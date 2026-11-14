@@ -66,8 +66,10 @@ fn each_mode_reports_its_own_name() {
     check::<Cmac<'_, Toy, Decrypting, 16>>(Toy::CMAC_ALG_NAME);
     check::<Gmac<'_, Toy, Encrypting, 16>>(Toy::GMAC_ALG_NAME);
     check::<Gmac<'_, Toy, Decrypting, 16>>(Toy::GMAC_ALG_NAME);
-    check::<Kw<'_, Toy>>(Toy::KW_ALG_NAME);
-    check::<Kwp<'_, Toy>>(Toy::KWP_ALG_NAME);
+    check::<Kw<'_, Toy, Encrypting>>(Toy::KW_ALG_NAME);
+    check::<Kw<'_, Toy, Decrypting>>(Toy::KW_ALG_NAME);
+    check::<Kwp<'_, Toy, Encrypting>>(Toy::KWP_ALG_NAME);
+    check::<Kwp<'_, Toy, Decrypting>>(Toy::KWP_ALG_NAME);
 }
 
 /// The padding layer and the stream-cipher wrapper add no name of their own.

@@ -28,7 +28,7 @@
 //! of the plaintext in the *same* block, so an attacker edits the block they aimed at, at the cost
 //! of randomising the next one. Do not decrypt data you have not authenticated separately.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_iv, load_key_object};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::cipher::BlockCipherKey;
 use bouncycastle::cipher::modes::CFB;
@@ -36,6 +36,9 @@ use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+
+/// The 128-bit block of the ciphers these commands serve; TDES has its own commands.
+const BLOCK_LEN: usize = 16;
 
 /// CFB under a `KEY_LEN`-byte key for the permutation `P`; `alg` names the cipher and key
 /// length in messages.

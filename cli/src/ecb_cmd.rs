@@ -17,7 +17,7 @@
 //! `aes*-cbc` or `aes*-cfb` under separate authentication, or better an AEAD.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
+    CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
 };
 use bouncycastle::cipher::BlockCipherKey;
 use bouncycastle::cipher::modes::ModeNames;
@@ -25,6 +25,9 @@ use bouncycastle::cipher::modes::hazmat::ecb::ECB;
 use bouncycastle::cipher::padding::NoPadding;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
+
+/// The 128-bit block of the ciphers these commands serve; TDES has its own commands.
+const BLOCK_LEN: usize = 16;
 
 const MODE: &str = "ECB";
 
@@ -59,9 +62,9 @@ where
                 |rng| key.create_encryptor(rng),
                 |no_iv| key.create_encryptor_nonce(no_iv),
             );
-            encrypt_stream::<_, 0>(enc, None, output_hex, Some(MODE))
+            encrypt_stream::<_, 0, BLOCK_LEN>(enc, None, output_hex, Some(MODE))
         }
-        CipherDirection::Decrypt => decrypt_stream::<_, 0>(
+        CipherDirection::Decrypt => decrypt_stream::<_, 0, BLOCK_LEN>(
             None,
             |no_iv| key.create_decryptor(no_iv),
             output_hex,

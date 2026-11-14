@@ -2,6 +2,7 @@
 use bouncycastle_chacha20::hazmat::keystream_at;
 use bouncycastle_chacha20::{ChaCha20, ChaCha20Key};
 use bouncycastle_cipher::Encrypting;
+use bouncycastle_cipher::stream::hazmat::stream_cipher_over;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -45,5 +46,5 @@ fn rfc8439_blocks_encryption_and_one_time_keys() {
 
 /// The RFC's vectors start at counters other than 0, which only the hazmat keystream takes.
 fn at<'k>(key: &'k ChaCha20Key, nonce: &[u8; 12], counter: u32) -> ChaCha20<'k, Encrypting> {
-    ChaCha20::from_keystream(keystream_at(key, nonce, counter))
+    stream_cipher_over(keystream_at(key, nonce, counter))
 }

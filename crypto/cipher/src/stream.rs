@@ -9,7 +9,7 @@
 //!
 //! A mode whose keystream depends on the data, such as CFB, implements the traits itself.
 
-use crate::{Decrypting, Encrypting};
+use crate::{Decrypting, Direction, Encrypting, sealed};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -54,6 +54,17 @@ where
     _marker: PhantomData<Dir>,
 }
 
+/// Whether a keystream's permutation decrypts only (`BlockPermutation::DECRYPT_ONLY`), so that
+/// [`StreamCipher`] can refuse, at compile time, to be made in the encrypting direction over it,
+/// whatever constructor makes it. `KeyStream` itself is `dyn`-compatible and so carries no
+/// constant; this sealed trait is implemented for the crate's keystream types. A keystream from
+/// outside the crate reaches [`StreamCipher`] only through [`hazmat::stream_cipher_over`], whose
+/// marker trait is the implementor's promise that no such permutation is under it.
+pub trait KeyStreamPolicy: sealed::Sealed {
+    /// The permutation's `DECRYPT_ONLY`.
+    const DECRYPT_ONLY: bool;
+}
+
 impl<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
@@ -62,11 +73,21 @@ where
     /// Wraps a keystream that has already been constructed and positioned, such as one that
     /// starts part-way into its counter space (GCM's GCTR starts at `inc32(J0)`).
     ///
-    /// # 🚨 Security Considerations 🚨
-    /// This bypasses init-data generation: the keystream's nonce is whatever it was constructed
-    /// with, and the caller is responsible for it never repeating under the key. A key's
-    /// `create_encryptor` is the safe path.
-    pub fn from_keystream(keystream: KS) -> Self {
+    /// Crate-private: it bypasses init-data generation (the keystream's nonce is whatever it was
+    /// constructed with, and a repeat under the key is the two-time pad), and a decryptor's
+    /// keystream wrapped in the encrypting direction would be an encryptor over a permutation
+    /// that decrypts only. A key's `create_encryptor` is the public path.
+    pub(crate) fn from_keystream(keystream: KS) -> Self
+    where
+        KS: KeyStreamPolicy,
+        Dir: Direction,
+    {
+        const {
+            assert!(
+                !(Dir::IS_ENCRYPTING && KS::DECRYPT_ONLY),
+                "this keystream's permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting stream cipher may be made over it"
+            )
+        };
         Self::check_shape();
         Self { keystream, pending: Secret::new(), used: BLOCK_LEN, _marker: PhantomData }
     }
@@ -275,5 +296,38 @@ where
     /// As [`StreamCipherEncryptor::do_encrypt_inplace`].
     fn do_decrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         self.apply(data)
+    }
+}
+
+/// Raw ways into [`StreamCipher`] whose safe use is the caller's responsibility; see
+/// [`bouncycastle_core::hazmat`] for what the path means and the supported uses.
+pub mod hazmat {
+    use super::StreamCipher;
+    use bouncycastle_core::hazmat::KeyStream;
+    use bouncycastle_utils::secret::Secret;
+    use core::marker::PhantomData;
+
+    /// A keystream that runs over no [`BlockPermutation`](bouncycastle_core::hazmat::BlockPermutation),
+    /// such as ChaCha20's, and so has no decrypt-only permutation for [`stream_cipher_over`] to
+    /// refuse. Implemented beside such a keystream's definition, and deliberately unsealed:
+    /// implementing it is the implementor's promise that no permutation that decrypts only is
+    /// under the keystream. The keystreams of this crate's modes do not implement it.
+    pub trait PermutationFreeKeyStream {}
+
+    /// A [`StreamCipher`] over a keystream that is already constructed and positioned, for a
+    /// keystream defined outside this crate.
+    ///
+    /// # 🚨 Security Considerations 🚨
+    /// The nonce and the starting counter are whatever the keystream was constructed with: no
+    /// init data is drawn, and a nonce or counter range repeated under the key is the two-time
+    /// pad. A key's `create_encryptor`, which draws the nonce, is the cipher to use.
+    pub fn stream_cipher_over<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>(
+        keystream: KS,
+    ) -> StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
+    where
+        KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + PermutationFreeKeyStream,
+    {
+        StreamCipher::<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>::check_shape();
+        StreamCipher { keystream, pending: Secret::new(), used: BLOCK_LEN, _marker: PhantomData }
     }
 }

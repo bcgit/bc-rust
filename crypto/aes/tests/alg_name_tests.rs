@@ -149,25 +149,20 @@ fn cmac() {
     check::<AES_CMAC_256<'_, Encrypting>, AES_CMAC_256<'_, Decrypting>>("AES_CMAC_256", _256bit);
 }
 
-/// One worker serves both halves of a key wrap, so there is one name per alias to check.
+/// A key wrap's two directions report the one name and strength.
 #[test]
 fn kw_kwp() {
     use SecurityStrength::*;
-    assert_eq!((AES_KW_128::ALG_NAME, AES_KW_128::MAX_SECURITY_STRENGTH), ("AES_KW_128", _128bit));
-    assert_eq!((AES_KW_192::ALG_NAME, AES_KW_192::MAX_SECURITY_STRENGTH), ("AES_KW_192", _192bit));
-    assert_eq!((AES_KW_256::ALG_NAME, AES_KW_256::MAX_SECURITY_STRENGTH), ("AES_KW_256", _256bit));
-    assert_eq!(
-        (AES_KWP_128::ALG_NAME, AES_KWP_128::MAX_SECURITY_STRENGTH),
-        ("AES_KWP_128", _128bit)
-    );
-    assert_eq!(
-        (AES_KWP_192::ALG_NAME, AES_KWP_192::MAX_SECURITY_STRENGTH),
-        ("AES_KWP_192", _192bit)
-    );
-    assert_eq!(
-        (AES_KWP_256::ALG_NAME, AES_KWP_256::MAX_SECURITY_STRENGTH),
-        ("AES_KWP_256", _256bit)
-    );
+    fn check<Enc: Algorithm, Dec: Algorithm>(name: &str, strength: SecurityStrength) {
+        assert_eq!((Enc::ALG_NAME, Enc::MAX_SECURITY_STRENGTH), (name, strength));
+        assert_eq!((Dec::ALG_NAME, Dec::MAX_SECURITY_STRENGTH), (name, strength));
+    }
+    check::<AES_KW_128<'_, Encrypting>, AES_KW_128<'_, Decrypting>>("AES_KW_128", _128bit);
+    check::<AES_KW_192<'_, Encrypting>, AES_KW_192<'_, Decrypting>>("AES_KW_192", _192bit);
+    check::<AES_KW_256<'_, Encrypting>, AES_KW_256<'_, Decrypting>>("AES_KW_256", _256bit);
+    check::<AES_KWP_128<'_, Encrypting>, AES_KWP_128<'_, Decrypting>>("AES_KWP_128", _128bit);
+    check::<AES_KWP_192<'_, Encrypting>, AES_KWP_192<'_, Decrypting>>("AES_KWP_192", _192bit);
+    check::<AES_KWP_256<'_, Encrypting>, AES_KWP_256<'_, Decrypting>>("AES_KWP_256", _256bit);
 }
 
 fn key_for<M: Mode<AES128Internal>>() -> AES128Key<M> {

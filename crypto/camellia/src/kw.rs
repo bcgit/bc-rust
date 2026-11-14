@@ -45,12 +45,12 @@ use bouncycastle_cipher::modes::Kw;
 /// worker is the borrow of it, one pointer, and the wrapping function's scratch is one block on
 /// the stack; the data is wrapped and unwrapped in the caller's buffers.
 #[allow(non_camel_case_types)]
-pub type Camellia_KW_128<'k> = Kw<'k, Camellia128Internal>;
+pub type Camellia_KW_128<'k, Dir> = Kw<'k, Camellia128Internal, Dir>;
 
 /// Camellia-192 Key Wrap. See [`Camellia_KW_128`].
 #[allow(non_camel_case_types)]
-pub type Camellia_KW_192<'k> = Kw<'k, Camellia192Internal>;
+pub type Camellia_KW_192<'k, Dir> = Kw<'k, Camellia192Internal, Dir>;
 
 /// Camellia-256 Key Wrap. See [`Camellia_KW_128`].
 #[allow(non_camel_case_types)]
-pub type Camellia_KW_256<'k> = Kw<'k, Camellia256Internal>;
+pub type Camellia_KW_256<'k, Dir> = Kw<'k, Camellia256Internal, Dir>;

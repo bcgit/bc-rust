@@ -90,9 +90,15 @@ fn cfb_cfb8_ctr() {
 #[test]
 fn kw() {
     use SecurityStrength::*;
-    check::<Camellia_KW_128<'_>, Camellia_KW_128<'_>>("Camellia_KW_128", _128bit);
-    check::<Camellia_KW_192<'_>, Camellia_KW_192<'_>>("Camellia_KW_192", _192bit);
-    check::<Camellia_KW_256<'_>, Camellia_KW_256<'_>>("Camellia_KW_256", _256bit);
+    check::<Camellia_KW_128<'_, Encrypting>, Camellia_KW_128<'_, Decrypting>>(
+        "Camellia_KW_128", _128bit,
+    );
+    check::<Camellia_KW_192<'_, Encrypting>, Camellia_KW_192<'_, Decrypting>>(
+        "Camellia_KW_192", _192bit,
+    );
+    check::<Camellia_KW_256<'_, Encrypting>, Camellia_KW_256<'_, Decrypting>>(
+        "Camellia_KW_256", _256bit,
+    );
 }
 
 #[test]

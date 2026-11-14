@@ -93,6 +93,12 @@ where
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
+            )
+        };
         // `I1 = IV`.
         let iv = random_iv::<BLOCK_LEN>(rng)?;
         Ok((Cfb8 { perm: state, chain: iv, _dir: PhantomData }, iv))
@@ -102,6 +108,12 @@ where
         state: &'k Self::KeyState,
         iv: &[u8; BLOCK_LEN],
     ) -> Self::Encryptor<'k> {
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
+            )
+        };
         Cfb8 { perm: state, chain: *iv, _dir: PhantomData }
     }
 }

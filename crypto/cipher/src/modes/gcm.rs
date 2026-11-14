@@ -183,7 +183,7 @@
 use crate::modes::Ctr;
 use crate::modes::ModeNames;
 use crate::modes::hazmat::ctr_key_stream::CtrKeyStream;
-use crate::{Decrypting, Encrypting};
+use crate::{Decrypting, Direction, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     AeadDecryptMode, AeadEncryptMode, BlockPermutation, ElectronicCodeBook, Mode,
@@ -351,6 +351,7 @@ where
 impl<'k, P, Dir, const TAG_LEN: usize> Gcm<'k, P, Dir, TAG_LEN>
 where
     P: BlockPermutation<16> + ModeNames,
+    Dir: Direction,
 {
     /// The compile-time shape check: `TAG_LEN` must be one of Sec 5.2.1.2's five recommended tag
     /// lengths in bytes (96, 104, 112, 120, 128 bits -- Appendix C's 32- and 64-bit tags are a
@@ -490,6 +491,7 @@ where
 impl<'k, P, Dir, const TAG_LEN: usize> Algorithm for Gcm<'k, P, Dir, TAG_LEN>
 where
     P: BlockPermutation<16> + ModeNames,
+    Dir: Direction,
 {
     const ALG_NAME: &'static str = P::GCM_ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
@@ -1233,7 +1235,7 @@ mod tests {
 
     /// The CTR half positioned at the last counter block under `nonce`: 16 bytes of keystream
     /// left, as a worker that had encrypted `2^32 - 3` blocks would have.
-    fn ctr_at_the_last_block<Dir>(
+    fn ctr_at_the_last_block<Dir: Direction>(
         state: &GcmKeyState<Toy>,
         nonce: [u8; GCM_NONCE_LEN],
     ) -> Ctr<'_, Toy, Dir, 16, GCM_NONCE_LEN> {

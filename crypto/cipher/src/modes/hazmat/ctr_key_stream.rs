@@ -11,7 +11,7 @@ use bouncycastle_core::traits::Algorithm;
 #[allow(unused_imports)]
 use crate::modes::Ctr;
 #[allow(unused_imports)]
-use crate::stream::StreamCipher;
+use crate::stream::{KeyStreamPolicy, StreamCipher};
 // end of imports needed for docs
 
 /// The CTR keystream `Oj = CIPH_K(Tj)` (SP 800-38A Sec 6.5) over any [`BlockPermutation`], with
@@ -124,6 +124,21 @@ where
     const ALG_NAME: &'static str = P::CTR_ALG_NAME;
     /// A mode does not change the strength of the underlying cipher.
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
+}
+
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> crate::sealed::Sealed
+    for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
+where
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
+{
+}
+
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> KeyStreamPolicy
+    for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
+where
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
+{
+    const DECRYPT_ONLY: bool = P::DECRYPT_ONLY;
 }
 
 impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> KeyStream<INIT_DATA_LEN, BLOCK_LEN>

@@ -102,27 +102,27 @@ use bouncycastle_cipher::modes::{Kw, Kwp};
 /// [`KeyUnwrappingKey`]: bouncycastle_core::symmetric_key::KeyUnwrappingKey
 /// [`KeyType::SymmetricCipherKey`]: bouncycastle_core::key_material::KeyType::SymmetricCipherKey
 #[allow(non_camel_case_types)]
-pub type AES_KW_128<'k> = Kw<'k, AES128Internal>;
+pub type AES_KW_128<'k, Dir> = Kw<'k, AES128Internal, Dir>;
 
 /// AES-192 Key Wrap (SP 800-38F KW; RFC 3394 with a 192-bit KEK). See [`AES_KW_128`].
 #[allow(non_camel_case_types)]
-pub type AES_KW_192<'k> = Kw<'k, AES192Internal>;
+pub type AES_KW_192<'k, Dir> = Kw<'k, AES192Internal, Dir>;
 
 /// AES-256 Key Wrap (SP 800-38F KW; RFC 3394 with a 256-bit KEK). See [`AES_KW_128`].
 #[allow(non_camel_case_types)]
-pub type AES_KW_256<'k> = Kw<'k, AES256Internal>;
+pub type AES_KW_256<'k, Dir> = Kw<'k, AES256Internal, Dir>;
 
 /// AES-128 Key Wrap with Padding (SP 800-38F KWP; RFC 5649 with a 128-bit KEK): the worker an
 /// `AES128Key<KWP>` hands out.
 #[allow(non_camel_case_types)]
-pub type AES_KWP_128<'k> = Kwp<'k, AES128Internal>;
+pub type AES_KWP_128<'k, Dir> = Kwp<'k, AES128Internal, Dir>;
 
 /// AES-192 Key Wrap with Padding (SP 800-38F KWP; RFC 5649 with a 192-bit KEK). See
 /// [`AES_KWP_128`].
 #[allow(non_camel_case_types)]
-pub type AES_KWP_192<'k> = Kwp<'k, AES192Internal>;
+pub type AES_KWP_192<'k, Dir> = Kwp<'k, AES192Internal, Dir>;
 
 /// AES-256 Key Wrap with Padding (SP 800-38F KWP; RFC 5649 with a 256-bit KEK). See
 /// [`AES_KWP_128`].
 #[allow(non_camel_case_types)]
-pub type AES_KWP_256<'k> = Kwp<'k, AES256Internal>;
+pub type AES_KWP_256<'k, Dir> = Kwp<'k, AES256Internal, Dir>;
