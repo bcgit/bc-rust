@@ -96,9 +96,11 @@ fn the_pairing_takes_the_descriptions_salt() {
     assert!(HkdfDescription::<SHA256>::with_salt(&unknown).is_err());
 }
 
-/// The pairing derives its longest key, RFC 5869 Section 2.3's 255 * HashLen bytes, in one call.
+/// The pairing derives its longest key, RFC 5869 Section 2.3's 255 * HashLen bytes, in one call,
+/// and the constant is that bound: 255 * 32 for SHA-256.
 #[test]
 fn the_pairing_derives_its_longest_key() {
+    assert_eq!(HKDF_SHA256_MAX_LEN, 8160);
     let (alice_pk, alice_sk) = keygen_default().unwrap();
     let (bob_pk, bob_sk) = keygen_default().unwrap();
     let hkdf = HkdfDescription::<SHA256>::new();
