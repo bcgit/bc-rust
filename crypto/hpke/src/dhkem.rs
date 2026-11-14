@@ -133,16 +133,10 @@ impl<
         );
     };
 
-    /// `Encap(pkR)` (RFC 9180 Section 4.1), drawing the ephemeral key pair from `rng`.
-    ///
-    /// Returns the shared secret and `enc`, as a [`KeyType::CryptographicRandom`] key at the
-    /// group's security strength.
-    ///
-    /// # Errors
-    ///
     /// `Encap(pkR)` (RFC 9180 Section 4.1), with the ephemeral key pair generated from `rng`:
-    /// the shared secret into `shared_secret` and `enc`, the ephemeral public key, into `enc`,
-    /// each zeroized first and left so on the error path.
+    /// the shared secret, a [`KeyType::CryptographicRandom`] key at the group's security
+    /// strength, into `shared_secret` and `enc`, the ephemeral public key, into `enc`, each
+    /// zeroized first and left so on the error path.
     ///
     /// # Errors
     /// * [`KEMError::RNGError`] if `rng`'s security strength is below the group's.
@@ -188,15 +182,9 @@ impl<
         Ok((shared_secret, enc))
     }
 
-    /// `Decap(enc, skR)` (RFC 9180 Section 4.1).
-    ///
-    /// Returns the shared secret, as a [`KeyType::CryptographicRandom`] key at the group's security
-    /// strength.
-    ///
-    /// # Errors
-    ///
-    /// `Decap(enc, skR)` (RFC 9180 Section 4.1) into `shared_secret`, zeroized first and left so
-    /// on the error path.
+    /// `Decap(enc, skR)` (RFC 9180 Section 4.1): the shared secret, a
+    /// [`KeyType::CryptographicRandom`] key at the group's security strength, into
+    /// `shared_secret`, zeroized first and left so on the error path.
     ///
     /// # Errors
     /// [`KEMError::DecapsulationFailed`] if `enc` does not deserialize or the DH output fails the
@@ -276,15 +264,12 @@ impl<
         Ok((G::pk(&sk), sk))
     }
 
-    /// `ExtractAndExpand(dh, kem_context)` (RFC 9180 Section 4.1), with `kem_context` given as the
-    /// parts it is the concatenation of.
-    ///
-    /// The output is labelled as a full-entropy key at the group's strength: it is HKDF output, and
-    /// so pseudorandom, unlike the DH output it is derived from.
+    /// `ExtractAndExpand(dh, kem_context)` (RFC 9180 Section 4.1) into `out`, zeroized first,
+    /// with `kem_context` given as the parts it is the concatenation of. The output is labelled
+    /// as a full-entropy key at the group's strength: it is HKDF output, and so pseudorandom,
+    /// unlike the DH output it is derived from.
     // #[inline(never)]: inlined into encap_rng, its two HMAC states were allocated for the whole
     // encapsulation, on top of the key generation that sets the peak.
-    /// `ExtractAndExpand(dh, kem_context)` (RFC 9180 Section 4.1) into `out`: the shared secret,
-    /// typed `CryptographicRandom` at the group's strength. `out` is zeroized first.
     #[inline(never)]
     fn extract_and_expand_into(dh: &[u8], kem_context: &[&[u8]], out: &mut KeyMaterial<N_SECRET>) {
         out.zeroize();
