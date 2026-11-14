@@ -162,13 +162,16 @@
 //! **What step-4-style destruction reaches here, and what it does not.** `K`, the decoded
 //! scalar, the ladder's and the inversion's field elements and the DHKEM's intermediates each
 //! live in a `Secret` or a self-wiping field element and are cleared at the end of their
-//! lifetime, and `agree_out` writes into the caller's buffer. What is not reached: a key pair
-//! returned by [`keygen`], [`keygen_from_seed`] or `DeriveKeyPair` is moved out of the frame that
-//! built it (one copy of the scalar, as a move does not wipe its source), `encode` returns the
-//! clamped scalar as a plain array by the trait's contract, the by-value `agree`, `encaps` and
-//! `decaps` of `core` move their result out the same way, and HKDF's frame keeps its copies of
-//! `K` and of the PRK's HMAC states in the pairing and the DHKEM (see `bouncycastle_hpke`'s
-//! Security Considerations), so use the `_out` forms into a buffer you own where that matters.
+//! lifetime, `agree_out` writes into the caller's buffer, and [`keygen_out`] and
+//! [`keygen_from_seed_out`] draw the scalar straight into a key the caller holds. What is not
+//! reached: a key pair returned by value from [`keygen`], [`keygen_from_seed`], the trait's
+//! `from_bytes` or `DeriveKeyPair` is moved out of the frame that built it, and a move does not
+//! wipe its source, so copies of the scalar stay on the dead stack (two for the keygens, one
+//! move into the pair and one into the `Result`); `encode` returns the clamped scalar as a plain
+//! array by the trait's contract; the by-value `agree`, `encaps` and `decaps` of `core` move
+//! their result out the same way; and HKDF's frame keeps its copies of `K` and of the PRK's
+//! HMAC states in the pairing and the DHKEM (see `bouncycastle_hpke`'s Security
+//! Considerations). Use the `_out` forms into a buffer or key you own where that matters.
 //!
 //! The pairing's derived key carries the least of X25519's 128 bits, the KDF's and the length's
 //! strength, so a `LEN` below 16 bytes is typed `CryptographicRandom` at less than 128 bits.
@@ -252,18 +255,38 @@ impl KeyAgreementAlgorithm for X25519 {}
 /// are the private key (RFC 7748 Section 6.1; RFC 9180 Section 4: "GenerateKeyPair can be
 /// implemented as DeriveKeyPair(random(Nsk))", which for X25519 is the identity).
 ///
+/// [`keygen_out`] into a key you hold, moved out of this frame: a move wipes nothing, so copies
+/// of the scalar stay on the dead stack (the module's Security Considerations).
+///
 /// # Errors
 /// [`KeyAgreementError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver.
 pub fn keygen(rng: &mut dyn RNG) -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
+    let mut sk = X25519PrivateKey::zeroized();
+    let pk = keygen_out(rng, &mut sk)?;
+    Ok((pk, sk))
+}
+
+/// Generates a private key into `sk`, a key you hold, and returns its public key: the RNG,
+/// which must offer X25519's 128 bits, writes the 32 bytes of the scalar straight into the
+/// key's own `Secret` (RFC 7748 Section 6.1), so no copy of it is staged on the way. `sk` is
+/// zeroized first and left so on every error.
+///
+/// # Errors
+/// [`KeyAgreementError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver.
+pub fn keygen_out(
+    rng: &mut dyn RNG,
+    sk: &mut X25519PrivateKey,
+) -> Result<X25519PublicKey, KeyAgreementError> {
+    sk.clear();
     if rng.security_strength() < X25519::MAX_SECURITY_STRENGTH {
         return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
     }
-    // The key is built in place: the RNG writes the scalar into the key's own Secret, and the
-    // public key is set beside it. What is left is the pair's move out through the Result.
-    let mut sk = X25519PrivateKey { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) };
-    rng.next_bytes_out(&mut *sk.k)?;
+    if let Err(e) = rng.next_bytes_out(&mut *sk.k) {
+        sk.clear();
+        return Err(e.into());
+    }
     sk.pk = scalar_mult_base(&sk.k);
-    Ok((sk.pk, sk))
+    Ok(sk.pk)
 }
 
 /// The key pair whose private key is `seed`'s 32 bytes: a [`KeyMaterial256`] typed
@@ -271,12 +294,32 @@ pub fn keygen(rng: &mut dyn RNG) -> Result<(X25519PublicKey, X25519PrivateKey), 
 /// more. The bytes are kept as given; the clamping of RFC 7748 Section 5 is applied when they
 /// are used, and the encoding is the clamped form.
 ///
+/// [`keygen_from_seed_out`] into a key you hold, moved out of this frame: a move wipes nothing,
+/// so copies of the scalar stay on the dead stack (the module's Security Considerations).
+///
 /// # Errors
 /// [`KeyAgreementError::KeyMaterialError`] for a seed of another type or length, or of too
 /// little strength.
 pub fn keygen_from_seed(
     seed: &KeyMaterial256,
 ) -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
+    let mut sk = X25519PrivateKey::zeroized();
+    let pk = keygen_from_seed_out(seed, &mut sk)?;
+    Ok((pk, sk))
+}
+
+/// The private key whose scalar is `seed`'s 32 bytes, into `sk`, a key you hold, and its public
+/// key returned: the seed's requirements are [`keygen_from_seed`]'s, and the bytes are copied
+/// once, into the key's own `Secret`. `sk` is zeroized first and left so on every error.
+///
+/// # Errors
+/// [`KeyAgreementError::KeyMaterialError`] for a seed of another type or length, or of too
+/// little strength.
+pub fn keygen_from_seed_out(
+    seed: &KeyMaterial256,
+    sk: &mut X25519PrivateKey,
+) -> Result<X25519PublicKey, KeyAgreementError> {
+    sk.clear();
     if seed.key_type() == KeyType::Zeroized {
         return Err(KeyMaterialError::ActingOnZeroizedKey.into());
     }
@@ -295,10 +338,9 @@ pub fn keygen_from_seed(
         .into());
     }
 
-    let mut sk = X25519PrivateKey { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) };
     sk.k.copy_from_slice(seed.ref_to_bytes());
     sk.pk = scalar_mult_base(&sk.k);
-    Ok((sk.pk, sk))
+    Ok(sk.pk)
 }
 
 /// `K = X25519(k, u)` of RFC 7748 Section 6.1 into `out`, the u-coordinate of the peer's public
@@ -462,6 +504,19 @@ pub struct X25519PrivateKey {
 }
 
 impl X25519PrivateKey {
+    /// The all-zero key: the key [`keygen_out`] and [`keygen_from_seed_out`] write into, so
+    /// that the scalar is drawn where it will live and never moved. It is not a generated key;
+    /// its public key is all zero until one of them fills it.
+    pub fn zeroized() -> Self {
+        Self { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) }
+    }
+
+    /// Back to the all-zero key, the scalar wiped.
+    fn clear(&mut self) {
+        self.k.zeroize();
+        self.pk = X25519PublicKey([0; POINT_LEN]);
+    }
+
     /// The public key, `X25519(k, 9)` (RFC 7748 §6.1).
     pub fn pk(&self) -> X25519PublicKey {
         self.pk

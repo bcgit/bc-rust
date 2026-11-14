@@ -5,6 +5,7 @@ use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
 use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreementKeys;
 use bouncycastle_ed::x25519::{
     POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen, keygen_from_seed,
+    keygen_from_seed_out, keygen_out,
 };
 use bouncycastle_hex as hex;
 use bouncycastle_rng::{DefaultRNG, FixedSeedRNG};
@@ -96,6 +97,44 @@ fn keygen_uses_the_rng_output_as_the_key() {
     let mut rng = FixedSeedRNG::new(seed_bytes);
     rng.set_security_strength(SecurityStrength::_128bit);
     keygen(&mut rng).unwrap();
+}
+
+/// The out forms write into a key the caller holds: a stale key is overwritten with what the
+/// by-value forms give for the same RNG output or seed, the returned public key is the key's
+/// own, and a refused RNG or seed leaves the key all zero.
+#[test]
+fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
+    let seed_bytes: [u8; 32] = hex::decode(ALICE_SK).unwrap().try_into().unwrap();
+    let zero = X25519PrivateKey::zeroized();
+    assert_eq!(zero.pk().as_bytes(), &[0u8; POINT_LEN]);
+
+    let (_, mut sk) = keygen_default().unwrap();
+    let pk = keygen_out(&mut FixedSeedRNG::new(seed_bytes), &mut sk).unwrap();
+    assert_eq!(pk.as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
+    assert_eq!(sk.pk(), pk);
+    assert!(sk == keygen(&mut FixedSeedRNG::new(seed_bytes)).unwrap().1);
+
+    let mut weak = FixedSeedRNG::new(seed_bytes);
+    weak.set_security_strength(SecurityStrength::_112bit);
+    assert!(matches!(
+        keygen_out(&mut weak, &mut sk),
+        Err(KeyAgreementError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm))
+    ));
+    assert!(sk == zero);
+    assert_eq!(sk.pk(), zero.pk());
+
+    let (_, mut sk) = keygen_default().unwrap();
+    let pk = keygen_from_seed_out(&seed(ALICE_SK, KeyType::Seed), &mut sk).unwrap();
+    assert_eq!(pk.as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
+    assert_eq!(sk.pk(), pk);
+    assert!(sk == keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap().1);
+
+    assert!(matches!(
+        keygen_from_seed_out(&seed(ALICE_SK, KeyType::Unknown), &mut sk),
+        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
+    ));
+    assert!(sk == zero);
+    assert_eq!(sk.pk(), zero.pk());
 }
 
 #[test]
