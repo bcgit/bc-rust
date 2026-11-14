@@ -27,6 +27,7 @@ mod sha2_cmd;
 mod sha3_cmd;
 mod sm2_cmd;
 mod sm3_cmd;
+mod x25519_cmd;
 
 use crate::blake2_cmd::BLAKE2Variant;
 use crate::eccdh_cmd::ECCDHAction;
@@ -5751,6 +5752,28 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
+
+    /// The X25519 key agreement algorithm (RFC 7748), and the DHKEM(X25519, HKDF-SHA256) key
+    /// encapsulation built on it (RFC 9180).
+    X25519 {
+        action: x25519_cmd::X25519Action,
+
+        #[arg(long)]
+        /// The private key file (binary, or hex under --hex-input) for pk-from-sk, check-consistency, agree and decaps; stdin if absent where allowed
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (binary, or hex under --hex-input) for check-consistency, agree and encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (binary, or hex under --hex-input): written by encaps, read by decaps.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
 }
 
 fn main() {
@@ -7130,6 +7153,9 @@ fn run() {
         }
         Some(Subcommands::HMAC_SHA3_512 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA3_512, key, key_file, verify, *x)
+        }
+        Some(Subcommands::X25519 { action, skfile, pkfile, ctfile, x }) => {
+            x25519_cmd::x25519_cmd(action, skfile, pkfile, ctfile, *x);
         }
         None => {
             eprintln!("No command provided. See -h")

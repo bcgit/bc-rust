@@ -24,6 +24,13 @@
 * `bouncycastle-ec` -- the constant-time, fixed-width curve arithmetic under both: per-curve field, scalar and
   Jacobian-point arithmetic, SEC 1 codec and comb, wNAF and variable-base multipliers, all under `hazmat`, with the
   generic limb arithmetic (`nat`, `montgomery`, `barrett`, `inverse_vartime`) at the crate root.
+* X25519 -- `bouncycastle-ed`, the Diffie-Hellman function of RFC 7748 over Curve25519, on the key agreement
+  roles: `X25519PrivateKey` implements `AgreementKey` over `()` for the raw shared secret and over
+  `KdfParams<HkdfDescription<SHA256>, LEN>` for a derived key (`X25519_HKDF_SHA256`), and with `X25519PublicKey` the KEM roles
+  as DHKEM(X25519, HKDF-SHA256) of RFC 9180 Section 4.1, through the new `bouncycastle-hpke` crate's generic DHKEM;
+  `keygen` draws the key from the caller's RNG; checked against RFC 7748's vectors, RFC 9180 Appendix A.1.1, A.1.2, A.2.1, A.2.2, A.7.1 and A.7.2, and
+  Wycheproof's X25519 set; the `x25519` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree, encaps
+  and decaps.
 
 ## Minor features / bug fixes
 
@@ -135,7 +142,7 @@
 * `bouncycastle-eccdh`: ECC CDH (SP 800-56A Rev. 3 Section 5.7.1.2) over P-256, P-384, P-521, secp256k1,
   brainpoolP256r1, brainpoolP384r1 and brainpoolP512r1, with its own key types per curve (full public-key
   validation at decode, key generation by extra random bits), the markers `ECCDHP256` and friends on the
-  `AgreementKey` role over `()`, and `ECCDHP256_HKDF_SHA256` over `KdfParams<HKDF_SHA256, LEN>` on the P-256 keys;
+  `AgreementKey` role over `()`, and `ECCDHP256_HKDF_SHA256` over `KdfParams<HkdfDescription<SHA256>, LEN>` on the P-256 keys;
   tested against the CAVP ECC CDH primitive vectors, RFC 7027 Appendix A and the Wycheproof ECDH sets.
 * `bouncycastle-x963kdf`: the ANSI X9.63 KDF of SEC 1 v2 Section 3.6.1 over SHA-224, SHA-256, SHA-384 and
   SHA-512, on the `KDF` trait and in `KDFFactory` (`X963KDF-SHA256` and so on) and as the `x963kdf-sha*` CLI

@@ -73,6 +73,8 @@ pub enum KEMError {
     DecapsulationFailed,
     ///
     DecodingError(&'static str),
+    /// The public key given to encapsulation is unusable, for example a point of small order.
+    InvalidPublicKey(&'static str),
     ///
     KeyGenError(&'static str),
     ///

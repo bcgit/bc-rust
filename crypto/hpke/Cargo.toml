@@ -1,0 +1,14 @@
+[package]
+name = "bouncycastle-hpke"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bouncycastle-core.workspace = true
+bouncycastle-hmac.workspace = true
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+bouncycastle-ed.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-rng.workspace = true

@@ -17,9 +17,10 @@
 //! A key under a KDF its curve is not paired with has no role, so the wrong KDF is a compile
 //! error; a further pairing is one marker and one impl.
 //!
-//! The derived key is typed by the KDF's accounting ([`KDF`]'s docs): `CryptographicRandom` at
-//! the least of the curve's strength, the KDF's and the length's, so a key shorter than 14
-//! bytes carries no strength although the algorithm's `MAX_SECURITY_STRENGTH` is the curve's.
+//! The derived key is typed by the KDF's accounting ([`KDF`](bouncycastle_core::traits::KDF)'s
+//! docs): `CryptographicRandom` at the least of the curve's strength, the KDF's and the
+//! length's, so a key shorter than 14 bytes carries no strength although the algorithm's
+//! `MAX_SECURITY_STRENGTH` is the curve's.
 //! An all-zero `Z` (`x_P = 0`, on the curve for P-256, P-384 and P-521 and not arrangeable
 //! without `d`) reaches the KDF typed `Zeroized` and credits nothing: the X9.63 and
 //! concatenation roles, and HKDF with an empty salt, return a key typed `Unknown` with no
@@ -62,8 +63,8 @@ use bouncycastle_concatkdf::{ConcatKDF, ConcatKDFParams};
 use bouncycastle_core::agreement_key::KeyAgreementAlgorithm;
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::kdf_params::{KdfDescription, KdfParams};
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
-use bouncycastle_core::traits::{HashAlgParams, KDF};
+use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::traits::HashAlgParams;
 use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_sha2::SHA256;
 use bouncycastle_x963kdf::{X963KDF, X963KDFParams};
@@ -111,12 +112,12 @@ pub trait KdfPairing<D: KdfDescription + PairedKdf + ?Sized, const SS_LEN: usize
 }
 
 /// KDF(Z, info) into `out`, zeroized first, a key of `SS_LEN` bytes: `Z` is typed
-/// `SharedSecret`, which the KDF credits. The caller's buffer is where the key lives.
+/// `SharedSecret`, which the KDF credits. The caller's buffer is where the key lives. The
+/// length check is this pairing's; the derivation is [`KdfParams::derive_out`].
 ///
 /// # Errors
 /// [`KeyAgreementError::KDFError`] with the KDF's own error if it refuses to be built from the
-/// description or refuses the derivation, and
-/// [`KeyAgreementError::GenericError`] if it writes anything but `SS_LEN` bytes; `out` is left
+/// description or refuses the derivation, or writes anything but `SS_LEN` bytes; `out` is left
 /// zeroized.
 pub(crate) fn derive<
     D: KdfDescription + PairedKdf + ?Sized,
@@ -133,15 +134,7 @@ pub(crate) fn derive<
             "the derived key is from one byte to the KDF's MAX_LEN long"
         )
     };
-    out.zeroize();
-    // The engine is built from the description for this derivation: for HKDF, an instance keyed
-    // with the salt. `derive_key_out` zeroizes `out` first and leaves it so on its errors.
-    let kdf = params.kdf().engine()?;
-    let written = kdf.derive_key_out(z, params.info(), SS_LEN, out)?;
-    if written != SS_LEN || out.key_len() != SS_LEN {
-        out.zeroize();
-        return Err(KeyAgreementError::GenericError("the KDF derived a key of the wrong length"));
-    }
+    params.derive_out(z, out)?;
     Ok(())
 }
 
