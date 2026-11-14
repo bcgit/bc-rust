@@ -184,12 +184,12 @@
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, KeyMaterialError, RNGError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::kdf_params::{KdfDescription, KdfParams};
+use bouncycastle_core::kdf_params::KdfParams;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorithm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, KDF, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, KeyAgreement,
+    Algorithm, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, KeyAgreement,
     KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG,
 };
 use bouncycastle_hkdf::HkdfDescription;
@@ -232,7 +232,7 @@ const C_A: u32 = 486662;
 ///
 /// Deviation from the RFC: RFC 7748 §5 uses `a24 = (486662 - 2) / 4 = 121665` in
 /// `z_2 = E * (AA + a24 * E)`. Since `E = AA - BB`, `AA + a24 * E = BB + (a24 + 1) * E`, so pairing
-/// the constant with BB instead needs `a24 + 1 = (A + 2) / 4`. [`scalar_mult`] and
+/// the constant with BB instead needs `a24 + 1 = (A + 2) / 4`. [`scalar_mult_into`] and
 /// [`ladder_double`] both use that form.
 const C_A24: u32 = (C_A + 2) / 4;
 
@@ -301,9 +301,6 @@ pub fn keygen_from_seed(
     Ok((sk.pk, sk))
 }
 
-/// `K = X25519(k, u)` of RFC 7748 Section 6.1, the u-coordinate of the peer's public key
-/// multiplied by our scalar, as its 32-byte little-endian encoding, refused when all zero.
-///
 /// `K = X25519(k, u)` of RFC 7748 Section 6.1 into `out`, the u-coordinate of the peer's public
 /// key multiplied by our scalar as its 32-byte little-endian encoding, refused when all zero
 /// (and `out` left zeroized then).
@@ -427,16 +424,9 @@ impl<const LEN: usize> KeyAgreement<X25519PublicKey, LEN> for X25519KdfAgreement
         ss.zeroize();
         let mut k = KeyMaterial::<POINT_LEN>::new();
         X25519Agreement { sk: self.sk }.agree_out(peer_pk, &mut k)?;
-        // The engine is an HKDF keyed with the description's salt, if any. `derive_key_out`
-        // zeroizes `ss` first and leaves it so on its errors.
-        let kdf = self.params.kdf().engine()?;
-        let written = kdf.derive_key_out(&k, self.params.info(), LEN, ss)?;
-        if written != LEN || ss.key_len() != LEN {
-            ss.zeroize();
-            return Err(KeyAgreementError::GenericError(
-                "the KDF derived a key of the wrong length",
-            ));
-        }
+        // The engine is an HKDF keyed with the description's salt, if any, built for this
+        // derivation; `ss` is zeroized first and left so on every error.
+        self.params.derive_out(&k, ss)?;
         Ok(LEN)
     }
 }
@@ -477,7 +467,6 @@ impl X25519PrivateKey {
         self.pk
     }
 
-    /// The key bytes, [`clamp`]ed.
     /// The key bytes, [`clamp`]ed, into `out`.
     fn clamped_into(&self, out: &mut [u8; SCALAR_LEN]) {
         *out = *self.k;
@@ -687,13 +676,13 @@ fn encode_u_coordinate(u: &FieldElement25519, r: &mut [u8; POINT_LEN]) {
 /// Updated in place.
 ///
 /// Keeping u as a fraction is what lets the ladder avoid a field inversion on every step: only
-/// multiplications and squarings are needed here, and [`scalar_mult`] divides `x` by `z` once, at
-/// the end.
+/// multiplications and squarings are needed here, and [`scalar_mult_into`] divides `x` by `z`
+/// once, at the end.
 ///
 /// This is the doubling half of the Montgomery ladder step in Section 5 of RFC7748, used by
-/// [`scalar_mult`] for the last three iterations. With `AA = (x + z)^2`, `BB = (x - z)^2` and
-/// `E = AA - BB`, it writes `x = AA * BB` and `z = E * (BB + C_A24 * E)`; see [`C_A24`] for the
-/// pairing with `BB`.
+/// [`scalar_mult_into`] for the last three iterations. With `AA = (x + z)^2`, `BB = (x - z)^2`
+/// and `E = AA - BB`, it writes `x = AA * BB` and `z = E * (BB + C_A24 * E)`; see [`C_A24`] for
+/// the pairing with `BB`.
 ///
 /// X25519 only: it works on curve25519's Montgomery form and depends on its coefficient A.
 /// Ed25519 doubles points on the twisted Edwards curve in extended coordinates (Section 5.1.4 of
@@ -747,8 +736,8 @@ fn scalar_mult_into(k: &[u8; SCALAR_LEN], u: &X25519PublicKey, out: &mut [u8; PO
     encode_u_coordinate(&r, out);
 }
 
-/// The Montgomery ladder of [`scalar_mult`]: writes the projective u-coordinate of `n * x1` to
-/// `(x2, z2)`, for a scalar `n` decoded by [`decode_scalar_25519`].
+/// The Montgomery ladder of [`scalar_mult_into`]: writes the projective u-coordinate of `n * x1`
+/// to `(x2, z2)`, for a scalar `n` decoded by [`decode_scalar_25519`].
 // #[inline(never)]: so that the ladder's variables live in a different stack frame and can be popped
 // before scalar_mult's `z2.inv()` runs (which is the other stack-expensive operation).
 #[inline(never)]

@@ -1,9 +1,12 @@
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::kdf_params::{KdfDescription, KdfParams, KeyLen};
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{
+    KeyMaterial, KeyMaterial0, KeyMaterial256, KeyMaterialTrait, KeyType,
+};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KDF, KeyAgreement, KeyAgreementPublicKey};
+use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreement;
 use bouncycastle_ed::x25519::{
     HKDF_SHA256_MAX_LEN, POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen,
@@ -13,6 +16,7 @@ use bouncycastle_hex as hex;
 use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::SHA256;
+use bouncycastle_sha2::hkdf::HKDF_SHA256;
 
 fn keygen_default() -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
     keygen(&mut DefaultRNG::default())
@@ -51,6 +55,45 @@ fn raw_z_is_a_shared_secret_and_the_pairing_is_hkdf_over_it() {
     assert!(derived.equals(&by_hand));
     assert_eq!(derived.key_type(), KeyType::CryptographicRandom);
     assert_eq!(derived.security_strength(), SecurityStrength::_128bit);
+}
+
+/// The pairing under a salted description: the framework suite, both sides agree, the key is
+/// HKDF-SHA256 extract-and-expand by hand over `K` with that salt, and the absent salt or
+/// another info derives a different key. A salt typed `Unknown` is refused at the description.
+#[test]
+fn the_pairing_takes_the_descriptions_salt() {
+    const LEN: usize = 32;
+    let salt =
+        KeyMaterial::<32>::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::CryptographicRandom)
+            .unwrap();
+    let hkdf = HkdfDescription::<SHA256>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"X25519 salted info", KeyLen::<LEN>);
+    TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, params);
+
+    let (alice_pk, alice_sk) = keygen_default().unwrap();
+    let (bob_pk, bob_sk) = keygen_default().unwrap();
+    let key = alice_sk.agree(&bob_pk, params).unwrap();
+    assert!(key.equals(&bob_sk.agree(&alice_pk, params).unwrap()));
+    assert_eq!(key.key_len(), LEN);
+    assert_eq!(key.key_type(), KeyType::CryptographicRandom);
+    assert_eq!(key.security_strength(), SecurityStrength::_128bit);
+
+    let z = alice_sk.agree(&bob_pk, ()).unwrap();
+    let mut expected = KeyMaterial::<LEN>::new();
+    HKDF_SHA256::extract_and_expand_out(&salt, &z, b"X25519 salted info", LEN, &mut expected)
+        .unwrap();
+    assert!(key.equals(&expected));
+
+    let other_info = KdfParams::new(&hkdf, b"another context", KeyLen::<LEN>);
+    assert!(!alice_sk.agree(&bob_pk, other_info).unwrap().equals(&key));
+    let absent = KeyMaterial0::new();
+    let hkdf_absent = HkdfDescription::<SHA256>::with_salt(&absent).unwrap();
+    let no_salt = KdfParams::new(&hkdf_absent, b"X25519 salted info", KeyLen::<LEN>);
+    assert!(!alice_sk.agree(&bob_pk, no_salt).unwrap().equals(&key));
+
+    let unknown =
+        KeyMaterial::<32>::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Unknown).unwrap();
+    assert!(HkdfDescription::<SHA256>::with_salt(&unknown).is_err());
 }
 
 /// The pairing derives its longest key, RFC 5869 Section 2.3's 255 * HashLen bytes, in one call.

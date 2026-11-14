@@ -168,9 +168,8 @@ impl FieldElement25519 {
     /// `x * inv(x) = 1` is checked in the test module over the edge cases and patterned values.
     ///
     /// Scope: both x25519 and ed25519.
-    // TODO -- a safegcd-style `mod_odd_inverse` would be asymptotically cheaper, and P64 above is
-    //          the constant it wants. Only worth revisiting if this shows up in a profile -- it is
-    //          one call per scalar_mult.
+    // TODO -- a safegcd-style `mod_odd_inverse` would be asymptotically cheaper. Only worth
+    //          revisiting if this shows up in a profile -- it is one call per scalar_mult_into.
     pub(crate) fn inv(&self) -> Self {
         let (x_cubed, t) = self.pow_p_sub5_div8();
         t.sqr_n(3).mul(&x_cubed)
@@ -223,24 +222,8 @@ impl FieldElement25519 {
         Self::reduce_products(m(x0, y0), m(x1, y0), m(x2, y0), m(x3, y0), m(x4, y0))
     }
 
-    /// Reduce self to the unique canonical representative of its residue class: limbs all in
-    /// `[0, 2^51)` and the value in `[0, p)`.
-    ///
-    /// Idempotent.
-    ///
-    /// Two [`Self::reduce`] passes, `reduce(1)` then `reduce(-1)`: the first adds 19 at the bottom
-    /// and the second removes it, with no matching change at the top. Neither pass alone is
-    /// congruent mod p, but the `+19` and `-19` cancel exactly, leaving `value - (c + c') * p` for
-    /// the two top-carry folds `c`, `c'`.
-    ///
-    /// The `+19` makes the first pass's top carry fire exactly when the value is `>= p`, since
-    /// `v >= p` if and only if `v + 19 >= 2^255`. This is what implements Section 5 of RFC7748's
-    /// "Implementations MUST accept non-canonical values and process them as if they had been
-    /// reduced modulo the field prime. The non-canonical values are 2^255 - 19 through 2^255 - 1".
-    /// The `normalize_edge_values` unit test pins `p - 1`, `p` and `2^255 - 1`.
-    ///
     /// The canonical representation of the value: every limb in `[0, 2^51)` and the value in
-    /// `[0, p)`, as a [`NormalizedFieldElement25519`].
+    /// `[0, p)`, as a [`NormalizedFieldElement25519`]. Idempotent.
     ///
     /// Total on every input whose limbs lie in `[-2^53, 2^53]`, which covers everything the
     /// arithmetic here produces: [`Self::reduce_products`] leaves limb 0 in `[0, 2^51)` and the
@@ -261,6 +244,12 @@ impl FieldElement25519 {
     /// 4. `reduce(-1)`: when limb 4 is `2^51`, `t5 = 1 - 1 = 0` drops the `2^255` and the result
     ///    is `V - p`, in `[0, 19)`; otherwise `t5 = -1` takes the `19` back and the borrow it may
     ///    cause resolves inside the limbs, since the result `V` is at least `0`.
+    ///
+    /// Pass 3's `+19` is what implements Section 5 of RFC7748's "Implementations MUST accept
+    /// non-canonical values and process them as if they had been reduced modulo the field
+    /// prime. The non-canonical values are 2^255 - 19 through 2^255 - 1": `v >= p` if and only
+    /// if `v + 19 >= 2^255`. The `normalize_edge_values` unit test pins `p - 1`, `p` and
+    /// `2^255 - 1`.
     ///
     /// The two-pass form this replaced was wrong for `V` in `[p - 19, p - 1]` with a limb 4 of
     /// `2^51` or more (its single fold produced a negative value, which the second pass then
@@ -417,7 +406,6 @@ impl FieldElement25519 {
     }
 
     /// Square self `n` times, i.e. raise to the `2^n`.
-    /// Declared const to enable pre-computed tables to be built at compile-time.
     pub(crate) fn sqr_n(&self, mut n: usize) -> Self {
         let mut z = Self(self.0);
         while n > 0 {
