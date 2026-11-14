@@ -153,9 +153,12 @@ impl FieldElement25519 {
 
     /// Multiplicative inverse in GF(p), by Fermat's little theorem: `x^(p-2) == x^-1`.
     ///
-    /// [`Self::pow_p_sub5_div8`] returns `(x^3, x^((p-5)/8))`. Raising the second to the 8th and
-    /// multiplying by the first gives exponent `8 * (2^252 - 3) + 3 == 2^255 - 21 == p - 2`.
-    /// Costs 254 squarings and 12 multiplies.
+    /// [`Self::pow_p_sub5_div8`] writes `x^3` and `x^((p-5)/8)` into this frame's two buffers.
+    /// Raising the second to the 8th and multiplying by the first gives exponent
+    /// `8 * (2^252 - 3) + 3 == 2^255 - 21 == p - 2`. Costs 254 squarings and 12 multiplies. The
+    /// two buffers are wiped when this frame drops them, which a pair returned by value was not:
+    /// a move out of the callee's frame runs no `Drop`, and the pair, which together gives
+    /// `x^-1`, stayed on the dead stack.
     ///
     /// Constant time: a fixed addition chain, with no data-dependent branch or index.
     ///
@@ -171,7 +174,9 @@ impl FieldElement25519 {
     // TODO -- a safegcd-style `mod_odd_inverse` would be asymptotically cheaper. Only worth
     //          revisiting if this shows up in a profile -- it is one call per scalar_mult_into.
     pub(crate) fn inv(&self) -> Self {
-        let (x_cubed, t) = self.pow_p_sub5_div8();
+        let mut x_cubed = Self::zero();
+        let mut t = Self::zero();
+        self.pow_p_sub5_div8(&mut x_cubed, &mut t);
         t.sqr_n(3).mul(&x_cubed)
     }
 
@@ -264,30 +269,30 @@ impl FieldElement25519 {
         Self([1, 0, 0, 0, 0])
     }
 
-    /// Returns `(x^3, x^((p-5)/8))` for `x = self`, by a fixed addition chain.
+    /// Writes `x^3` to `x_cubed` and `x^((p-5)/8)` to `z`, for `x = self`, by a fixed addition
+    /// chain. Both are the caller's buffers so that they are wiped in the caller's frame; the
+    /// chain's intermediates are this frame's temporaries, wiped as they drop.
     ///
     /// `(p - 5) / 8 == 2^252 - 3` for `p = 2^255 - 19`, which in binary is 250 ones, a zero, then a
     /// one -- the `FFFF..FD` of the comment below. The chain reaches it in 10 steps by doubling runs
-    /// of 1-bits. Both return values are checked through the inversion test in the test module.
+    /// of 1-bits. Both outputs are checked through the inversion test in the test module.
     ///
-    /// Beware the naming: the locals count *consecutive 1-bits*, not exponents. `x2` is `x^3`
+    /// Beware the naming: the locals count *consecutive 1-bits*, not exponents. `x_cubed` is `x^3`
     /// (`0b11`, two ones), `x3` is `x^7`, `x5` is `x^31`, and `x250` is `x^(2^250 - 1)`. It reads
     /// like an off-by-one bug and is not one.
     ///
-    /// Both consumers need the pair:
-    /// * inversion, as `z.sqr_n(3).mul(&x2)` -- exponent `8 * (2^252 - 3) + 3 == 2^255 - 21 == p - 2`,
-    ///   i.e. Fermat.
-    /// * [`Self::sqrt_ratio_var`], which uses `x^((p-5)/8)` directly as the `p == 5 mod 8` square-root
-    ///   candidate.
-    fn pow_p_sub5_div8(&self) -> (Self, Self) {
+    /// Inversion takes both, as `z.sqr_n(3).mul(&x_cubed)` -- exponent
+    /// `8 * (2^252 - 3) + 3 == 2^255 - 21 == p - 2`, i.e. Fermat. The `p == 5 mod 8` square root
+    /// Ed25519 will need takes `z` alone, as its candidate.
+    fn pow_p_sub5_div8(&self, x_cubed: &mut Self, z: &mut Self) {
         // z = x^((p-5)/8) = x^FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD
         // (250 1s) (1 0s) (1 1s)
         // Addition chain: [1] 2 3 5 10 15 25 50 75 125 [250]
 
         let x = self;
-        let x2 = x.sqr().mul(x);
-        let x3 = x2.sqr().mul(x);
-        let x5 = x3.sqr_n(2).mul(&x2);
+        *x_cubed = x.sqr().mul(x);
+        let x3 = x_cubed.sqr().mul(x);
+        let x5 = x3.sqr_n(2).mul(x_cubed);
         let x10 = x5.sqr_n(5).mul(&x5);
         let x15 = x10.sqr_n(5).mul(&x5);
         let x25 = x15.sqr_n(10).mul(&x10);
@@ -296,8 +301,7 @@ impl FieldElement25519 {
         let x125 = x75.sqr_n(50).mul(&x50);
         let x250 = x125.sqr_n(125).mul(&x125);
 
-        let z = x250.sqr_n(2).mul(x);
-        (x2, z)
+        *z = x250.sqr_n(2).mul(x);
     }
 
     /// One carry pass that additionally subtracts `(x4 >> 51)` multiples of p and adds `19 * y` at
