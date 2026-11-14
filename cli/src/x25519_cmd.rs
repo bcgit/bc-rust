@@ -10,7 +10,7 @@ use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
-use bouncycastle::ed::x25519::{POINT_LEN, X25519PrivateKey, X25519PublicKey, keygen};
+use bouncycastle::ed::x25519::{POINT_LEN, X25519PrivateKey, X25519PublicKey, keygen_out};
 use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::Secret;
 use clap::ValueEnum;
@@ -41,7 +41,9 @@ pub(crate) fn x25519_cmd(
 ) {
     match action {
         X25519Action::Keygen => {
-            let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap_or_else(|e| {
+            // The scalar is drawn straight into this key, never moved.
+            let mut sk = X25519PrivateKey::zeroized();
+            keygen_out(&mut HashDRBG_SHA512::new_from_os(), &mut sk).unwrap_or_else(|e| {
                 eprintln!("Error: key generation failed: {e:?}");
                 exit(-1);
             });
