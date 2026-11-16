@@ -157,9 +157,10 @@ fn parse_pk<PK: SignaturePublicKey<PK_LEN>, const PK_LEN: usize>(
 }
 
 /// Verifies stdin against `--pkfile`/`--sigfile` through `PK`'s streaming `VerifyingKey`
-/// impl. Shared by [`rsa_sign_verify_cmd`]'s `Verify` arm, and called directly by the verify-only
-/// sizes (`rsa_1024_cmd`, `rsa_1536_cmd`). A signature file of the wrong length is simply
-/// invalid (RFC 8017 §8.1.2/§8.2.2 step 1), as `do_verify_final` reports it.
+/// impl. Shared by the `Verify` arms of [`rsa_pss_cmd`] and [`rsa_pkcs1_cmd`], and called
+/// directly by the verify-only sizes (`rsa_1024_cmd`, `rsa_1536_cmd`). A signature file of the
+/// wrong length is simply invalid (RFC 8017 §8.1.2/§8.2.2 step 1), as `do_verify_final` reports
+/// it.
 fn do_verify<A: RsaSignatureAlgorithm, const PK_LEN: usize, const SIG_LEN: usize>(
     pkfile: &Option<String>,
     sigfile: &Option<String>,
