@@ -1,6 +1,9 @@
 //! Known-answer tests against the NIST CAVP "TDES Multi block Message Test" vectors from the
-//! `bc-test-data` repository: `TECBMMT3`, `TCBCMMT3`, `TCFB64MMT3`, `TCFB8MMT3` (three-key, for
-//! [`TDES3Key`]) and `TECBMMT2`, `TCBCMMT2`, `TCFB64MMT2`, `TCFB8MMT2` (two-key, for [`TDES2Key`]).
+//! `bc-test-data` repository: `TECBMMT3`, `TCBCMMT3`, `TCFB64MMT3`, `TCFB8MMT3`, `TOFBMMT3`
+//! (three-key, for [`TDES3Key`]) and `TECBMMT2`, `TCBCMMT2`, `TCFB64MMT2`, `TCFB8MMT2`,
+//! `TOFBMMT2` (two-key, for [`TDES2Key`]). `TOFBIMMT{2,3}` are the interleaved TOFB-I mode of
+//! ANSI X9.52, which SP 800-38A Appendix E says it does not provide an analogue of, and are not
+//! used.
 //!
 //! The files are read through the test framework's `bc_test_data` loader: `bc-test-data` cloned
 //! beside this repository, with the response files from NIST's `tdesmmt.zip` (CAVS 18.0) under
@@ -19,21 +22,21 @@
 //! ECB vectors are block-permutation vectors and go through the engine directly, one block at a
 //! time, as well as through the four-block path where the message is long enough.
 //!
-//! The CBC and CFB vectors carry an IV, and a key's `create_encryptor` draws the IV from the RNG
-//! it is given, so three-key encryption passes a `FixedSeedRNG` that emits the vector's IV, and the
-//! returned init data is asserted equal to it before any ciphertext is compared; decryption takes
-//! the IV directly. The keys are made under the modes the `TDES_*` aliases name, so the aliases'
-//! parameter choices (an 8-byte block, an 8-byte IV) are what is under test.
+//! The CBC, CFB and OFB vectors carry an IV, and a key's `create_encryptor` draws the IV from the
+//! RNG it is given, so three-key encryption passes a `FixedSeedRNG` that emits the vector's IV, and
+//! the returned init data is asserted equal to it before any ciphertext is compared; decryption
+//! takes the IV directly. The keys are made under the modes the `TDES_*` aliases name, so the
+//! aliases' parameter choices (an 8-byte block, an 8-byte IV) are what is under test.
 //!
-//! Two-key TDEA is decryption-only -- `create_encryptor` does not compile on [`TDES2Key`] -- so
-//! its CBC and CFB vectors are checked by decrypting `CIPHERTEXT` (both sections), and the forward
+//! Two-key TDEA is decryption-only -- `create_encryptor` does not compile on [`TDES2Key`] -- so its
+//! CBC, CFB and OFB vectors are checked by decrypting `CIPHERTEXT` (both sections), and the forward
 //! direction is checked on the ECB vectors through the raw permutation, which CFB decryption is
 //! built on anyway.
 //!
 //! The Monte Carlo Test files (`tdesmct_intermediate.zip`) are **not** used: their chained update
 //! rule is defined by SP 800-20, and implementing it is a separate piece of work from the engine.
 
-use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8};
+use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, OFB};
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -328,6 +331,22 @@ fn tcfb8mmt2_decrypts() {
 }
 
 #[test]
+fn tofbmmt3() {
+    let Some(cases) = load("TOFBMMT3.rsp") else { return };
+    for case in &cases {
+        check_stream3_case(&label("TOFBMMT3", case), &key3::<OFB>(case), case);
+    }
+}
+
+#[test]
+fn tofbmmt2_decrypts() {
+    let Some(cases) = load("TOFBMMT2.rsp") else { return };
+    for case in &cases {
+        check_stream2_case(&label("TOFBMMT2", case), &key2::<OFB>(case), case);
+    }
+}
+
+#[test]
 fn the_vector_files_have_the_expected_shape() {
     // Messages of one block per COUNT (CFB8: one byte), all keys with odd parity as CAVP generates
     // them, and KEY3 = KEY1 in the two-key files. A damaged copy of the data fails here rather than
@@ -337,10 +356,12 @@ fn the_vector_files_have_the_expected_shape() {
         ("TCBCMMT3.rsp", BLOCK_LEN, false),
         ("TCFB64MMT3.rsp", BLOCK_LEN, false),
         ("TCFB8MMT3.rsp", 1, false),
+        ("TOFBMMT3.rsp", BLOCK_LEN, false),
         ("TECBMMT2.rsp", BLOCK_LEN, true),
         ("TCBCMMT2.rsp", BLOCK_LEN, true),
         ("TCFB64MMT2.rsp", BLOCK_LEN, true),
         ("TCFB8MMT2.rsp", 1, true),
+        ("TOFBMMT2.rsp", BLOCK_LEN, true),
     ];
     for (file, unit, two_key) in files {
         let Some(cases) = load(file) else { return };

@@ -4,19 +4,19 @@
 
 * ARIA -- `bouncycastle-aria`, the RFC 5794 block cipher at 128, 192 and 256 bits, constant-time and table-free (the
   S-boxes as bit-sliced Boolean circuits, four blocks at a time), on the key objects as `ARIA128Key<M>` and friends
-  with CBC, CFB, CFB8, CTR, GCM, CCM, CMAC, GMAC, KW and KWP; the `aria*-{cbc,cfb,cfb8,ctr,gcm,ccm,kw,kwp}` CLI
-  commands.
+  with CBC, CFB, CFB8, OFB, CTR, GCM, CCM, CMAC, GMAC, KW and KWP; the
+  `aria*-{cbc,cfb,cfb8,ofb,ctr,gcm,ccm,kw,kwp}` CLI commands.
 * Camellia -- `bouncycastle-camellia`, the RFC 3713 block cipher at 128, 192 and 256 bits, constant-time and table-free
   (the S-box as a bit-sliced Boolean circuit, four blocks at a time), on the key objects as `Camellia128Key<M>` and
-  friends with CBC, CFB, CFB8, CTR, GCM, CCM, CMAC, GMAC and KW; the `camellia*-{cbc,cfb,cfb8,ctr,gcm,ccm,kw}` CLI
-  commands.
+  friends with CBC, CFB, CFB8, OFB, CTR, GCM, CCM, CMAC, GMAC and KW; the
+  `camellia*-{cbc,cfb,cfb8,ofb,ctr,gcm,ccm,kw}` CLI commands.
 * SM4 -- `bouncycastle-sm4`, the GB/T 32907-2016 block cipher (draft-ribose-cfrg-sm4-10), constant-time and
   table-free (the S-box as a bit-sliced Boolean circuit, four blocks at a time), on the key object `SM4Key<M>` with
-  CBC, CFB, CFB8, CTR, GCM and CCM (RFC 8998's AEAD_SM4_GCM and AEAD_SM4_CCM), KW and KWP; the
-  `sm4-{cbc,cfb,cfb8,ctr,gcm,ccm,kw,kwp}` CLI commands.
+  CBC, CFB, CFB8, OFB, CTR, GCM and CCM (RFC 8998's AEAD_SM4_GCM and AEAD_SM4_CCM), KW and KWP; the
+  `sm4-{cbc,cfb,cfb8,ofb,ctr,gcm,ccm,kw,kwp}` CLI commands.
 * CHACHA20 -- ChaCha20, Poly1305 and ChaCha20-Poly1305 (RFC 8439).
 * TDES -- three-key TDEA (NIST SP 800-67 Rev 2) as a constant-time, table-free bit-sliced engine under `hazmat`,
-  with ECB, CBC, CFB64, CFB8 and CTR (SP 800-38A Appendix E) and TDEA Key Wrap (SP 800-38F TKW) through the key
+  with ECB, CBC, CFB64, CFB8, OFB and CTR (SP 800-38A Appendix E) and TDEA Key Wrap (SP 800-38F TKW) through the key
   role traits; two-key TDEA decrypts, unwraps and verifies CMAC tags only, which `BlockPermutation::DECRYPT_ONLY`
   makes a compile error for every encrypting, wrapping and tag-generating route (CMAC over TDEA is reached through
   the generic `BlockCipherKey`, not `TDESKey`); the `tdes-*` and `tdes2-*` CLI commands, whose `encrypt` refuses input past
@@ -34,6 +34,10 @@
 
 ## Minor features / bug fixes
 
+* OFB (NIST SP 800-38A Sec 6.4) over any block permutation, as `bouncycastle_cipher::modes::OFB` / `Ofb`, a keystream
+  under `StreamCipher`; the `AES_OFB_*`, `ARIA_OFB_*`, `Camellia_OFB_*`, `SM4_OFB`, `TDES_OFB` and `TDES2_OFB` aliases,
+  `ModeNames::OFB_ALG_NAME`, and the `aes*-ofb`, `aria*-ofb`, `camellia*-ofb`, `sm4-ofb`, `tdes-ofb` and `tdes2-ofb`
+  CLI commands.
 * The key-wrap workers `Kw`, `Kwp` and `Tkw` carry their direction in the type, as the cipher modes do:
   `KeyWrapper` is implemented for the encrypting worker only, so an unwrapper has no wrapping method and a
   permutation that decrypts only is refused a wrapper at compile time by every route. The `AES_KW_*`, `AES_KWP_*`,
@@ -120,7 +124,7 @@
 * Every encrypting key takes a caller-supplied IV or nonce as the AEAD keys already did:
   `SymmetricEncryptionKey` and `BlockEncryptionKey` gain `create_encryptor_nonce` and the `encrypt_nonce_out` /
   `encrypt_nonce` / `encrypt_inplace_nonce` one-shots, `SymmetricEncryptMode` and `BlockEncryptMode` the
-  `encrypt_init_nonce` constructor, implemented by CBC, CFB, CFB8, CTR, padded ECB and `ChaCha20Key`. The drawing
+  `encrypt_init_nonce` constructor, implemented by CBC, CFB, CFB8, OFB, CTR, padded ECB and `ChaCha20Key`. The drawing
   forms remain the default; the caller of a `_nonce` form takes on the obligation they discharge (SP 800-38A
   Appendix C's unpredictable IV for CBC and CFB, Appendix B's unique counter blocks for CTR, RFC 8439 Sec 2.4's
   never-repeated nonce for ChaCha20). The known-answer suites pin their IVs through the new forms instead of a

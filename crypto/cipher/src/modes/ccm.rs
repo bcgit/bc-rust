@@ -1877,6 +1877,7 @@ mod tests {
         const GMAC_ALG_NAME: &'static str = "identity_GMAC";
         const KW_ALG_NAME: &'static str = "identity_KW";
         const KWP_ALG_NAME: &'static str = "identity_KWP";
+        const OFB_ALG_NAME: &'static str = "identity_OFB";
     }
 
     impl KeyExpansion<16> for Identity {

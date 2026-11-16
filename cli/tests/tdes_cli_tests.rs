@@ -6,7 +6,7 @@
 //! the decrypt-only two-key commands, and the known-answer vectors in both directions.
 //!
 //! The vectors are `COUNT = 0` of each NIST CAVP Multi-block Message Test file the crate's own
-//! suite uses (`TECBMMT3`, `TCBCMMT3`, `TCFB64MMT3`, `TCFB8MMT3` `[ENCRYPT]`, and the two-key
+//! suite uses (`TECBMMT3`, `TCBCMMT3`, `TCFB64MMT3`, `TCFB8MMT3`, `TOFBMMT3` `[ENCRYPT]`, and the two-key
 //! `[DECRYPT]` files), read from `../bc-test-data` at test time; without it those tests print a
 //! warning and pass, as the crate's suite does. The CBC vectors are unpadded, so under the
 //! commands' PKCS7 framing the ciphertext is followed by one block of padding, computed here from
@@ -199,11 +199,15 @@ fn tdes_cbc_matches_the_cavp_vector() {
     assert_eq!(tohex(&back), v.plaintext, "decrypt with the IV in band");
 }
 
-/// `tdes-cfb encrypt --iv` and `tdes-cfb8 encrypt --iv` reproduce TCFB64MMT3 and TCFB8MMT3
-/// exactly, and `decrypt --iv` takes them back.
+/// `tdes-cfb`, `tdes-cfb8` and `tdes-ofb encrypt --iv` reproduce TCFB64MMT3, TCFB8MMT3 and
+/// TOFBMMT3 exactly, and `decrypt --iv` takes them back.
 #[test]
-fn tdes_cfb_and_cfb8_match_the_cavp_vectors() {
-    for (cmd, file) in [("tdes-cfb", "TCFB64MMT3.rsp"), ("tdes-cfb8", "TCFB8MMT3.rsp")] {
+fn tdes_stream_modes_match_the_cavp_vectors() {
+    for (cmd, file) in [
+        ("tdes-cfb", "TCFB64MMT3.rsp"),
+        ("tdes-cfb8", "TCFB8MMT3.rsp"),
+        ("tdes-ofb", "TOFBMMT3.rsp"),
+    ] {
         let Some(v) = vector(file, "ENCRYPT") else { return };
         let out =
             run_ok(&[cmd, "-d", "encrypt", "--key", &v.key, "--iv", &v.iv], &unhex(&v.plaintext));
@@ -224,7 +228,7 @@ fn tdes_ecb_matches_the_cavp_vector() {
 }
 
 /// The two-key commands decrypt the `[DECRYPT]` vectors of the two-key files: CBC with the PKCS7
-/// block appended, CFB64 and CFB8 exactly, ECB without an IV.
+/// block appended, CFB64, CFB8 and OFB exactly, ECB without an IV.
 #[test]
 fn tdes2_commands_decrypt_the_cavp_vectors() {
     let Some(v) = vector("TCBCMMT2.rsp", "DECRYPT") else { return };
@@ -238,7 +242,11 @@ fn tdes2_commands_decrypt_the_cavp_vectors() {
     );
     assert_eq!(tohex(&out), v.plaintext, "tdes2-cbc decrypt with the IV in band");
 
-    for (cmd, file) in [("tdes2-cfb", "TCFB64MMT2.rsp"), ("tdes2-cfb8", "TCFB8MMT2.rsp")] {
+    for (cmd, file) in [
+        ("tdes2-cfb", "TCFB64MMT2.rsp"),
+        ("tdes2-cfb8", "TCFB8MMT2.rsp"),
+        ("tdes2-ofb", "TOFBMMT2.rsp"),
+    ] {
         let Some(v) = vector(file, "DECRYPT") else { return };
         let out =
             run_ok(&[cmd, "-d", "decrypt", "--key", &v.key, "--iv", &v.iv], &unhex(&v.ciphertext));
@@ -261,6 +269,7 @@ fn every_three_key_mode_round_trips() {
         ("tdes-cbc", 8, 4096 + 8),
         ("tdes-cfb", 8, 4096),
         ("tdes-cfb8", 8, 4096),
+        ("tdes-ofb", 8, 4096),
         ("tdes-ctr", 6, 4096),
         ("tdes-ecb", 0, 4096),
     ] {
@@ -329,7 +338,7 @@ fn hex_output_matches_binary_output() {
 #[test]
 fn two_key_commands_refuse_to_encrypt() {
     let key_2 = &KEY_3[..32];
-    for cmd in ["tdes2-cbc", "tdes2-cfb", "tdes2-cfb8", "tdes2-ctr", "tdes2-ecb"] {
+    for cmd in ["tdes2-cbc", "tdes2-cfb", "tdes2-cfb8", "tdes2-ofb", "tdes2-ctr", "tdes2-ecb"] {
         let err = run_err(&[cmd, "-d", "encrypt", "--key", key_2], &[0u8; 16]);
         assert!(
             err.contains("decrypt"),
@@ -372,9 +381,10 @@ fn a_large_payload_on_an_error_path_does_not_break_the_harness() {
 fn the_subcommands_are_listed_in_help() {
     let out = run_ok(&["--help"], &[]);
     let help = String::from_utf8_lossy(&out);
-    for cmd in
-        ["tdes-cbc", "tdes-cfb", "tdes-cfb8", "tdes-ctr", "tdes-ecb", "tdes2-cbc", "tdes2-ecb"]
-    {
+    for cmd in [
+        "tdes-cbc", "tdes-cfb", "tdes-cfb8", "tdes-ofb", "tdes-ctr", "tdes-ecb", "tdes2-cbc",
+        "tdes2-ofb", "tdes2-ecb",
+    ] {
         assert!(help.contains(cmd), "`--help` should list {cmd}");
     }
 }

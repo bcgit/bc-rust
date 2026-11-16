@@ -22,6 +22,7 @@ mod kw_cmd;
 mod mac_cmd;
 mod mldsa_cmd;
 mod mlkem_cmd;
+mod ofb_cmd;
 mod rng_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
@@ -32,11 +33,13 @@ mod tdes2_cfb8_cmd;
 mod tdes2_cfb_cmd;
 mod tdes2_ctr_cmd;
 mod tdes2_ecb_cmd;
+mod tdes2_ofb_cmd;
 mod tdes_cbc_cmd;
 mod tdes_cfb8_cmd;
 mod tdes_cfb_cmd;
 mod tdes_ctr_cmd;
 mod tdes_ecb_cmd;
+mod tdes_ofb_cmd;
 mod tdes_tkw_cmd;
 
 use crate::blake2_cmd::BLAKE2Variant;
@@ -235,6 +238,58 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     AES128_CFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in OFB mode (NIST SP 800-38A Sec 6.4), streaming stdin to stdout.
+    ///
+    /// On `encrypt`, a fresh random IV is generated and written as the FIRST 16 BYTES of the
+    /// output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
+    /// compose directly in a pipeline.
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes; hex with --hex-input), the IV is supplied
+    /// instead: `encrypt` uses it and writes ONLY the ciphertext, and `decrypt` reads ONLY
+    /// ciphertext from stdin. This is for a format that carries the IV itself, and for reproducing
+    /// published vectors. The IV must then never be reused under one key (SP 800-38A Appendix C): a
+    /// repeated IV repeats the whole keystream. That is the caller's responsibility, which the
+    /// default takes care of.
+    ///
+    /// Input may be ANY length: OFB is a stream cipher, so nothing is padded and the ciphertext is
+    /// exactly as long as the plaintext.
+    ///
+    /// WARNING: OFB provides confidentiality only. It does not detect tampering, and neither the
+    /// ciphertext nor the IV is authenticated. Flipping a ciphertext bit flips the same bit of the
+    /// plaintext and no other block notices, so tampering is directly exploitable. Do not decrypt
+    /// data you have not authenticated separately.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_OFB {
         #[arg(short, long)]
         direction: CipherDirection,
 
@@ -647,6 +702,39 @@ enum Subcommands {
         x: bool,
     },
 
+    /// AES-192 in OFB mode (NIST SP 800-38A Sec 6.4), streaming stdin to stdout.
+    ///
+    /// See `aes128-ofb` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
+    AES192_OFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// AES-192 in CFB8 mode (NIST SP 800-38A Sec 6.3, s = 8), streaming stdin to stdout.
     ///
     /// See `aes128-cfb8` for the IV convention, input-length rule and warnings; only the key length
@@ -921,6 +1009,39 @@ enum Subcommands {
     /// See `aes128-cfb` for the IV convention, input-length rule and warnings; only the key length
     /// differs.
     AES256_CFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in OFB mode (NIST SP 800-38A Sec 6.4), streaming stdin to stdout.
+    ///
+    /// See `aes128-ofb` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
+    AES256_OFB {
         #[arg(short, long)]
         direction: CipherDirection,
 
@@ -4159,6 +4280,44 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
+
+    /// Camellia-128 in OFB mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.4 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// The IV is the first 16 bytes of `encrypt`'s output and of `decrypt`'s input, unless `--iv`
+    /// or `--iv-file` supplies it, in which case only ciphertext is written or read. Input may be
+    /// ANY length: nothing is padded.
+    ///
+    /// See `aes128-ofb` for the full IV convention, input-length rule and warnings; the key and
+    /// block are both 16 bytes, as for AES-128.
+    CAMELLIA128_OFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
     /// Camellia-192 in CCM mode (NIST SP 800-38C), authenticated encryption of stdin to stdout.
     ///
     /// See `aes128-ccm` for the nonce convention, the length rules, the non-streaming note and the
@@ -4236,6 +4395,40 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
+
+    /// Camellia-192 in OFB mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.4 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `camellia128-ofb` for the IV convention, input-length rule and warnings; only the key
+    /// length differs.
+    CAMELLIA192_OFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
     /// Camellia-256 in CCM mode (NIST SP 800-38C), authenticated encryption of stdin to stdout.
     ///
     /// See `aes128-ccm` for the nonce convention, the length rules, the non-streaming note and the
@@ -4286,6 +4479,40 @@ enum Subcommands {
     /// See `camellia128-cfb` for the IV convention, input-length rule and warnings; only the key
     /// length differs.
     CAMELLIA256_CFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Camellia-256 in OFB mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.4 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `camellia128-ofb` for the IV convention, input-length rule and warnings; only the key
+    /// length differs.
+    CAMELLIA256_OFB {
         #[arg(short, long)]
         direction: CipherDirection,
 
@@ -4908,6 +5135,44 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
+
+    /// ARIA-128 in OFB mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.4 mode), streaming stdin
+    /// to stdout.
+    ///
+    /// The IV is the first 16 bytes of `encrypt`'s output and of `decrypt`'s input, unless `--iv`
+    /// or `--iv-file` supplies it, in which case only ciphertext is written or read. Input may be
+    /// ANY length: nothing is padded.
+    ///
+    /// See `aes128-ofb` for the full IV convention, input-length rule and warnings; the key and
+    /// block are both 16 bytes, as for AES-128.
+    ARIA128_OFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte ARIA key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
     /// ARIA-192 in CCM mode (NIST SP 800-38C), authenticated encryption of stdin to stdout.
     ///
     /// See `aes128-ccm` for the nonce convention, the length rules, the non-streaming note and the
@@ -4985,6 +5250,40 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
+
+    /// ARIA-192 in OFB mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.4 mode), streaming stdin
+    /// to stdout.
+    ///
+    /// See `aria128-ofb` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
+    ARIA192_OFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte ARIA key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
     /// ARIA-256 in CCM mode (NIST SP 800-38C), authenticated encryption of stdin to stdout.
     ///
     /// See `aes128-ccm` for the nonce convention, the length rules, the non-streaming note and the
@@ -5035,6 +5334,40 @@ enum Subcommands {
     /// See `aria128-cfb` for the IV convention, input-length rule and warnings; only the key length
     /// differs.
     ARIA256_CFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte ARIA key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-256 in OFB mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.4 mode), streaming stdin
+    /// to stdout.
+    ///
+    /// See `aria128-ofb` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
+    ARIA256_OFB {
         #[arg(short, long)]
         direction: CipherDirection,
 
@@ -5591,6 +5924,44 @@ enum Subcommands {
         x: bool,
     },
 
+    /// SM4 in OFB mode (GB/T 32907-2016 block cipher; NIST SP 800-38A Sec 6.4 mode, which
+    /// draft-ribose-cfrg-sm4-10 calls SM4-OFB), streaming stdin to stdout.
+    ///
+    /// The IV is the first 16 bytes of `encrypt`'s output and of `decrypt`'s input, unless `--iv`
+    /// or `--iv-file` supplies it, in which case only ciphertext is written or read. Input may be
+    /// ANY length: nothing is padded.
+    ///
+    /// See `aes128-ofb` for the full IV convention, input-length rule and warnings; the key and
+    /// block are both 16 bytes, as for AES-128.
+    SM4_OFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte SM4 key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// SM4 in CFB8 mode (GB/T 32907-2016 block cipher; NIST SP 800-38A Sec 6.3 mode, s = 8),
     /// streaming stdin to stdout.
     ///
@@ -5827,6 +6198,47 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Triple DES (three-key TDEA) in OFB mode (SP 800-38A Sec 6.4), streaming stdin to stdout.
+    /// LEGACY: see `tdes-cbc`.
+    ///
+    /// On `encrypt`, a fresh random IV is generated and written as the FIRST 8 BYTES of the output;
+    /// on `decrypt` it is read back from the first 8 bytes of the input. With `--iv` (hex) or
+    /// `--iv-file` (raw bytes; hex with --hex-input), the IV is supplied instead and only
+    /// ciphertext is written or read; it must then never be reused under the key.
+    ///
+    /// Input may be ANY length: OFB is a stream cipher, so nothing is padded and the ciphertext is
+    /// exactly as long as the plaintext.
+    ///
+    /// See `tdes-cbc` for the key format and the warnings, which apply unchanged.
+    TDES_OFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte TDES key bundle in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte TDES key bundle (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 8-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 8-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// Triple DES (three-key TDEA) in CFB8 mode (SP 800-38A Sec 6.3, s = 8), streaming stdin to
     /// stdout. LEGACY: see `tdes-cbc`.
     ///
@@ -5951,8 +6363,8 @@ enum Subcommands {
     /// Two-key Triple DES (2TDEA, Key3 = Key1) in CBC mode, DECRYPTION ONLY, streaming stdin to
     /// stdout. NIST SP 800-131A Rev 2 Table 1 disallows two-key TDEA for encryption and allows
     /// decryption for legacy use, so `encrypt` does not exist for this command. That is a guard
-    /// against accidental encryption: `tdes2-cfb` and `tdes2-ctr` decryption are the forward
-    /// cipher, which a determined caller can turn into encryption, so a deployment that must rule
+    /// against accidental encryption: `tdes2-cfb`, `tdes2-ofb` and `tdes2-ctr` decryption are the
+    /// forward cipher, which a determined caller can turn into encryption, so a deployment that must rule
     /// that out should expose only `tdes2-cbc` and `tdes2-ecb`.
     ///
     /// The first 8 bytes of input are the IV, as the `tdes-cbc decrypt` convention, unless `--iv`
@@ -5996,6 +6408,38 @@ enum Subcommands {
     /// no `encrypt`, and `tdes-cfb` for the IV convention (first 8 bytes of input, or `--iv`) and
     /// the any-length input rule.
     TDES2_CFB {
+        #[arg(short = 'd', long = "direction")]
+        action: DecryptOnlyAction,
+
+        /// The 16-byte two-key TDES bundle in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte two-key TDES bundle (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 8-byte IV in hex. Supplied instead of read from the input, which is then
+        /// ciphertext only.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 8-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Two-key Triple DES (2TDEA) in OFB mode, DECRYPTION ONLY. See `tdes2-cbc` for why there is no
+    /// `encrypt`, and `tdes-ofb` for the IV convention (first 8 bytes of input, or `--iv`) and the
+    /// any-length input rule.
+    TDES2_OFB {
         #[arg(short = 'd', long = "direction")]
         action: DecryptOnlyAction,
 
@@ -6242,6 +6686,11 @@ fn run() {
                 direction, key, key_file, iv, iv_file, *x, "AES-128",
             );
         }
+        Some(Subcommands::AES128_OFB { direction, key, key_file, iv, iv_file, x }) => {
+            ofb_cmd::ofb_cmd::<AES128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "AES-128",
+            );
+        }
         Some(Subcommands::AES128_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
             cfb8_cmd::cfb8_cmd::<AES128Internal, 16>(
                 direction, key, key_file, iv, iv_file, *x, "AES-128",
@@ -6294,6 +6743,11 @@ fn run() {
                 direction, key, key_file, iv, iv_file, *x, "AES-192",
             );
         }
+        Some(Subcommands::AES192_OFB { direction, key, key_file, iv, iv_file, x }) => {
+            ofb_cmd::ofb_cmd::<AES192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "AES-192",
+            );
+        }
         Some(Subcommands::AES192_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
             cfb8_cmd::cfb8_cmd::<AES192Internal, 24>(
                 direction, key, key_file, iv, iv_file, *x, "AES-192",
@@ -6343,6 +6797,11 @@ fn run() {
         }
         Some(Subcommands::AES256_CFB { direction, key, key_file, iv, iv_file, x }) => {
             cfb_cmd::cfb_cmd::<AES256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "AES-256",
+            );
+        }
+        Some(Subcommands::AES256_OFB { direction, key, key_file, iv, iv_file, x }) => {
+            ofb_cmd::ofb_cmd::<AES256Internal, 32>(
                 direction, key, key_file, iv, iv_file, *x, "AES-256",
             );
         }
@@ -7150,6 +7609,11 @@ fn run() {
                 direction, key, key_file, iv, iv_file, *x, "Camellia-128",
             );
         }
+        Some(Subcommands::CAMELLIA128_OFB { direction, key, key_file, iv, iv_file, x }) => {
+            ofb_cmd::ofb_cmd::<Camellia128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-128",
+            );
+        }
         Some(Subcommands::CAMELLIA192_CCM {
             direction,
             key,
@@ -7171,6 +7635,11 @@ fn run() {
                 direction, key, key_file, iv, iv_file, *x, "Camellia-192",
             );
         }
+        Some(Subcommands::CAMELLIA192_OFB { direction, key, key_file, iv, iv_file, x }) => {
+            ofb_cmd::ofb_cmd::<Camellia192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-192",
+            );
+        }
         Some(Subcommands::CAMELLIA256_CCM {
             direction,
             key,
@@ -7189,6 +7658,11 @@ fn run() {
         }
         Some(Subcommands::CAMELLIA256_CFB { direction, key, key_file, iv, iv_file, x }) => {
             cfb_cmd::cfb_cmd::<Camellia256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-256",
+            );
+        }
+        Some(Subcommands::CAMELLIA256_OFB { direction, key, key_file, iv, iv_file, x }) => {
+            ofb_cmd::ofb_cmd::<Camellia256Internal, 32>(
                 direction, key, key_file, iv, iv_file, *x, "Camellia-256",
             );
         }
@@ -7300,6 +7774,11 @@ fn run() {
                 direction, key, key_file, iv, iv_file, *x, "ARIA-128",
             );
         }
+        Some(Subcommands::ARIA128_OFB { direction, key, key_file, iv, iv_file, x }) => {
+            ofb_cmd::ofb_cmd::<ARIA128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-128",
+            );
+        }
         Some(Subcommands::ARIA192_CCM {
             direction,
             key,
@@ -7321,6 +7800,11 @@ fn run() {
                 direction, key, key_file, iv, iv_file, *x, "ARIA-192",
             );
         }
+        Some(Subcommands::ARIA192_OFB { direction, key, key_file, iv, iv_file, x }) => {
+            ofb_cmd::ofb_cmd::<ARIA192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-192",
+            );
+        }
         Some(Subcommands::ARIA256_CCM {
             direction,
             key,
@@ -7339,6 +7823,11 @@ fn run() {
         }
         Some(Subcommands::ARIA256_CFB { direction, key, key_file, iv, iv_file, x }) => {
             cfb_cmd::cfb_cmd::<ARIA256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-256",
+            );
+        }
+        Some(Subcommands::ARIA256_OFB { direction, key, key_file, iv, iv_file, x }) => {
+            ofb_cmd::ofb_cmd::<ARIA256Internal, 32>(
                 direction, key, key_file, iv, iv_file, *x, "ARIA-256",
             );
         }
@@ -7435,6 +7924,9 @@ fn run() {
         Some(Subcommands::SM4_CFB { direction, key, key_file, iv, iv_file, x }) => {
             cfb_cmd::cfb_cmd::<SM4Internal, 16>(direction, key, key_file, iv, iv_file, *x, "SM4");
         }
+        Some(Subcommands::SM4_OFB { direction, key, key_file, iv, iv_file, x }) => {
+            ofb_cmd::ofb_cmd::<SM4Internal, 16>(direction, key, key_file, iv, iv_file, *x, "SM4");
+        }
         Some(Subcommands::SM4_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
             cfb8_cmd::cfb8_cmd::<SM4Internal, 16>(direction, key, key_file, iv, iv_file, *x, "SM4");
         }
@@ -7452,6 +7944,9 @@ fn run() {
         Some(Subcommands::TDES_CFB { direction, key, key_file, iv, iv_file, x }) => {
             tdes_cfb_cmd::tdes_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
         }
+        Some(Subcommands::TDES_OFB { direction, key, key_file, iv, iv_file, x }) => {
+            tdes_ofb_cmd::tdes_ofb_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
         Some(Subcommands::TDES_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
             tdes_cfb8_cmd::tdes_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
         }
@@ -7466,6 +7961,9 @@ fn run() {
         }
         Some(Subcommands::TDES2_CFB { action, key, key_file, iv, iv_file, x }) => {
             tdes2_cfb_cmd::tdes2_cfb_cmd(action, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::TDES2_OFB { action, key, key_file, iv, iv_file, x }) => {
+            tdes2_ofb_cmd::tdes2_ofb_cmd(action, key, key_file, iv, iv_file, *x);
         }
         Some(Subcommands::TDES2_CFB8 { action, key, key_file, iv, iv_file, x }) => {
             tdes2_cfb8_cmd::tdes2_cfb8_cmd(action, key, key_file, iv, iv_file, *x);

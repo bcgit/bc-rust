@@ -19,19 +19,19 @@
 //! ## Modes of operation
 //!
 //! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
-//! messages as needed: `CBC<PKCS7>` for CBC (Sec 8.4; NIST SP 800-38A Sec 6.2) with PKCS#7
-//! padding, `CFB` for SM4-CFB-128 (Sec 8.5.1), `CFB8` for SM4-CFB-8, the `s = 8` segment size,
-//! which is a different and non-interoperable mode costing one SM4 call per byte, `CTR` for
-//! CTR (Sec 8.7) with a 12-byte nonce and a 4-byte counter, and `GCM` and `CCM<N, T>` for the
-//! authenticated modes RFC 8998 Sec 3.5 defines as `AEAD_SM4_GCM` and `AEAD_SM4_CCM`, each with
-//! a 12-byte nonce and a 16-byte tag; and `KW` and `KWP` for the key wraps (NIST SP 800-38F;
-//! GM/T 0006's `sms4_wrap` and `sms4_wrap_pad`). The aliases [`SM4_CBC`], [`SM4_CFB`],
-//! [`SM4_CFB8`], [`SM4_CTR`], [`SM4_GCM`], [`SM4_CCM`], [`SM4_KW`] and [`SM4_KWP`] name the
-//! workers the key hands out.
+//! messages as needed: `CBC<PKCS7>` for CBC (Sec 8.4; NIST SP 800-38A Sec 6.2) with PKCS#7 padding,
+//! `CFB` for SM4-CFB-128 (Sec 8.5.1), `CFB8` for SM4-CFB-8, the `s = 8` segment size, which is a
+//! different and non-interoperable mode costing one SM4 call per byte, `OFB` for SM4-OFB (Sec 8.6),
+//! `CTR` for CTR (Sec 8.7) with a 12-byte nonce and a 4-byte counter, and `GCM` and `CCM<N, T>` for
+//! the authenticated modes RFC 8998 Sec 3.5 defines as `AEAD_SM4_GCM` and `AEAD_SM4_CCM`, each with
+//! a 12-byte nonce and a 16-byte tag; and `KW` and `KWP` for the key wraps (NIST SP 800-38F; GM/T
+//! 0006's `sms4_wrap` and `sms4_wrap_pad`). The aliases [`SM4_CBC`], [`SM4_CFB`], [`SM4_CFB8`],
+//! [`SM4_OFB`], [`SM4_CTR`], [`SM4_GCM`], [`SM4_CCM`], [`SM4_KW`] and [`SM4_KWP`] name the workers
+//! the key hands out.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
-//! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
-//! length with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the
+//! padding scheme to bridge the difference; the CFB modes, OFB and CTR are stream ciphers and take
+//! any length with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the
 //! comparison, and [`SM4_CBC`] for why the scheme is named in the type.
 //!
 //! ```
@@ -275,13 +275,14 @@
 //!   licence), as in the AES crate.
 //! * Verified against every value in the draft's Appendix A.1 -- Examples 1 through 6, including
 //!   all 32 round keys and all 32 per-round outputs of Examples 1 and 4, and the two 1,000,000-fold
-//!   iterated ciphertexts -- the SM4-ECB, SM4-CBC and SM4-CFB vectors of Appendix A.2.1, A.2.2 and
-//!   A.2.4, the SM4-CTR vectors of Appendix A.2.5 (through a reference built from the Sec 8.7.1
-//!   equations, which the `CTR` key is then held to -- see `tests/stream_mode_tests.rs` for
-//!   why the published counter blocks are not ones it produces), plus GB/T 32907-2016's own
-//!   two examples as republished at <https://eprint.iacr.org/2008/329.pdf>. RFC 8998 Appendix
-//!   A.1 and Project Wycheproof's `sm4_gcm_test.json` run through the `GCM` key; Appendix A.2
-//!   and `sm4_ccm_test.json` through the `CCM` mode traits over the engine.
+//!   iterated ciphertexts -- the SM4-ECB, SM4-CBC, SM4-OFB and SM4-CFB vectors of Appendix A.2.1,
+//!   A.2.2, A.2.3 and A.2.4 (and OpenSSL's `SM4-OFB` vector), the SM4-CTR vectors of Appendix A.2.5
+//!   (through a reference built from the Sec 8.7.1 equations, which the `CTR` key is then held to
+//!   -- see `tests/stream_mode_tests.rs` for why the published counter blocks are not ones it
+//!   produces), plus GB/T 32907-2016's own two examples as republished at
+//!   <https://eprint.iacr.org/2008/329.pdf>. RFC 8998 Appendix A.1 and Project Wycheproof's
+//!   `sm4_gcm_test.json` run through the `GCM` key; Appendix A.2 and `sm4_ccm_test.json` through
+//!   the `CCM` mode traits over the engine.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -297,6 +298,7 @@ mod gcm;
 pub mod hazmat;
 mod key;
 mod kw;
+mod ofb;
 mod sbox;
 mod schedule;
 
@@ -318,6 +320,7 @@ pub use ctr::{CTR_NONCE_LEN, SM4_CTR};
 pub use gcm::SM4_GCM;
 pub use key::SM4Key;
 pub use kw::{SM4_KW, SM4_KWP};
+pub use ofb::SM4_OFB;
 
 // Imports needed for docs
 #[allow(unused_imports)]

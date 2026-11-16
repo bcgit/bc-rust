@@ -9,10 +9,11 @@ use bouncycastle_aes::{
     AES_CFB_192, AES_CFB_256, AES_CFB8_128, AES_CFB8_192, AES_CFB8_256, AES_CMAC_128, AES_CMAC_192,
     AES_CMAC_256, AES_CTR_128, AES_CTR_192, AES_CTR_256, AES_GCM_128, AES_GCM_192, AES_GCM_256,
     AES_GMAC_128, AES_GMAC_192, AES_GMAC_256, AES_KW_128, AES_KW_192, AES_KW_256, AES_KWP_128,
-    AES_KWP_192, AES_KWP_256, AES128Key, CCM_NONCE_LEN, CCM_TAG_LEN,
+    AES_KWP_192, AES_KWP_256, AES_OFB_128, AES_OFB_192, AES_OFB_256, AES128Key, CCM_NONCE_LEN,
+    CCM_TAG_LEN,
 };
 use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
-use bouncycastle_cipher::modes::{CBC, Cbc, Gcm};
+use bouncycastle_cipher::modes::{CBC, Cbc, Gcm, OFB, Ofb};
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
@@ -99,6 +100,14 @@ fn cfb_cfb8_ctr() {
     check::<AES_CTR_128<'_, Encrypting>, AES_CTR_128<'_, Decrypting>>("AES_CTR_128", _128bit);
     check::<AES_CTR_192<'_, Encrypting>, AES_CTR_192<'_, Decrypting>>("AES_CTR_192", _192bit);
     check::<AES_CTR_256<'_, Encrypting>, AES_CTR_256<'_, Decrypting>>("AES_CTR_256", _256bit);
+}
+
+#[test]
+fn ofb() {
+    use SecurityStrength::*;
+    check::<AES_OFB_128<'_, Encrypting>, AES_OFB_128<'_, Decrypting>>("AES_OFB_128", _128bit);
+    check::<AES_OFB_192<'_, Encrypting>, AES_OFB_192<'_, Decrypting>>("AES_OFB_192", _192bit);
+    check::<AES_OFB_256<'_, Encrypting>, AES_OFB_256<'_, Decrypting>>("AES_OFB_256", _256bit);
 }
 
 #[test]
@@ -228,4 +237,12 @@ fn the_aliases_name_the_expected_types() {
     let (enc, no_iv) = key.create_encryptor(&mut rng).unwrap();
     let _: AES_ECB_128<'_, Encrypting, PKCS7> = enc;
     let _: AES_ECB_128<'_, Decrypting, PKCS7> = key.create_decryptor(&no_iv);
+    assert_eq!(
+        size_of::<AES_OFB_128<'_, Encrypting>>(),
+        size_of::<Ofb<'_, AES128Internal, Encrypting, 16>>()
+    );
+    let key = key_for::<OFB>();
+    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let _: AES_OFB_128<'_, Encrypting> = enc;
+    let _: AES_OFB_128<'_, Decrypting> = key.create_decryptor(&iv);
 }

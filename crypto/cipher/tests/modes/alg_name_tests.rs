@@ -9,7 +9,7 @@ mod common;
 use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_cipher::modes::{
     Blocks, CBC, CCM, CCM_Packet, CFB, CFB8, CTR, Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb,
-    Cfb8, Cmac, Ctr, Gcm, Gmac, Kw, Kwp, ModeNames,
+    Cfb8, Cmac, Ctr, Gcm, Gmac, Kw, Kwp, ModeNames, OFB, Ofb,
 };
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
@@ -40,6 +40,7 @@ fn the_toy_names_every_mode_differently() {
         Toy::GMAC_ALG_NAME,
         Toy::KW_ALG_NAME,
         Toy::KWP_ALG_NAME,
+        Toy::OFB_ALG_NAME,
     ];
     for (i, a) in names.iter().enumerate() {
         for b in &names[i + 1..] {
@@ -77,6 +78,8 @@ fn each_mode_reports_its_own_name() {
 fn the_wrappers_forward_the_inner_name() {
     check::<Ctr<'_, Toy, Encrypting, 16, 12>>(Toy::CTR_ALG_NAME);
     check::<Ctr<'_, Toy, Decrypting, 16, 12>>(Toy::CTR_ALG_NAME);
+    check::<Ofb<'_, Toy, Encrypting, 16>>(Toy::OFB_ALG_NAME);
+    check::<Ofb<'_, Toy, Decrypting, 16>>(Toy::OFB_ALG_NAME);
     check::<PaddedBlockCipherEncryptor<Cbc<'_, Toy, Encrypting, 16>, PKCS7, 16, 16>>(
         Toy::CBC_ALG_NAME,
     );
@@ -106,6 +109,7 @@ fn each_mode_type_asks_for_a_cipher_key() {
     check::<CFB8>(Toy::CFB8_ALG_NAME);
     check::<CTR>(Toy::CTR_ALG_NAME);
     check::<CTR<15>>(Toy::CTR_ALG_NAME);
+    check::<OFB>(Toy::OFB_ALG_NAME);
     check::<CCM<12, 16>>(Toy::CCM_ALG_NAME);
     check::<CCM_Packet<12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
 }

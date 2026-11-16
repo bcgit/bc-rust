@@ -17,20 +17,23 @@
 //! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
 //! messages as the data limit allows: `CBC<PKCS7>` for CBC (SP 800-38A Sec 6.2) with PKCS#7
 //! padding, `CFB` for CFB64 (Sec 6.3), `CFB8` for the `s = 8` segment size, a different and
-//! non-interoperable mode costing one TDES call per byte, `CTR<6, 8>` for CTR (Sec 6.5) with a
+//! non-interoperable mode costing one TDES call per byte, `OFB` for OFB (Sec 6.4), `CTR<6, 8>`
+//! for CTR (Sec 6.5) with a
 //! 6-byte nonce and a 2-byte counter, and `ECB<PKCS7>` for ECB (Sec 6.1), which has no IV and is
 //! for interoperability and test vectors only -- see
 //! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher); and `TKW` for
 //! TDEA Key Wrap (SP 800-38F Sec 7), legacy only. The aliases [`TDES_CBC`], [`TDES_CFB`],
-//! [`TDES_CFB8`], [`TDES_CTR`], [`TDES_ECB`] and [`TDES_TKW`] name the workers the key hands out.
+//! [`TDES_CFB8`], [`TDES_OFB`], [`TDES_CTR`], [`TDES_ECB`] and [`TDES_TKW`] name the workers the
+//! key hands out.
 //!
-//! SP 800-38A Appendix E is what makes these the standard TDEA modes: TECB, TCBC and TCFB of ANSI
-//! X9.52 "are equivalent to" ECB, CBC and CFB "with the TDEA as the underlying block cipher", and
+//! SP 800-38A Appendix E is what makes these the standard TDEA modes: "the TECB, TCBC, and TOFB
+//! modes in ANSI X9.52 are equivalent to the ECB, CBC, and OFB modes in this recommendation, with
+//! the TDEA as the underlying block cipher", TCFB likewise to CFB, and
 //! CTR with TDEA is explicitly allowed as well.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
-//! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
-//! length with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the
+//! padding scheme to bridge the difference; the CFB modes, OFB and CTR are stream ciphers and take
+//! any length with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the
 //! comparison, and [`TDES_CBC`] for why the scheme is named in the type.
 //!
 //! ```
@@ -101,24 +104,24 @@
 //!
 //! ## Two-key TDEA: decryption only
 //!
-//! [`TDES2Key`] takes the 16-byte `Key1 || Key2` of two-key TDEA (`Key3 = Key1`), which
-//! SP 800-131A Rev 2 Table 1 lists as "Disallowed" for encryption and "Legacy use" for decryption.
-//! Its engine sets `BlockPermutation::DECRYPT_ONLY`, so no encrypting worker can be made over
-//! it: the key's `create_encryptor` refuses to compile under every mode, while its decryptors
-//! work. That gate
+//! [`TDES2Key`] takes the 16-byte `Key1 || Key2` of two-key TDEA (`Key3 = Key1`), which SP 800-131A
+//! Rev 2 Table 1 lists as "Disallowed" for encryption and "Legacy use" for decryption. Its engine
+//! sets `BlockPermutation::DECRYPT_ONLY`, so no encrypting worker can be made over it: the key's
+//! `create_encryptor` refuses to compile under every mode, while its decryptors work. That gate
 //! stops accidental encryption through the encrypting APIs, not deliberate use of the forward
-//! cipher function: CTR decryption *is* CTR encryption, and a CFB decryptor under a chosen IV
-//! maps a zero block to `CIPH(IV)`, so two-key encryption can be assembled from those decryptors
-//! with the safe API alone (SP 800-38A defines the modes that way). A deployment that must rule
-//! two-key encryption out altogether should expose only the CBC and ECB decryptors. The aliases
-//! [`TDES2_CBC`], [`TDES2_CFB`], [`TDES2_CFB8`], [`TDES2_CTR`] and [`TDES2_ECB`] are those
-//! decryptors, with the IV or nonce supplied by the caller as it was received, and [`TDES2_TKW`]
-//! is the key unwrapper, with no wrapper beside it. CMAC follows the same line: SP 800-131A Rev 2
-//! Table 9 lists two-key TDEA CMAC generation as "Disallowed" and verification as "Legacy use",
-//! and `CMAC`'s generating constructor carries the same compile-time check, so a two-key key
-//! under CMAC verifies tags and cannot produce them. [`TDESKey`] carries no MAC role at all; CMAC
-//! over either bundle is reached through the generic `bouncycastle_cipher::BlockCipherKey`
-//! (`BlockCipherKey<TDES2Internal, CMAC<8>>`), a hazmat type name.
+//! cipher function: CTR and OFB decryption *are* their encryption, and a CFB decryptor under a
+//! chosen IV maps a zero block to `CIPH(IV)`, so two-key encryption can be assembled from those
+//! decryptors with the safe API alone (SP 800-38A defines the modes that way). A deployment that
+//! must rule two-key encryption out altogether should expose only the CBC and ECB decryptors. The
+//! aliases [`TDES2_CBC`], [`TDES2_CFB`], [`TDES2_CFB8`], [`TDES2_OFB`], [`TDES2_CTR`] and
+//! [`TDES2_ECB`] are those decryptors, with the IV or nonce supplied by the caller as it was
+//! received, and [`TDES2_TKW`] is the key unwrapper, with no wrapper beside it. CMAC follows the
+//! same line: SP 800-131A Rev 2 Table 9 lists two-key TDEA CMAC generation as "Disallowed" and
+//! verification as "Legacy use", and `CMAC`'s generating constructor carries the same compile-time
+//! check, so a two-key key under CMAC verifies tags and cannot produce them. [`TDESKey`] carries no
+//! MAC role at all; CMAC over either bundle is reached through the generic
+//! `bouncycastle_cipher::BlockCipherKey` (`BlockCipherKey<TDES2Internal, CMAC<8>>`), a hazmat type
+//! name.
 //!
 //! ```
 //! use bouncycastle_tdes::TDES2Key;
@@ -245,14 +248,13 @@
 //! ## The 64-bit block, and the data limit
 //!
 //! SP 800-67r2 Sec 3.4: "One key bundle shall not be used to apply cryptographic protection (e.g.,
-//! encrypt) more than 2^20 64-bit data blocks" -- in total, across all messages, and counted
-//! as the blocks TDEA processes: 8 MiB of plaintext for ECB, CBC, CFB64 and CTR, 1 MiB for CFB8
-//! (one block operation per byte), and 699,048 bytes of TKW plaintext (six block operations per
-//! 4-byte semiblock), which is where the `tdes-*` CLI commands stop. The limit exists because a
-//! 64-bit block cipher in CBC or CFB leaks plaintext
-//! relationships once about 2^32 blocks have been seen under one key (the birthday bound). This
-//! crate cannot count blocks across the uses of a key, so the limit has to be enforced by whoever
-//! manages the key.
+//! encrypt) more than 2^20 64-bit data blocks" -- in total, across all messages, and counted as the
+//! blocks TDEA processes: 8 MiB of plaintext for ECB, CBC, CFB64, OFB and CTR, 1 MiB for CFB8 (one
+//! block operation per byte), and 699,048 bytes of TKW plaintext (six block operations per 4-byte
+//! semiblock), which is where the `tdes-*` CLI commands stop. The limit exists because a 64-bit
+//! block cipher in CBC or CFB leaks plaintext relationships once about 2^32 blocks have been seen
+//! under one key (the birthday bound). This crate cannot count blocks across the uses of a key, so
+//! the limit has to be enforced by whoever manages the key.
 //!
 //! The CTR alias has a further constraint from the small block, explained at [`TDES_CTR`].
 //!
@@ -307,7 +309,8 @@
 //!   decryption-only key -- the crate docs say so and cite the SP 800-67r2 and SP 800-131A Rev 2
 //!   text that motivates it.
 //! * Verified against the NIST CAVP TDES Multi-block Message Test vectors `TECBMMT{2,3}`,
-//!   `TCBCMMT{2,3}`, `TCFB64MMT{2,3}` and `TCFB8MMT{2,3}`, from the `bc-test-data` repository.
+//!   `TCBCMMT{2,3}`, `TCFB64MMT{2,3}`, `TCFB8MMT{2,3}` and `TOFBMMT{2,3}`, from the `bc-test-data`
+//!   repository.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -320,6 +323,7 @@ mod ctr;
 mod des;
 pub mod hazmat;
 mod key;
+mod ofb;
 mod sbox;
 mod schedule;
 mod tkw;
@@ -340,6 +344,7 @@ pub use cfb::{TDES_CFB, TDES2_CFB};
 pub use cfb8::{TDES_CFB8, TDES2_CFB8};
 pub use ctr::{CTR_NONCE_LEN, TDES_CTR, TDES2_CTR};
 pub use key::{TDES2Key, TDES3Key, TDESEngine, TDESKey};
+pub use ofb::{TDES_OFB, TDES2_OFB};
 pub use tkw::{TDES_TKW, TDES2_TKW};
 
 // Imports needed for docs

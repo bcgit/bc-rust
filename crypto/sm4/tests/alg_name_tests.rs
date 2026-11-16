@@ -5,7 +5,7 @@
 //! direction and the padding are type parameters of one algorithm, not different algorithms, so
 //! every combination of them must report the same name.
 
-use bouncycastle_cipher::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr};
+use bouncycastle_cipher::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr, OFB, Ofb};
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
@@ -20,7 +20,7 @@ use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sm4::hazmat::SM4Internal;
 use bouncycastle_sm4::{
     BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, LANES, SM4_CBC, SM4_CFB, SM4_CFB8, SM4_CTR, SM4_KW, SM4_KWP,
-    SM4Key,
+    SM4_OFB, SM4Key,
 };
 use core::mem::size_of;
 
@@ -50,6 +50,7 @@ fn cfb_cfb8_ctr() {
     check::<SM4_CFB<'_, Encrypting>, SM4_CFB<'_, Decrypting>>("SM4_CFB");
     check::<SM4_CFB8<'_, Encrypting>, SM4_CFB8<'_, Decrypting>>("SM4_CFB8");
     check::<SM4_CTR<'_, Encrypting>, SM4_CTR<'_, Decrypting>>("SM4_CTR");
+    check::<SM4_OFB<'_, Encrypting>, SM4_OFB<'_, Decrypting>>("SM4_OFB");
 }
 
 #[test]
@@ -129,6 +130,10 @@ fn the_aliases_name_the_expected_types() {
         size_of::<SM4_CTR<'_, Decrypting>>(),
         size_of::<Ctr<'_, SM4Internal, Decrypting, BLOCK_LEN, CTR_NONCE_LEN>>()
     );
+    assert_eq!(
+        size_of::<SM4_OFB<'_, Encrypting>>(),
+        size_of::<Ofb<'_, SM4Internal, Encrypting, BLOCK_LEN>>()
+    );
 
     // ...and the key hands out exactly those types.
     let bytes: [u8; KEY_LEN] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -147,6 +152,10 @@ fn the_aliases_name_the_expected_types() {
     let (enc, nonce) = key.create_encryptor(&mut rng).unwrap();
     let _: SM4_CTR<'_, Encrypting> = enc;
     let _: SM4_CTR<'_, Decrypting> = key.create_decryptor(&nonce);
+    let key = SM4Key::<OFB>::from_key_material(&material).unwrap();
+    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let _: SM4_OFB<'_, Encrypting> = enc;
+    let _: SM4_OFB<'_, Decrypting> = key.create_decryptor(&iv);
 }
 
 /// The const parameters SM4 fills in are the ones the crate exports, CTR's nonce leaves the

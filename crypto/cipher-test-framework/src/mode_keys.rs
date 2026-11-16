@@ -7,7 +7,7 @@ use crate::material::{mac_material, material, material_flipped, rng};
 use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
 use bouncycastle_cipher::modes::{
-    Blocks, CBC, CCM_Packet, CFB, CFB8, CMAC, CTR, GCM, GMAC, KW, KWP,
+    Blocks, CBC, CCM_Packet, CFB, CFB8, CMAC, CTR, GCM, GMAC, KW, KWP, OFB,
 };
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
@@ -60,6 +60,7 @@ pub fn construction<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     suite::<P, CFB, KEY_LEN>(P::CFB_ALG_NAME);
     suite::<P, CFB8, KEY_LEN>(P::CFB8_ALG_NAME);
     suite::<P, CTR, KEY_LEN>(P::CTR_ALG_NAME);
+    suite::<P, OFB, KEY_LEN>(P::OFB_ALG_NAME);
     suite::<P, GCM, KEY_LEN>(P::GCM_ALG_NAME);
     suite::<P, Packet, KEY_LEN>(P::CCM_ALG_NAME);
     suite::<P, KW, KEY_LEN>(P::KW_ALG_NAME);
@@ -96,12 +97,13 @@ pub fn padded_modes<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     framework.test_key::<KEY_LEN, 0, 16, _>(&make_key::<P, ECB<NoPadding>, KEY_LEN>(), &mut rng());
 }
 
-/// The stream-cipher suite over CFB, CFB8 and CTR.
+/// The stream-cipher suite over CFB, CFB8, OFB and CTR.
 pub fn stream_modes<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     let framework = TestFrameworkStreamCipher::new();
     framework.test_key::<KEY_LEN, 16, _>(&make_key::<P, CFB, KEY_LEN>(), &mut rng());
     framework.test_key::<KEY_LEN, 16, _>(&make_key::<P, CFB8, KEY_LEN>(), &mut rng());
     framework.test_key::<KEY_LEN, 12, _>(&make_key::<P, CTR, KEY_LEN>(), &mut rng());
+    framework.test_key::<KEY_LEN, 16, _>(&make_key::<P, OFB, KEY_LEN>(), &mut rng());
 }
 
 /// The AEAD suite and the inline `ciphertext || tag` layout over GCM, and the AEAD suite over the

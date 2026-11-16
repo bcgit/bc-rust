@@ -25,12 +25,12 @@
 //! bc-rust aes128-cbc decrypt --key-file k.bin < cipher.bin > plain.bin
 //! ```
 //!
-//! Every mode with an IV or nonce (CBC, CFB, CFB8, CTR, GCM) also takes `--iv` / `--iv-file`,
+//! Every mode with an IV or nonce (CBC, CFB, CFB8, OFB, CTR, GCM) also takes `--iv` / `--iv-file`,
 //! or `--nonce` / `--nonce-file`, which spell the same flag, loaded by [`load_iv`], for a format
 //! that carries the IV itself and for reproducing published vectors. With it, `encrypt` runs the
 //! key's `create_encryptor_nonce` through [`start_encryptor`] and writes **only the ciphertext**,
 //! and `decrypt` takes it from the flag and reads **only ciphertext** from stdin. Unpredictability
-//! for CBC and CFB, and uniqueness for CTR and GCM, is then the caller's responsibility. CCM keeps
+//! for CBC and CFB, and uniqueness for OFB, CTR and GCM, is then the caller's responsibility. CCM keeps
 //! its own variable-length nonce, which was never generated, under the same two spellings.
 //!
 //! The IV is not secret (Sec 5.3), so shipping it in the clear is correct. Its *integrity* is not
@@ -259,7 +259,7 @@ pub(crate) struct InputLimit {
 
 /// SP 800-67 Rev 2 Sec 3.4: "One key bundle shall not be used to apply cryptographic protection
 /// (e.g., encrypt) more than 2^20 64-bit data blocks", 8 MiB for a mode that passes each 8 bytes
-/// of input through TDEA once (ECB, CBC, CFB64, CTR). The bound counts blocks the cipher
+/// of input through TDEA once (ECB, CBC, CFB64, OFB, CTR). The bound counts blocks the cipher
 /// processes, so a mode that invokes TDEA more often per byte has a lower figure below. The
 /// command is the one place that sees a bundle's whole use within an invocation, so it holds the
 /// input to that; it cannot count across invocations.

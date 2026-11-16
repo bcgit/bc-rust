@@ -1,19 +1,19 @@
-//! Shared plumbing for the stream-cipher-mode subcommands: `aes{128,192,256}-{cfb,cfb8,ctr}`.
+//! Shared plumbing for the stream-cipher-mode subcommands: `aes{128,192,256}-{cfb,cfb8,ofb,ctr}`.
 //!
 //! The stream-cipher counterpart of [`crate::helpers::block_mode_helpers`], and deliberately parallel to it:
 //! same key loading (reused directly from there), same IV convention, same `-x` hex output, same
 //! 1 KiB streaming chunk. Everything here is mode-independent and generic over
-//! [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`], so `cfb_cmd`, `cfb8_cmd` and
-//! `ctr_cmd` are thin dispatchers over it and cannot drift apart on the parts that matter for
+//! [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`], so `cfb_cmd`, `cfb8_cmd`,
+//! `ofb_cmd` and `ctr_cmd` are thin dispatchers over it and cannot drift apart on the parts that matter for
 //! correctness. The init data length is a parameter, so it need not be a whole block: it is the
-//! block for the CFB modes and a 12-byte nonce for CTR.
+//! block for the CFB modes and OFB and a 12-byte nonce for CTR.
 //!
 //! # The IV travels in the ciphertext, unless `--iv` is given
 //!
 //! Exactly as for the block modes, see [`crate::helpers::block_mode_helpers`]: by default
-//! `encrypt` generates the IV (CFB, CFB8) or nonce (CTR) and writes it first, `decrypt` reads it
+//! `encrypt` generates the IV (CFB, CFB8, OFB) or nonce (CTR) and writes it first, `decrypt` reads it
 //! back, and with `--iv` / `--iv-file` the caller supplies it and only ciphertext is written or
-//! read. The length is the mode's `INIT_DATA_LEN`: 16 bytes for CFB and CFB8, 12 for CTR.
+//! read. The length is the mode's `INIT_DATA_LEN`: 16 bytes for CFB, CFB8 and OFB, 12 for CTR.
 //!
 //! # No alignment requirement, and no padding
 //!
@@ -41,7 +41,7 @@ use std::process::exit;
 /// [`InputLimit`], the running input total is checked against the bound before each chunk is
 /// encrypted, so nothing past it is ever written.
 ///
-/// `INIT_DATA_LEN` is the mode's: one block for CFB and CFB8, 12 bytes for CTR.
+/// `INIT_DATA_LEN` is the mode's: one block for CFB, CFB8 and OFB, 12 bytes for CTR.
 pub(crate) fn encrypt_stream<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     key: &'k K,
     iv: Option<[u8; INIT_DATA_LEN]>,
@@ -70,8 +70,7 @@ pub(crate) fn encrypt_stream<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: u
             eprintln!("Error: {}", limit.message);
             exit(-1);
         }
-        // Cannot fail: neither CFB nor CFB8 has a per-IV data limit.
-        // CFB and CFB8 cannot fail here; CTR can, once its counter is exhausted, which is a real
+        // CFB, CFB8 and OFB cannot fail here; CTR can, once its counter is exhausted, which is a real
         // limit a long enough stream reaches rather than a bug.
         enc.do_encrypt_inplace(data).unwrap_or_else(|e| {
             eprintln!("Error: encryption failed: {e:?}");
@@ -151,7 +150,7 @@ fn finish(output_hex: bool) {
 }
 
 /// Runs one direction of a stream mode under its key. The `run` dispatchers in `cfb_cmd`,
-/// `cfb8_cmd` and `ctr_cmd` differ only in which key type they load, so the match lives
+/// `cfb8_cmd`, `ofb_cmd` and `ctr_cmd` differ only in which key type they load, so the match lives
 /// here.
 pub(crate) fn run_stream_mode<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     action: &CipherDirection,

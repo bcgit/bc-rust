@@ -72,6 +72,7 @@ impl ModeNames for Toy {
     const GMAC_ALG_NAME: &'static str = "Toy_GMAC";
     const KW_ALG_NAME: &'static str = "Toy_KW";
     const KWP_ALG_NAME: &'static str = "Toy_KWP";
+    const OFB_ALG_NAME: &'static str = "Toy_OFB";
 }
 
 impl KeyExpansion<TOY_LEN> for Toy {
@@ -152,6 +153,7 @@ impl ModeNames for SwappedPairToy {
     const GMAC_ALG_NAME: &'static str = "SwappedPairToy_GMAC";
     const KW_ALG_NAME: &'static str = "SwappedPairToy_KW";
     const KWP_ALG_NAME: &'static str = "SwappedPairToy_KWP";
+    const OFB_ALG_NAME: &'static str = "SwappedPairToy_OFB";
 }
 
 impl KeyExpansion<TOY_LEN> for SwappedPairToy {
@@ -232,6 +234,7 @@ impl ModeNames for ForwardOnlyToy {
     const GMAC_ALG_NAME: &'static str = "ForwardOnlyToy_GMAC";
     const KW_ALG_NAME: &'static str = "ForwardOnlyToy_KW";
     const KWP_ALG_NAME: &'static str = "ForwardOnlyToy_KWP";
+    const OFB_ALG_NAME: &'static str = "ForwardOnlyToy_OFB";
 }
 
 impl KeyExpansion<TOY_LEN> for ForwardOnlyToy {
@@ -294,6 +297,7 @@ impl ModeNames for SwappedFourToy {
     const GMAC_ALG_NAME: &'static str = "SwappedFourToy_GMAC";
     const KW_ALG_NAME: &'static str = "SwappedFourToy_KW";
     const KWP_ALG_NAME: &'static str = "SwappedFourToy_KWP";
+    const OFB_ALG_NAME: &'static str = "SwappedFourToy_OFB";
 }
 
 impl KeyExpansion<TOY_LEN> for SwappedFourToy {

@@ -62,7 +62,7 @@ use bouncycastle_utils::secret::Secret;
 /// ```
 ///
 /// The stream modes check the same constant through their keystream, so the refusal holds for
-/// CTR, CFB and CFB8 too:
+/// CTR, OFB, CFB and CFB8 too:
 ///
 /// ```compile_fail
 /// use bouncycastle_tdes::{BLOCK_LEN, CTR_NONCE_LEN, TDES2Key};
@@ -78,6 +78,21 @@ use bouncycastle_utils::secret::Secret;
 ///
 /// // Two-key TDEA may not apply protection through CTR either: this does not compile.
 /// let _ = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os());
+/// ```
+///
+/// ```compile_fail
+/// use bouncycastle_tdes::TDES2Key;
+/// use bouncycastle_cipher::modes::OFB;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
+///
+/// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+///     .unwrap();
+/// let key = TDES2Key::<OFB>::from_key_material(&material).unwrap();
+///
+/// // Nor through OFB, whose only check is the keystream's: this does not compile.
+/// let _ = key.create_encryptor_nonce(&[0u8; 8]);
 /// ```
 ///
 /// Nor may it generate a CMAC tag, through the generic `BlockCipherKey` that is the only key with
@@ -100,12 +115,13 @@ use bouncycastle_utils::secret::Secret;
 ///
 /// `create_decryptor` on every mode works, and this crate names those decryptors
 /// [`TDES2_CBC`](crate::TDES2_CBC), [`TDES2_CFB`](crate::TDES2_CFB),
-/// [`TDES2_CFB8`](crate::TDES2_CFB8), [`TDES2_CTR`](crate::TDES2_CTR) and
+/// [`TDES2_CFB8`](crate::TDES2_CFB8), [`TDES2_OFB`](crate::TDES2_OFB),
+/// [`TDES2_CTR`](crate::TDES2_CTR) and
 /// [`TDES2_ECB`](crate::TDES2_ECB). The raw
-/// [`BlockPermutation::encrypt_block`] is still present, because CFB and CTR decryption are
+/// [`BlockPermutation::encrypt_block`] is still present, because CFB, OFB and CTR decryption are
 /// built on the forward cipher function; a raw permutation is not something to encrypt data with
 /// anyway (see the crate docs). For the same reason the gate stops accidental encryption through
-/// the encrypting APIs, not deliberate use of the forward cipher: CTR decryption is CTR
+/// the encrypting APIs, not deliberate use of the forward cipher: CTR and OFB decryption are their
 /// encryption, and a CFB decryptor under a chosen IV gives `CIPH(IV)` for a zero block, so a
 /// caller who wants two-key TDEA encryption can assemble it from those decryptors. A deployment
 /// that must rule it out should expose only the CBC and ECB decryptors.
@@ -179,7 +195,7 @@ impl BlockPermutation<BLOCK_LEN> for TDES2Internal {
 
     /// The forward cipher operation with `Key3 = Key1`: `O = F_Key1(I_Key2(F_Key1(d)))`.
     ///
-    /// Present because CFB and CTR decryption need it, and because the trait requires it; the
+    /// Present because CFB, OFB and CTR decryption need it, and because the trait requires it; the
     /// encrypting modes will not compile over this type. See the type docs.
     fn encrypt_block(&self, block: &mut Block) {
         let [k1, k2] = &*self.schedule;
@@ -229,6 +245,7 @@ impl ModeNames for TDES2Internal {
     /// TKW-AD only: the engine decrypts only, so no wrapper is made over it.
     const KW_ALG_NAME: &'static str = "TDES2_TKW";
     const KWP_ALG_NAME: &'static str = "";
+    const OFB_ALG_NAME: &'static str = "TDES2_OFB";
 }
 
 impl core::fmt::Debug for TDES2Internal {

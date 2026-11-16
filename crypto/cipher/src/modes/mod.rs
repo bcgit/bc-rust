@@ -20,6 +20,7 @@
 //! | ECB | [`hazmat`] | SP 800-38A Sec 6.1 | Electronic Codebook. **Not confidential for data**; interoperability and test vectors only |
 //! | GCM | [`gcm`] | SP 800-38D | **Authenticated**: 96-bit nonce, 96-128-bit tag, no padding; AAD before data |
 //! | GMAC | [`gmac`] | SP 800-38D Sec 5.2 | A MAC, not a cipher: GCM with no plaintext, so the tag is bound to a 96-bit nonce |
+//! | OFB | [`ofb`] | SP 800-38A Sec 6.4 | Output Feedback. Keystream from the IV alone, serial in both directions |
 //! | KW | [`kw`] | SP 800-38F Sec 6.2 | Key Wrap (RFC 3394). **Authenticated**, deterministic, no IV; whole 8-byte semiblocks only |
 //! | KWP | [`kwp`] | SP 800-38F Sec 6.3 | Key Wrap with Padding (RFC 5649). As KW, for data of any length |
 //! | TKW | [`tkw`] | SP 800-38F Sec 7 | TDEA Key Wrap: KW at 64-bit blocks and 32-bit semiblocks. **Legacy only** |
@@ -29,9 +30,9 @@
 //! **ECB and CBC are block ciphers** ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]): whole
 //! blocks in, whole blocks out, and arbitrary-length data needs the padding layer.
 //!
-//! **CFB, CFB8 and CTR are stream ciphers** ([`StreamCipherEncryptor`] / [`StreamCipherDecryptor`]):
-//! any length in, the same length out, no padding, no finalization -- see
-//! [Block alignment, and which modes need it](#block-alignment-and-which-modes-need-it).
+//! **CFB, CFB8, OFB and CTR are stream ciphers** ([`StreamCipherEncryptor`] /
+//! [`StreamCipherDecryptor`]): any length in, the same length out, no padding, no finalization --
+//! see [Block alignment, and which modes need it](#block-alignment-and-which-modes-need-it).
 //!
 //! **CCM and GCM are AEADs**: they authenticate the ciphertext to detect ciphertext tampering, and
 //! can also take additional (non-encrypted) data (AAD) that is protected by the same
@@ -46,22 +47,22 @@
 //! general data as well, but they are deterministic, so for data that may repeat an AEAD is the
 //! better fit (see the [`kw`] security notes).
 //!
-//! CBC, CFB, CFB8 and CTR all generate their own init data, or take the caller's through the key's
-//! `_nonce` forms: an IV for the first three, a nonce for CTR, which is shorter than a block
+//! CBC, CFB, CFB8, OFB and CTR all generate their own init data, or take the caller's through the
+//! key's `_nonce` forms: an IV for the first four, a nonce for CTR, which is shorter than a block
 //! because the rest of the counter block is the counter. ECB has
 //! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block, which is
 //! why it lives under [`hazmat`] -- see [`hazmat::ecb::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
 //!
 //! Each mode is also a **mode type** -- [`CBC`], [`CCM`], [`CCM_Packet`], [`CFB`], [`CFB8`],
-//! [`CTR`], [`GCM`], [`hazmat::ecb::ECB`], the MACs [`CMAC`] and [`GMAC`], and the key wraps
-//! [`KW`], [`KWP`] and [`TKW`] -- the `M` a mode-bound
-//! key such as `bouncycastle_aes::AES128Key<M>` is parameterised by. The mode type implements the
-//! hazmat mode traits of [`bouncycastle_core::hazmat`], which is how a key hands out the mode's
-//! encryptors and decryptors through the role traits of `bouncycastle_core::symmetric_key`; a
-//! key is bound to one mode, and which role traits it carries follow from that mode. The modes
-//! with a padded and a whole-block form, CBC and ECB, take the padding scheme or [`Blocks`] as a
-//! parameter, and the two forms are two key types.
+//! [`CTR`], [`GCM`], [`OFB`], [`hazmat::ecb::ECB`], the MACs [`CMAC`] and [`GMAC`], and the key
+//! wraps [`KW`], [`KWP`] and [`TKW`] -- the `M` a mode-bound key such as
+//! `bouncycastle_aes::AES128Key<M>` is parameterised by. The mode type implements the hazmat mode
+//! traits of [`bouncycastle_core::hazmat`], which is how a key hands out the mode's encryptors and
+//! decryptors through the role traits of `bouncycastle_core::symmetric_key`; a key is bound to one
+//! mode, and which role traits it carries follow from that mode. The modes with a padded and a
+//! whole-block form, CBC and ECB, take the padding scheme or [`Blocks`] as a parameter, and the two
+//! forms are two key types.
 //!
 //! [Choosing between the modes](#choosing-between-the-modes) covers when each is the right answer
 //! -- which, for a new design, one of them usually is.
@@ -82,24 +83,25 @@
 //!
 //! ## Defining type aliases
 //!
-//! Define a one-line alias for the combination you use -- or use the ready-made
-//! `AES_CBC_128` / `AES_CCM_128` / `AES_CFB_128` / `AES_CFB8_128` / `AES_CTR_128` / `AES_ECB_128` /
-//! `AES_GCM_128` and friends from `bouncycastle-aes`. Those aliases are not all the same shape: the
+//! Define a one-line alias for the combination you use -- or use the ready-made `AES_CBC_128` /
+//! `AES_CCM_128` / `AES_CFB_128` / `AES_CFB8_128` / `AES_CTR_128` / `AES_ECB_128` / `AES_GCM_128` /
+//! `AES_OFB_128` and friends from `bouncycastle-aes`. Those aliases are not all the same shape: the
 //! two block modes take a padding scheme as well as a direction, since neither is usable on data of
-//! arbitrary length without one, the three stream modes take only the direction, CCM takes the
+//! arbitrary length without one, the four stream modes take only the direction, CCM takes the
 //! direction in its type name, plus its nonce and tag lengths, its AAD capacity and its frame
 //! length, and GCM takes the direction and its tag length:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_cipher::modes::{Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb, Cfb8, Ctr, Gcm};
+//! use bouncycastle_cipher::modes::{Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb, Cfb8, Ctr, Gcm, Ofb};
 //!
-//! // Every worker borrows its key state for `'k`. CBC, CFB, and CFB8 then take a permutation, a
-//! // direction and a block length; the key length is the key's business, not the worker's.
+//! // Every worker borrows its key state for `'k`. CBC, CFB, CFB8 and OFB then take a permutation,
+//! // a direction and a block length; the key length is the key's business, not the worker's.
 //! type ToyCbc<'k, Dir> = Cbc<'k, ToyBlockCipher, Dir, 16>;
 //! type ToyCfb<'k, Dir> = Cfb<'k, ToyBlockCipher, Dir, 16>;
 //! type ToyCfb8<'k, Dir> = Cfb8<'k, ToyBlockCipher, Dir, 16>;
+//! type ToyOfb<'k, Dir> = Ofb<'k, ToyBlockCipher, Dir, 16>;
 //!
 //! // CTR takes one more parameter: the nonce length, which fixes the counter width at
 //! // `BLOCK_LEN - NONCE_LEN`. 12 bytes of nonce leaves the maximum 4-byte counter.
@@ -127,7 +129,7 @@
 //! # Choosing between the modes
 //!
 //! **For a new design, use [`gcm`].** It is authenticated, and an unauthenticated
-//! mode is almost never what a new protocol wants: the other five leave the ciphertext malleable in
+//! mode is almost never what a new protocol wants: the other six leave the ciphertext malleable in
 //! specific, exploitable ways. While it is possible to bolt a MAC on afterwards,
 //! this design has some subtleties that most people get wrong.
 //!
@@ -137,11 +139,11 @@
 //!
 //! ECB is not a candidate for data at all (below). Between the unauthenticated modes:
 //!
-//! The block cipher modes: [`cbc`], [`ctr`], [`cfb`] and [`cfb8`], while they do provide reasonable
-//! confidentiality, do not provide ciphertext authentication, meaning that they do not protect against
-//! ciphertext malleability attacks where an active attacker will manipulate the ciphertext and then
-//! hand it to a decryption oracle to see how the oracle behaves. As such, these modes should be
-//! considered antiquated and only used when a protocol requires them.
+//! The block cipher modes: [`cbc`], [`ctr`], [`cfb`], [`cfb8`] and [`ofb`], while they do provide
+//! reasonable confidentiality, do not provide ciphertext authentication, meaning that they do not
+//! protect against ciphertext malleability attacks where an active attacker will manipulate the
+//! ciphertext and then hand it to a decryption oracle to see how the oracle behaves. As such, these
+//! modes should be considered antiquated and only used when a protocol requires them.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -180,6 +182,7 @@ pub mod hazmat;
 mod iv;
 pub mod kw;
 pub mod kwp;
+pub mod ofb;
 pub mod tkw;
 
 pub use cbc::{CBC, Cbc};
@@ -194,6 +197,7 @@ pub use gcm::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
 pub use gmac::{GMAC, Gmac};
 pub use kw::{KW, KW_BLOCK_LEN, Kw, SEMIBLOCK_LEN};
 pub use kwp::{KWP, Kwp};
+pub use ofb::{OFB, Ofb};
 pub use tkw::{TKW, TKW_BLOCK_LEN, TKW_SEMIBLOCK_LEN, Tkw};
 
 /// Selects the whole-block form of a mode that also has a padded form: `CBC<Blocks>` is a key
@@ -231,6 +235,8 @@ pub trait ModeNames {
     const KW_ALG_NAME: &'static str;
     /// Reported by [`Kwp`].
     const KWP_ALG_NAME: &'static str;
+    /// Reported by [`Ofb`], through its keystream.
+    const OFB_ALG_NAME: &'static str;
 }
 
 // Imports needed for docs

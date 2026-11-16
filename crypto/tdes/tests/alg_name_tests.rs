@@ -7,7 +7,7 @@
 //! report the same name.
 
 use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
-use bouncycastle_cipher::modes::{CBC, Cbc, Cfb, Cfb8, Cmac, Ctr};
+use bouncycastle_cipher::modes::{CBC, Cbc, Cfb, Cfb8, Cmac, Ctr, OFB, Ofb};
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
@@ -22,8 +22,8 @@ use bouncycastle_core::traits::Algorithm;
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_tdes::hazmat::{TDES_ECB, TDES2_ECB, TDES2Internal, TDESInternal};
 use bouncycastle_tdes::{
-    BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, TDES_CBC, TDES_CFB, TDES_CFB8, TDES_CTR, TDES_TKW,
-    TDES2_CBC, TDES2_CFB, TDES2_CFB8, TDES2_CTR, TDES2_TKW, TDES3Key,
+    BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, TDES_CBC, TDES_CFB, TDES_CFB8, TDES_CTR, TDES_OFB, TDES_TKW,
+    TDES2_CBC, TDES2_CFB, TDES2_CFB8, TDES2_CTR, TDES2_OFB, TDES2_TKW, TDES3Key,
 };
 use core::mem::size_of;
 
@@ -85,7 +85,7 @@ fn ecb() {
 }
 
 #[test]
-fn cfb_cfb8_ctr() {
+fn cfb_cfb8_ofb_ctr() {
     use SecurityStrength::*;
     check::<TDES_CFB<'_, Encrypting>, TDES_CFB<'_, Decrypting>>("TDES_CFB", _112bit);
     check::<TDES_CFB8<'_, Encrypting>, TDES_CFB8<'_, Decrypting>>("TDES_CFB8", _112bit);
@@ -93,6 +93,8 @@ fn cfb_cfb8_ctr() {
     check_decrypting::<TDES2_CFB<'_>>("TDES2_CFB");
     check_decrypting::<TDES2_CFB8<'_>>("TDES2_CFB8");
     check_decrypting::<TDES2_CTR<'_>>("TDES2_CTR");
+    check::<TDES_OFB<'_, Encrypting>, TDES_OFB<'_, Decrypting>>("TDES_OFB", _112bit);
+    check_decrypting::<TDES2_OFB<'_>>("TDES2_OFB");
 }
 
 #[test]
@@ -197,6 +199,10 @@ fn the_aliases_name_the_expected_types() {
         size_of::<TDES_CTR<'_, Encrypting>>(),
         size_of::<Ctr<'_, TDESInternal, Encrypting, BLOCK_LEN, CTR_NONCE_LEN>>()
     );
+    assert_eq!(
+        size_of::<TDES_OFB<'_, Encrypting>>(),
+        size_of::<Ofb<'_, TDESInternal, Encrypting, BLOCK_LEN>>()
+    );
 
     // ...and the key hands out exactly those types.
     let mut rng = HashDRBG_SHA512::new_from_os();
@@ -208,4 +214,8 @@ fn the_aliases_name_the_expected_types() {
     let (enc, no_iv) = key.create_encryptor(&mut rng).unwrap();
     let _: TDES_ECB<'_, Encrypting, PKCS7> = enc;
     let _: TDES_ECB<'_, Decrypting, PKCS7> = key.create_decryptor(&no_iv);
+    let key = key_for::<OFB>();
+    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let _: TDES_OFB<'_, Encrypting> = enc;
+    let _: TDES_OFB<'_, Decrypting> = key.create_decryptor(&iv);
 }

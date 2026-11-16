@@ -36,6 +36,12 @@ test_cfb_refuses_one_byte_past_the_limit() {
     assert_stderr_has "Error: TDEA: one key bundle may protect at most 2^20 blocks"
 }
 
+test_ofb_refuses_one_byte_past_the_limit() {
+    expect_fail "tdes-ofb: 2^20 blocks plus a byte" \
+        "$BC_RUST" tdes-ofb -d encrypt --key "$KEY" < <(zeros $((LIMIT + 1)))
+    assert_stderr_has "Error: TDEA: one key bundle may protect at most 2^20 blocks"
+}
+
 test_cfb8_counts_a_block_per_byte() {
     expect_ok "tdes-cfb8: 2^20 bytes is 2^20 blocks" \
         "$BC_RUST" tdes-cfb8 -d encrypt --key "$KEY" < <(zeros $((1 << 20))) >/dev/null
@@ -72,6 +78,11 @@ test_cfb_takes_exactly_the_limit() {
         "$BC_RUST" tdes-cfb -d encrypt --key "$KEY" < <(zeros "$LIMIT") >/dev/null
 }
 
+test_ofb_takes_exactly_the_limit() {
+    expect_ok "tdes-ofb: exactly 2^20 blocks" \
+        "$BC_RUST" tdes-ofb -d encrypt --key "$KEY" < <(zeros "$LIMIT") >/dev/null
+}
+
 test_ctr_takes_its_whole_counter_space() {
     expect_ok "tdes-ctr: exactly 2^16 blocks" \
         "$BC_RUST" tdes-ctr -d encrypt --key "$KEY" < <(zeros $((1 << 19))) >/dev/null
@@ -86,6 +97,8 @@ test_decrypt_is_not_limited() {
         "$BC_RUST" tdes2-ecb -d decrypt --key "$KEY2" < <(zeros $((LIMIT + 8))) >/dev/null
     expect_ok "tdes2-cfb decrypt past the limit" \
         "$BC_RUST" tdes2-cfb -d decrypt --key "$KEY2" < <(zeros $((LIMIT + 16))) >/dev/null
+    expect_ok "tdes2-ofb decrypt past the limit" \
+        "$BC_RUST" tdes2-ofb -d decrypt --key "$KEY2" < <(zeros $((LIMIT + 16))) >/dev/null
 }
 
 run_all

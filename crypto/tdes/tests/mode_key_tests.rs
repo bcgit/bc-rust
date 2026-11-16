@@ -3,7 +3,7 @@
 //! a two-key key can do, decrypt.
 
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, ModeNames, TKW};
+use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, ModeNames, OFB, TKW};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{BlockPermutation, EcbDecryptionKey, KeyExpansion, Mode};
@@ -64,6 +64,7 @@ fn every_mode_key_enforces_the_material_policy() {
     construction_suite::<ECB<PKCS7>>(TDESInternal::ECB_ALG_NAME, TDES2Internal::ECB_ALG_NAME);
     construction_suite::<CFB>(TDESInternal::CFB_ALG_NAME, TDES2Internal::CFB_ALG_NAME);
     construction_suite::<CFB8>(TDESInternal::CFB8_ALG_NAME, TDES2Internal::CFB8_ALG_NAME);
+    construction_suite::<OFB>(TDESInternal::OFB_ALG_NAME, TDES2Internal::OFB_ALG_NAME);
     construction_suite::<Ctr6>(TDESInternal::CTR_ALG_NAME, TDES2Internal::CTR_ALG_NAME);
     construction_suite::<TKW>(TDESInternal::KW_ALG_NAME, TDES2Internal::KW_ALG_NAME);
 }
@@ -110,6 +111,7 @@ fn stream_mode_keys_pass_the_stream_cipher_framework() {
     let framework = TestFrameworkStreamCipher::new();
     framework.test_key::<KEY_LEN, BLOCK_LEN, _>(&key3::<CFB>(), &mut rng());
     framework.test_key::<KEY_LEN, BLOCK_LEN, _>(&key3::<CFB8>(), &mut rng());
+    framework.test_key::<KEY_LEN, BLOCK_LEN, _>(&key3::<OFB>(), &mut rng());
     framework.test_key::<KEY_LEN, CTR_NONCE_LEN, _>(&key3::<Ctr6>(), &mut rng());
 }
 
@@ -158,6 +160,19 @@ fn two_key_keys_decrypt() {
     }
     let mut back = ct.as_flattened().to_vec();
     key2::<CFB>().create_decryptor(&iv).do_decrypt_inplace(&mut back).unwrap();
+    assert_eq!(back, plaintext.as_flattened());
+
+    // OFB: `C_j = P_j ^ O_j`, `O_j = CIPH(O_{j-1})`, `O_0 = IV`.
+    let mut ct = plaintext;
+    let mut o = iv;
+    for block in ct.iter_mut() {
+        perm.encrypt_block(&mut o);
+        for (b, k) in block.iter_mut().zip(o) {
+            *b ^= k;
+        }
+    }
+    let mut back = ct.as_flattened().to_vec();
+    key2::<OFB>().create_decryptor(&iv).do_decrypt_inplace(&mut back).unwrap();
     assert_eq!(back, plaintext.as_flattened());
 
     // CTR: `C_j = P_j ^ CIPH(nonce || j)`, counter from zero.
