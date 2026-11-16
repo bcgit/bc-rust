@@ -100,19 +100,13 @@ where
     }
 }
 
-/// The toys the `tests/modes` integration tests use, shared with the unit tests below rather than
-/// copied. Declared here, not inside `mod tests`, so that `#[path]` is relative to this file.
-#[cfg(test)]
-#[path = "../../../tests/modes/common/mod.rs"]
-mod modes_common;
-
 #[cfg(test)]
 mod tests {
     //! Unit tests for [`OfbKeyStream`], which is `pub(crate)` and so cannot be reached from
     //! `tests/modes/ofb_tests.rs`; the same carve-out as `ctr_key_stream.rs`'s.
 
-    use super::modes_common::{ForwardOnlyToy, TOY_LEN, Toy};
     use super::*;
+    use crate::modes::modes_common::{ForwardOnlyToy, TOY_LEN, Toy};
     use bouncycastle_core::hazmat::KeyExpansion;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
     use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;

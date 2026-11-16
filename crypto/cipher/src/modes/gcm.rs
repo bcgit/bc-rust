@@ -1200,12 +1200,6 @@ mod ghash {
     }
 }
 
-/// The toys the `tests/modes` integration tests use, shared with the unit tests below rather than
-/// copied. Declared here, not inside `mod tests`, so that `#[path]` is relative to this file.
-#[cfg(test)]
-#[path = "../../tests/modes/common/mod.rs"]
-mod modes_common;
-
 #[cfg(test)]
 mod tests {
     //! The SP 800-38D limits at the limit itself. A worker at `MAX_AAD_LEN`, `MAX_DATA_LEN` or
@@ -1214,8 +1208,8 @@ mod tests {
     //! "high-risk code that cannot be reached through the public API" case QUALITY_AND_STYLE.md
     //! reserves a unit test for.
 
-    use super::modes_common::{Toy, toy_key};
     use super::*;
+    use crate::modes::modes_common::{Toy, toy_key};
     use bouncycastle_core::hazmat::KeyExpansion;
 
     fn key_state() -> GcmKeyState<Toy> {

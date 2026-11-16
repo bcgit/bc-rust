@@ -164,12 +164,6 @@ where
     }
 }
 
-/// The toys the `tests/modes` integration tests use, shared with the unit tests below rather than
-/// copied. Declared here, not inside `mod tests`, so that `#[path]` is relative to this file.
-#[cfg(test)]
-#[path = "../../../tests/modes/common/mod.rs"]
-mod modes_common;
-
 #[cfg(test)]
 mod tests {
     //! Unit tests for [`CtrKeyStream`], which is `pub(crate)` and so cannot be reached from
@@ -177,9 +171,9 @@ mod tests {
     //! the public API" case QUALITY_AND_STYLE.md carves out for a unit test here rather than an
     //! integration test.
 
-    use super::modes_common::{ForwardOnlyToy, TOY_LEN, Toy};
     use super::*;
     use crate::Encrypting;
+    use crate::modes::modes_common::{ForwardOnlyToy, TOY_LEN, Toy};
     use bouncycastle_core::hazmat::KeyExpansion;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
     use bouncycastle_core::traits::StreamCipherEncryptor;

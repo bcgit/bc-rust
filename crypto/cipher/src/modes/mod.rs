@@ -182,6 +182,11 @@ pub mod hazmat;
 mod iv;
 pub mod kw;
 pub mod kwp;
+/// The toys the `tests/modes` integration tests use, shared with the unit tests in this module's
+/// files rather than copied.
+#[cfg(test)]
+#[path = "../../tests/modes/common/mod.rs"]
+pub(crate) mod modes_common;
 pub mod ofb;
 pub mod tkw;
 
