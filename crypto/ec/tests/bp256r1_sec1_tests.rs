@@ -11,6 +11,7 @@ use bouncycastle_ec::hazmat::bp256r1_domain::{G_X_LIMBS, G_Y_LIMBS};
 use bouncycastle_ec::hazmat::bp256r1_sec1::{
     decode, decode_point, encode_compressed, encode_uncompressed,
 };
+use bouncycastle_hex::decode as hex_decode;
 
 const TWO_G_X: [u64; 4] =
     [0xd51a14c2ce13ea0e, 0x36ef044166699e37, 0xb55f8aa369593ac4, 0x743cf1b8b5cd4f2e];
@@ -133,4 +134,31 @@ fn decode_rejects_malformed_input() {
     let mut y_too_big = UNCOMPRESSED_G;
     y_too_big[33..65].fill(0xff);
     assert_eq!(decode(&y_too_big), None);
+}
+
+/// SP 800-186 Appendix D.1.1.1 step 2 on its own: `(x, y)` is on the curve, so `(x + p, y)` is
+/// too once reduced, and only the coordinate range check rejects its encodings. Computed in
+/// Python from the curve's `p`, `a` and `b`: the smallest `x` with `x^3 + ax + b` a residue
+/// (`x = 1`), `y` its root `(x^3 + ax + b)^((p + 1) / 4)`, and `x + p`, which fits the
+/// 32-byte field.
+#[test]
+fn decode_rejects_a_coordinate_at_or_above_p_that_is_on_the_curve_after_reduction() {
+    let point = hex_decode(
+        "04000000000000000000000000000000000000000000000000000000000000000109e0e9e8d98fb89da2a32b2c7618b26bb99b920f02a5e831a142e6c8673110cd",
+    )
+    .unwrap();
+    assert!(decode(&point).is_some(), "(x, y) is on the curve");
+    let x_plus_p = hex_decode(
+        "04a9fb57dba1eea9bc3e660a909d838d726e3bf623d52620282013481d1f6e537809e0e9e8d98fb89da2a32b2c7618b26bb99b920f02a5e831a142e6c8673110cd",
+    )
+    .unwrap();
+    assert_eq!(decode(&x_plus_p), None, "uncompressed, x + p");
+    let compressed =
+        hex_decode("03a9fb57dba1eea9bc3e660a909d838d726e3bf623d52620282013481d1f6e5378").unwrap();
+    assert_eq!(decode(&compressed), None, "compressed, x + p");
+    let y_plus_p = hex_decode(
+        "040000000000000000000000000000000000000000000000000000000000000001b3dc41c47b7e6259e10935bd139c3fde27d78832d7cc0859c1562ee5869f6444",
+    )
+    .unwrap();
+    assert_eq!(decode(&y_plus_p), None, "uncompressed, y + p");
 }

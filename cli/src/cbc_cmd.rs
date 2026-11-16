@@ -12,8 +12,7 @@
 //! separately.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_iv, load_key_object,
-    start_encryptor,
+    CipherDirection, decrypt_stream, encrypt_stream, load_iv, load_key_object, start_encryptor,
 };
 use bouncycastle::cipher::BlockCipherKey;
 use bouncycastle::cipher::modes::CBC;
@@ -21,6 +20,9 @@ use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::cipher::padding::PKCS7;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
+
+/// The 128-bit block of the ciphers these commands serve; TDES has its own commands.
+const BLOCK_LEN: usize = 16;
 
 /// CBC with PKCS7 padding under a `KEY_LEN`-byte key for the permutation `P`; `alg` names the
 /// cipher and key length in messages, "AES-128" and the like.
@@ -60,10 +62,13 @@ fn run<K, const KEY_LEN: usize>(
                 |rng| key.create_encryptor(rng),
                 |iv| key.create_encryptor_nonce(iv),
             );
-            encrypt_stream::<_, BLOCK_LEN>(enc, generated_iv.as_ref(), output_hex, None)
+            encrypt_stream::<_, BLOCK_LEN, BLOCK_LEN>(enc, generated_iv.as_ref(), output_hex, None)
         }
-        CipherDirection::Decrypt => {
-            decrypt_stream::<_, BLOCK_LEN>(iv, |iv| key.create_decryptor(iv), output_hex, None)
-        }
+        CipherDirection::Decrypt => decrypt_stream::<_, BLOCK_LEN, BLOCK_LEN>(
+            iv,
+            |iv| key.create_decryptor(iv),
+            output_hex,
+            None,
+        ),
     }
 }

@@ -164,4 +164,14 @@ test_hkdf_sm3_one_octet_past_a_block() {
     hkdf_short_output_is_a_prefix hkdf-sm3 33
 }
 
+# An empty Z derives a key from nothing (the KDF trait allows it; no command-line user means
+# it): refused before any derivation, inline and from a file.
+test_hkdf_refuses_an_empty_ikm() {
+    expect_fail "an empty --ikm is refused" "$BC_RUST" hkdf-sha256 --salt 000102 --ikm "" --len 16
+    assert_stderr_has "empty"
+    : >"$TMP/empty"
+    expect_fail "an empty --ikm-file is refused" "$BC_RUST" hkdf-sha256 --salt 000102 --ikm-file "$TMP/empty" --len 16
+    assert_stderr_has "empty"
+}
+
 run_all

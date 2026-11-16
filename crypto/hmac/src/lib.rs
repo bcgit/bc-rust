@@ -127,7 +127,8 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, HashAlgParams, HashOneShot, MACGenerator, MACVerifier, RNG,
+    Algorithm, AlgorithmOID, FinishToken, HashAlgParams, HashOneShot, MACGenerator, MACVerifier,
+    RNG,
 };
 use bouncycastle_utils::{ct, secret::Secret};
 use core::fmt::{Debug, Display, Formatter};
@@ -346,16 +347,22 @@ impl<HASH: HMACParams> HmacKey<HASH> {
     }
 
     /// RFC 2104 Section 2 steps (4), (6) and (7) over an inner hash that has absorbed the text:
-    /// finishes it, feeds the result to the outer pad state, and finishes that into `out` as
-    /// [`Hash::do_final_out`] does, the whole buffer zeroized first and the tag in its first
-    /// [`HashAlgParams::OUTPUT_LEN`] bytes. Returns the number of bytes written.
-    pub(crate) fn finish_out(&self, inner: HASH, out: &mut [u8]) -> usize {
+    /// finishes it where it sits, feeds the result to the outer pad state, and finishes that into
+    /// `out` as [`Hash::do_final_out`] does, the whole buffer zeroized first and the tag in its
+    /// first [`HashAlgParams::OUTPUT_LEN`] bytes. Returns the number of bytes written. Neither
+    /// hash is moved; `token` is the one a worker's final was given, or [`hazmat`]'s.
+    pub(crate) fn finish_out(
+        &self,
+        token: &FinishToken,
+        inner: &mut HASH,
+        out: &mut [u8],
+    ) -> usize {
         // The inner hash is keying material in flight; a stack scratch, zeroized on drop.
         let mut ihash: Secret<[u8; LARGEST_HASHER_OUTPUT_LEN]> = Secret::new();
-        let n = inner.do_final_out(&mut ihash[..HASH::OUTPUT_LEN]); // step (4)
+        let n = inner.finish_into(token, &mut ihash[..HASH::OUTPUT_LEN]); // step (4)
         let mut outer = self.outer.clone();
         outer.do_update(&ihash[..n]); // step (6)
-        outer.do_final_out(out) // step (7)
+        outer.finish_into(token, out) // step (7)
     }
 }
 
@@ -443,14 +450,18 @@ impl<'k, HASH: HMACParams, Dir> HMAC<'k, HASH, Dir> {
     /// Steps (4), (6) and (7), through the key: [`HmacKey::finish_out`] into a buffer of the
     /// hash's output length. `MAC_LEN` is that length by the role impls' bound; the check makes
     /// a foreign `HMACParams` whose `MACKey` says otherwise fail to compile.
-    fn finish<const MAC_LEN: usize>(self, out: &mut [u8; MAC_LEN]) -> usize {
+    fn finish<const MAC_LEN: usize>(
+        &mut self,
+        token: &FinishToken,
+        out: &mut [u8; MAC_LEN],
+    ) -> usize {
         const {
             assert!(
                 MAC_LEN == HASH::OUTPUT_LEN,
                 "HMACParams::MACKey must be KeyMaterial<OUTPUT_LEN>"
             )
         };
-        self.key.finish_out(self.hasher, out)
+        self.key.finish_out(token, &mut self.hasher, out)
     }
 }
 
@@ -462,8 +473,8 @@ where
         self.absorb(data)
     }
 
-    fn do_final_out(self, out: &mut [u8; MAC_LEN]) -> usize {
-        self.finish(out)
+    fn finish_mac_into(&mut self, token: &FinishToken, out: &mut [u8; MAC_LEN]) -> usize {
+        self.finish(token, out)
     }
 }
 
@@ -476,11 +487,15 @@ where
     }
 
     /// Recomputes the tag and compares it in constant time.
-    fn do_verify_final(self, mac: &[u8; MAC_LEN]) -> Result<(), MACError> {
+    fn finish_mac_verify(
+        &mut self,
+        token: &FinishToken,
+        mac: &[u8; MAC_LEN],
+    ) -> Result<(), MACError> {
         // The recomputed tag is the valid tag of whatever message was absorbed, so it is kept
         // off the stack's leftovers.
         let mut computed: Secret<[u8; MAC_LEN]> = Secret::new();
-        self.finish(&mut computed);
+        self.finish(token, &mut computed);
         if ct::ct_eq_bytes(&*computed, mac) { Ok(()) } else { Err(MACError::VerificationFailed) }
     }
 }

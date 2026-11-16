@@ -49,7 +49,10 @@ use crate::shake::SHAKEInternal;
 use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, Suspendable, XOF};
+// Named only by the doc links below.
+#[cfg(doc)]
+use bouncycastle_core::traits::XOFSqueezer;
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,
@@ -129,7 +132,9 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
     fn absorb_block_digest(&mut self) {
         let mut digest = [0u8; 64];
         let digest = &mut digest[..Self::INNER_LEN];
-        core::mem::take(&mut self.inner).xof_out(&[], digest);
+        // Read where the sponge sits, then start the next block's on a fresh one.
+        self.inner.squeeze_internal_out(digest);
+        self.inner = SHAKEInternal::new();
         self.cshake.do_update(digest);
         // Saturating: the count is bookkeeping for the final `right_encode(n)`, and a resumed
         // state may carry any value, so `+=` could overflow on one a caller corrupted.
@@ -189,24 +194,22 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
     /// The `right_encode(L)` that completes step 4 is left to the caller, because which `L` it
     /// carries is not settled here: the fixed-length function knows it up front ([`Self::finish`]),
     /// and the XOF leaves it to the first read ([`CSHAKESqueezer`]).
-    fn finish_blocks(mut self) -> CSHAKEInternal<PARAMS> {
+    fn finish_blocks(&mut self) {
         if self.block_fill > 0 {
             self.absorb_block_digest();
         }
         // Step 4: z = z || right_encode(n) ...
         let (buf, len) = right_encode(self.blocks);
         self.cshake.do_update(&buf[..len]);
-        self.cshake
     }
 
-    /// [`Self::finish_blocks`], then the `right_encode(L)` that completes step 4.
+    /// [`Self::finish_blocks`], then the `right_encode(L)` that completes step 4 and a read into
+    /// `output`.
     ///
     /// `length_bits` is the requested output length of the fixed-length function of Sec 6.3.
-    fn finish(self, length_bits: u64) -> CSHAKEInternal<PARAMS> {
-        let mut cshake = self.finish_blocks();
-        let (buf, len) = right_encode(length_bits);
-        cshake.do_update(&buf[..len]);
-        cshake
+    fn finish(&mut self, length_bits: u64, output: &mut [u8]) -> usize {
+        self.finish_blocks();
+        self.cshake.finish_out_with_length(length_bits, output)
     }
 }
 
@@ -309,12 +312,7 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashInternal<PARAMS> {
         self.state.do_update(data);
     }
 
-    fn do_final(self) -> Vec<u8> {
-        let n = self.output_len;
-        self.state.finish((n as u64) * 8).into_squeezer().do_output(n)
-    }
-
-    fn do_final_out(self, output: &mut [u8]) -> usize {
+    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
         let n = self.output_len;
         // Per Hash::do_final_out: a short buffer is filled and the digest truncated, a long one
         // takes the digest in its first output_len bytes and zeros after it. `n` is bound into the
@@ -322,24 +320,15 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashInternal<PARAMS> {
         // truncated read is this ParallelHash cut short, not the ParallelHash of a shorter length.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.state.finish((n as u64) * 8).into_squeezer().do_output_out(&mut output[..written])
+        self.state.finish((n as u64) * 8, &mut output[..written])
     }
 
     /// # Errors
     /// Always [`HashError::InvalidLength`] for a non-zero `num_bits`: the block count and length
     /// encodings have to follow the message, which a partial final byte would prevent.
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        let mut out = vec![0u8; self.output_len];
-        self.do_final_partial_bits_out(partial_byte, num_bits, &mut out)?;
-        Ok(out)
-    }
-
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        token: &FinishToken,
         _partial_byte: u8,
         num_bits: usize,
         output: &mut [u8],
@@ -349,7 +338,7 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashInternal<PARAMS> {
                 "ParallelHash cannot take a partial final byte: the encodings must follow",
             ));
         }
-        Ok(self.do_final_out(output))
+        Ok(self.finish_into(token, output))
     }
 }
 
@@ -421,36 +410,22 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
 
     /// A final read at the nominal length, so `L` is bound: this is the fixed-length ParallelHash
     /// of Sec 6.3 at `n = ` [`Hash::output_len`], not a prefix of the ParallelHashXOF stream.
-    fn do_final(self) -> Vec<u8> {
-        let n = self.output_len();
-        self.into_squeezer().do_output_final(n)
-    }
-
-    fn do_final_out(self, output: &mut [u8]) -> usize {
+    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
         let n = self.output_len();
         // Per Hash::do_final_out, as for the fixed-length form: a short buffer truncates this
         // ParallelHash rather than computing the ParallelHash of a shorter length, because `n` is
         // what reaches right_encode, not the buffer's length.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.into_squeezer().do_final_out_with_length((n as u64) * 8, &mut output[..written])
+        self.state.finish((n as u64) * 8, &mut output[..written])
     }
 
     /// # Errors
     /// Always [`HashError::InvalidLength`] for a non-zero `num_bits`; see
     /// [`ParallelHashInternal::do_final_partial_bits`].
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        let mut out = vec![0u8; self.output_len()];
-        self.do_final_partial_bits_out(partial_byte, num_bits, &mut out)?;
-        Ok(out)
-    }
-
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        token: &FinishToken,
         _partial_byte: u8,
         num_bits: usize,
         output: &mut [u8],
@@ -460,7 +435,7 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
                 "ParallelHashXOF cannot take a partial final byte: the encodings must follow",
             ));
         }
-        Ok(self.do_final_out(output))
+        Ok(self.finish_into(token, output))
     }
 }
 
@@ -470,8 +445,9 @@ impl<PARAMS: SHAKEParams> XOF for ParallelHashXOFInternal<PARAMS> {
     // The block count of Sec 6.3.1 step 4 is bound here; the `right_encode` that follows it is
     // not, because whether it carries 0 or the length of a final read is
     // CSHAKESqueezer's decision.
-    fn into_squeezer(self) -> Self::Squeezer {
-        CSHAKESqueezer::new(self.state.finish_blocks())
+    fn into_squeezer(mut self) -> Self::Squeezer {
+        self.state.finish_blocks();
+        CSHAKESqueezer::new(self.state.cshake)
     }
 
     fn into_squeezer_partial_bits(

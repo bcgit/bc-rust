@@ -4,7 +4,9 @@
 
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, HashOneShot, Suspendable};
+use bouncycastle_core::traits::{
+    Algorithm, FinishToken, Hash, HashAlgParams, HashOneShot, Suspendable,
+};
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
@@ -69,13 +71,7 @@ impl Hash for AsconHash256 {
         self.sponge.absorb(data);
     }
 
-    fn do_final(mut self) -> Vec<u8> {
-        let mut out = [0u8; DIGEST_BYTES];
-        self.squeeze_into(&mut out);
-        out.to_vec()
-    }
-
-    fn do_final_out(mut self, output: &mut [u8]) -> usize {
+    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
         output.fill(0);
         let mut out = [0u8; DIGEST_BYTES];
         self.squeeze_into(&mut out);
@@ -84,28 +80,9 @@ impl Hash for AsconHash256 {
         n
     }
 
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        if num_bits > 7 {
-            return Err(HashError::InvalidLength("num_bits must be in the range [0,7]"));
-        }
-
-        if num_bits != 0 {
-            return Err(HashError::InvalidInput(
-                "Ascon-Hash256 does not support partial byte input",
-            ));
-        }
-
-        // A zero-bit partial byte means the message is byte-aligned.
-        let _ = partial_byte;
-        Ok(self.do_final())
-    }
-
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        token: &FinishToken,
         partial_byte: u8,
         num_bits: usize,
         output: &mut [u8],
@@ -123,7 +100,7 @@ impl Hash for AsconHash256 {
 
         // A zero-bit partial byte means the message is byte-aligned.
         let _ = partial_byte;
-        Ok(self.do_final_out(output))
+        Ok(self.finish_into(token, output))
     }
 }
 

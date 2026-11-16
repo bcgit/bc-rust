@@ -83,6 +83,7 @@
 pub mod hazmat;
 
 use bouncycastle_cipher::stream::StreamCipher;
+use bouncycastle_cipher::stream::hazmat::stream_cipher_over;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -154,14 +155,14 @@ impl SymmetricEncryptionKey<KEY_LEN, NONCE_LEN, 0> for ChaCha20Key {
     ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
         let mut nonce = [0u8; NONCE_LEN];
         rng.next_bytes_out(&mut nonce)?;
-        Ok((ChaCha20::from_keystream(ChaCha20KeyStream::start_at(&self.state, &nonce, 0)), nonce))
+        Ok((stream_cipher_over(ChaCha20KeyStream::start_at(&self.state, &nonce, 0)), nonce))
     }
 
     /// Under a nonce the caller supplies, for the protocols RFC 8439 Sec 2.4 has in mind ("In some
     /// protocols, this is known as the Initialization Vector"); it "MUST not be repeated for the
     /// same key", which is then the caller's to ensure.
     fn create_encryptor_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor<'k> {
-        ChaCha20::from_keystream(ChaCha20KeyStream::start_at(&self.state, nonce, 0))
+        stream_cipher_over(ChaCha20KeyStream::start_at(&self.state, nonce, 0))
     }
 }
 
@@ -172,6 +173,6 @@ impl SymmetricDecryptionKey<KEY_LEN, NONCE_LEN, 0> for ChaCha20Key {
         Self: 'k;
 
     fn create_decryptor<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
-        ChaCha20::from_keystream(ChaCha20KeyStream::start_at(&self.state, nonce, 0))
+        stream_cipher_over(ChaCha20KeyStream::start_at(&self.state, nonce, 0))
     }
 }

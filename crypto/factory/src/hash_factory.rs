@@ -37,7 +37,7 @@ use bouncycastle_blake3 as blake3;
 use bouncycastle_blake3::BLAKE3_NAME;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{AlgorithmInfo, Hash};
+use bouncycastle_core::traits::{AlgorithmInfo, FinishToken, Hash};
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha2::{
     SHA224_NAME, SHA256_NAME, SHA384_NAME, SHA512_224_NAME, SHA512_256_NAME, SHA512_NAME,
@@ -236,112 +236,61 @@ impl Hash for HashFactory {
         }
     }
 
-    fn do_final(self) -> Vec<u8> {
-        match self {
-            Self::SHA224(h) => h.do_final(),
-            Self::SHA256(h) => h.do_final(),
-            Self::SHA384(h) => h.do_final(),
-            Self::SHA512(h) => h.do_final(),
-            Self::SHA512_224(h) => h.do_final(),
-            Self::SHA512_256(h) => h.do_final(),
-            Self::SHA3_224(h) => h.do_final(),
-            Self::SHA3_256(h) => h.do_final(),
-            Self::SHA3_384(h) => h.do_final(),
-            Self::SHA3_512(h) => h.do_final(),
-            Self::SM3(h) => h.do_final(),
-            Self::AsconHash256(h) => h.do_final(),
-            Self::BLAKE2b_512(h) => h.do_final(),
-            Self::BLAKE2s_256(h) => h.do_final(),
-            Self::BLAKE3(h) => h.do_final(),
-        }
-    }
-
-    fn do_final_out(self, output: &mut [u8]) -> usize {
+    fn finish_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
         output.fill(0);
 
         match self {
-            Self::SHA224(h) => h.do_final_out(output),
-            Self::SHA256(h) => h.do_final_out(output),
-            Self::SHA384(h) => h.do_final_out(output),
-            Self::SHA512(h) => h.do_final_out(output),
-            Self::SHA512_224(h) => h.do_final_out(output),
-            Self::SHA512_256(h) => h.do_final_out(output),
-            Self::SHA3_224(h) => h.do_final_out(output),
-            Self::SHA3_256(h) => h.do_final_out(output),
-            Self::SHA3_384(h) => h.do_final_out(output),
-            Self::SHA3_512(h) => h.do_final_out(output),
-            Self::SM3(h) => h.do_final_out(output),
-            Self::AsconHash256(h) => h.do_final_out(output),
-            Self::BLAKE2b_512(h) => h.do_final_out(output),
-            Self::BLAKE2s_256(h) => h.do_final_out(output),
-            Self::BLAKE3(h) => h.do_final_out(output),
+            Self::SHA224(h) => h.finish_into(token, output),
+            Self::SHA256(h) => h.finish_into(token, output),
+            Self::SHA384(h) => h.finish_into(token, output),
+            Self::SHA512(h) => h.finish_into(token, output),
+            Self::SHA512_224(h) => h.finish_into(token, output),
+            Self::SHA512_256(h) => h.finish_into(token, output),
+            Self::SHA3_224(h) => h.finish_into(token, output),
+            Self::SHA3_256(h) => h.finish_into(token, output),
+            Self::SHA3_384(h) => h.finish_into(token, output),
+            Self::SHA3_512(h) => h.finish_into(token, output),
+            Self::SM3(h) => h.finish_into(token, output),
+            Self::AsconHash256(h) => h.finish_into(token, output),
+            Self::BLAKE2b_512(h) => h.finish_into(token, output),
+            Self::BLAKE2s_256(h) => h.finish_into(token, output),
+            Self::BLAKE3(h) => h.finish_into(token, output),
         }
     }
 
-    fn do_final_partial_bits(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        token: &FinishToken,
         partial_byte: u8,
-        num_partial_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        match self {
-            Self::SHA224(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA384(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA512(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA512_224(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA512_256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA3_224(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA3_256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA3_384(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA3_512(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SM3(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::AsconHash256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::BLAKE2b_512(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::BLAKE2s_256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::BLAKE3(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-        }
-    }
-
-    fn do_final_partial_bits_out(
-        self,
-        partial_byte: u8,
-        num_partial_bits: usize,
+        num_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
         match self {
-            Self::SHA224(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
-            Self::SHA256(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
-            Self::SHA384(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
-            Self::SHA512(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
+            Self::SHA224(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::SHA256(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::SHA384(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::SHA512(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
             Self::SHA512_224(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+                h.finish_partial_bits_into(token, partial_byte, num_bits, output)
             }
             Self::SHA512_256(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+                h.finish_partial_bits_into(token, partial_byte, num_bits, output)
             }
-            Self::SHA3_224(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
-            }
-            Self::SHA3_256(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
-            }
-            Self::SHA3_384(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
-            }
-            Self::SHA3_512(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
-            }
-            Self::SM3(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
+            Self::SHA3_224(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::SHA3_256(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::SHA3_384(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::SHA3_512(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::SM3(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
             Self::AsconHash256(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+                h.finish_partial_bits_into(token, partial_byte, num_bits, output)
             }
             Self::BLAKE2b_512(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+                h.finish_partial_bits_into(token, partial_byte, num_bits, output)
             }
             Self::BLAKE2s_256(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+                h.finish_partial_bits_into(token, partial_byte, num_bits, output)
             }
-            Self::BLAKE3(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
+            Self::BLAKE3(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
         }
     }
 }

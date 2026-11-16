@@ -20,19 +20,34 @@ const SQRT_EXPONENT: [u64; 6] = [
 /// Converts 48 big-endian bytes to little-endian `u64` limbs.
 pub fn limbs_from_be_bytes(bytes: &[u8; 48]) -> [u64; 6] {
     let mut limbs = [0u64; 6];
-    for i in 0..6 {
-        limbs[i] = u64::from_be_bytes(bytes[(40 - i * 8)..(48 - i * 8)].try_into().unwrap());
-    }
+    limbs_from_be_bytes_into(bytes, &mut limbs);
     limbs
+}
+
+/// [`limbs_from_be_bytes`] into `out`: for a secret value, so that no copy of it is staged in
+/// a return slot.
+pub fn limbs_from_be_bytes_into(bytes: &[u8; 48], out: &mut [u64; 6]) {
+    for (i, chunk) in bytes.rchunks(8).enumerate() {
+        let mut limb = [0u8; 8];
+        limb[8 - chunk.len()..].copy_from_slice(chunk);
+        out[i] = u64::from_be_bytes(limb);
+    }
 }
 
 /// Converts little-endian `u64` limbs to 48 big-endian bytes.
 pub fn be_bytes_from_limbs(limbs: &[u64; 6]) -> [u8; 48] {
     let mut out = [0u8; 48];
-    for i in 0..6 {
-        out[(40 - i * 8)..(48 - i * 8)].copy_from_slice(&limbs[i].to_be_bytes());
-    }
+    be_bytes_from_limbs_into(limbs, &mut out);
     out
+}
+
+/// [`be_bytes_from_limbs`] into `out`: for a secret value, so that no copy of it is staged in
+/// a return slot.
+pub fn be_bytes_from_limbs_into(limbs: &[u64; 6], out: &mut [u8; 48]) {
+    for (i, chunk) in out.rchunks_mut(8).enumerate() {
+        let n = chunk.len();
+        chunk.copy_from_slice(&limbs[i].to_be_bytes()[8 - n..]);
+    }
 }
 
 fn limbs_less_than_p(limbs: &[u64; 6]) -> bool {

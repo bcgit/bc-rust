@@ -22,8 +22,8 @@ use crate::traits::{BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEnc
 /// `bouncycastle_cipher::stream::StreamCipher`, which turns any `KeyStream` into a
 /// [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] pair.
 ///
-/// Only a keystream that is independent of the data fits: CTR does, CFB does not, since its next
-/// keystream block is the encryption of the last ciphertext block.
+/// Only a keystream that is independent of the data fits: CTR and OFB do, CFB does not, since its
+/// next keystream block is the encryption of the last ciphertext block.
 ///
 /// # 🚨 Security Considerations 🚨
 /// A keystream is started at init data the caller chose, so nothing here stops a caller reusing

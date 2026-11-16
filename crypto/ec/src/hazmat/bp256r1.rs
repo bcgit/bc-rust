@@ -8,6 +8,7 @@
 //! (programmatically, concatenating the line-wrapped hex, not retyped) and verified in Python: `G`
 //! is on the curve and `n·G` is the point at infinity, before any of this was ported to Rust.
 
+use crate::curve::FieldElement;
 use crate::montgomery;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
@@ -60,6 +61,13 @@ impl Bp256r1FieldElement {
         let mut t = [0u64; 8];
         t[..4].copy_from_slice(&self.0);
         montgomery::redc::<4, 8, 9>(&t, &P_LIMBS, N_PRIME).0
+    }
+
+    /// [`Self::to_limbs`] into `out`. The conversion out of Montgomery form is a REDC, whose
+    /// result is returned by value inside this call before it is copied into `out`; that copy
+    /// is one of the multiplier's intermediates the crate docs say are not scrubbed.
+    pub fn to_limbs_into(&self, out: &mut [u64; 4]) {
+        *out = self.to_limbs();
     }
 
     /// The limbs exactly as this type stores them: the Montgomery form `x*R mod p`, not the
@@ -223,3 +231,53 @@ impl PartialEq for Bp256r1FieldElement {
 }
 
 impl Eq for Bp256r1FieldElement {}
+
+impl FieldElement for Bp256r1FieldElement {
+    type Limbs = [u64; 4];
+    const ZERO: Self = Bp256r1FieldElement::ZERO;
+    const ONE: Self = Bp256r1FieldElement::ONE;
+
+    fn from_limbs(limbs: [u64; 4]) -> Self {
+        Bp256r1FieldElement::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 4] {
+        Bp256r1FieldElement::to_limbs(self)
+    }
+
+    fn to_limbs_into(&self, out: &mut [u64; 4]) {
+        Bp256r1FieldElement::to_limbs_into(self, out)
+    }
+
+    fn is_zero(&self) -> Condition<u64> {
+        Bp256r1FieldElement::is_zero(self)
+    }
+
+    fn zeroize(&mut self) {
+        Bp256r1FieldElement::zeroize(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        Bp256r1FieldElement::add(self, other)
+    }
+
+    fn sub(&self, other: &Self) -> Self {
+        Bp256r1FieldElement::sub(self, other)
+    }
+
+    fn negate(&self) -> Self {
+        Bp256r1FieldElement::negate(self)
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        Bp256r1FieldElement::mul(self, other)
+    }
+
+    fn square(&self) -> Self {
+        Bp256r1FieldElement::square(self)
+    }
+
+    fn invert(&self) -> Self {
+        Bp256r1FieldElement::invert(self)
+    }
+}

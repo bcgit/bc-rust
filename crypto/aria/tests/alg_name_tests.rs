@@ -9,10 +9,10 @@ use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Interna
 use bouncycastle_aria::{
     ARIA_CBC_128, ARIA_CBC_192, ARIA_CBC_256, ARIA_CFB_128, ARIA_CFB_192, ARIA_CFB_256,
     ARIA_CFB8_128, ARIA_CFB8_192, ARIA_CFB8_256, ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256,
-    ARIA_KW_128, ARIA_KW_192, ARIA_KW_256, ARIA_KWP_128, ARIA_KWP_192, ARIA_KWP_256, ARIA128Key,
-    BLOCK_LEN, CTR_NONCE_LEN, LANES,
+    ARIA_KW_128, ARIA_KW_192, ARIA_KW_256, ARIA_KWP_128, ARIA_KWP_192, ARIA_KWP_256, ARIA_OFB_128,
+    ARIA_OFB_192, ARIA_OFB_256, ARIA128Key, BLOCK_LEN, CTR_NONCE_LEN, LANES,
 };
-use bouncycastle_cipher::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr};
+use bouncycastle_cipher::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr, OFB, Ofb};
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
@@ -63,18 +63,21 @@ fn cfb_cfb8_ctr() {
     check::<ARIA_CTR_128<'_, Encrypting>, ARIA_CTR_128<'_, Decrypting>>("ARIA_CTR_128", _128bit);
     check::<ARIA_CTR_192<'_, Encrypting>, ARIA_CTR_192<'_, Decrypting>>("ARIA_CTR_192", _192bit);
     check::<ARIA_CTR_256<'_, Encrypting>, ARIA_CTR_256<'_, Decrypting>>("ARIA_CTR_256", _256bit);
+    check::<ARIA_OFB_128<'_, Encrypting>, ARIA_OFB_128<'_, Decrypting>>("ARIA_OFB_128", _128bit);
+    check::<ARIA_OFB_192<'_, Encrypting>, ARIA_OFB_192<'_, Decrypting>>("ARIA_OFB_192", _192bit);
+    check::<ARIA_OFB_256<'_, Encrypting>, ARIA_OFB_256<'_, Decrypting>>("ARIA_OFB_256", _256bit);
 }
 
 /// One worker serves both halves of a key wrap, so each alias is checked against itself.
 #[test]
 fn kw_kwp() {
     use SecurityStrength::*;
-    check::<ARIA_KW_128<'_>, ARIA_KW_128<'_>>("ARIA_KW_128", _128bit);
-    check::<ARIA_KW_192<'_>, ARIA_KW_192<'_>>("ARIA_KW_192", _192bit);
-    check::<ARIA_KW_256<'_>, ARIA_KW_256<'_>>("ARIA_KW_256", _256bit);
-    check::<ARIA_KWP_128<'_>, ARIA_KWP_128<'_>>("ARIA_KWP_128", _128bit);
-    check::<ARIA_KWP_192<'_>, ARIA_KWP_192<'_>>("ARIA_KWP_192", _192bit);
-    check::<ARIA_KWP_256<'_>, ARIA_KWP_256<'_>>("ARIA_KWP_256", _256bit);
+    check::<ARIA_KW_128<'_, Encrypting>, ARIA_KW_128<'_, Decrypting>>("ARIA_KW_128", _128bit);
+    check::<ARIA_KW_192<'_, Encrypting>, ARIA_KW_192<'_, Decrypting>>("ARIA_KW_192", _192bit);
+    check::<ARIA_KW_256<'_, Encrypting>, ARIA_KW_256<'_, Decrypting>>("ARIA_KW_256", _256bit);
+    check::<ARIA_KWP_128<'_, Encrypting>, ARIA_KWP_128<'_, Decrypting>>("ARIA_KWP_128", _128bit);
+    check::<ARIA_KWP_192<'_, Encrypting>, ARIA_KWP_192<'_, Decrypting>>("ARIA_KWP_192", _192bit);
+    check::<ARIA_KWP_256<'_, Encrypting>, ARIA_KWP_256<'_, Decrypting>>("ARIA_KWP_256", _256bit);
 }
 
 #[test]
@@ -170,6 +173,10 @@ fn the_aliases_name_the_expected_types() {
         size_of::<ARIA_CTR_256<'_, Encrypting>>(),
         size_of::<Ctr<'_, ARIA256Internal, Encrypting, BLOCK_LEN, CTR_NONCE_LEN>>()
     );
+    assert_eq!(
+        size_of::<ARIA_OFB_128<'_, Encrypting>>(),
+        size_of::<Ofb<'_, ARIA128Internal, Encrypting, BLOCK_LEN>>()
+    );
 
     // ...and the key hands out exactly those types.
     let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -188,6 +195,10 @@ fn the_aliases_name_the_expected_types() {
     let (enc, nonce) = key.create_encryptor(&mut rng).unwrap();
     let _: ARIA_CTR_128<'_, Encrypting> = enc;
     let _: ARIA_CTR_128<'_, Decrypting> = key.create_decryptor(&nonce);
+    let key = ARIA128Key::<OFB>::from_key_material(&material).unwrap();
+    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let _: ARIA_OFB_128<'_, Encrypting> = enc;
+    let _: ARIA_OFB_128<'_, Decrypting> = key.create_decryptor(&iv);
 }
 
 /// The const parameters are ARIA's, CTR's nonce leaves the four-byte counter the mode caps at,

@@ -53,8 +53,21 @@
 // this crate instantiates.
 #[inline(always)]
 pub fn widening_mul<const L: usize, const L2: usize>(a: &[u64; L], b: &[u64; L]) -> [u64; L2] {
-    debug_assert_eq!(L2, 2 * L, "widening_mul's L2 must be exactly 2 * L");
     let mut result = [0u64; L2];
+    widening_mul_into(a, b, &mut result);
+    result
+}
+
+/// [`widening_mul`] into `result`, overwritten in full: the form for a product that must not
+/// be staged in a return slot, with `result` the caller's `Secret`.
+#[inline(always)]
+pub fn widening_mul_into<const L: usize, const L2: usize>(
+    a: &[u64; L],
+    b: &[u64; L],
+    result: &mut [u64; L2],
+) {
+    debug_assert_eq!(L2, 2 * L, "widening_mul's L2 must be exactly 2 * L");
+    result.fill(0);
     for i in 0..L {
         let mut carry: u128 = 0;
         for j in 0..L {
@@ -82,7 +95,6 @@ pub fn widening_mul<const L: usize, const L2: usize>(a: &[u64; L], b: &[u64; L])
             k += 1;
         }
     }
-    result
 }
 
 /// Schoolbook squaring of an `L`-limb value into its `L2 = 2L`-limb square.

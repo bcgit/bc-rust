@@ -87,7 +87,7 @@ where
     let perm = P::new(key).expect("an ACVP key");
     let mut inline = plaintext.to_vec();
     let tag =
-        CCM::<NONCE_LEN, TAG_LEN>::encrypt_detached_in_place_nonce(&perm, nonce, aad, &mut inline)
+        CCM::<NONCE_LEN, TAG_LEN>::encrypt_detached_inplace_nonce(&perm, nonce, aad, &mut inline)
             .expect("CCM encryption of a valid ACVP case");
     inline.extend_from_slice(&tag);
     inline
@@ -106,7 +106,7 @@ where
     let perm = P::new(key).expect("an ACVP key");
     let (ct, tag) = ct_and_tag.split_last_chunk::<TAG_LEN>().expect("a tag on every vector");
     let mut plaintext = ct.to_vec();
-    match CCM::<NONCE_LEN, TAG_LEN>::decrypt_detached_in_place(
+    match CCM::<NONCE_LEN, TAG_LEN>::decrypt_detached_inplace(
         &perm, nonce, aad, &mut plaintext, tag,
     ) {
         Ok(()) => Decrypted::Plaintext(plaintext),

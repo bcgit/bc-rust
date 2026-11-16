@@ -52,6 +52,13 @@ impl TestFrameworkHash {
         assert_eq!(h.do_final_out(&mut buf), n);
         assert_eq!(buf, expected, "an exactly-sized buffer must take the whole digest");
 
+        // Held as `Box<dyn Hash>`, the hash finishes through `do_final_out_boxed`.
+        let mut buf = vec![0xAA_u8; n];
+        let mut h: Box<dyn Hash + '_> = Box::new(make());
+        h.do_update(input);
+        assert_eq!(h.do_final_out_boxed(&mut buf), n);
+        assert_eq!(buf, expected, "the boxed final must give the same digest");
+
         // Long: the digest lands in the first output_len bytes and the rest is zeroized.
         for extra in [1, n, 2 * n + 1] {
             let mut buf = vec![0xAA_u8; n + extra];
@@ -96,6 +103,19 @@ impl TestFrameworkHash {
         message_digest.do_update(input);
         let output_buf = message_digest.do_final();
         assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
+
+        /*** fn do_final_out_boxed(self: Box<Self>, ..), for a hash held as Box<dyn Hash> ***/
+        let mut boxed: Box<dyn Hash + '_> = Box::new(H::default());
+        boxed.do_update(input);
+        let mut boxed_out = vec![0_u8; H::OUTPUT_LEN];
+        assert_eq!(boxed.do_final_out_boxed(&mut boxed_out), H::OUTPUT_LEN);
+        assert_eq!(expected_output, boxed_out, "Incorrect output from the boxed final");
+        // and with no trailing bits the boxed partial-bits final is the same digest
+        let mut boxed: Box<dyn Hash + '_> = Box::new(H::default());
+        boxed.do_update(input);
+        let mut boxed_out = vec![0_u8; H::OUTPUT_LEN];
+        assert_eq!(boxed.do_final_partial_bits_out_boxed(0, 0, &mut boxed_out), Ok(H::OUTPUT_LEN));
+        assert_eq!(expected_output, boxed_out, "the boxed partial-bits final, no bits");
 
         for length in 1..output_buf.len() {
             let mut truncated = vec![0_u8; length];

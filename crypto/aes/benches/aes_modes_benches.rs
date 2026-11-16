@@ -12,7 +12,8 @@
 //! directions. On the bit-sliced AES a four costs barely more than one block, so decryption should
 //! run at roughly three times the throughput of encryption; if that gap closes, something has
 //! stopped taking the four path. CFB never calls the inverse cipher, so its decryption should also
-//! come out ahead of CBC's.
+//! come out ahead of CBC's. OFB is serial in both directions (Sec 6.4), so its one figure should
+//! match CFB *encryption*, not CTR.
 //!
 //! The `modes::gcm::AES_128` group is GCM against CTR: GCM is CTR plus GHASH over the ciphertext
 //! and AAD (SP 800-38D Sec 7.1), and its CTR half batches exactly as `modes::ctr::AES_128` does, so
@@ -28,7 +29,7 @@ use bouncycastle_aes::{AES128Key, AES256Key};
 use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_cipher::modes::{
     Blocks, CBC, CCM, CCM_Packet, CFB, CFB8, CMAC, CTR, Cfb, Cfb8, Ctr, GCM, GCM_NONCE_LEN, GMAC,
-    KW, KWP,
+    KW, KWP, OFB, Ofb,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::{AeadDeclaredEncryptMode, EcbEncryptionKey, KeyExpansion};
@@ -73,6 +74,7 @@ const GCM_TAG_LEN: usize = 16;
 type Aes128GcmKey = AES128Key<GCM<GCM_TAG_LEN>>;
 type Aes256GcmKey = AES256Key<GCM<GCM_TAG_LEN>>;
 type Aes128Ctr<'k, Dir> = Ctr<'k, AES128Internal, Dir, BLOCK_LEN, 12>;
+type Aes128Ofb<'k, Dir> = Ofb<'k, AES128Internal, Dir, BLOCK_LEN>;
 type Aes128Ecb<'k, Dir> = Ecb<'k, AES128Internal, Dir, BLOCK_LEN>;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
@@ -145,7 +147,7 @@ fn bench_aes128cbc(c: &mut Criterion) {
 }
 
 /// Runs the 16 KiB through a freshly made stream-cipher encryptor in `call_len`-byte calls. Used
-/// by the CFB, CFB8 and CTR groups: it is generic over the trait, not over the mode, and the
+/// by the CFB, CFB8, OFB and CTR groups: it is generic over the trait, not over the mode, and the
 /// caller's key (or mode constructor) supplies the worker.
 fn stream_encrypt_in_calls<E: StreamCipherEncryptor<INIT_DATA_LEN>, const INIT_DATA_LEN: usize>(
     mut enc: E,
@@ -284,6 +286,31 @@ fn bench_ctr_aes128(c: &mut Criterion) {
     group.finish();
 }
 
+/// OFB: serial in both directions (SP 800-38A Sec 6.4), and both directions are the same
+/// keystream function, so one measurement covers it. It should match CFB encryption.
+fn bench_ofb_aes128(c: &mut Criterion) {
+    let key = AES128Key::<OFB>::from_key_material(&key::<16>()).unwrap();
+    let mut rng = iv_rng();
+    let flat: Vec<u8> = data().as_flattened().to_vec();
+
+    let mut group = c.benchmark_group("modes::ofb::AES_128");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
+    group.bench_function("16KiB encrypt -- whole message in one call", |b| {
+        b.iter_batched(
+            || flat.clone(),
+            |mut scratch| {
+                let (enc, _): (Aes128Ofb<Encrypting>, _) = key.create_encryptor(&mut rng).unwrap();
+                stream_encrypt_in_calls(enc, &mut scratch, DATA_LEN);
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    group.finish();
+}
+
 /// ECB is a thin wrapper over the permutation's batch methods, so this should match `aes_benches`'
 /// `encrypt_4blocks` figure; it is here to catch a regression in the wrapper.
 fn bench_ecb_aes128(c: &mut Criterion) {
@@ -379,7 +406,7 @@ fn bench_ccm_aes128(c: &mut Criterion) {
             || data,
             |buf| {
                 black_box(
-                    Aes128CcmMode::encrypt_detached_in_place_nonce(
+                    Aes128CcmMode::encrypt_detached_inplace_nonce(
                         black_box(&perm),
                         &nonce,
                         &no_aad,
@@ -398,7 +425,7 @@ fn bench_ccm_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut out: [u8; 0] = [];
             black_box(
-                Aes128CcmMode::encrypt_detached_in_place_nonce(
+                Aes128CcmMode::encrypt_detached_inplace_nonce(
                     black_box(&perm),
                     &nonce,
                     black_box(&data),
@@ -445,12 +472,12 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     });
 
     // The same 4 KiB and nonce through the mode's in-place one-shot, for the ratio.
-    group.bench_function("CCM::encrypt_detached_in_place_nonce 4KiB", |b| {
+    group.bench_function("CCM::encrypt_detached_inplace_nonce 4KiB", |b| {
         b.iter_batched_ref(
             || data,
             |buf| {
                 black_box(
-                    Aes128CcmMode::encrypt_detached_in_place_nonce(
+                    Aes128CcmMode::encrypt_detached_inplace_nonce(
                         black_box(&perm),
                         &nonce,
                         &no_aad,
@@ -662,7 +689,7 @@ fn bench_kw_aes128(c: &mut Criterion) {
 
 criterion_group!(
     benches, bench_aes128cbc, bench_cfb_aes128, bench_cfb8_aes128, bench_ctr_aes128,
-    bench_ecb_aes128, bench_ccm_aes128, bench_ccm_one_shot_pair, bench_gcm_aes128,
-    bench_gcm_aes256, bench_init, bench_cmac, bench_gmac, bench_kw_aes128
+    bench_ofb_aes128, bench_ecb_aes128, bench_ccm_aes128, bench_ccm_one_shot_pair,
+    bench_gcm_aes128, bench_gcm_aes256, bench_init, bench_cmac, bench_gmac, bench_kw_aes128
 );
 criterion_main!(benches);

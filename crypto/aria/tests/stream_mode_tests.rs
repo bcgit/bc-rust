@@ -1,13 +1,13 @@
 //! Known-answer tests for the stream modes of operation over ARIA: the `ARIA-*-CFB`,
-//! `ARIA-*-CFB8` and `ARIA-*-CTR` entries of OpenSSL's
+//! `ARIA-*-CFB8`, `ARIA-*-OFB` and `ARIA-*-CTR` entries of OpenSSL's
 //! `test/recipes/30-test_evp_data/evpciph_aria.txt` (OpenSSL 3.6.2), which attributes them to
 //! `ARIA-testvector-e.pdf` from the ARIA site. Transcribed from the OpenSSL file.
 //!
 //! RFC 5794 itself publishes only single-block values (Appendix A), so these KISA vectors are the
 //! only published mode answers for ARIA -- and unlike Camellia's and SM4's they line up with these
-//! aliases exactly, in all three modes:
+//! aliases exactly, in all four modes:
 //!
-//! * The CFB128 and CFB8 vectors share the IV `0f1e2d3c..f0` that the CBC vectors use, and are
+//! * The CFB128, CFB8 and OFB vectors share the IV `0f1e2d3c..f0` that the CBC vectors use, and are
 //!   driven through the key's `create_encryptor` with a [`FixedSeedRNG`] whose stream is that IV
 //!   (there is no API for supplying one); the test asserts the returned init data really is the
 //!   vector's IV before comparing any ciphertext. Decryption takes the IV directly.
@@ -17,13 +17,13 @@
 //!   [`ARIA_CTR_128`](bouncycastle_aria::ARIA_CTR_128) docs), so they are straight known-answer
 //!   tests through the key too.
 //!
-//! The same 160-byte plaintext runs through all three modes, and it is the one the ECB and CBC
+//! The same 160-byte plaintext runs through all four modes, and it is the one the ECB and CBC
 //! vectors in `kisa_vectors_tests.rs` use.
 
 mod common;
 
 use bouncycastle_aria::{ARIA128Key, ARIA192Key, ARIA256Key, BLOCK_LEN, CTR_NONCE_LEN};
-use bouncycastle_cipher::modes::{CFB, CFB8, CTR};
+use bouncycastle_cipher::modes::{CFB, CFB8, CTR, OFB};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -33,13 +33,13 @@ use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_rng::FixedSeedRNG;
 use common::bytes;
 
-/// The 160-byte plaintext shared by all nine vectors.
+/// The 160-byte plaintext shared by all twelve vectors.
 const PLAINTEXT: &str = "11111111aaaaaaaa11111111bbbbbbbb11111111cccccccc11111111dddddddd22222222aaaaaaaa22222222bbbbbbbb22222222cccccccc22222222dddddddd33333333aaaaaaaa33333333bbbbbbbb33333333cccccccc33333333dddddddd44444444aaaaaaaa44444444bbbbbbbb44444444cccccccc44444444dddddddd55555555aaaaaaaa55555555bbbbbbbb55555555cccccccc55555555dddddddd";
 
 /// The number of bytes in that plaintext: ten whole blocks.
 const LEN: usize = 160;
 
-/// The IV shared by the CFB128 and CFB8 vectors -- the same one the CBC vectors use.
+/// The IV shared by the CFB128, CFB8 and OFB vectors -- the same one the CBC vectors use.
 const IV: &str = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
 
 const KEY_128: &str = "00112233445566778899aabbccddeeff";
@@ -164,6 +164,46 @@ const CTR_CT_256: &str = concat!(
     "ab2cad944e51d266548e61c6eb0aa1cd",
 );
 
+/// `ARIA-128-OFB` ciphertext.
+const OFB_CT_128: &str = concat!(
+    "3720e53ba7d615383406b09f0a05a200",
+    "0063063f0560083483faeb041c8adece",
+    "f30cf80cefb002a0d280759168ec01db",
+    "3d49f61aced260bd43eec0a2731730ee",
+    "c6fa4f2304319cf8ccac2d7be7833e4f",
+    "8ae6ce967012c1c6badc5d28e7e4144f",
+    "6bf5cebe01253ee202afce4bc61f28de",
+    "c069a6f16f6c8a7dd2afae44148f6ff4",
+    "d0029d5c607b5fa6b8c8a6301cde5c70",
+    "33565cd0b8f0974ab490b236197ba04a",
+);
+/// `ARIA-192-OFB` ciphertext.
+const OFB_CT_192: &str = concat!(
+    "4171f7192bf4495494d2736129640f5c",
+    "c224d26d364b5a06ddde13d0f1e74faa",
+    "846de354c63cda77469d1a2d425c47ff",
+    "41734c71b3fa1fcdc11e0b2de22bfeed",
+    "54898e233df652c75ae136e61de6524e",
+    "62b3f806fb2e8e616eb410a1b9500537",
+    "e327ffb04f19f7f82fde2b122100261f",
+    "81b82723bf936be7beaaf3067d1c0360",
+    "01f1ade71422268d274d7dc6c6ae1970",
+    "b27a5f2c2f39c1d241fe8cac5ccd74e9",
+);
+/// `ARIA-256-OFB` ciphertext.
+const OFB_CT_256: &str = concat!(
+    "26834705b0f2c0e2588d4a7f09009635",
+    "84c256815c4292b59f8d3f966a75b523",
+    "45b4f5f98c785d3f368a8d5ff89b7f95",
+    "0ceab3cd63773c2621d652b8ef98b419",
+    "6afb2c2b30496bc5b7d9e7f9084f9d85",
+    "5f63a511751c8909e7a6deadbe0a67a4",
+    "fb89383ca5d209c6f66f793fc471195c",
+    "476fb9c1eab2ac91e680e454b4f3ed9a",
+    "67fb52f09c29b965b23cfa6f3f6bbb2a",
+    "86c6cdbaa2857bf2486f543231892a52",
+);
+
 fn material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&bytes::<N>(hex_str), KeyType::SymmetricCipherKey)
         .expect("a valid symmetric cipher key")
@@ -172,8 +212,8 @@ fn material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 /// One vector, through the key: encrypted under the vector's own init data, in one call and then
 /// in pieces, and decrypted back both ways.
 ///
-/// `init` is the IV for the CFB modes and the nonce for CTR; the only difference between the three
-/// modes here is its length, which is why one function covers all nine vectors.
+/// `init` is the IV for the CFB modes and OFB and the nonce for CTR; the only difference between
+/// the four modes here is its length, which is why one function covers all twelve vectors.
 fn check<'k, const KEY_LEN: usize, const INIT_DATA_LEN: usize, K>(
     name: &str,
     key: &'k K,
@@ -248,6 +288,38 @@ fn aria_256_cfb_vectors() {
         &ARIA256Key::<CFB>::from_key_material(&material::<32>(KEY_256)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
         CFB_CT_256,
+    );
+}
+
+// ---- OFB -----------------------------------------------------------------------------------
+
+#[test]
+fn aria_128_ofb_vectors() {
+    check::<16, _, _>(
+        "ARIA-128-OFB",
+        &ARIA128Key::<OFB>::from_key_material(&material::<16>(KEY_128)).unwrap(),
+        bytes::<BLOCK_LEN>(IV),
+        OFB_CT_128,
+    );
+}
+
+#[test]
+fn aria_192_ofb_vectors() {
+    check::<24, _, _>(
+        "ARIA-192-OFB",
+        &ARIA192Key::<OFB>::from_key_material(&material::<24>(KEY_192)).unwrap(),
+        bytes::<BLOCK_LEN>(IV),
+        OFB_CT_192,
+    );
+}
+
+#[test]
+fn aria_256_ofb_vectors() {
+    check::<32, _, _>(
+        "ARIA-256-OFB",
+        &ARIA256Key::<OFB>::from_key_material(&material::<32>(KEY_256)).unwrap(),
+        bytes::<BLOCK_LEN>(IV),
+        OFB_CT_256,
     );
 }
 

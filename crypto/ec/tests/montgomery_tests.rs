@@ -8,7 +8,7 @@
 //! any particular brainpool curve's own parameters.
 
 use bouncycastle_ec::hazmat::p256_scalar::{N_LIMBS, P256ScalarField};
-use bouncycastle_ec::montgomery::{redc, widening_mul, widening_square};
+use bouncycastle_ec::montgomery::{redc, widening_mul, widening_mul_into, widening_square};
 use bouncycastle_ec::nat;
 
 const N_PRIME: u64 = 0xccd1c8aaee00bc4f;
@@ -429,4 +429,21 @@ fn widening_square_agrees_with_widening_mul_and_the_all_ones_known_answer_at_l_9
         }
         assert_eq!(widening_square::<9, 18>(&a), widening_mul::<9, 18>(&a, &a), "a = {a:x?}");
     }
+}
+
+/// `widening_mul_into` owes the caller a full overwrite: a prefilled output must come out as
+/// the product, not the product OR'd or added into what was there.
+#[test]
+fn widening_mul_into_overwrites_a_prefilled_output() {
+    let mut rng = Xorshift64(0x5EED_0000_0000_0010);
+    for _ in 0..500 {
+        let a = rng.next_limbs();
+        let b = rng.next_limbs();
+        let mut out = [u64::MAX; 8];
+        widening_mul_into::<4, 8>(&a, &b, &mut out);
+        assert_eq!(out, widening_mul::<4, 8>(&a, &b), "a = {a:x?}, b = {b:x?}");
+    }
+    let mut out = [0x5A5A_5A5A_5A5A_5A5Au64; 8];
+    widening_mul_into::<4, 8>(&[0u64; 4], &[u64::MAX; 4], &mut out);
+    assert_eq!(out, [0u64; 8]);
 }

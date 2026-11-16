@@ -82,6 +82,7 @@ use bouncycastle_blake3 as blake3;
 use bouncycastle_blake3::BLAKE3_KEYED_HASH_NAME;
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::MACError;
+use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
@@ -398,21 +399,31 @@ fn tag_len<T: TagLen>(_: &T) -> usize {
 /// `generator`'s tag into the front of `out`, for the run-time-length finals: `out` must hold
 /// `N` bytes, else `InvalidLength` and nothing is written.
 fn final_into<const N: usize, G: MACGenerator<N>>(
-    generator: G,
+    generator: &mut G,
     out: &mut [u8],
 ) -> Result<usize, MACError> {
     let Some(slot) = out.get_mut(..N).and_then(|s| <&mut [u8; N]>::try_from(s).ok()) else {
         return Err(MACError::InvalidLength("output buffer is smaller than the tag"));
     };
-    Ok(generator.do_final_out(slot))
+    Ok(generator.finish_mac_into(&finish_token(), slot))
+}
+
+/// `generator`'s tag as a `Vec`, for the allocating final.
+fn final_vec<const N: usize, G: MACGenerator<N>>(generator: &mut G) -> Vec<u8> {
+    let mut tag = [0u8; N];
+    generator.finish_mac_into(&finish_token(), &mut tag);
+    tag.to_vec()
 }
 
 /// `mac` as the fixed-length tag `verifier` takes, or `InvalidLength`.
-fn verify_tag<const N: usize, V: MACVerifier<N>>(verifier: V, mac: &[u8]) -> Result<(), MACError> {
+fn verify_tag<const N: usize, V: MACVerifier<N>>(
+    verifier: &mut V,
+    mac: &[u8],
+) -> Result<(), MACError> {
     let Ok(mac) = <&[u8; N]>::try_from(mac) else {
         return Err(MACError::InvalidLength("the tag is not the algorithm's output length"));
     };
-    verifier.do_verify_final(mac)
+    verifier.finish_mac_verify(&finish_token(), mac)
 }
 
 impl MACFactoryWorker<'_, Encrypting> {
@@ -440,24 +451,24 @@ impl MACFactoryWorker<'_, Encrypting> {
     }
 
     /// Produces the tag, the algorithm's output length. Consumes the worker.
-    pub fn do_final(self) -> Vec<u8> {
-        match self {
-            Self::KMAC128(h) => h.do_final().to_vec(),
-            Self::KMAC256(h) => h.do_final().to_vec(),
-            Self::HMAC_SHA224(h) => h.do_final().to_vec(),
-            Self::HMAC_SHA256(h) => h.do_final().to_vec(),
-            Self::HMAC_SHA384(h) => h.do_final().to_vec(),
-            Self::HMAC_SHA512(h) => h.do_final().to_vec(),
-            Self::HMAC_SHA512_224(h) => h.do_final().to_vec(),
-            Self::HMAC_SHA512_256(h) => h.do_final().to_vec(),
-            Self::HMAC_SHA3_224(h) => h.do_final().to_vec(),
-            Self::HMAC_SHA3_256(h) => h.do_final().to_vec(),
-            Self::HMAC_SHA3_384(h) => h.do_final().to_vec(),
-            Self::HMAC_SHA3_512(h) => h.do_final().to_vec(),
-            Self::HMAC_SM3(h) => h.do_final().to_vec(),
-            Self::BLAKE2b_512_MAC(h) => h.do_final().to_vec(),
-            Self::BLAKE2s_256_MAC(h) => h.do_final().to_vec(),
-            Self::BLAKE3KeyedHash(h) => h.do_final().to_vec(),
+    pub fn do_final(mut self) -> Vec<u8> {
+        match &mut self {
+            Self::KMAC128(h) => final_vec(h),
+            Self::KMAC256(h) => final_vec(h),
+            Self::HMAC_SHA224(h) => final_vec(h),
+            Self::HMAC_SHA256(h) => final_vec(h),
+            Self::HMAC_SHA384(h) => final_vec(h),
+            Self::HMAC_SHA512(h) => final_vec(h),
+            Self::HMAC_SHA512_224(h) => final_vec(h),
+            Self::HMAC_SHA512_256(h) => final_vec(h),
+            Self::HMAC_SHA3_224(h) => final_vec(h),
+            Self::HMAC_SHA3_256(h) => final_vec(h),
+            Self::HMAC_SHA3_384(h) => final_vec(h),
+            Self::HMAC_SHA3_512(h) => final_vec(h),
+            Self::HMAC_SM3(h) => final_vec(h),
+            Self::BLAKE2b_512_MAC(h) => final_vec(h),
+            Self::BLAKE2s_256_MAC(h) => final_vec(h),
+            Self::BLAKE3KeyedHash(h) => final_vec(h),
         }
     }
 
@@ -466,9 +477,9 @@ impl MACFactoryWorker<'_, Encrypting> {
     ///
     /// # Errors
     /// [`MACError::InvalidLength`] if `out` is shorter than the tag; it is left zeroized.
-    pub fn do_final_out(self, out: &mut [u8]) -> Result<usize, MACError> {
+    pub fn do_final_out(mut self, out: &mut [u8]) -> Result<usize, MACError> {
         out.fill(0);
-        match self {
+        match &mut self {
             Self::KMAC128(h) => final_into(h, out),
             Self::KMAC256(h) => final_into(h, out),
             Self::HMAC_SHA224(h) => final_into(h, out),
@@ -518,8 +529,8 @@ impl MACFactoryWorker<'_, Decrypting> {
     /// # Errors
     /// [`MACError::InvalidLength`] if `mac` is not the algorithm's output length;
     /// [`MACError::VerificationFailed`] if it is not the tag of the message under the key.
-    pub fn do_verify_final(self, mac: &[u8]) -> Result<(), MACError> {
-        match self {
+    pub fn do_verify_final(mut self, mac: &[u8]) -> Result<(), MACError> {
+        match &mut self {
             Self::KMAC128(h) => verify_tag(h, mac),
             Self::KMAC256(h) => verify_tag(h, mac),
             Self::HMAC_SHA224(h) => verify_tag(h, mac),

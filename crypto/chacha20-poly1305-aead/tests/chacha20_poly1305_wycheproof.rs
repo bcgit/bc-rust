@@ -62,7 +62,7 @@ fn wycheproof_chacha20_poly1305() {
                 assert!(out.iter().all(|&b| b == 0), "tcId {id}");
                 let mut in_place = ct.clone();
                 assert_eq!(
-                    key.decrypt_detached_in_place(&nonce, &aad, &mut in_place, &tag),
+                    key.decrypt_detached_inplace(&nonce, &aad, &mut in_place, &tag),
                     Err(SymmetricCipherError::AEADTagCheckFailed),
                     "tcId {id}"
                 );

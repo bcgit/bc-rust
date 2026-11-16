@@ -55,7 +55,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::DeterministicSigningKey;
 use bouncycastle_core::signature_key::{SignatureAlgorithm, SigningKey, VerifyingKey};
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmInfo, Hash, RNG, SignatureSigner, SignatureVerifier,
+    Algorithm, AlgorithmInfo, FinishToken, Hash, RNG, SignatureSigner, SignatureVerifier,
 };
 use bouncycastle_ec::hazmat::sm2::Sm2FieldElement;
 use bouncycastle_ec::hazmat::sm2_comb::comb_multiply_base_point;
@@ -101,9 +101,9 @@ pub struct SM2Verifier<'k> {
 }
 
 /// `e` from the (already `ZA`-prefixed) running hash, per §6.1 step A2 / §7.1 step B4.
-fn e_from_hash(hash: SM3) -> Sm2ScalarField {
+fn e_from_hash(hash: &mut SM3, token: &FinishToken) -> Sm2ScalarField {
     let mut e_bytes = [0u8; 32];
-    hash.do_final_out(&mut e_bytes);
+    hash.finish_into(token, &mut e_bytes);
     Sm2ScalarField::from_limbs(sm2_sec1::limbs_from_be_bytes(&e_bytes))
 }
 
@@ -125,10 +125,10 @@ fn x_affine_of_signing_point(point: &Sm2JacobianPoint) -> Sm2FieldElement {
 /// §6.1 steps A4-A7, given `k` already generated (step A3) by one of `SM2`'s randomised methods.
 /// Returns `None` for step A5's `r = 0`/`r + k = n` or step A6's `s = 0`, on which
 /// [`sign_with_random_k`] goes back to step A3.
-fn sign_with_k(sk: &SM2PrivateKey, e: &Sm2ScalarField, k: Sm2Scalar) -> Option<[u8; SIG_LEN]> {
-    let mut k_field = Sm2ScalarField::from_secret(&k);
+fn sign_with_k(sk: &SM2PrivateKey, e: &Sm2ScalarField, k: &Sm2Scalar) -> Option<[u8; SIG_LEN]> {
+    let mut k_field = Sm2ScalarField::from_secret(k);
 
-    let r_point = comb_multiply_base_point(&k); // step A4
+    let r_point = comb_multiply_base_point(k); // step A4
     let x1 = x_affine_of_signing_point(&r_point); // step A4's x1
     let x1_field = Sm2ScalarField::from_limbs(x1.to_limbs());
     let r = e.add(&x1_field); // step A5
@@ -253,19 +253,19 @@ impl SignatureSigner<SIG_LEN> for SM2Signer<'_> {
         self.hash.do_update(msg_chunk);
     }
 
-    fn do_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
-        let e = e_from_hash(self.hash);
+    fn finish_signature_into(
+        &mut self,
+        token: &FinishToken,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        output.fill(0);
+        let e = e_from_hash(&mut self.hash, token);
         // Steps A5 and A6 send `r = 0`, `r + k = n` and `s = 0` back to step A3 for a new `k`.
         // `k` was drawn when this signer was created and there is no RNG here to draw another
         // from, so the failure is reported instead; each case has probability about 2^-256.
-        sign_with_k(self.sk, &e, self.k).ok_or(SignatureError::GenericError(
+        *output = sign_with_k(self.sk, &e, &self.k).ok_or(SignatureError::GenericError(
             "SM2 produced r = 0, r + k = n or s = 0; create a fresh signer and sign again",
-        ))
-    }
-
-    fn do_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
-        output.fill(0);
-        *output = self.do_final()?;
+        ))?;
         Ok(SIG_LEN)
     }
 }
@@ -285,13 +285,22 @@ impl SignatureVerifier for SM2Verifier<'_> {
         self.hash.do_update(msg_chunk);
     }
 
-    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
-        verify_final(self.hash, self.pk, sig)
+    fn finish_signature_verify(
+        &mut self,
+        token: &FinishToken,
+        sig: &[u8],
+    ) -> Result<(), SignatureError> {
+        verify_final(&mut self.hash, token, self.pk, sig)
     }
 }
 
 /// Steps B1-B7 of the verification, given the `ZA`-primed hash with the message absorbed.
-fn verify_final(hash: SM3, pk: &SM2PublicKey, sig: &[u8]) -> Result<(), SignatureError> {
+fn verify_final(
+    hash: &mut SM3,
+    token: &FinishToken,
+    pk: &SM2PublicKey,
+    sig: &[u8],
+) -> Result<(), SignatureError> {
     // Exactly SIG_LEN, not "at least": the raw encoding is two fixed-width integers and
     // nothing else, so trailing bytes make this a different, malformed encoding rather than a
     // valid signature in a roomy buffer. Accepting them would let anyone turn one valid
@@ -312,7 +321,7 @@ fn verify_final(hash: SM3, pk: &SM2PublicKey, sig: &[u8]) -> Result<(), Signatur
     let r = Sm2ScalarField::from_limbs(r_limbs);
     let s = Sm2ScalarField::from_limbs(s_limbs);
 
-    let e = e_from_hash(hash); // steps B3-B4
+    let e = e_from_hash(hash, token); // steps B3-B4
 
     let t = r.add(&s); // step B5
     if t == Sm2ScalarField::ZERO {

@@ -196,16 +196,16 @@ fn the_hazmat_halves_compose_to_the_tag() {
     let mut inner = inner_state(&key);
     inner.do_update(MSG);
     let mut out = [0xEEu8; 40];
-    assert_eq!(finish_out(&key, inner, &mut out), 32);
+    assert_eq!(finish_out(&key, &mut inner, &mut out), 32);
     assert_eq!(out[..32], key.mac(MSG));
     assert_eq!(out[32..], [0u8; 8]);
 
     // A fresh inner state is the key's, not a default hash: finished at once it is the empty
     // message's tag.
-    assert_eq!(finish_out(&key, inner_state(&key), &mut out), 32);
+    assert_eq!(finish_out(&key, &mut inner_state(&key), &mut out), 32);
     assert_eq!(out[..32], key.mac(b""));
 
     let mut short = [0xEEu8; 16];
-    assert_eq!(finish_out(&key, inner_state(&key), &mut short), 16);
+    assert_eq!(finish_out(&key, &mut inner_state(&key), &mut short), 16);
     assert_eq!(short, key.mac(b"")[..16]);
 }

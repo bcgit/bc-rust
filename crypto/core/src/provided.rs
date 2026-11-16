@@ -91,7 +91,7 @@ where
 ///
 /// # Errors
 /// Any error of the worker's streaming methods.
-pub(crate) fn encrypt_detached_in_place<
+pub(crate) fn encrypt_detached_inplace<
     E,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
@@ -210,7 +210,7 @@ where
 /// # Errors
 /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, or any error of the
 /// worker's streaming methods.
-pub(crate) fn decrypt_detached_in_place<
+pub(crate) fn decrypt_detached_inplace<
     D,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,

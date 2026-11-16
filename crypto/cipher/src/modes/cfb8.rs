@@ -55,8 +55,8 @@ use bouncycastle_core::hazmat::{
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    Algorithm, FinishToken, RNG, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use core::marker::PhantomData;
 
@@ -93,6 +93,12 @@ where
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
+            )
+        };
         // `I1 = IV`.
         let iv = random_iv::<BLOCK_LEN>(rng)?;
         Ok((Cfb8 { perm: state, chain: iv, _dir: PhantomData }, iv))
@@ -102,6 +108,12 @@ where
         state: &'k Self::KeyState,
         iv: &[u8; BLOCK_LEN],
     ) -> Self::Encryptor<'k> {
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
+            )
+        };
         Cfb8 { perm: state, chain: *iv, _dir: PhantomData }
     }
 }
@@ -256,7 +268,10 @@ where
     }
 
     /// Nothing is held back, so there is nothing to finish.
-    fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn finish_encrypt(
+        &mut self,
+        _token: &FinishToken,
+    ) -> Result<([u8; 0], usize), SymmetricCipherError> {
         Ok(([], 0))
     }
 
@@ -318,7 +333,10 @@ where
     }
 
     /// Nothing is held back, so there is nothing to finish.
-    fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn finish_decrypt(
+        &mut self,
+        _token: &FinishToken,
+    ) -> Result<([u8; 0], usize), SymmetricCipherError> {
         Ok(([], 0))
     }
 

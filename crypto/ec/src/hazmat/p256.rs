@@ -27,6 +27,7 @@
 //! Every step is a fixed, public-length loop over fixed-size arrays with a single masked select,
 //! so the whole routine is trivially constant-time in the operands.
 
+use crate::curve::FieldElement;
 use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
@@ -78,6 +79,12 @@ impl P256FieldElement {
     /// Returns the canonical little-endian `u64` limbs, `< p`.
     pub fn to_limbs(&self) -> [u64; 4] {
         self.0
+    }
+
+    /// [`Self::to_limbs`] into `out`: for a secret value, so that no copy of it is staged in a
+    /// return slot.
+    pub fn to_limbs_into(&self, out: &mut [u64; 4]) {
+        out.copy_from_slice(&self.0);
     }
 
     /// The limbs exactly as this type stores them: the canonical value itself, so this is
@@ -411,4 +418,54 @@ fn reduce(t: &[u64; 8]) -> [u64; 4] {
     ct::conditional_select(Condition::<u64>::from_lsb(borrow), &v, &diff, &mut selected);
     debug_assert_eq!(selected[4], 0, "P-256 reduction left a value >= 2^256");
     [selected[0], selected[1], selected[2], selected[3]]
+}
+
+impl FieldElement for P256FieldElement {
+    type Limbs = [u64; 4];
+    const ZERO: Self = P256FieldElement::ZERO;
+    const ONE: Self = P256FieldElement::ONE;
+
+    fn from_limbs(limbs: [u64; 4]) -> Self {
+        P256FieldElement::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 4] {
+        P256FieldElement::to_limbs(self)
+    }
+
+    fn to_limbs_into(&self, out: &mut [u64; 4]) {
+        P256FieldElement::to_limbs_into(self, out)
+    }
+
+    fn is_zero(&self) -> Condition<u64> {
+        P256FieldElement::is_zero(self)
+    }
+
+    fn zeroize(&mut self) {
+        P256FieldElement::zeroize(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        P256FieldElement::add(self, other)
+    }
+
+    fn sub(&self, other: &Self) -> Self {
+        P256FieldElement::sub(self, other)
+    }
+
+    fn negate(&self) -> Self {
+        P256FieldElement::negate(self)
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        P256FieldElement::mul(self, other)
+    }
+
+    fn square(&self) -> Self {
+        P256FieldElement::square(self)
+    }
+
+    fn invert(&self) -> Self {
+        P256FieldElement::invert(self)
+    }
 }

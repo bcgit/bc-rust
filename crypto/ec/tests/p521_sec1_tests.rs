@@ -9,6 +9,7 @@ use bouncycastle_ec::hazmat::p521::P521FieldElement;
 use bouncycastle_ec::hazmat::p521_sec1::{
     decode, decode_point, encode_compressed, encode_uncompressed,
 };
+use bouncycastle_hex::decode as hex_decode;
 
 const G_X: [u64; 9] = [
     0xf97e7e31c2e5bd66, 0x3348b3c1856a429b, 0xfe1dc127a2ffa8de, 0xa14b5e77efe75928,
@@ -142,4 +143,33 @@ fn decode_rejects_malformed_input() {
     let mut y_too_big = UNCOMPRESSED_G;
     y_too_big[67..133].fill(0xff);
     assert_eq!(decode(&y_too_big), None);
+}
+
+/// SP 800-186 Appendix D.1.1.1 step 2 on its own: `(x, y)` is on the curve, so `(x + p, y)` is
+/// too once reduced, and only the coordinate range check rejects its encodings. Computed in
+/// Python from the curve's `p`, `a` and `b`: the smallest `x` with `x^3 + ax + b` a residue
+/// (`x = 0`), `y` its root `(x^3 + ax + b)^((p + 1) / 4)`, and `x + p`, which fits the
+/// 66-byte field.
+#[test]
+fn decode_rejects_a_coordinate_at_or_above_p_that_is_on_the_curve_after_reduction() {
+    let point = hex_decode(
+        "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000012df13601594a883ef2d935e44bb90bf4d6619b74e52af7552f97769011c0719eb439cfab2a88d40fe59a2bed1f43557169a2d0a2ccd280c607b92bbf51ffe0b078",
+    )
+    .unwrap();
+    assert!(decode(&point).is_some(), "(x, y) is on the curve");
+    let x_plus_p = hex_decode(
+        "0401ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff012df13601594a883ef2d935e44bb90bf4d6619b74e52af7552f97769011c0719eb439cfab2a88d40fe59a2bed1f43557169a2d0a2ccd280c607b92bbf51ffe0b078",
+    )
+    .unwrap();
+    assert_eq!(decode(&x_plus_p), None, "uncompressed, x + p");
+    let compressed = hex_decode(
+        "0201ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    )
+    .unwrap();
+    assert_eq!(decode(&compressed), None, "compressed, x + p");
+    let y_plus_p = hex_decode(
+        "04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000032df13601594a883ef2d935e44bb90bf4d6619b74e52af7552f97769011c0719eb439cfab2a88d40fe59a2bed1f43557169a2d0a2ccd280c607b92bbf51ffe0b077",
+    )
+    .unwrap();
+    assert_eq!(decode(&y_plus_p), None, "uncompressed, y + p");
 }

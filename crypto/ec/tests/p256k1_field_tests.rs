@@ -367,3 +367,21 @@ fn known_answer_mul_reaching_the_third_fold() {
     assert_ne!(fe(a).mul(&fe(b)), fe(short_by_c), "the result a two-fold-only reduction gives");
     assert_eq!(fe(expected).sub(&fe(short_by_c)).to_limbs(), [0x00000001000003d1, 0, 0, 0], "C");
 }
+
+/// `to_limbs_into` owes the caller a full overwrite of a prefilled buffer with the canonical
+/// limbs, the same ones `to_limbs` returns.
+#[test]
+fn to_limbs_into_overwrites_a_prefilled_buffer_with_the_canonical_limbs() {
+    let mut patterns = [[0u64; 4], [u64::MAX; 4], [0u64; 4], [0u64; 4]];
+    patterns[2][0] = 1;
+    for (i, limb) in patterns[3].iter_mut().enumerate() {
+        *limb = 0x0123_4567_89ab_cdef_u64.rotate_left(7 * i as u32);
+    }
+    for limbs in patterns {
+        let x = P256K1FieldElement::from_limbs(limbs);
+        let mut out = [u64::MAX; 4];
+        x.to_limbs_into(&mut out);
+        assert_eq!(out, x.to_limbs(), "{limbs:x?}");
+        assert_eq!(P256K1FieldElement::from_limbs(out), x);
+    }
+}

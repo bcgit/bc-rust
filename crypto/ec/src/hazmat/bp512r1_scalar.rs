@@ -5,6 +5,7 @@
 //! [`crate::hazmat::p256_scalar`]), just delegating the widening-multiply/REDC work to the shared
 //! module instead of hand-writing it again.
 
+use crate::curve::{PublicScalar, ScalarFieldElement, SecretScalar};
 use crate::montgomery;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
@@ -217,10 +218,22 @@ impl PartialEq for Bp512r1ScalarField {
 impl Eq for Bp512r1ScalarField {}
 
 fn reduce_once(limbs: [u64; 8]) -> [u64; 8] {
-    let (diff, borrow) = crate::nat::sub(&limbs, &N_LIMBS);
-    let mut result = [0u64; 8];
-    ct::conditional_select(Condition::<u64>::from_lsb(borrow), &limbs, &diff, &mut result);
-    result
+    let mut out = [0u64; 8];
+    reduce_once_into(&limbs, &mut out);
+    out
+}
+
+/// The one conditional subtraction of `n`, of a borrowed value into `out`, in place: `out` takes `limbs - n`, and
+/// `limbs` is moved back in under the borrow's mask where the subtraction borrowed. For a
+/// secret value, so that no copy of it is staged in a return slot: `limbs` is the caller's and
+/// `out` the new `Secret`'s array.
+fn reduce_once_into(limbs: &[u64; 8], out: &mut [u64; 8]) {
+    out.copy_from_slice(limbs);
+    let borrow = crate::nat::sub_assign(out, &N_LIMBS);
+    let keep = Condition::<u64>::from_lsb(borrow);
+    for i in 0..8 {
+        keep.mov(limbs[i], &mut out[i]);
+    }
 }
 
 /// A scalar mod `n`, `< n`, held in `Secret`. See [`crate::hazmat::p256_scalar::P256Scalar`]'s
@@ -230,9 +243,18 @@ pub struct Bp512r1Scalar(Secret<[u64; 8]>);
 
 impl Bp512r1Scalar {
     /// Builds a secret scalar from little-endian `u64` limbs, reducing once if `limbs >= n`.
-    pub fn from_limbs(limbs: [u64; 8]) -> Self {
+    pub fn from_limbs(mut limbs: [u64; 8]) -> Self {
+        let scalar = Self::from_borrowed_limbs(&limbs);
+        bouncycastle_utils::secret::zeroize_in_place(&mut limbs);
+        scalar
+    }
+
+    /// As [`Self::from_limbs`], from limbs the caller holds (a `Secret`'s, usually): the
+    /// reduction is made in the new `Secret` itself, so no by-value copy of the value is staged
+    /// on the way. The returned scalar is moved out, which a move does not wipe.
+    pub fn from_borrowed_limbs(limbs: &[u64; 8]) -> Self {
         let mut secret = Secret::<[u64; 8]>::new();
-        *secret = reduce_once(limbs);
+        reduce_once_into(limbs, &mut secret);
         Self(secret)
     }
 
@@ -277,5 +299,94 @@ impl Bp512r1PublicScalar {
     /// [`crate::inverse_vartime`].
     pub fn invert_vartime(&self) -> Bp512r1ScalarField {
         Bp512r1ScalarField::from_limbs(crate::inverse_vartime::mod_inverse(&self.0, &N_LIMBS))
+    }
+}
+
+impl SecretScalar for Bp512r1Scalar {
+    type Limbs = [u64; 8];
+    type Bytes = [u8; 64];
+
+    fn from_limbs(limbs: [u64; 8]) -> Self {
+        Bp512r1Scalar::from_limbs(limbs)
+    }
+
+    fn from_borrowed_limbs(limbs: &[u64; 8]) -> Self {
+        Bp512r1Scalar::from_borrowed_limbs(limbs)
+    }
+
+    fn from_be_bytes(bytes: &[u8; 64]) -> Self {
+        Bp512r1Scalar::from_be_bytes(bytes)
+    }
+
+    fn to_be_bytes(&self) -> [u8; 64] {
+        Bp512r1Scalar::to_be_bytes(self)
+    }
+}
+
+impl ScalarFieldElement for Bp512r1ScalarField {
+    type Limbs = [u64; 8];
+    type Secret = Bp512r1Scalar;
+    const ZERO: Self = Bp512r1ScalarField::ZERO;
+    const ONE: Self = Bp512r1ScalarField::ONE;
+
+    fn from_limbs(limbs: [u64; 8]) -> Self {
+        Bp512r1ScalarField::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 8] {
+        Bp512r1ScalarField::to_limbs(self)
+    }
+
+    fn is_zero(&self) -> Condition<u64> {
+        Bp512r1ScalarField::is_zero(self)
+    }
+
+    fn zeroize(&mut self) {
+        Bp512r1ScalarField::zeroize(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        Bp512r1ScalarField::add(self, other)
+    }
+
+    fn sub(&self, other: &Self) -> Self {
+        Bp512r1ScalarField::sub(self, other)
+    }
+
+    fn negate(&self) -> Self {
+        Bp512r1ScalarField::negate(self)
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        Bp512r1ScalarField::mul(self, other)
+    }
+
+    fn square(&self) -> Self {
+        Bp512r1ScalarField::square(self)
+    }
+
+    fn from_secret(secret: &Bp512r1Scalar) -> Self {
+        Bp512r1ScalarField::from_secret(secret)
+    }
+
+    fn invert(&self) -> Self {
+        Bp512r1ScalarField::invert(self)
+    }
+}
+
+impl PublicScalar for Bp512r1PublicScalar {
+    type Limbs = [u64; 8];
+    type Field = Bp512r1ScalarField;
+
+    fn from_limbs(limbs: [u64; 8]) -> Self {
+        Bp512r1PublicScalar::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 8] {
+        Bp512r1PublicScalar::to_limbs(self)
+    }
+
+    fn invert_vartime(&self) -> Bp512r1ScalarField {
+        Bp512r1PublicScalar::invert_vartime(self)
     }
 }

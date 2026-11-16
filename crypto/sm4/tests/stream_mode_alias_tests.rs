@@ -1,5 +1,5 @@
-//! The stream modes CFB, CFB8 and CTR through the SM4 keys, via the shared suite: any length,
-//! any chunking, fresh init data per encryption, and the three modes distinct from each other.
+//! The stream modes CFB, CFB8, OFB and CTR through the SM4 keys, via the shared suite: any length,
+//! any chunking, fresh init data per encryption, and the four modes distinct from each other.
 //! The known answers are in the vector suites beside this file, and which type each alias
 //! resolves to is pinned in `alg_name_tests.rs`.
 
@@ -29,4 +29,9 @@ fn cfb128_and_cfb8_are_not_interchangeable() {
 #[test]
 fn ctr_is_not_cfb() {
     stream::ctr_is_not_cfb::<SM4Internal, 16>();
+}
+
+#[test]
+fn ofb_is_not_cfb() {
+    stream::ofb_is_not_cfb::<SM4Internal, 16>();
 }

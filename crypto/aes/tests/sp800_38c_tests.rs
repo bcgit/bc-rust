@@ -118,11 +118,11 @@ fn check_vector<
     // --- Sec 6.1 and 6.2 in place, detached tag ---
     let mut buf = plaintext.clone();
     let tag =
-        Mode::<NONCE_LEN, TAG_LEN>::encrypt_detached_in_place_nonce(&perm, &nonce, aad, &mut buf)
+        Mode::<NONCE_LEN, TAG_LEN>::encrypt_detached_inplace_nonce(&perm, &nonce, aad, &mut buf)
             .expect("encryption");
     assert_eq!(buf, want_ct, "{name}: ciphertext");
     assert_eq!(&tag, want_tag, "{name}: tag");
-    Mode::<NONCE_LEN, TAG_LEN>::decrypt_detached_in_place(&perm, &nonce, aad, &mut buf, want_tag)
+    Mode::<NONCE_LEN, TAG_LEN>::decrypt_detached_inplace(&perm, &nonce, aad, &mut buf, want_tag)
         .expect("decryption");
     assert_eq!(buf, plaintext, "{name}: detached round trip");
 
@@ -645,7 +645,7 @@ fn packet_key_one_shots_take_the_frame_and_agree_with_the_declared_length_key() 
         assert_eq!(written, msg_len);
         let mut direct = msg.clone();
         let direct_tag =
-            declared.encrypt_detached_in_place_nonce(&nonce, &aad, &mut direct).expect("in place");
+            declared.encrypt_detached_inplace_nonce(&nonce, &aad, &mut direct).expect("in place");
         assert_eq!((&detached, tag), (&direct, direct_tag), "{what}: detached agrees");
 
         let mut inline = vec![0u8; msg_len + 16];
@@ -668,7 +668,7 @@ fn packet_key_one_shots_take_the_frame_and_agree_with_the_declared_length_key() 
             msg_len
         );
         assert_eq!(pt, msg, "{what}: inline round trip");
-        declared.decrypt_detached_in_place(&nonce, &aad, &mut direct, &tag).expect("in place");
+        declared.decrypt_detached_inplace(&nonce, &aad, &mut direct, &tag).expect("in place");
         assert_eq!(direct, msg, "{what}: in-place round trip");
 
         // The supplied-nonce forms, each opened by the matching decrypt.
@@ -709,7 +709,7 @@ fn packet_key_one_shots_take_the_frame_and_agree_with_the_declared_length_key() 
 
         let mut direct = msg.clone();
         let tag = declared
-            .encrypt_detached_in_place_nonce(&nonce, &aad, &mut direct)
+            .encrypt_detached_inplace_nonce(&nonce, &aad, &mut direct)
             .unwrap_or_else(|e| panic!("{what}: the declared-length key takes any length: {e:?}"));
         let n = declared.encrypt_with_aad_nonce_out(&nonce, &aad, &msg, &mut inline).unwrap();
         assert_eq!(n, msg_len + 16);
@@ -753,7 +753,7 @@ fn packet_key_one_shots_take_the_frame_and_agree_with_the_declared_length_key() 
     assert_eq!(pt, [0u8; 48]);
     let mut buf = inline[..48].to_vec();
     assert!(matches!(
-        declared.decrypt_detached_in_place(&nonce, b"hdr", &mut buf, &[0u8; 16]),
+        declared.decrypt_detached_inplace(&nonce, b"hdr", &mut buf, &[0u8; 16]),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
     assert_eq!(buf, [0u8; 48]);
@@ -1125,12 +1125,12 @@ fn payload_longer_than_the_q_limit_is_refused() {
     let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c];
     let mut buf = vec![0u8; 65536];
     assert!(
-        Mode::encrypt_detached_in_place_nonce(&perm, &nonce, &[], &mut buf[..65535]).is_ok(),
+        Mode::encrypt_detached_inplace_nonce(&perm, &nonce, &[], &mut buf[..65535]).is_ok(),
         "2^16 - 1 is accepted"
     );
     assert!(
         matches!(
-            Mode::encrypt_detached_in_place_nonce(&perm, &nonce, &[], &mut buf),
+            Mode::encrypt_detached_inplace_nonce(&perm, &nonce, &[], &mut buf),
             Err(SymmetricCipherError::GenericError(_))
         ),
         "2^16 does not fit [p]_16"
@@ -1231,9 +1231,8 @@ fn supplied_nonce_forms_agree_with_the_in_place_one_shot_at_any_a1_nonce_length(
         key.encrypt_detached_nonce_out(&nonce, &aad, &frame, &mut detached).expect("seal");
     assert_eq!(n, 48);
     let mut direct = frame;
-    let direct_tag =
-        CCM::<13, 8>::encrypt_detached_in_place_nonce(&perm, &nonce, &aad, &mut direct)
-            .expect("in place");
+    let direct_tag = CCM::<13, 8>::encrypt_detached_inplace_nonce(&perm, &nonce, &aad, &mut direct)
+        .expect("in place");
     assert_eq!((detached, tag), (direct, direct_tag), "the two routes to Sec 6.1 agree");
     let mut inline = [0u8; 56];
     assert_eq!(

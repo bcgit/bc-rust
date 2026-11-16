@@ -17,6 +17,7 @@
 #![allow(private_bounds)]
 
 pub mod bitslice;
+pub mod const_str;
 pub mod ct;
 pub mod secret;
 pub mod suspendable_state;

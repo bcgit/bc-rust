@@ -75,3 +75,25 @@ fn is_zero() {
     assert!(!nat::is_zero(&[0, 0, 0, 1]).to_bool());
     assert!(!nat::is_zero(&[0, 0, 1, 0]).to_bool());
 }
+
+/// The in-place forms give `add` and `sub`'s results and carries, on the same inputs.
+#[test]
+fn add_assign_and_sub_assign_match_the_by_value_forms() {
+    let cases: [([u64; 3], [u64; 3]); 4] = [
+        ([1, 2, 3], [4, 5, 6]),
+        ([u64::MAX, u64::MAX, 0], [1, 0, 0]),
+        ([0, 0, 0], [1, 0, 0]),
+        ([u64::MAX; 3], [u64::MAX; 3]),
+    ];
+    for (a, b) in cases {
+        let (sum, carry) = nat::add(&a, &b);
+        let mut acc = a;
+        assert_eq!(nat::add_assign(&mut acc, &b), carry);
+        assert_eq!(acc, sum);
+
+        let (diff, borrow) = nat::sub(&a, &b);
+        let mut acc = a;
+        assert_eq!(nat::sub_assign(&mut acc, &b), borrow);
+        assert_eq!(acc, diff);
+    }
+}

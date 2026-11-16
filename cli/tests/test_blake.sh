@@ -67,7 +67,9 @@ blake3_input() {
 bin_hex() {
     "$@" >"$TMP/.bin"
     assert_eq "$(tail -c 1 "$TMP/.bin" | "$BC_RUST" hex-encode)" 0a "binary output ends in a newline"
-    head -c -1 "$TMP/.bin" | "$BC_RUST" hex-encode
+    # Everything but the newline. `head -c -1` is a GNU extension that BSD head rejects, so
+    # the count is computed.
+    head -c "$(($(wc -c <"$TMP/.bin") - 1))" "$TMP/.bin" | "$BC_RUST" hex-encode
 }
 
 # ---- blake2b-512 / blake2s-256 --------------------------------------------------------------

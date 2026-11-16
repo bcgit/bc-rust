@@ -31,17 +31,15 @@ use bouncycastle::core::signature_key::{
 use bouncycastle::core::traits::{
     RNG, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
 };
+use bouncycastle::ec::curve::Curve;
+use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
+use bouncycastle::ecdsa::ecdsa::{
+    ECDSABp256r1, ECDSABp384r1, ECDSABp512r1, ECDSAP256, ECDSAP384, ECDSAP521, ECDSASecp256K1,
+};
+use bouncycastle::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
 use bouncycastle::ecdsa::keys_common::DerivePublicKey;
-use bouncycastle::ecdsa::{
-    ecdsa_bp256r1, ecdsa_bp256r1::ECDSABp256r1, ecdsa_bp384r1, ecdsa_bp384r1::ECDSABp384r1,
-    ecdsa_bp512r1, ecdsa_bp512r1::ECDSABp512r1, ecdsa_p256, ecdsa_p256::ECDSAP256, ecdsa_p256k1,
-    ecdsa_p256k1::ECDSASecp256K1, ecdsa_p384, ecdsa_p384::ECDSAP384, ecdsa_p521,
-    ecdsa_p521::ECDSAP521,
-};
-use bouncycastle::ecdsa::{
-    keys_bp256r1, keys_bp384r1, keys_bp512r1, keys_p256, keys_p256k1, keys_p384, keys_p521,
-};
 use bouncycastle::rng::HashDRBG_SHA512;
+use bouncycastle::sha2::{SHA256, SHA384, SHA512};
 use clap::ValueEnum;
 use std::process::exit;
 
@@ -203,13 +201,13 @@ pub(crate) fn ecdsa_p256_cmd(
 ) {
     ecdsa_cmd::<
         ECDSAP256,
-        _,
-        _,
-        { keys_p256::SK_LEN },
-        { keys_p256::PK_LEN },
-        { ecdsa_p256::SIG_LEN },
+        ECDSAPublicKey<P256, SHA256>,
+        ECDSAPrivateKey<P256, SHA256>,
+        { P256::SCALAR_LEN },
+        { P256::PK_UNCOMPRESSED_LEN },
+        { P256::SIG_LEN },
     >(
-        action, keys_p256::keygen, skfile, pkfile, sigfile, output_hex, deterministic, "ECDSA P-256"
+        action, keygen::<P256, _>, skfile, pkfile, sigfile, output_hex, deterministic, "ECDSA P-256"
     )
 }
 
@@ -223,13 +221,13 @@ pub(crate) fn ecdsa_p384_cmd(
 ) {
     ecdsa_cmd::<
         ECDSAP384,
-        _,
-        _,
-        { keys_p384::SK_LEN },
-        { keys_p384::PK_LEN },
-        { ecdsa_p384::SIG_LEN },
+        ECDSAPublicKey<P384, SHA384>,
+        ECDSAPrivateKey<P384, SHA384>,
+        { P384::SCALAR_LEN },
+        { P384::PK_UNCOMPRESSED_LEN },
+        { P384::SIG_LEN },
     >(
-        action, keys_p384::keygen, skfile, pkfile, sigfile, output_hex, deterministic, "ECDSA P-384"
+        action, keygen::<P384, _>, skfile, pkfile, sigfile, output_hex, deterministic, "ECDSA P-384"
     )
 }
 
@@ -243,13 +241,13 @@ pub(crate) fn ecdsa_p521_cmd(
 ) {
     ecdsa_cmd::<
         ECDSAP521,
-        _,
-        _,
-        { keys_p521::SK_LEN },
-        { keys_p521::PK_LEN },
-        { ecdsa_p521::SIG_LEN },
+        ECDSAPublicKey<P521, SHA512>,
+        ECDSAPrivateKey<P521, SHA512>,
+        { P521::SCALAR_LEN },
+        { P521::PK_UNCOMPRESSED_LEN },
+        { P521::SIG_LEN },
     >(
-        action, keys_p521::keygen, skfile, pkfile, sigfile, output_hex, deterministic, "ECDSA P-521"
+        action, keygen::<P521, _>, skfile, pkfile, sigfile, output_hex, deterministic, "ECDSA P-521"
     )
 }
 
@@ -263,19 +261,13 @@ pub(crate) fn ecdsa_secp256k1_cmd(
 ) {
     ecdsa_cmd::<
         ECDSASecp256K1,
-        _,
-        _,
-        { keys_p256k1::SK_LEN },
-        { keys_p256k1::PK_LEN },
-        { ecdsa_p256k1::SIG_LEN },
+        ECDSAPublicKey<Secp256K1, SHA256>,
+        ECDSAPrivateKey<Secp256K1, SHA256>,
+        { Secp256K1::SCALAR_LEN },
+        { Secp256K1::PK_UNCOMPRESSED_LEN },
+        { Secp256K1::SIG_LEN },
     >(
-        action,
-        keys_p256k1::keygen,
-        skfile,
-        pkfile,
-        sigfile,
-        output_hex,
-        deterministic,
+        action, keygen::<Secp256K1, _>, skfile, pkfile, sigfile, output_hex, deterministic,
         "ECDSA secp256k1",
     )
 }
@@ -290,19 +282,13 @@ pub(crate) fn ecdsa_bp256r1_cmd(
 ) {
     ecdsa_cmd::<
         ECDSABp256r1,
-        _,
-        _,
-        { keys_bp256r1::SK_LEN },
-        { keys_bp256r1::PK_LEN },
-        { ecdsa_bp256r1::SIG_LEN },
+        ECDSAPublicKey<Bp256r1, SHA256>,
+        ECDSAPrivateKey<Bp256r1, SHA256>,
+        { Bp256r1::SCALAR_LEN },
+        { Bp256r1::PK_UNCOMPRESSED_LEN },
+        { Bp256r1::SIG_LEN },
     >(
-        action,
-        keys_bp256r1::keygen,
-        skfile,
-        pkfile,
-        sigfile,
-        output_hex,
-        deterministic,
+        action, keygen::<Bp256r1, _>, skfile, pkfile, sigfile, output_hex, deterministic,
         "ECDSA brainpoolP256r1",
     )
 }
@@ -317,19 +303,13 @@ pub(crate) fn ecdsa_bp384r1_cmd(
 ) {
     ecdsa_cmd::<
         ECDSABp384r1,
-        _,
-        _,
-        { keys_bp384r1::SK_LEN },
-        { keys_bp384r1::PK_LEN },
-        { ecdsa_bp384r1::SIG_LEN },
+        ECDSAPublicKey<Bp384r1, SHA384>,
+        ECDSAPrivateKey<Bp384r1, SHA384>,
+        { Bp384r1::SCALAR_LEN },
+        { Bp384r1::PK_UNCOMPRESSED_LEN },
+        { Bp384r1::SIG_LEN },
     >(
-        action,
-        keys_bp384r1::keygen,
-        skfile,
-        pkfile,
-        sigfile,
-        output_hex,
-        deterministic,
+        action, keygen::<Bp384r1, _>, skfile, pkfile, sigfile, output_hex, deterministic,
         "ECDSA brainpoolP384r1",
     )
 }
@@ -344,19 +324,13 @@ pub(crate) fn ecdsa_bp512r1_cmd(
 ) {
     ecdsa_cmd::<
         ECDSABp512r1,
-        _,
-        _,
-        { keys_bp512r1::SK_LEN },
-        { keys_bp512r1::PK_LEN },
-        { ecdsa_bp512r1::SIG_LEN },
+        ECDSAPublicKey<Bp512r1, SHA512>,
+        ECDSAPrivateKey<Bp512r1, SHA512>,
+        { Bp512r1::SCALAR_LEN },
+        { Bp512r1::PK_UNCOMPRESSED_LEN },
+        { Bp512r1::SIG_LEN },
     >(
-        action,
-        keys_bp512r1::keygen,
-        skfile,
-        pkfile,
-        sigfile,
-        output_hex,
-        deterministic,
+        action, keygen::<Bp512r1, _>, skfile, pkfile, sigfile, output_hex, deterministic,
         "ECDSA brainpoolP512r1",
     )
 }

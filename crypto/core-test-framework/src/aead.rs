@@ -254,14 +254,14 @@ impl TestFrameworkAEADCipher {
             // the in-place one-shots, drawing and supplied-nonce
             let mut buf = msg.to_vec();
             let (ip_nonce, ip_tag) =
-                key.encrypt_detached_in_place(&mut fixed_rng(), aad, &mut buf).unwrap();
+                key.encrypt_detached_inplace(&mut fixed_rng(), aad, &mut buf).unwrap();
             assert_eq!(ip_nonce, pinned_nonce, "len {len}: in place, the pinned nonce");
             assert_eq!((&buf[..], ip_tag), (&detached[..len], detached_tag), "len {len}: in place");
-            key.decrypt_detached_in_place(&ip_nonce, aad, &mut buf, &ip_tag).unwrap();
+            key.decrypt_detached_inplace(&ip_nonce, aad, &mut buf, &ip_tag).unwrap();
             assert_eq!(&buf[..], msg, "len {len}: in-place round trip");
-            let ip_tag = key.encrypt_detached_in_place_nonce(&pinned_nonce, aad, &mut buf).unwrap();
+            let ip_tag = key.encrypt_detached_inplace_nonce(&pinned_nonce, aad, &mut buf).unwrap();
             assert_eq!((&buf[..], ip_tag), (&detached[..len], detached_tag), "len {len}: in place");
-            key.decrypt_detached_in_place(&pinned_nonce, aad, &mut buf, &ip_tag).unwrap();
+            key.decrypt_detached_inplace(&pinned_nonce, aad, &mut buf, &ip_tag).unwrap();
             assert_eq!(&buf[..], msg, "len {len}: in-place round trip under the nonce");
 
             // the streaming constructor under the pinned RNG draws the pinned nonce, and the
@@ -560,7 +560,7 @@ impl TestFrameworkAEADCipher {
                 "the one-shot decrypt must zeroize the buffer when the tag check fails"
             );
             let mut buf = tampered.clone();
-            match key.decrypt_detached_in_place(&nonce, aad, &mut buf, &tag) {
+            match key.decrypt_detached_inplace(&nonce, aad, &mut buf, &tag) {
                 Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
                 other => panic!("a modified ciphertext must fail in place too, got {other:?}"),
             };
@@ -698,6 +698,60 @@ impl TestFrameworkAEADCipher {
             rec, msg,
             "do_decrypt_out and do_decrypt_final_detached_out must report only their own bytes"
         );
+
+        // a worker held as `Box<dyn ..>` streams through the box and finishes through its
+        // `_boxed` finals, which consume the box: the detached pair, then the inline pair. Last
+        // in the suite, so that its nonce draws shift no earlier check's.
+        let len = self.fixed_message_len.unwrap_or(max_len);
+        let msg = &DUMMY_SEED[..len];
+        let mut boxed_encryptor = || {
+            let (enc, nonce) = key.create_encryptor(rng).unwrap();
+            let mut enc: Box<dyn AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN> + '_> =
+                Box::new(enc);
+            enc.do_update_aad(aad).unwrap();
+            let mut ct = vec![0u8; enc.do_encrypt_out_len(len)];
+            let n = enc.do_encrypt_out(msg, &mut ct).unwrap();
+            ct.truncate(n);
+            (enc, nonce, ct)
+        };
+        let boxed_decryptor = |nonce: &[u8; NONCE_LEN], ct: &[u8]| {
+            let mut dec: Box<dyn AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN> + '_> =
+                Box::new(key.create_decryptor(nonce));
+            dec.do_update_aad(aad).unwrap();
+            let mut pt = vec![0u8; dec.do_decrypt_out_len(ct.len())];
+            let n = dec.do_decrypt_out(ct, &mut pt).unwrap();
+            pt.truncate(n);
+            (dec, pt)
+        };
+
+        let (enc, nonce, mut ct) = boxed_encryptor();
+        let mut last = [0u8; FINAL_LEN];
+        let (last_len, tag) = enc.do_encrypt_final_detached_out_boxed(&mut last).unwrap();
+        ct.extend_from_slice(&last[..last_len]);
+        assert_eq!(key.decrypt_detached(&nonce, aad, &ct, &tag).unwrap(), msg, "boxed, detached");
+        let (dec, mut pt) = boxed_decryptor(&nonce, &ct);
+        let last_len = dec.do_decrypt_final_detached_out_boxed(&tag, &mut last).unwrap();
+        pt.extend_from_slice(&last[..last_len]);
+        assert_eq!(pt, msg, "boxed decryptor, detached");
+        let mut bad_tag = tag;
+        bad_tag[0] ^= 1;
+        let (dec, _) = boxed_decryptor(&nonce, &ct);
+        assert!(
+            matches!(
+                dec.do_decrypt_final_detached_out_boxed(&bad_tag, &mut last),
+                Err(SymmetricCipherError::AEADTagCheckFailed)
+            ),
+            "boxed decryptor: a wrong tag must be refused"
+        );
+
+        let (enc, nonce, mut ct) = boxed_encryptor();
+        let (last, last_len) = enc.do_encrypt_final_boxed().unwrap();
+        ct.extend_from_slice(&last[..last_len]);
+        assert_eq!(key.decrypt_with_aad(&nonce, aad, &ct).unwrap(), msg, "boxed, inline");
+        let (dec, mut pt) = boxed_decryptor(&nonce, &ct);
+        let (last, last_len) = dec.do_decrypt_final_boxed().unwrap();
+        pt.extend_from_slice(&last[..last_len]);
+        assert_eq!(pt, msg, "boxed decryptor, inline");
     }
 
     /// The parts of the symmetric-cipher suite an AEAD pair cannot reach through

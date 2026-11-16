@@ -68,7 +68,7 @@ fn seal<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone>(
     plaintext: &[u8],
 ) -> (Vec<u8>, [u8; TAG_LEN]) {
     let mut buf = plaintext.to_vec();
-    let tag = declared_key::<P>().encrypt_detached_in_place_nonce(nonce, aad, &mut buf).unwrap();
+    let tag = declared_key::<P>().encrypt_detached_inplace_nonce(nonce, aad, &mut buf).unwrap();
     (buf, tag)
 }
 
@@ -80,7 +80,7 @@ fn open<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone>(
     tag: &[u8; TAG_LEN],
 ) -> Result<Vec<u8>, SymmetricCipherError> {
     let mut buf = ciphertext.to_vec();
-    declared_key::<P>().decrypt_detached_in_place(nonce, aad, &mut buf, tag)?;
+    declared_key::<P>().decrypt_detached_inplace(nonce, aad, &mut buf, tag)?;
     Ok(buf)
 }
 
@@ -363,9 +363,9 @@ fn tag_length_changes_the_tag_but_not_the_ciphertext_and_tags_do_not_nest() {
             let key =
                 BlockCipherKey::<Toy, CCM<NONCE_LEN, $t>>::from_key_material(&toy_key()).unwrap();
             let mut buf = plaintext.clone();
-            let tag = key.encrypt_detached_in_place_nonce(&nonce, aad, &mut buf).unwrap();
+            let tag = key.encrypt_detached_inplace_nonce(&nonce, aad, &mut buf).unwrap();
             assert_eq!(buf, ct16, "ciphertext must not depend on TAG_LEN ({})", $t);
-            key.decrypt_detached_in_place(&nonce, aad, &mut buf, &tag).unwrap();
+            key.decrypt_detached_inplace(&nonce, aad, &mut buf, &tag).unwrap();
             assert_eq!(buf, plaintext, "TAG_LEN={} round trip", $t);
             tag.to_vec()
         }};
@@ -418,11 +418,11 @@ fn every_permitted_nonce_length_works() {
         let nonce: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(11).wrapping_add(3));
         let plaintext = message(100);
         let mut buf = plaintext.clone();
-        let tag = key.encrypt_detached_in_place_nonce(&nonce, b"aad", &mut buf).unwrap();
+        let tag = key.encrypt_detached_inplace_nonce(&nonce, b"aad", &mut buf).unwrap();
         assert_ne!(buf, plaintext, "nonce length {N}: must actually encrypt");
         let ct = buf.clone();
 
-        key.decrypt_detached_in_place(&nonce, b"aad", &mut buf, &tag).unwrap();
+        key.decrypt_detached_inplace(&nonce, b"aad", &mut buf, &tag).unwrap();
         assert_eq!(buf, plaintext, "nonce length {N}: round trip");
 
         // The last nonce octet sits right before `Q` in B0 (Table 2) and before the counter in
@@ -432,7 +432,7 @@ fn every_permitted_nonce_length_works() {
         let mut buf = ct;
         assert!(
             matches!(
-                key.decrypt_detached_in_place(&wrong, b"aad", &mut buf, &tag),
+                key.decrypt_detached_inplace(&wrong, b"aad", &mut buf, &tag),
                 Err(SymmetricCipherError::AEADTagCheckFailed)
             ),
             "nonce length {N}: the nonce is authenticated"
@@ -470,7 +470,7 @@ fn the_one_shot_releases_nothing_on_forgery_but_the_stream_does() {
     // The one-shot: verify-then-return, so a forged tag leaves nothing but zeros.
     let mut buf = ct.clone();
     assert!(matches!(
-        declared_key::<Toy>().decrypt_detached_in_place(&nonce, b"aad", &mut buf, &tag),
+        declared_key::<Toy>().decrypt_detached_inplace(&nonce, b"aad", &mut buf, &tag),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
     assert_eq!(buf, [0u8; LEN], "the one-shot must zeroize its buffer on a forged tag");

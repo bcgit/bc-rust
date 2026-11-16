@@ -43,8 +43,8 @@ pub const CCM_TAG_LEN: usize = 16;
 ///
 /// let aad = b"header";
 /// let mut buf = *b"a message of no particular length";
-/// let (nonce, tag) = key.encrypt_detached_in_place(&mut rng, aad, &mut buf).expect("encryption");
-/// key.decrypt_detached_in_place(&nonce, aad, &mut buf, &tag).expect("decryption");
+/// let (nonce, tag) = key.encrypt_detached_inplace(&mut rng, aad, &mut buf).expect("encryption");
+/// key.decrypt_detached_inplace(&nonce, aad, &mut buf, &tag).expect("decryption");
 /// assert_eq!(&buf, b"a message of no particular length");
 /// ```
 #[allow(non_camel_case_types)]

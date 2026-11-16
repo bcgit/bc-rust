@@ -12,6 +12,7 @@
 //! ZZ`, verified (not checked in) against the affine doubling law over 500 random on-curve points,
 //! using brainpoolP512r1's actual `A`, before being ported here.
 
+use crate::curve::JacobianPoint;
 use crate::hazmat::bp512r1::Bp512r1FieldElement;
 use crate::hazmat::bp512r1_domain::B_LIMBS;
 use bouncycastle_utils::ct;
@@ -408,5 +409,50 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+impl JacobianPoint for Bp512r1JacobianPoint {
+    type Fe = Bp512r1FieldElement;
+    const INFINITY: Self = Bp512r1JacobianPoint::INFINITY;
+
+    fn from_affine(x: Bp512r1FieldElement, y: Bp512r1FieldElement) -> Self {
+        Bp512r1JacobianPoint::from_affine(x, y)
+    }
+
+    fn x(&self) -> &Bp512r1FieldElement {
+        &self.x
+    }
+
+    fn y(&self) -> &Bp512r1FieldElement {
+        &self.y
+    }
+
+    fn z(&self) -> &Bp512r1FieldElement {
+        &self.z
+    }
+
+    fn is_infinity(&self) -> Condition<u64> {
+        Bp512r1JacobianPoint::is_infinity(self)
+    }
+
+    fn to_affine(&self) -> Option<(Bp512r1FieldElement, Bp512r1FieldElement)> {
+        Bp512r1JacobianPoint::to_affine(self)
+    }
+
+    fn negate(&self) -> Self {
+        Bp512r1JacobianPoint::negate(self)
+    }
+
+    fn zeroize(&mut self) {
+        Bp512r1JacobianPoint::zeroize(self)
+    }
+
+    fn double(&self) -> Self {
+        Bp512r1JacobianPoint::double(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        Bp512r1JacobianPoint::add(self, other)
     }
 }

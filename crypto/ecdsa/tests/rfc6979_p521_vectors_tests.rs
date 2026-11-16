@@ -1,79 +1,134 @@
-//! RFC 6979 Appendix A.2.7 ("ECDSA, 521 Bits (Prime Field)") known-answer tests: the key pair, the
-//! deterministic per-message secret `k`, and the resulting signature `(r, s)`, for `curve: NIST
-//! P-521` with SHA-512, messages `"sample"` and `"test"`. Values extracted programmatically from
-//! a fresh copy of the RFC text (not hand-transcribed) to avoid the line-wrap transcription error
-//! this crate's P-384 vectors hit; each is 131 hex digits in the RFC (`ceil(521/4)`), zero-padded
-//! here with a leading `0` to the fixed 132-digit (66-byte) SEC 1 width.
+//! RFC 6979 Appendix A.2.7 ("ECDSA, 521 Bits (Prime Field)") known-answer tests: the
+//! key pair and, for each of SHA-224, SHA-256, SHA-384 and SHA-512 (SHA-1 is not implemented
+//! here), the deterministic signature `(r, s)` over the messages `"sample"` and `"test"`, as
+//! [`ECDSA<P521, H>`] signs them. The appendix's `k` is not asserted directly: it is the one
+//! value that gives this `r`, so the signature pins it.
 
 use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
-use bouncycastle_ec::hazmat::p521_comb::comb_multiply_base_point;
-use bouncycastle_ec::hazmat::p521_scalar::P521Scalar;
-use bouncycastle_ecdsa::keys_p521::{ECDSAP521PrivateKey, ECDSAP521PublicKey};
+use bouncycastle_core::traits::{Algorithm, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::P521;
+use bouncycastle_ecdsa::ecdsa::ECDSA;
+use bouncycastle_ecdsa::ecdsa::EcdsaHash;
+use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
+use bouncycastle_ecdsa::keys_common::DerivePublicKey;
 use bouncycastle_hex::decode as hex_decode;
+use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
+
+const SCALAR_LEN: usize = 66;
+const SIG_LEN: usize = 132;
 
 const X: &str = "00FAD06DAA62BA3B25D2FB40133DA757205DE67F5BB0018FEE8C86E1B68C7E75CAA896EB32F1F47C70855836A6D16FCC1466F6D8FBEC67DB89EC0C08B0E996B83538";
 const UX: &str = "01894550D0785932E00EAA23B694F213F8C3121F86DC97A04E5A7167DB4E5BCD371123D46E45DB6B5D5370A7F20FB633155D38FFA16D2BD761DCAC474B9A2F5023A4";
 const UY: &str = "00493101C962CD4D2FDDF782285E64584139C2F91B47F87FF82354D6630F746A28A0DB25741B5B34A828008B22ACC23F924FAAFBD4D33F81EA66956DFEAA2BFDFCF5";
 
+/// `(message, r, s)` for one hash.
 struct Vector {
     msg: &'static [u8],
     r: &'static str,
     s: &'static str,
 }
 
-const SAMPLE: Vector = Vector {
-    msg: b"sample",
-    r: "00C328FAFCBD79DD77850370C46325D987CB525569FB63C5D3BC53950E6D4C5F174E25A1EE9017B5D450606ADD152B534931D7D4E8455CC91F9B15BF05EC36E377FA",
-    s: "00617CCE7CF5064806C467F678D3B4080D6F1CC50AF26CA209417308281B68AF282623EAA63E5B5C0723D8B8C37FF0777B1A20F8CCB1DCCC43997F1EE0E44DA4A67A",
-};
+const SHA224_VECTORS: [Vector; 2] = [
+    Vector {
+        msg: b"sample",
+        r: "01776331CFCDF927D666E032E00CF776187BC9FDD8E69D0DABB4109FFE1B5E2A30715F4CC923A4A5E94D2503E9ACFED92857B7F31D7152E0F8C00C15FF3D87E2ED2E",
+        s: "0050CB5265417FE2320BBB5A122B8E1A32BD699089851128E360E620A30C7E17BA41A666AF126CE100E5799B153B60528D5300D08489CA9178FB610A2006C254B41F",
+    },
+    Vector {
+        msg: b"test",
+        r: "01C7ED902E123E6815546065A2C4AF977B22AA8EADDB68B2C1110E7EA44D42086BFE4A34B67DDC0E17E96536E358219B23A706C6A6E16BA77B65E1C595D43CAE17FB",
+        s: "0177336676304FCB343CE028B38E7B4FBA76C1C1B277DA18CAD2A8478B2A9A9F5BEC0F3BA04F35DB3E4263569EC6AADE8C92746E4C82F8299AE1B8F1739F8FD519A4",
+    },
+];
 
-const TEST: Vector = Vector {
-    msg: b"test",
-    r: "013E99020ABF5CEE7525D16B69B229652AB6BDF2AFFCAEF38773B4B7D08725F10CDB93482FDCC54EDCEE91ECA4166B2A7C6265EF0CE2BD7051B7CEF945BABD47EE6D",
-    s: "01FBD0013C674AA79CB39849527916CE301C66EA7CE8B80682786AD60F98F7E78A19CA69EFF5C57400E3B3A0AD66CE0978214D13BAF4E9AC60752F7B155E2DE4DCE3",
-};
+const SHA256_VECTORS: [Vector; 2] = [
+    Vector {
+        msg: b"sample",
+        r: "01511BB4D675114FE266FC4372B87682BAECC01D3CC62CF2303C92B3526012659D16876E25C7C1E57648F23B73564D67F61C6F14D527D54972810421E7D87589E1A7",
+        s: "004A171143A83163D6DF460AAF61522695F207A58B95C0644D87E52AA1A347916E4F7A72930B1BC06DBE22CE3F58264AFD23704CBB63B29B931F7DE6C9D949A7ECFC",
+    },
+    Vector {
+        msg: b"test",
+        r: "000E871C4A14F993C6C7369501900C4BC1E9C7B0B4BA44E04868B30B41D8071042EB28C4C250411D0CE08CD197E4188EA4876F279F90B3D8D74A3C76E6F1E4656AA8",
+        s: "00CD52DBAA33B063C3A6CD8058A1FB0A46A4754B034FCC644766CA14DA8CA5CA9FDE00E88C1AD60CCBA759025299079D7A427EC3CC5B619BFBC828E7769BCD694E86",
+    },
+];
 
-fn bytes66(hex: &str) -> [u8; 66] {
+const SHA384_VECTORS: [Vector; 2] = [
+    Vector {
+        msg: b"sample",
+        r: "01EA842A0E17D2DE4F92C15315C63DDF72685C18195C2BB95E572B9C5136CA4B4B576AD712A52BE9730627D16054BA40CC0B8D3FF035B12AE75168397F5D50C67451",
+        s: "01F21A3CEE066E1961025FB048BD5FE2B7924D0CD797BABE0A83B66F1E35EEAF5FDE143FA85DC394A7DEE766523393784484BDF3E00114A1C857CDE1AA203DB65D61",
+    },
+    Vector {
+        msg: b"test",
+        r: "014BEE21A18B6D8B3C93FAB08D43E739707953244FDBE924FA926D76669E7AC8C89DF62ED8975C2D8397A65A49DCC09F6B0AC62272741924D479354D74FF6075578C",
+        s: "0133330865C067A0EAF72362A65E2D7BC4E461E8C8995C3B6226A21BD1AA78F0ED94FE536A0DCA35534F0CD1510C41525D163FE9D74D134881E35141ED5E8E95B979",
+    },
+];
+
+const SHA512_VECTORS: [Vector; 2] = [
+    Vector {
+        msg: b"sample",
+        r: "00C328FAFCBD79DD77850370C46325D987CB525569FB63C5D3BC53950E6D4C5F174E25A1EE9017B5D450606ADD152B534931D7D4E8455CC91F9B15BF05EC36E377FA",
+        s: "00617CCE7CF5064806C467F678D3B4080D6F1CC50AF26CA209417308281B68AF282623EAA63E5B5C0723D8B8C37FF0777B1A20F8CCB1DCCC43997F1EE0E44DA4A67A",
+    },
+    Vector {
+        msg: b"test",
+        r: "013E99020ABF5CEE7525D16B69B229652AB6BDF2AFFCAEF38773B4B7D08725F10CDB93482FDCC54EDCEE91ECA4166B2A7C6265EF0CE2BD7051B7CEF945BABD47EE6D",
+        s: "01FBD0013C674AA79CB39849527916CE301C66EA7CE8B80682786AD60F98F7E78A19CA69EFF5C57400E3B3A0AD66CE0978214D13BAF4E9AC60752F7B155E2DE4DCE3",
+    },
+];
+
+fn bytes(hex: &str) -> [u8; SCALAR_LEN] {
     hex_decode(hex).unwrap().try_into().unwrap()
 }
 
-fn private_key() -> ECDSAP521PrivateKey {
-    ECDSAP521PrivateKey::from_bytes(&bytes66(X)).unwrap()
+fn key_pair<H: EcdsaHash>() -> (ECDSAPublicKey<P521, H>, ECDSAPrivateKey<P521, H>) {
+    let sk = ECDSAPrivateKey::<P521, H>::from_bytes(&bytes(X)).unwrap();
+    let mut uncompressed = [0u8; 1 + 2 * SCALAR_LEN];
+    uncompressed[0] = 0x04;
+    uncompressed[1..1 + SCALAR_LEN].copy_from_slice(&bytes(UX));
+    uncompressed[1 + SCALAR_LEN..].copy_from_slice(&bytes(UY));
+    let pk = ECDSAPublicKey::<P521, H>::from_bytes(&uncompressed).unwrap();
+    (pk, sk)
 }
 
 #[test]
 fn public_key_matches_vector() {
-    let d = P521Scalar::from_be_bytes(&bytes66(X));
-    let q = comb_multiply_base_point(&d);
-    let (x, y) = q.to_affine().unwrap();
-    assert_eq!(x.to_limbs(), bouncycastle_ec::hazmat::p521_sec1::limbs_from_be_bytes(&bytes66(UX)));
-    assert_eq!(y.to_limbs(), bouncycastle_ec::hazmat::p521_sec1::limbs_from_be_bytes(&bytes66(UY)));
+    let (pk, sk) = key_pair::<SHA256>();
+    assert_eq!(sk.derive_pk(), pk, "U = xG");
 }
 
-#[test]
-fn deterministic_sign_matches_vectors() {
-    let sk = private_key();
-    for v in [&SAMPLE, &TEST] {
+/// The deterministic signature under `H` is the appendix's `(r, s)`, and verifies.
+fn check<H: EcdsaHash>(vectors: &[Vector]) {
+    let (pk, sk) = key_pair::<H>();
+    for v in vectors {
         let sig = sk.sign_deterministic(v.msg, None).unwrap();
-        let mut expected = [0u8; 132];
-        expected[..66].copy_from_slice(&bytes66(v.r));
-        expected[66..].copy_from_slice(&bytes66(v.s));
-        assert_eq!(sig, expected, "signature for message {:?}", v.msg);
-    }
-}
-
-#[test]
-fn deterministic_signature_verifies() {
-    let sk = private_key();
-    let mut uncompressed = [0u8; 133];
-    uncompressed[0] = 0x04;
-    uncompressed[1..67].copy_from_slice(&bytes66(UX));
-    uncompressed[67..133].copy_from_slice(&bytes66(UY));
-    let pk = ECDSAP521PublicKey::from_bytes(&uncompressed).unwrap();
-
-    for v in [&SAMPLE, &TEST] {
-        let sig = sk.sign_deterministic(v.msg, None).unwrap();
+        let mut expected = [0u8; SIG_LEN];
+        expected[..SCALAR_LEN].copy_from_slice(&bytes(v.r));
+        expected[SCALAR_LEN..].copy_from_slice(&bytes(v.s));
+        assert_eq!(sig, expected, "{} over {:?}", ECDSA::<P521, H>::ALG_NAME, v.msg);
         pk.verify(v.msg, None, &sig).unwrap();
     }
+}
+
+#[test]
+fn sha224() {
+    check::<SHA224>(&SHA224_VECTORS);
+}
+
+#[test]
+fn sha256() {
+    check::<SHA256>(&SHA256_VECTORS);
+}
+
+#[test]
+fn sha384() {
+    check::<SHA384>(&SHA384_VECTORS);
+}
+
+#[test]
+fn sha512() {
+    check::<SHA512>(&SHA512_VECTORS);
 }

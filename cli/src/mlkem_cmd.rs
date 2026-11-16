@@ -20,7 +20,7 @@ use bouncycastle::core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::{KEMPrivateKey, KEMPublicKey, RNG};
-use bouncycastle::hkdf::HKDF;
+use bouncycastle::hkdf::HkdfDescription;
 use bouncycastle::hmac::HMACParams;
 use bouncycastle::mlkem::{
     MLKEM512, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey,
@@ -216,7 +216,7 @@ pub(crate) enum MLKEMHkdfAction {
 }
 
 /// One body for the three `mlkem*-hkdf-*` subcommands: the plain set's keys, and the roles over
-/// `KdfParams` the `_params` marker names, keyed with the salt. The derived key is one hash
+/// `KdfParams` the `_params` marker names, the HKDF described by the salt. The derived key is one hash
 /// output long, the crate's `*_SS_LEN`.
 #[allow(clippy::too_many_arguments)] // one flag per input, the HKDF ones each inline or from a file
 pub(crate) fn mlkem_hkdf_cmd<
@@ -230,7 +230,7 @@ pub(crate) fn mlkem_hkdf_cmd<
     const PLAIN_SS_LEN: usize,
 >(
     set: &ParameterSet<PK, SK, PK_LEN, SK_LEN, CT_LEN, PLAIN_SS_LEN>,
-    _params: PhantomData<KdfParams<'static, HKDF<H>, SS_LEN>>,
+    _params: PhantomData<KdfParams<'static, HkdfDescription<'static, H>, SS_LEN>>,
     action: &MLKEMHkdfAction,
     skfile: &Option<String>,
     pkfile: &Option<String>,
@@ -242,9 +242,9 @@ pub(crate) fn mlkem_hkdf_cmd<
     output_hex: bool,
 ) where
     PK: KEMPublicKey<PK_LEN>
-        + for<'p> EncapsulatingKey<KdfParams<'p, HKDF<H>, SS_LEN>, CT_LEN, SS_LEN>,
+        + for<'p> EncapsulatingKey<KdfParams<'p, HkdfDescription<'p, H>, SS_LEN>, CT_LEN, SS_LEN>,
     SK: KEMPrivateKey<SK_LEN>
-        + for<'p> DecapsulatingKey<KdfParams<'p, HKDF<H>, SS_LEN>, CT_LEN, SS_LEN>,
+        + for<'p> DecapsulatingKey<KdfParams<'p, HkdfDescription<'p, H>, SS_LEN>, CT_LEN, SS_LEN>,
     H: HMACParams,
 {
     // RFC 5869 Section 2.2: the salt is optional, "a non-secret random value"; absent, HKDF uses
@@ -269,7 +269,7 @@ pub(crate) fn mlkem_hkdf_cmd<
         (None, Some(hex_str)) => decode_hex_arg(hex_str, "additional-input"),
         (None, None) => Vec::new(),
     };
-    let hkdf = HKDF::<H>::new_with_salt(&salt).unwrap_or_else(|e| {
+    let hkdf = HkdfDescription::<H>::with_salt(&salt).unwrap_or_else(|e| {
         eprintln!("Error: couldn't load the salt: {e:?}");
         exit(-1);
     });
