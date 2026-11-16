@@ -22,6 +22,7 @@ use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle::hex;
+use bouncycastle_utils::secret::Secret;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
@@ -368,6 +369,30 @@ pub(crate) fn write_bytes_or_hex(bytes: &[u8], output_hex: bool) {
     }
 }
 
+/// [`write_bytes_or_hex`] for a secret (a private key, a shared secret): the hex form is built
+/// in a stack buffer that is wiped, 32 bytes at a time, rather than in a heap `String` that is
+/// freed as it stands, and each digit is computed, not looked up by the secret nibble.
+pub(crate) fn write_secret_bytes_or_hex(bytes: &[u8], output_hex: bool) {
+    if !output_hex {
+        write_stdout(bytes);
+        return;
+    }
+    let mut hex = Secret::<[u8; 64]>::new();
+    for chunk in bytes.chunks(32) {
+        for (i, b) in chunk.iter().enumerate() {
+            hex[2 * i] = hex_digit(b >> 4);
+            hex[2 * i + 1] = hex_digit(b & 0x0f);
+        }
+        write_stdout(&hex[..2 * chunk.len()]);
+    }
+}
+
+/// The lower-case hex digit of the nibble `n`, with no branch or table on its value: '0'..'9'
+/// is `48 + n` and 'a'..'f' is `48 + n + 39`, and the mask is all ones exactly when `n > 9`.
+fn hex_digit(n: u8) -> u8 {
+    b'0' + n + ((((9i16 - n as i16) >> 8) as u8) & 39)
+}
+
 /// Writes `bytes`, raw or as hex, to a new file `filename`; a failure names the path.
 pub(crate) fn write_bytes_or_hex_to_file(bytes: &[u8], filename: &str, output_hex: bool) {
     let result = File::create(filename).and_then(|mut file| {
@@ -471,4 +496,16 @@ pub(crate) fn squeeze_to_stdout(
         left -= n;
     }
     write_stdout(b"\n");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hex_digit;
+
+    #[test]
+    fn hex_digit_is_the_lower_case_digit_of_every_nibble() {
+        for (n, expected) in b"0123456789abcdef".iter().enumerate() {
+            assert_eq!(hex_digit(n as u8), *expected, "nibble {n}");
+        }
+    }
 }
