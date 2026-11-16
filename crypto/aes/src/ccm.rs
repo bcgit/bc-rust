@@ -193,8 +193,8 @@ pub const CCM_TAG_LEN: usize = 16;
 /// let nonce = [0x02u8; 12];
 ///
 /// let mut buf = *b"a short packet";
-/// let tag = key.encrypt_detached_in_place_nonce(&nonce, &[], &mut buf).expect("encryption");
-/// key.decrypt_detached_in_place(&nonce, &[], &mut buf, &tag).expect("decryption");
+/// let tag = key.encrypt_detached_inplace_nonce(&nonce, &[], &mut buf).expect("encryption");
+/// key.decrypt_detached_inplace(&nonce, &[], &mut buf, &tag).expect("decryption");
 /// assert_eq!(&buf, b"a short packet");
 /// ```
 ///

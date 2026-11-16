@@ -1,6 +1,6 @@
 use crate::low_memory_helpers::{expandA_elem, s_unpack};
 use crate::mldsa::{H, MLDSA_MU_LEN, MLDSA_RND_LEN, N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
-use crate::mldsa::{MuBuilder, draw_rnd, sign_internal, verify_internal};
+use crate::mldsa::{MuBuilder, Rnd, draw_rnd, sign_internal, verify_internal};
 use crate::params::{FullPrivateKeyLen, PrivateKeyLen, PublicKeyLen, SignatureLen};
 use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
 use bouncycastle_core::errors::SignatureError;
@@ -244,7 +244,7 @@ pub(crate) trait SignMuWithRnd<P: MLDSAParams> {
     fn sign_mu_with_rnd_out<const SIG_LEN: usize>(
         &self,
         mu: &[u8; MLDSA_MU_LEN],
-        rnd: [u8; MLDSA_RND_LEN],
+        rnd: &[u8; MLDSA_RND_LEN],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>
     where
@@ -337,7 +337,9 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
-        self.sign_mu_with_rnd_out(mu, draw_rnd(rng)?, output)
+        let mut rnd = Rnd::new();
+        draw_rnd(rng, &mut rnd)?;
+        self.sign_mu_with_rnd_out(mu, &rnd, output)
     }
 
     /// FIPS 204 Section 3.4, the deterministic variant of [`sign_mu`](Self::sign_mu): `rnd` is
@@ -364,7 +366,7 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
-        self.sign_mu_with_rnd_out(mu, [0u8; MLDSA_RND_LEN], output)
+        self.sign_mu_with_rnd_out(mu, &[0u8; MLDSA_RND_LEN], output)
     }
 }
 
@@ -780,7 +782,7 @@ impl<P: MLDSAParams> SignMuWithRnd<P> for MLDSASeedPrivateKey<P> {
     fn sign_mu_with_rnd_out<const SIG_LEN: usize>(
         &self,
         mu: &[u8; MLDSA_MU_LEN],
-        rnd: [u8; MLDSA_RND_LEN],
+        rnd: &[u8; MLDSA_RND_LEN],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>
     where

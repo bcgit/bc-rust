@@ -29,7 +29,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
     use bouncycastle_core::errors::SymmetricCipherError;
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
-        AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, SymmetricCipherDecryptor,
+        AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, SymmetricCipherDecryptor,
         SymmetricCipherEncryptor,
     };
 
@@ -123,9 +123,12 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
             ciphertext.fill(0);
             Ok(self.0.update_out(plaintext, ciphertext))
         }
-        fn do_encrypt_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
+        fn finish_encrypt(
+            &mut self,
+            token: &FinishToken,
+        ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
             let mut out = [0u8; FINAL_LEN];
-            let (n, tag) = self.do_encrypt_final_detached_out(&mut out)?;
+            let (n, tag) = self.finish_encrypt_detached_into(token, &mut out)?;
             out[n..n + TAG_LEN].copy_from_slice(&tag);
             Ok((out, n + TAG_LEN))
         }
@@ -138,8 +141,9 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         fn do_update_aad(&mut self, _aad: &[u8]) -> Result<(), SymmetricCipherError> {
             Ok(())
         }
-        fn do_encrypt_final_detached_out(
-            mut self,
+        fn finish_encrypt_detached_into(
+            &mut self,
+            _token: &FinishToken,
             ciphertext: &mut [u8; FINAL_LEN],
         ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
             ciphertext.fill(0);
@@ -162,7 +166,10 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
             Ok(self.0.update_out(ciphertext, plaintext))
         }
         /// The last `TAG_LEN` held-back bytes are the tag, the rest ciphertext.
-        fn do_decrypt_final(mut self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
+        fn finish_decrypt(
+            &mut self,
+            _token: &FinishToken,
+        ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
             let Some(n) = self.0.held_len.checked_sub(TAG_LEN) else {
                 return Err(SymmetricCipherError::DecryptionFailed);
             };
@@ -182,8 +189,9 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         fn do_update_aad(&mut self, _aad: &[u8]) -> Result<(), SymmetricCipherError> {
             Ok(())
         }
-        fn do_decrypt_final_detached_out(
-            mut self,
+        fn finish_decrypt_detached_into(
+            &mut self,
+            _token: &FinishToken,
             tag: &[u8; TAG_LEN],
             plaintext: &mut [u8; FINAL_LEN],
         ) -> Result<usize, SymmetricCipherError> {

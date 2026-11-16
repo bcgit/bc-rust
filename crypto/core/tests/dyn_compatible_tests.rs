@@ -4,11 +4,11 @@
 //! The functions take trait objects and do nothing; compiling them is the test.
 //!
 //! A worker held as `Box<dyn ..>` is finished through the `_boxed` twin of its consuming final,
-//! which the `*Boxed` supertraits put in the vtable; the `boxed_*` functions pin that each twin is
-//! callable on the box. The hash, cipher, AEAD, MAC and signature framework suites run them against
+//! a provided method with a `self: Box<Self>` receiver; the `boxed_*` functions pin that each twin
+//! is callable on the box. The hash, cipher, AEAD, MAC and signature framework suites run them against
 //! the implementors those suites cover.
 
-use bouncycastle_core::errors::{MACError, SignatureError, SymmetricCipherError};
+use bouncycastle_core::errors::{HashError, MACError, SignatureError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor, Hash,
@@ -80,6 +80,9 @@ fn boxed_signature(
 fn boxed_hash(hash: Box<dyn Hash>, out: &mut [u8]) -> usize {
     hash.do_final_out_boxed(out)
 }
+fn boxed_hash_partial_bits(hash: Box<dyn Hash>, out: &mut [u8]) -> Result<usize, HashError> {
+    hash.do_final_partial_bits_out_boxed(0x80, 1, out)
+}
 
 #[test]
 fn the_boxed_finals_are_callable_on_a_box() {
@@ -91,6 +94,7 @@ fn the_boxed_finals_are_callable_on_a_box() {
         boxed_mac as fn(_, _) -> _,
         boxed_signature as fn(_, _) -> _,
         boxed_hash as fn(_, _) -> _,
+        boxed_hash_partial_bits as fn(_, _) -> _,
     );
 }
 

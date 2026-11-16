@@ -1,7 +1,7 @@
 use crate::SHA256InitValue;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, Suspendable};
+use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, HashOneShot, Suspendable};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
@@ -203,7 +203,7 @@ impl<PARAMS: SHA256InitValue> SHA256Internal<PARAMS> {
     /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
     /// truncates the digest, a longer one is zero-filled past the digest.
     fn do_final_internal(
-        mut self,
+        &mut self,
         partial_byte: u8,
         num_partial_bits: usize,
         output: &mut [u8],
@@ -318,33 +318,18 @@ impl<PARAMS: SHA256InitValue> Hash for SHA256Internal<PARAMS> {
         self.x_buf_off = remaining;
     }
 
-    fn do_final(self) -> Vec<u8> {
-        let mut output = vec![0u8; PARAMS::OUTPUT_LEN];
-        self.do_final_out(&mut output);
-        output
-    }
-
-    fn do_final_out(self, output: &mut [u8]) -> usize {
+    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
         // A whole-byte message is the zero-partial-bits case of the general padding.
         self.do_final_internal(0, 0, output)
-    }
-
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_partial_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        let mut output = vec![0u8; PARAMS::OUTPUT_LEN];
-        self.do_final_partial_bits_out(partial_byte, num_partial_bits, &mut output)?;
-        Ok(output)
     }
 
     /// FIPS 180-4 s. 5.1: bit-oriented messages. The `num_partial_bits` most significant bits of
     /// `partial_byte` (ASN.1 BIT STRING order, leading bit first) are appended to the message before
     /// padding; the low bits are ignored. `num_partial_bits == 0` behaves exactly like
     /// [`Hash::do_final_out`].
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        _token: &FinishToken,
         partial_byte: u8,
         num_partial_bits: usize,
         output: &mut [u8],

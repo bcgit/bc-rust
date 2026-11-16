@@ -13,12 +13,14 @@
 
 mod ecb_key;
 mod electronic_code_book;
+mod finish_token;
 mod hazardous_operations;
 mod key_stream;
 mod mode;
 
 pub use ecb_key::{EcbDecryptionKey, EcbEncryptionKey};
 pub use electronic_code_book::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
+pub use finish_token::finish_token;
 pub use hazardous_operations::do_hazardous_operations;
 pub use key_stream::KeyStream;
 pub use mode::{

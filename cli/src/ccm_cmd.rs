@@ -282,7 +282,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
         });
 
     if encrypt {
-        match key.encrypt_detached_in_place_nonce(&nonce, aad, &mut input) {
+        match key.encrypt_detached_inplace_nonce(&nonce, aad, &mut input) {
             Ok(tag) => {
                 helpers::write_bytes_or_hex(&input, output_hex);
                 helpers::write_bytes_or_hex(&tag, output_hex);
@@ -309,7 +309,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
             );
             exit(-1)
         };
-        match key.decrypt_detached_in_place(&nonce, aad, data, tag) {
+        match key.decrypt_detached_inplace(&nonce, aad, data, tag) {
             Ok(()) => {
                 helpers::write_bytes_or_hex(data, output_hex);
                 if output_hex {

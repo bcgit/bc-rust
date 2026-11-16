@@ -104,12 +104,18 @@ impl TestFrameworkHash {
         let output_buf = message_digest.do_final();
         assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
 
-        /*** HashBoxed::do_final_out_boxed, for a hash held as Box<dyn Hash> ***/
+        /*** fn do_final_out_boxed(self: Box<Self>, ..), for a hash held as Box<dyn Hash> ***/
         let mut boxed: Box<dyn Hash + '_> = Box::new(H::default());
         boxed.do_update(input);
         let mut boxed_out = vec![0_u8; H::OUTPUT_LEN];
         assert_eq!(boxed.do_final_out_boxed(&mut boxed_out), H::OUTPUT_LEN);
         assert_eq!(expected_output, boxed_out, "Incorrect output from the boxed final");
+        // and with no trailing bits the boxed partial-bits final is the same digest
+        let mut boxed: Box<dyn Hash + '_> = Box::new(H::default());
+        boxed.do_update(input);
+        let mut boxed_out = vec![0_u8; H::OUTPUT_LEN];
+        assert_eq!(boxed.do_final_partial_bits_out_boxed(0, 0, &mut boxed_out), Ok(H::OUTPUT_LEN));
+        assert_eq!(expected_output, boxed_out, "the boxed partial-bits final, no bits");
 
         for length in 1..output_buf.len() {
             let mut truncated = vec![0_u8; length];

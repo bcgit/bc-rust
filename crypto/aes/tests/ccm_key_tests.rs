@@ -39,7 +39,7 @@ fn message(len: usize) -> Vec<u8> {
 fn reference(km: &KeyMaterial<16>, nonce: &[u8; 12], msg: &[u8]) -> (Vec<u8>, [u8; 16]) {
     let perm = AES128Internal::new(km).unwrap();
     let mut ct = msg.to_vec();
-    let tag = CCM::<12, 16>::encrypt_detached_in_place_nonce(&perm, nonce, AAD, &mut ct).unwrap();
+    let tag = CCM::<12, 16>::encrypt_detached_inplace_nonce(&perm, nonce, AAD, &mut ct).unwrap();
     (ct, tag)
 }
 
@@ -56,9 +56,9 @@ fn every_form_takes_any_length_and_agrees_with_the_pair() {
         assert_eq!(reference(&km, &nonce, &msg), (ct.clone(), tag), "len {len}");
 
         let mut buf = msg.clone();
-        assert_eq!(key.encrypt_detached_in_place_nonce(&nonce, AAD, &mut buf).unwrap(), tag);
+        assert_eq!(key.encrypt_detached_inplace_nonce(&nonce, AAD, &mut buf).unwrap(), tag);
         assert_eq!(buf, ct, "len {len}: in place");
-        key.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag).unwrap();
+        key.decrypt_detached_inplace(&nonce, AAD, &mut buf, &tag).unwrap();
         assert_eq!(buf, msg, "len {len}: in place round trip");
 
         let inline = key.encrypt_with_aad_nonce(&nonce, AAD, &msg).unwrap();
@@ -153,17 +153,17 @@ fn a_bad_tag_or_aad_zeroizes_the_buffer() {
     let key = AES192Key::<CCM<12, 16>>::from_key_material(&material::<24>()).unwrap();
     let msg = message(200);
     let mut buf = msg.clone();
-    let (nonce, mut tag) = key.encrypt_detached_in_place(&mut rng(), AAD, &mut buf).unwrap();
+    let (nonce, mut tag) = key.encrypt_detached_inplace(&mut rng(), AAD, &mut buf).unwrap();
     let ct = buf.clone();
     assert!(matches!(
-        key.decrypt_detached_in_place(&nonce, b"other aad", &mut buf, &tag),
+        key.decrypt_detached_inplace(&nonce, b"other aad", &mut buf, &tag),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
     assert!(buf.iter().all(|&b| b == 0));
     tag[0] ^= 1;
     let mut buf = ct;
     assert!(matches!(
-        key.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag),
+        key.decrypt_detached_inplace(&nonce, AAD, &mut buf, &tag),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
     assert!(buf.iter().all(|&b| b == 0));
@@ -178,15 +178,15 @@ fn a_short_nonce_is_reachable_through_the_supplied_nonce_forms() {
     let nonce = [0xA5u8; 8];
     let msg = message(100);
     let mut buf = msg.clone();
-    let tag = key.encrypt_detached_in_place_nonce(&nonce, AAD, &mut buf).unwrap();
+    let tag = key.encrypt_detached_inplace_nonce(&nonce, AAD, &mut buf).unwrap();
     let (ct, tag_p) = {
         let perm = AES128Internal::new(&km).unwrap();
         let mut ct = msg.clone();
-        let t = CCM::<8, 8>::encrypt_detached_in_place_nonce(&perm, &nonce, AAD, &mut ct).unwrap();
+        let t = CCM::<8, 8>::encrypt_detached_inplace_nonce(&perm, &nonce, AAD, &mut ct).unwrap();
         (ct, t)
     };
     assert_eq!((ct, tag_p), (buf.clone(), tag));
-    key.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag).unwrap();
+    key.decrypt_detached_inplace(&nonce, AAD, &mut buf, &tag).unwrap();
     assert_eq!(buf, msg);
 }
 
@@ -246,7 +246,7 @@ fn a_refused_update_leaves_no_payload_in_the_output_buffer() {
     assert_eq!(out, [0u8; 32], "a refused decrypt must leave only zeros behind");
 }
 
-/// The drawing in-place one-shot, `encrypt_detached_in_place(rng, ..)`, is the `_nonce` form
+/// The drawing in-place one-shot, `encrypt_detached_inplace(rng, ..)`, is the `_nonce` form
 /// under the nonce it drew: the one form the suite above does not reach.
 #[test]
 fn the_drawing_in_place_form_is_the_nonce_form_under_the_drawn_nonce() {
@@ -255,12 +255,12 @@ fn the_drawing_in_place_form_is_the_nonce_form_under_the_drawn_nonce() {
     for len in LENS {
         let msg = message(len);
         let mut buf = msg.clone();
-        let (nonce, tag) = key.encrypt_detached_in_place(&mut rng(), AAD, &mut buf).unwrap();
+        let (nonce, tag) = key.encrypt_detached_inplace(&mut rng(), AAD, &mut buf).unwrap();
         assert_eq!(reference(&km, &nonce, &msg), (buf.clone(), tag), "len {len}");
         let mut again = msg.clone();
-        assert_eq!(key.encrypt_detached_in_place_nonce(&nonce, AAD, &mut again).unwrap(), tag);
+        assert_eq!(key.encrypt_detached_inplace_nonce(&nonce, AAD, &mut again).unwrap(), tag);
         assert_eq!(again, buf, "len {len}: the nonce form agrees");
-        key.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag).unwrap();
+        key.decrypt_detached_inplace(&nonce, AAD, &mut buf, &tag).unwrap();
         assert_eq!(buf, msg, "len {len}: round trip");
     }
 }
