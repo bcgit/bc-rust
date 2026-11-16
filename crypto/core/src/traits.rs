@@ -49,6 +49,7 @@ pub type AEADEncryptedTuple<const NONCE_LEN: usize, const TAG_LEN: usize> =
 /// buffer itself before returning the error.
 pub trait AEADCipherDecryptor<const NONCE_LEN: usize, const TAG_LEN: usize, const FINAL_LEN: usize>:
     SymmetricCipherDecryptor<NONCE_LEN, FINAL_LEN>
+    + AEADCipherDecryptorBoxed<NONCE_LEN, TAG_LEN, FINAL_LEN>
 {
     /// Absorbs additional authenticated data; see [`AEADCipherEncryptor::do_update_aad`] for the
     /// rules, which are the same on both sides. The concatenation of what a decryptor absorbs must
@@ -117,6 +118,41 @@ pub trait AEADCipherDecryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
     }
 }
 
+/// The boxed twin of [`AEADCipherDecryptor::do_decrypt_final_detached_out`], for a worker held as
+/// `Box<dyn AEADCipherDecryptor>`, which cannot call a method that takes `self` by value.
+/// Implemented for every implementor and a supertrait of [`AEADCipherDecryptor`], so no implementor
+/// writes it and the trait object calls it with nothing more in scope.
+pub trait AEADCipherDecryptorBoxed<
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+>
+{
+    /// As [`AEADCipherDecryptor::do_decrypt_final_detached_out`], consuming the box: a stored
+    /// worker is finished exactly once, as a concrete one is.
+    fn do_decrypt_final_detached_out_boxed(
+        self: Box<Self>,
+        tag: &[u8; TAG_LEN],
+        plaintext: &mut [u8; FINAL_LEN],
+    ) -> Result<usize, SymmetricCipherError>;
+}
+
+impl<
+    T: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+> AEADCipherDecryptorBoxed<NONCE_LEN, TAG_LEN, FINAL_LEN> for T
+{
+    fn do_decrypt_final_detached_out_boxed(
+        self: Box<Self>,
+        tag: &[u8; TAG_LEN],
+        plaintext: &mut [u8; FINAL_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        (*self).do_decrypt_final_detached_out(tag, plaintext)
+    }
+}
+
 /// The encryption half of an AEAD cipher's streaming API. This extends
 /// [`SymmetricCipherEncryptor`] -- the same separate-output, init-data-generating,
 /// possibly-buffering shape -- with the two things authentication adds.
@@ -174,6 +210,7 @@ pub trait AEADCipherDecryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
 ///   [`do_encrypt_out`](SymmetricCipherEncryptor::do_encrypt_out) call.
 pub trait AEADCipherEncryptor<const NONCE_LEN: usize, const TAG_LEN: usize, const FINAL_LEN: usize>:
     SymmetricCipherEncryptor<NONCE_LEN, FINAL_LEN>
+    + AEADCipherEncryptorBoxed<NONCE_LEN, TAG_LEN, FINAL_LEN>
 {
     /// Absorbs `aad`: data that is authenticated by the tag but not encrypted. May be called
     /// repeatedly before the first [`SymmetricCipherEncryptor::do_encrypt_out`]; a sequence of calls
@@ -231,6 +268,39 @@ pub trait AEADCipherEncryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
         Self: Sized,
     {
         plaintext_len
+    }
+}
+
+/// The boxed twin of [`AEADCipherEncryptor::do_encrypt_final_detached_out`], for a worker held as
+/// `Box<dyn AEADCipherEncryptor>`, which cannot call a method that takes `self` by value.
+/// Implemented for every implementor and a supertrait of [`AEADCipherEncryptor`], so no implementor
+/// writes it and the trait object calls it with nothing more in scope.
+pub trait AEADCipherEncryptorBoxed<
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+>
+{
+    /// As [`AEADCipherEncryptor::do_encrypt_final_detached_out`], consuming the box: a stored
+    /// worker is finished exactly once, as a concrete one is.
+    fn do_encrypt_final_detached_out_boxed(
+        self: Box<Self>,
+        ciphertext: &mut [u8; FINAL_LEN],
+    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError>;
+}
+
+impl<
+    T: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+> AEADCipherEncryptorBoxed<NONCE_LEN, TAG_LEN, FINAL_LEN> for T
+{
+    fn do_encrypt_final_detached_out_boxed(
+        self: Box<Self>,
+        ciphertext: &mut [u8; FINAL_LEN],
+    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        (*self).do_encrypt_final_detached_out(ciphertext)
     }
 }
 
@@ -381,7 +451,7 @@ pub trait BlockCipherEncryptor<const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
 /// `Clone` is not a supertrait, though, because `Clone` implies `Sized` and would stop this trait
 /// from ever being a trait object. Code that forks a hash says so: `HMACParams` and the test
 /// framework bound on `Hash + Clone`.
-pub trait Hash: AlgorithmInfo {
+pub trait Hash: AlgorithmInfo + HashBoxed {
     /// The size of the internal block in bits -- needed by functions such as HMAC to compute security parameters.
     fn block_bitlen(&self) -> usize;
 
@@ -452,6 +522,23 @@ pub trait Hash: AlgorithmInfo {
         num_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError>;
+}
+
+/// The boxed twin of [`Hash::do_final_out`], for a worker held as
+/// `Box<dyn Hash>`, which cannot call a method that takes `self` by value.
+/// Implemented for every implementor and a supertrait of [`Hash`], so no implementor
+/// writes it and the trait object calls it with nothing more in scope.
+/// The `Vec` and partial-bits finals stay with the concrete value.
+pub trait HashBoxed {
+    /// As [`Hash::do_final_out`], consuming the box: a stored
+    /// worker is finished exactly once, as a concrete one is.
+    fn do_final_out_boxed(self: Box<Self>, output: &mut [u8]) -> usize;
+}
+
+impl<T: Hash> HashBoxed for T {
+    fn do_final_out_boxed(self: Box<Self>, output: &mut [u8]) -> usize {
+        (*self).do_final_out(output)
+    }
 }
 
 /// The one-shot form of a hash that takes no parameters: `SHA256::hash(msg)`.
@@ -921,7 +1008,7 @@ pub trait KeyWrapper: AlgorithmInfo {
 /// `MAC_LEN` bytes, the construction's full output; a protocol that truncates its tags does so on
 /// the array it gets back. It is a separate trait from [`MACVerifier`] so that a key, or a policy,
 /// can allow verification without generation.
-pub trait MACGenerator<const MAC_LEN: usize>: AlgorithmInfo {
+pub trait MACGenerator<const MAC_LEN: usize>: AlgorithmInfo + MACGeneratorBoxed<MAC_LEN> {
     /// Absorbs the next chunk of the message. May be called any number of times with chunks of
     /// any size, including zero; a sequence of calls is equivalent to one call over the
     /// concatenation.
@@ -942,12 +1029,28 @@ pub trait MACGenerator<const MAC_LEN: usize>: AlgorithmInfo {
     }
 }
 
+/// The boxed twin of [`MACGenerator::do_final_out`], for a worker held as
+/// `Box<dyn MACGenerator>`, which cannot call a method that takes `self` by value.
+/// Implemented for every implementor and a supertrait of [`MACGenerator`], so no implementor
+/// writes it and the trait object calls it with nothing more in scope.
+pub trait MACGeneratorBoxed<const MAC_LEN: usize> {
+    /// As [`MACGenerator::do_final_out`], consuming the box: a stored
+    /// worker is finished exactly once, as a concrete one is.
+    fn do_final_out_boxed(self: Box<Self>, out: &mut [u8; MAC_LEN]) -> usize;
+}
+
+impl<T: MACGenerator<MAC_LEN>, const MAC_LEN: usize> MACGeneratorBoxed<MAC_LEN> for T {
+    fn do_final_out_boxed(self: Box<Self>, out: &mut [u8; MAC_LEN]) -> usize {
+        (*self).do_final_out(out)
+    }
+}
+
 /// The verifying half of a MAC in progress: the streaming worker a MAC key hands out through
 /// [`MacVerificationKey`](crate::symmetric_key::MacVerificationKey) or, under a nonce,
 /// [`NonceMacVerificationKey`](crate::symmetric_key::NonceMacVerificationKey). The comparison is
 /// in constant time, so recomputing the tag and comparing it with `==`, which leaks how many
 /// leading bytes matched, is never needed.
-pub trait MACVerifier<const MAC_LEN: usize>: AlgorithmInfo {
+pub trait MACVerifier<const MAC_LEN: usize>: AlgorithmInfo + MACVerifierBoxed<MAC_LEN> {
     /// Absorbs the next chunk of the message, as [`MACGenerator::do_update`] does.
     fn do_update(&mut self, data: &[u8]);
 
@@ -956,6 +1059,22 @@ pub trait MACVerifier<const MAC_LEN: usize>: AlgorithmInfo {
     /// # Errors
     /// [`MACError::VerificationFailed`] if `mac` is not the tag of the message under the key.
     fn do_verify_final(self, mac: &[u8; MAC_LEN]) -> Result<(), MACError>;
+}
+
+/// The boxed twin of [`MACVerifier::do_verify_final`], for a worker held as
+/// `Box<dyn MACVerifier>`, which cannot call a method that takes `self` by value.
+/// Implemented for every implementor and a supertrait of [`MACVerifier`], so no implementor
+/// writes it and the trait object calls it with nothing more in scope.
+pub trait MACVerifierBoxed<const MAC_LEN: usize> {
+    /// As [`MACVerifier::do_verify_final`], consuming the box: a stored
+    /// worker is finished exactly once, as a concrete one is.
+    fn do_verify_final_boxed(self: Box<Self>, mac: &[u8; MAC_LEN]) -> Result<(), MACError>;
+}
+
+impl<T: MACVerifier<MAC_LEN>, const MAC_LEN: usize> MACVerifierBoxed<MAC_LEN> for T {
+    fn do_verify_final_boxed(self: Box<Self>, mac: &[u8; MAC_LEN]) -> Result<(), MACError> {
+        (*self).do_verify_final(mac)
+    }
 }
 
 /// A block padding scheme, used to extend arbitrary-length data to a whole number of blocks so that it
@@ -1059,7 +1178,9 @@ pub trait SignaturePublicKey<const PK_LEN: usize>:
 /// [`DeterministicSigningKey`](crate::signature_key::DeterministicSigningKey). The key and any
 /// randomness the algorithm needs were fixed when the worker was made, so the message is the only
 /// input left.
-pub trait SignatureSigner<const SIG_LEN: usize>: AlgorithmInfo {
+pub trait SignatureSigner<const SIG_LEN: usize>:
+    AlgorithmInfo + SignatureSignerBoxed<SIG_LEN>
+{
     /// Absorbs the next chunk of the message. May be called any number of times with chunks of
     /// any size; a sequence of calls is equivalent to one call over the concatenation.
     fn do_update(&mut self, msg_chunk: &[u8]);
@@ -1077,10 +1198,32 @@ pub trait SignatureSigner<const SIG_LEN: usize>: AlgorithmInfo {
     fn do_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
 }
 
+/// The boxed twin of [`SignatureSigner::do_final_out`], for a worker held as
+/// `Box<dyn SignatureSigner>`, which cannot call a method that takes `self` by value.
+/// Implemented for every implementor and a supertrait of [`SignatureSigner`], so no implementor
+/// writes it and the trait object calls it with nothing more in scope.
+pub trait SignatureSignerBoxed<const SIG_LEN: usize> {
+    /// As [`SignatureSigner::do_final_out`], consuming the box: a stored
+    /// worker is finished exactly once, as a concrete one is.
+    fn do_final_out_boxed(
+        self: Box<Self>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError>;
+}
+
+impl<T: SignatureSigner<SIG_LEN>, const SIG_LEN: usize> SignatureSignerBoxed<SIG_LEN> for T {
+    fn do_final_out_boxed(
+        self: Box<Self>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        (*self).do_final_out(output)
+    }
+}
+
 /// The verifying half of a signature in progress: the streaming worker a verifying key hands out
 /// through [`VerifyingKey`](crate::signature_key::VerifyingKey). It is a separate trait from
 /// [`SignatureSigner`] so that a key, or a policy, can allow verification without signing.
-pub trait SignatureVerifier: AlgorithmInfo {
+pub trait SignatureVerifier: AlgorithmInfo + SignatureVerifierBoxed {
     /// Absorbs the next chunk of the message. May be called any number of times with chunks of
     /// any size; a sequence of calls is equivalent to one call over the concatenation.
     fn do_update(&mut self, msg_chunk: &[u8]);
@@ -1091,6 +1234,22 @@ pub trait SignatureVerifier: AlgorithmInfo {
     /// [`SignatureError::SignatureVerificationFailed`] if the signature does not verify;
     /// [`SignatureError::LengthError`] if `sig` is not the algorithm's signature length.
     fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError>;
+}
+
+/// The boxed twin of [`SignatureVerifier::do_verify_final`], for a worker held as
+/// `Box<dyn SignatureVerifier>`, which cannot call a method that takes `self` by value.
+/// Implemented for every implementor and a supertrait of [`SignatureVerifier`], so no implementor
+/// writes it and the trait object calls it with nothing more in scope.
+pub trait SignatureVerifierBoxed {
+    /// As [`SignatureVerifier::do_verify_final`], consuming the box: a stored
+    /// worker is finished exactly once, as a concrete one is.
+    fn do_verify_final_boxed(self: Box<Self>, sig: &[u8]) -> Result<(), SignatureError>;
+}
+
+impl<T: SignatureVerifier> SignatureVerifierBoxed for T {
+    fn do_verify_final_boxed(self: Box<Self>, sig: &[u8]) -> Result<(), SignatureError> {
+        (*self).do_verify_final(sig)
+    }
 }
 
 /// The decryption half of a stream cipher's streaming API; see [`StreamCipherEncryptor`], whose
@@ -1203,7 +1362,7 @@ pub trait Suspendable<const SERIALIZED_STATE_LEN: usize>: Sized {
 /// [`do_decrypt_final`](Self::do_decrypt_final) and [`decrypt_out_len`](Self::decrypt_out_len);
 /// the constructor is the key's, and never part of the trait.
 pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: usize>:
-    AlgorithmInfo
+    AlgorithmInfo + SymmetricCipherDecryptorBoxed<INIT_DATA_LEN, FINAL_LEN>
 {
     /// The exact number of bytes the next [`do_update_out`](Self::do_decrypt_out) will write if
     /// given `input_len` more bytes of ciphertext, so a caller can size the `plaintext` buffer for
@@ -1309,6 +1468,31 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
         Self: Sized;
 }
 
+/// The boxed twin of [`SymmetricCipherDecryptor::do_decrypt_final`], for a worker held as
+/// `Box<dyn SymmetricCipherDecryptor>`, which cannot call a method that takes `self` by value.
+/// Implemented for every implementor and a supertrait of [`SymmetricCipherDecryptor`], so no
+/// implementor writes it and the trait object calls it with nothing more in scope.
+pub trait SymmetricCipherDecryptorBoxed<const INIT_DATA_LEN: usize, const FINAL_LEN: usize> {
+    /// As [`SymmetricCipherDecryptor::do_decrypt_final`], consuming the box: a stored
+    /// worker is finished exactly once, as a concrete one is.
+    fn do_decrypt_final_boxed(
+        self: Box<Self>,
+    ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>;
+}
+
+impl<
+    T: SymmetricCipherDecryptor<INIT_DATA_LEN, FINAL_LEN>,
+    const INIT_DATA_LEN: usize,
+    const FINAL_LEN: usize,
+> SymmetricCipherDecryptorBoxed<INIT_DATA_LEN, FINAL_LEN> for T
+{
+    fn do_decrypt_final_boxed(
+        self: Box<Self>,
+    ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
+        (*self).do_decrypt_final()
+    }
+}
+
 /// The encryption half of a symmetric cipher's arbitrary-length API: streaming `do_update_out` /
 /// `do_encrypt_final`. The one-shots, and the constructor, are the key's.
 ///
@@ -1331,7 +1515,7 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
 /// [`do_update_out`](Self::do_encrypt_out), [`do_encrypt_final`](Self::do_encrypt_final) and
 /// [`encrypt_out_len`](Self::encrypt_out_len).
 pub trait SymmetricCipherEncryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: usize>:
-    AlgorithmInfo
+    AlgorithmInfo + SymmetricCipherEncryptorBoxed<INIT_DATA_LEN, FINAL_LEN>
 {
     /// The exact number of bytes the next [`do_update_out`](Self::do_encrypt_out) will write if
     /// given `input_len` more bytes of plaintext, so a caller can size the `ciphertext` buffer for
@@ -1428,6 +1612,31 @@ pub trait SymmetricCipherEncryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     fn encrypt_out_len(plaintext_len: usize) -> usize
     where
         Self: Sized;
+}
+
+/// The boxed twin of [`SymmetricCipherEncryptor::do_encrypt_final`], for a worker held as
+/// `Box<dyn SymmetricCipherEncryptor>`, which cannot call a method that takes `self` by value.
+/// Implemented for every implementor and a supertrait of [`SymmetricCipherEncryptor`], so no
+/// implementor writes it and the trait object calls it with nothing more in scope.
+pub trait SymmetricCipherEncryptorBoxed<const INIT_DATA_LEN: usize, const FINAL_LEN: usize> {
+    /// As [`SymmetricCipherEncryptor::do_encrypt_final`], consuming the box: a stored
+    /// worker is finished exactly once, as a concrete one is.
+    fn do_encrypt_final_boxed(
+        self: Box<Self>,
+    ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>;
+}
+
+impl<
+    T: SymmetricCipherEncryptor<INIT_DATA_LEN, FINAL_LEN>,
+    const INIT_DATA_LEN: usize,
+    const FINAL_LEN: usize,
+> SymmetricCipherEncryptorBoxed<INIT_DATA_LEN, FINAL_LEN> for T
+{
+    fn do_encrypt_final_boxed(
+        self: Box<Self>,
+    ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
+        (*self).do_encrypt_final()
+    }
 }
 
 /// The squeezing phase of an [`XOF`]: a value that produces output and can no longer take input,

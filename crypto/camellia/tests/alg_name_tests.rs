@@ -13,9 +13,10 @@ use bouncycastle_camellia::{
     BLOCK_LEN, CTR_NONCE_LEN, Camellia_CBC_128, Camellia_CBC_192, Camellia_CBC_256,
     Camellia_CFB_128, Camellia_CFB_192, Camellia_CFB_256, Camellia_CFB8_128, Camellia_CFB8_192,
     Camellia_CFB8_256, Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256, Camellia_KW_128,
-    Camellia_KW_192, Camellia_KW_256, Camellia128Key, LANES,
+    Camellia_KW_192, Camellia_KW_256, Camellia_OFB_128, Camellia_OFB_192, Camellia_OFB_256,
+    Camellia128Key, LANES,
 };
-use bouncycastle_cipher::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr};
+use bouncycastle_cipher::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr, OFB, Ofb};
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
@@ -84,15 +85,30 @@ fn cfb_cfb8_ctr() {
     check::<Camellia_CTR_256<'_, Encrypting>, Camellia_CTR_256<'_, Decrypting>>(
         "Camellia_CTR_256", _256bit,
     );
+    check::<Camellia_OFB_128<'_, Encrypting>, Camellia_OFB_128<'_, Decrypting>>(
+        "Camellia_OFB_128", _128bit,
+    );
+    check::<Camellia_OFB_192<'_, Encrypting>, Camellia_OFB_192<'_, Decrypting>>(
+        "Camellia_OFB_192", _192bit,
+    );
+    check::<Camellia_OFB_256<'_, Encrypting>, Camellia_OFB_256<'_, Decrypting>>(
+        "Camellia_OFB_256", _256bit,
+    );
 }
 
 /// One worker serves both halves of a key wrap, so each alias is checked against itself.
 #[test]
 fn kw() {
     use SecurityStrength::*;
-    check::<Camellia_KW_128<'_>, Camellia_KW_128<'_>>("Camellia_KW_128", _128bit);
-    check::<Camellia_KW_192<'_>, Camellia_KW_192<'_>>("Camellia_KW_192", _192bit);
-    check::<Camellia_KW_256<'_>, Camellia_KW_256<'_>>("Camellia_KW_256", _256bit);
+    check::<Camellia_KW_128<'_, Encrypting>, Camellia_KW_128<'_, Decrypting>>(
+        "Camellia_KW_128", _128bit,
+    );
+    check::<Camellia_KW_192<'_, Encrypting>, Camellia_KW_192<'_, Decrypting>>(
+        "Camellia_KW_192", _192bit,
+    );
+    check::<Camellia_KW_256<'_, Encrypting>, Camellia_KW_256<'_, Decrypting>>(
+        "Camellia_KW_256", _256bit,
+    );
 }
 
 #[test]
@@ -188,6 +204,10 @@ fn the_aliases_name_the_expected_types() {
         size_of::<Camellia_CTR_256<'_, Encrypting>>(),
         size_of::<Ctr<'_, Camellia256Internal, Encrypting, BLOCK_LEN, CTR_NONCE_LEN>>()
     );
+    assert_eq!(
+        size_of::<Camellia_OFB_128<'_, Encrypting>>(),
+        size_of::<Ofb<'_, Camellia128Internal, Encrypting, BLOCK_LEN>>()
+    );
 
     // ...and the key hands out exactly those types.
     let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -206,6 +226,10 @@ fn the_aliases_name_the_expected_types() {
     let (enc, nonce) = key.create_encryptor(&mut rng).unwrap();
     let _: Camellia_CTR_128<'_, Encrypting> = enc;
     let _: Camellia_CTR_128<'_, Decrypting> = key.create_decryptor(&nonce);
+    let key = Camellia128Key::<OFB>::from_key_material(&material).unwrap();
+    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let _: Camellia_OFB_128<'_, Encrypting> = enc;
+    let _: Camellia_OFB_128<'_, Decrypting> = key.create_decryptor(&iv);
 }
 
 /// The const parameters are Camellia's, CTR's nonce leaves the four-byte counter the mode caps

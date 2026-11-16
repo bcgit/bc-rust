@@ -36,7 +36,7 @@
 //! reproducing published vectors and for formats that carry the nonce themselves; with them, its
 //! uniqueness under the key is the caller's to keep.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_iv, load_key_object};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::aes::CTR_NONCE_LEN;
 use bouncycastle::cipher::BlockCipherKey;
@@ -45,6 +45,9 @@ use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+
+/// The 128-bit block of the ciphers these commands serve; TDES has its own commands.
+const BLOCK_LEN: usize = 16;
 
 // Every block cipher crate fixes the same CTR nonce length, so one command serves them all.
 const _: () = assert!(

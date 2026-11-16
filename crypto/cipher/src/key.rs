@@ -32,7 +32,7 @@ use bouncycastle_core::traits::RNG;
 ///
 /// Which workers a key hands out is decided by its mode, through the mode traits `M` implements
 /// over `P` in [`bouncycastle_core::hazmat`]: the symmetric pair for the stream modes and the
-/// padded block modes (`CFB`, `CFB8`, `CTR<N>` at any nonce length, `CBC<PKCS7>`,
+/// padded block modes (`CFB`, `CFB8`, `OFB`, `CTR<N>` at any nonce length, `CBC<PKCS7>`,
 /// `CBC<NoPadding>`, `ECB<PKCS7>`, `ECB<NoPadding>`), the block pair for `CBC<Blocks>`, the
 /// `hazmat` ECB pair for `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, the MAC
 /// pair for `CMAC`, the key-wrap pair for `KW` and `KWP`, and for `GMAC`, whose tag is

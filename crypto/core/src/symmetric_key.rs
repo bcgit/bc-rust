@@ -15,7 +15,7 @@
 //! * **Roles**, one trait per direction: [`AeadEncryptionKey`] / [`AeadDecryptionKey`], their
 //!   declared-length forms [`AeadDeclaredEncryptionKey`] / [`AeadDeclaredDecryptionKey`] for a mode that must
 //!   know the lengths up front, [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] for the
-//!   unauthenticated modes that take data of any length (padded CBC, CFB, CFB8, CTR),
+//!   unauthenticated modes that take data of any length (padded CBC, CFB, CFB8, OFB, CTR),
 //!   [`BlockEncryptionKey`] / [`BlockDecryptionKey`] for the whole-block modes, the ECB pair in
 //!   [`crate::hazmat`], [`MacGenerationKey`] / [`MacVerificationKey`], their nonce-bound forms
 //!   [`NonceMacGenerationKey`] / [`NonceMacVerificationKey`] for a MAC whose tag is bound to a
@@ -868,21 +868,23 @@ pub trait AeadDeclaredDecryptionKey<
     }
 }
 
-/// A key that can begin an unauthenticated encryption of data of any length: the encryption
-/// half of a key for padded CBC, CFB, CFB8 or CTR. The encryptor is the mode's ordinary worker, a
+/// A key that can begin an unauthenticated encryption of data of any length: the encryption half of
+/// a key for padded CBC, CFB, CFB8, OFB or CTR. The encryptor is the mode's ordinary worker, a
 /// [`SymmetricCipherEncryptor`]; this trait adds where it comes from, and the one-shots are
 /// provided over [`create_encryptor`](Self::create_encryptor) and the worker's streaming methods.
 ///
 /// # The init data is drawn by default
 ///
-/// Every form without `_nonce` in its name draws the init data (an IV for CBC, CFB and CFB8, a
+/// Every form without `_nonce` in its name draws the init data (an IV for CBC, CFB, CFB8 and OFB, a
 /// nonce for CTR and a stream cipher) from the RNG it is given and returns it. The `_nonce` forms
 /// take it from the caller, for a protocol whose nonce is a counter or whose format carries the
 /// IV; the caller then takes on the obligation the drawing forms discharge. For CBC and CFB that
 /// is unpredictability: SP 800-38A Appendix C, "For the CBC and CFB modes, the IVs must be
 /// unpredictable", which the drawing forms meet by its second method, "a random data block using
 /// a FIPS-approved random number generator", and a caller may meet by its first, the forward
-/// cipher function under the same key applied to a nonce unique to the message. For CTR it is
+/// cipher function under the same key applied to a nonce unique to the message. For OFB it is
+/// uniqueness: "For the OFB mode, the IV need not be unpredictable, but it must be a nonce that is
+/// unique to each execution of the encryption operation" (Appendix C). For CTR it is
 /// uniqueness: Appendix B requires "a unique counter block for each plaintext block that is ever
 /// encrypted under a given key, across all messages", which a per-message nonce in the leading
 /// bits of the counter block provides (Appendix B.2). For ChaCha20 the nonce "MUST not be

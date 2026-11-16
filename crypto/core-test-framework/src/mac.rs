@@ -78,6 +78,13 @@ impl TestFrameworkMAC {
         verifier.do_update(b"not the input");
         assert_eq!(verifier.do_verify_final(expected_output), Err(MACError::VerificationFailed));
 
+        boxed_workers_finish(
+            || key.create_generator(),
+            || key.create_verifier(),
+            input,
+            expected_output,
+        );
+
         // the two workers describe the same algorithm
         assert_eq!(key.create_generator().alg_name(), key.create_verifier().alg_name());
         assert_eq!(
@@ -242,9 +249,39 @@ impl TestFrameworkMAC {
             expected_output,
         );
 
+        boxed_workers_finish(&new_generator, &new_verifier, input, expected_output);
+
         assert_eq!(new_generator().alg_name(), new_verifier().alg_name());
         assert_eq!(new_generator().max_security_strength(), new_verifier().max_security_strength());
     }
+}
+
+/// Workers held as `Box<dyn ..>` are fed through the box and finished through their `_boxed`
+/// finals.
+fn boxed_workers_finish<const MAC_LEN: usize, G, V>(
+    new_generator: impl Fn() -> G,
+    new_verifier: impl Fn() -> V,
+    input: &[u8],
+    expected_output: &[u8; MAC_LEN],
+) where
+    G: MACGenerator<MAC_LEN>,
+    V: MACVerifier<MAC_LEN>,
+{
+    let mut generator: Box<dyn MACGenerator<MAC_LEN> + '_> = Box::new(new_generator());
+    generator.do_update(input);
+    let mut out = [0xA5u8; MAC_LEN];
+    assert_eq!(generator.do_final_out_boxed(&mut out), MAC_LEN);
+    assert_eq!(out, *expected_output);
+    let boxed_verifier = |msg: &[u8]| {
+        let mut verifier: Box<dyn MACVerifier<MAC_LEN> + '_> = Box::new(new_verifier());
+        verifier.do_update(msg);
+        verifier
+    };
+    assert_eq!(boxed_verifier(input).do_verify_final_boxed(expected_output), Ok(()));
+    assert_eq!(
+        boxed_verifier(b"not the input").do_verify_final_boxed(expected_output),
+        Err(MACError::VerificationFailed)
+    );
 }
 
 /// Every single-bit change to `tag` is refused by `verify`: a verifier that compared a prefix,

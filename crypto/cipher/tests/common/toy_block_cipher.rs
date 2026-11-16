@@ -49,6 +49,7 @@ impl ModeNames for ToyBlockCipher {
     const GMAC_ALG_NAME: &'static str = "ToyBlockCipher_GMAC";
     const KW_ALG_NAME: &'static str = "ToyBlockCipher_KW";
     const KWP_ALG_NAME: &'static str = "ToyBlockCipher_KWP";
+    const OFB_ALG_NAME: &'static str = "ToyBlockCipher_OFB";
 }
 
 impl KeyExpansion<TOY_BLOCK_LEN> for ToyBlockCipher {

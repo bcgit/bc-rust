@@ -1,5 +1,5 @@
-//! The stream modes CFB, CFB8 and CTR through the AES keys, via the shared suite: any length,
-//! any chunking, fresh init data per encryption, and the three modes distinct from each other.
+//! The stream modes CFB, CFB8, OFB and CTR through the AES keys, via the shared suite: any length,
+//! any chunking, fresh init data per encryption, and the four modes distinct from each other.
 //! The known answers are in the vector suites beside this file, and which type each alias
 //! resolves to is pinned in `alg_name_tests.rs`.
 
@@ -39,4 +39,11 @@ fn ctr_is_not_cfb() {
     stream::ctr_is_not_cfb::<AES128Internal, 16>();
     stream::ctr_is_not_cfb::<AES192Internal, 24>();
     stream::ctr_is_not_cfb::<AES256Internal, 32>();
+}
+
+#[test]
+fn ofb_is_not_cfb() {
+    stream::ofb_is_not_cfb::<AES128Internal, 16>();
+    stream::ofb_is_not_cfb::<AES192Internal, 24>();
+    stream::ofb_is_not_cfb::<AES256Internal, 32>();
 }

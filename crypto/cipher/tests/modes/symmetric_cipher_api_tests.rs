@@ -2,8 +2,8 @@
 //!
 //! The stream traits extend the symmetric-cipher traits with `FINAL_LEN = 0`: `Cfb` and `Cfb8`
 //! implement both, the separate-output half over `bouncycastle_cipher::stream`'s helpers, and
-//! `Ctr` gets both from `StreamCipher` over its keystream. That is what lets a caller
-//! hold any of the five modes through one trait: a padded `Cbc` or `Ecb` with the padded block as
+//! `Ctr` and `Ofb` get both from `StreamCipher` over their keystreams. That is what lets a caller
+//! hold any of the six modes through one trait: a padded `Cbc` or `Ecb` with the padded block as
 //! its final output, and a stream mode with nothing.
 //!
 //! What is worth testing here is the bridge, not the ciphers, which their own suites cover:
@@ -19,7 +19,7 @@
 mod common;
 
 use bouncycastle_cipher::BlockCipherKey;
-use bouncycastle_cipher::modes::{CFB, CFB8, CTR, Ctr};
+use bouncycastle_cipher::modes::{CFB, CFB8, CTR, Ctr, OFB};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::symmetric_key::{
@@ -40,7 +40,7 @@ fn key_for<M: Mode<Toy>>() -> BlockCipherKey<Toy, M> {
     BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
-/// All three stream modes must satisfy the shared conformance suite for the symmetric-cipher
+/// All four stream modes must satisfy the shared conformance suite for the symmetric-cipher
 /// traits -- the same suite the padded adapters run, with `required_alignment` left at 1 because a
 /// stream cipher accepts every length.
 ///
@@ -54,6 +54,7 @@ fn the_stream_modes_conform_to_the_symmetric_cipher_suite() {
     let framework = TestFrameworkSymmetricCipher::new();
     framework.test_key::<TOY_LEN, TOY_LEN, 0, _>(&key_for::<CFB>(), &mut os_rng());
     framework.test_key::<TOY_LEN, TOY_LEN, 0, _>(&key_for::<CFB8>(), &mut os_rng());
+    framework.test_key::<TOY_LEN, TOY_LEN, 0, _>(&key_for::<OFB>(), &mut os_rng());
     framework.test_key::<TOY_LEN, 12, 0, _>(&key_for::<CTR<12>>(), &mut os_rng());
 }
 
@@ -91,6 +92,7 @@ fn the_two_apis_agree_byte_for_byte() {
 
     check::<_, TOY_LEN, TOY_LEN>("Cfb", &key_for::<CFB>());
     check::<_, TOY_LEN, TOY_LEN>("Cfb8", &key_for::<CFB8>());
+    check::<_, TOY_LEN, TOY_LEN>("Ofb", &key_for::<OFB>());
     check::<_, TOY_LEN, 12>("Ctr", &key_for::<CTR<12>>());
 }
 
@@ -208,7 +210,7 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
 }
 
 /// The allocating one-shots -- the `Vec`-returning `encrypt` / `decrypt`, which no other test here
-/// reaches -- round-trip at a length that is not a whole number of blocks, for all three stream
+/// reaches -- round-trip at a length that is not a whole number of blocks, for all four stream
 /// modes: the shape a caller most often wants from this API.
 #[test]
 fn the_allocating_one_shots_round_trip() {
@@ -223,6 +225,12 @@ fn the_allocating_one_shots_round_trip() {
     // CFB8
     let key = key_for::<CFB8>();
     let (iv, ct) = key.encrypt(&mut os_rng(), message).unwrap();
+    assert_eq!(key.decrypt(&iv, &ct).unwrap(), message);
+
+    // OFB
+    let key = key_for::<OFB>();
+    let (iv, ct) = key.encrypt(&mut os_rng(), message).unwrap();
+    assert_eq!(ct.len(), message.len(), "a stream cipher does not change the length");
     assert_eq!(key.decrypt(&iv, &ct).unwrap(), message);
 
     // CTR

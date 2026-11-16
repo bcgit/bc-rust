@@ -9,7 +9,7 @@ use bouncycastle_cipher::BlockCipherKey;
 /// [`ARIA128Key<M>`], [`ARIA192Key<M>`] and [`ARIA256Key<M>`] are one type each per mode `M`:
 /// [`BlockCipherKey`] over the ARIA permutations, as `AES128Key<M>` and friends are over AES's.
 /// Which workers a key hands out is decided by its mode, as that type's docs say; the crate names
-/// the workers of CBC, CFB, CFB8, CTR, GCM, CCM, CMAC, GMAC, KW and KWP as the `ARIA_*`
+/// the workers of CBC, CFB, CFB8, OFB, CTR, GCM, CCM, CMAC, GMAC, KW and KWP as the `ARIA_*`
 /// aliases, and the rest are reached by naming the mode.
 ///
 /// # Usage Examples

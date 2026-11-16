@@ -41,6 +41,9 @@ pub enum KeyMaterialError {
     InvalidLength,
     ///
     SecurityStrength(&'static str),
+    /// The key is one the algorithm's specification says to avoid: a weak or semi-weak key, or a
+    /// key bundle whose components are not distinct (e.g. a TDEA bundle that collapses to single DES).
+    WeakKey(&'static str),
 }
 
 ///

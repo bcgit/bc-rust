@@ -48,25 +48,25 @@ use bouncycastle_cipher::modes::{Kw, Kwp};
 /// is the borrow of it, one pointer, and the wrapping function's scratch is one block on the
 /// stack; the data is wrapped and unwrapped in the caller's buffers.
 #[allow(non_camel_case_types)]
-pub type ARIA_KW_128<'k> = Kw<'k, ARIA128Internal>;
+pub type ARIA_KW_128<'k, Dir> = Kw<'k, ARIA128Internal, Dir>;
 
 /// ARIA-192 Key Wrap. See [`ARIA_KW_128`].
 #[allow(non_camel_case_types)]
-pub type ARIA_KW_192<'k> = Kw<'k, ARIA192Internal>;
+pub type ARIA_KW_192<'k, Dir> = Kw<'k, ARIA192Internal, Dir>;
 
 /// ARIA-256 Key Wrap. See [`ARIA_KW_128`].
 #[allow(non_camel_case_types)]
-pub type ARIA_KW_256<'k> = Kw<'k, ARIA256Internal>;
+pub type ARIA_KW_256<'k, Dir> = Kw<'k, ARIA256Internal, Dir>;
 
 /// ARIA-128 Key Wrap with Padding: the `Kwp` worker over the ARIA permutation, from an
 /// `ARIA128Key<KWP>`. See [`ARIA_KW_128`].
 #[allow(non_camel_case_types)]
-pub type ARIA_KWP_128<'k> = Kwp<'k, ARIA128Internal>;
+pub type ARIA_KWP_128<'k, Dir> = Kwp<'k, ARIA128Internal, Dir>;
 
 /// ARIA-192 Key Wrap with Padding. See [`ARIA_KW_128`].
 #[allow(non_camel_case_types)]
-pub type ARIA_KWP_192<'k> = Kwp<'k, ARIA192Internal>;
+pub type ARIA_KWP_192<'k, Dir> = Kwp<'k, ARIA192Internal, Dir>;
 
 /// ARIA-256 Key Wrap with Padding. See [`ARIA_KW_128`].
 #[allow(non_camel_case_types)]
-pub type ARIA_KWP_256<'k> = Kwp<'k, ARIA256Internal>;
+pub type ARIA_KWP_256<'k, Dir> = Kwp<'k, ARIA256Internal, Dir>;
