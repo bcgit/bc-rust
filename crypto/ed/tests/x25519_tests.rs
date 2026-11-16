@@ -1,11 +1,11 @@
 use bouncycastle_core::agreement_key::AgreementKey;
-use bouncycastle_core::errors::KeyAgreementError;
+use bouncycastle_core::errors::{KeyAgreementError, KeyMaterialError};
 use bouncycastle_core::kdf_params::{KdfDescription, KdfParams, KeyLen};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterial0, KeyMaterial256, KeyMaterialTrait, KeyType,
 };
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{KDF, KeyAgreement, KeyAgreementPublicKey};
+use bouncycastle_core::traits::{KDF, KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreement;
 use bouncycastle_ed::x25519::{
@@ -182,17 +182,33 @@ fn rfc7748_section_6_1() {
     check_value(bob_k.ref_to_bytes(), "Section 6.1 K (Bob)", k);
 }
 
+/// Every public key in Wycheproof's `x25519_test.json` (testvectors_v1, tcId 32, 33, 63 to 68,
+/// 74 to 77, 81 and 82) whose shared secret is all zero: u = 0 and u = 1, the two points of
+/// order 8, u = p - 1, p and p + 1, and each of them again with the ignored bit 255 set. Kept
+/// here so that the check does not depend on the Wycheproof checkout being present.
+const LOW_ORDER_PUBLIC_KEYS: [&str; 14] = [
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0100000000000000000000000000000000000000000000000000000000000000",
+    "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800",
+    "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b880",
+    "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f11d7",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "0000000000000000000000000000000000000000000000000000000000000080",
+    "0100000000000000000000000000000000000000000000000000000000000080",
+    "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+];
+
 /// The agreement rejects a public key that gives an all-zero shared secret, however that key
-/// is encoded: u = 0, u = p (non-canonical, reduces to 0), and u = 0 with the ignored bit 255
-/// set. The caller's buffer is left zeroized.
+/// is encoded: every small-order point, canonical or not, with or without the ignored bit 255.
+/// The caller's buffer is left zeroized.
 #[test]
 fn key_agreement_rejects_all_zero_shared_secret() {
-    let zero = [0_u8; POINT_LEN];
-    let p = decode_32("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f");
-    let mut zero_bit_255 = zero;
-    zero_bit_255[31] = 0x80;
-
-    for u in [zero, p, zero_bit_255] {
+    for u in LOW_ORDER_PUBLIC_KEYS.map(decode_32) {
         let sk = sk_from_bytes(&decode_32(
             "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
         ));
@@ -213,6 +229,51 @@ fn key_agreement_rejects_all_zero_shared_secret() {
 
 fn decode_32(s: &str) -> [u8; 32] {
     hex::decode(s).unwrap().try_into().unwrap()
+}
+
+/// RFC 7748 Section 5: "Implementations MUST accept non-canonical values and process them as if
+/// they had been reduced modulo the field prime", and "MUST mask the most significant bit in the
+/// final byte". So u = p + 3 agrees as u = 3 does, and so does u = 3 with bit 255 set.
+#[test]
+fn non_canonical_u_coordinates_agree_as_their_reduced_value() {
+    let sk = sk_from_bytes(&decode_32(
+        "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+    ));
+    let mut three = [0_u8; POINT_LEN];
+    three[0] = 3;
+    // p + 3 = 2^255 - 16
+    let p_plus_3 = decode_32("f0ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f");
+    let mut three_bit_255 = three;
+    three_bit_255[31] |= 0x80;
+
+    let expected = sk.agree(&X25519PublicKey::from_bytes(&three).unwrap(), ()).unwrap();
+    for u in [p_plus_3, three_bit_255] {
+        let k = sk.agree(&X25519PublicKey::from_bytes(&u).unwrap(), ()).unwrap();
+        assert_eq!(k.ref_to_bytes(), expected.ref_to_bytes(), "u = {u:02x?}");
+    }
+}
+
+/// The all-zero key that `keygen_out` writes into is not a key until it is filled: it makes no
+/// agreement, raw or through HKDF, and the generators leave it in that state on an error.
+#[test]
+fn an_unfilled_key_makes_no_agreement() {
+    let unfilled = X25519PrivateKey::zeroized();
+    let (pk, _) = keygen_default().unwrap();
+    assert!(matches!(
+        unfilled.agree(&pk, ()),
+        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey))
+    ));
+    let description = HkdfDescription::<SHA256>::new();
+    let params = KdfParams::new(&description, b"info", KeyLen::<32>);
+    assert!(matches!(
+        unfilled.agree(&pk, params),
+        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey))
+    ));
+
+    // A generated key is unaffected, including the one whose bytes are all zero: its scalar
+    // clamps to 2^254 and its public key is not zero.
+    let zero_bytes = X25519PrivateKey::from_bytes(&[0u8; SCALAR_LEN]).unwrap();
+    assert!(zero_bytes.agree(&pk, ()).is_ok());
 }
 
 /// A private key from its 32 bytes, via [`keygen_from_seed`].

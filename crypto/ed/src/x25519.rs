@@ -252,8 +252,8 @@ impl Algorithm for X25519 {
 impl KeyAgreementAlgorithm for X25519 {}
 
 /// Generates a key pair from `rng`, which must offer X25519's 128 bits: the 32 bytes it draws
-/// are the private key (RFC 7748 Section 6.1; RFC 9180 Section 4: "GenerateKeyPair can be
-/// implemented as DeriveKeyPair(random(Nsk))", which for X25519 is the identity).
+/// are the private key (RFC 7748 Section 6.1: "Alice generates 32 random bytes in a\[0\] to
+/// a\[31\]").
 ///
 /// [`keygen_out`] into a key you hold, moved out of this frame: a move wipes nothing, so copies
 /// of the scalar stay on the dead stack (the module's Security Considerations).
@@ -410,6 +410,9 @@ impl AgreementKey<(), POINT_LEN> for X25519PrivateKey {
         &'k self,
         _params: (),
     ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
+        if !self.is_filled() {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
         Ok(X25519Agreement { sk: self })
     }
 }
@@ -484,6 +487,9 @@ impl<'p, 's, const LEN: usize> AgreementKey<KdfParams<'p, HkdfDescription<'s, SH
         &'k self,
         params: KdfParams<'p, HkdfDescription<'s, SHA256>, LEN>,
     ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
+        if !self.is_filled() {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
         Ok(X25519KdfAgreement { sk: self, params })
     }
 }
@@ -505,10 +511,19 @@ pub struct X25519PrivateKey {
 
 impl X25519PrivateKey {
     /// The all-zero key: the key [`keygen_out`] and [`keygen_from_seed_out`] write into, so
-    /// that the scalar is drawn where it will live and never moved. It is not a generated key;
-    /// its public key is all zero until one of them fills it.
+    /// that the scalar is drawn where it will live and never moved. It is not a generated key:
+    /// its public key is all zero until one of them fills it, and until then it makes no
+    /// agreement and no decapsulator ([`KeyMaterialError::ActingOnZeroizedKey`]).
     pub fn zeroized() -> Self {
         Self { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) }
+    }
+
+    /// Whether the key has been generated or decoded. The stored public key says so: it is
+    /// `X25519(k, 9)`, which is never zero for a clamped `k` (a multiple of 8 in `[2^254,
+    /// 2^255)`, so not a multiple of the base point's odd prime order), and all zero only in the
+    /// state [`zeroized`](Self::zeroized) makes and the `_out` generators leave on an error.
+    fn is_filled(&self) -> bool {
+        self.pk.0 != [0u8; POINT_LEN]
     }
 
     /// Back to the all-zero key, the scalar wiped.
@@ -923,16 +938,19 @@ impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X25519 {
     type KDFHash = SHA256;
     const KEM_ID: u16 = 0x0020;
 
-    fn generate_key_pair_rng(
+    fn with_generated_key_pair<R>(
         rng: &mut dyn RNG,
-    ) -> Result<(X25519PublicKey, X25519PrivateKey), KEMError> {
-        // RFC 9180 §4: "GenerateKeyPair can be implemented as DeriveKeyPair(random(Nsk))"; for
-        // X25519, 32 random bytes are already a private key (RFC 7748 §6.1), so they are used as is.
-        keygen(rng).map_err(|e| match e {
+        f: impl FnOnce(&X25519PublicKey, &X25519PrivateKey) -> R,
+    ) -> Result<R, KEMError> {
+        // For X25519, 32 random bytes are a private key (RFC 7748 §6.1). The key is generated
+        // in this frame and dropped here, so its scalar is wiped where it was drawn.
+        let mut sk = X25519PrivateKey::zeroized();
+        // keygen_out fails only through the RNG.
+        let pk = keygen_out(rng, &mut sk).map_err(|e| match e {
             KeyAgreementError::RNGError(e) => KEMError::RNGError(e),
-            KeyAgreementError::KeyMaterialError(e) => KEMError::KeyMaterialError(e),
             _ => KEMError::GenericError("X25519 key generation failed"),
-        })
+        })?;
+        Ok(f(&pk, &sk))
     }
 
     const DERIVE_KEY_PAIR_BY_EXPAND: bool = true;
@@ -967,7 +985,18 @@ impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X25519 {
     }
 }
 
-impl KEMAlgorithm for X25519 {}
+/// DHKEM(X25519, HKDF-SHA256) of RFC 9180 §4.1 (`kem_id` 0x0020, §7.1): the KEM the X25519 keys
+/// carry through [`EncapsulatingKey`] and [`DecapsulatingKey`], as distinct from the X25519
+/// function itself, [`X25519`].
+#[allow(non_camel_case_types)]
+pub struct DHKEM_X25519_HKDF_SHA256;
+
+impl Algorithm for DHKEM_X25519_HKDF_SHA256 {
+    const ALG_NAME: &'static str = "DHKEM(X25519, HKDF-SHA256)";
+    const MAX_SECURITY_STRENGTH: SecurityStrength = X25519::MAX_SECURITY_STRENGTH;
+}
+
+impl KEMAlgorithm for DHKEM_X25519_HKDF_SHA256 {}
 
 /// The encapsulator an [`X25519PublicKey`] hands out through [`EncapsulatingKey`]:
 /// DHKEM(X25519, HKDF-SHA256) of RFC 9180 §4.1, where the ciphertext is an ephemeral public key
@@ -978,8 +1007,8 @@ pub struct X25519Encapsulator<'k> {
 }
 
 impl Algorithm for X25519Encapsulator<'_> {
-    const ALG_NAME: &'static str = X25519::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = X25519::MAX_SECURITY_STRENGTH;
+    const ALG_NAME: &'static str = DHKEM_X25519_HKDF_SHA256::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = DHKEM_X25519_HKDF_SHA256::MAX_SECURITY_STRENGTH;
 }
 
 impl KEMEncapsulator<POINT_LEN, DHKEM_SS_LEN> for X25519Encapsulator<'_> {
@@ -1005,7 +1034,7 @@ impl KEMEncapsulator<POINT_LEN, DHKEM_SS_LEN> for X25519Encapsulator<'_> {
 
 /// X25519 public keys encapsulate as DHKEM(X25519, HKDF-SHA256), with `()` as the parameters.
 impl EncapsulatingKey<(), POINT_LEN, DHKEM_SS_LEN> for X25519PublicKey {
-    type Algorithm = X25519;
+    type Algorithm = DHKEM_X25519_HKDF_SHA256;
     type Encapsulator<'k> = X25519Encapsulator<'k>;
 
     fn create_encapsulator<'k>(&'k self, _params: ()) -> Result<X25519Encapsulator<'k>, KEMError> {
@@ -1020,8 +1049,8 @@ pub struct X25519Decapsulator<'k> {
 }
 
 impl Algorithm for X25519Decapsulator<'_> {
-    const ALG_NAME: &'static str = X25519::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = X25519::MAX_SECURITY_STRENGTH;
+    const ALG_NAME: &'static str = DHKEM_X25519_HKDF_SHA256::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = DHKEM_X25519_HKDF_SHA256::MAX_SECURITY_STRENGTH;
 }
 
 impl KEMDecapsulator<POINT_LEN, DHKEM_SS_LEN> for X25519Decapsulator<'_> {
@@ -1043,10 +1072,13 @@ impl KEMDecapsulator<POINT_LEN, DHKEM_SS_LEN> for X25519Decapsulator<'_> {
 
 /// X25519 private keys decapsulate as DHKEM(X25519, HKDF-SHA256), with `()` as the parameters.
 impl DecapsulatingKey<(), POINT_LEN, DHKEM_SS_LEN> for X25519PrivateKey {
-    type Algorithm = X25519;
+    type Algorithm = DHKEM_X25519_HKDF_SHA256;
     type Decapsulator<'k> = X25519Decapsulator<'k>;
 
     fn create_decapsulator<'k>(&'k self, _params: ()) -> Result<X25519Decapsulator<'k>, KEMError> {
+        if !self.is_filled() {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
         Ok(X25519Decapsulator { sk: self })
     }
 }

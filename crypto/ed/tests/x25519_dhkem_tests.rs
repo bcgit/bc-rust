@@ -1,17 +1,17 @@
 //! X25519 as a KEM: DHKEM(X25519, HKDF-SHA256) of RFC 9180 Section 4.1, against the RFC 9180
 //! Appendix A.1 vectors and the core-test-framework KEM suites.
 
-use bouncycastle_core::errors::{KEMError, RNGError};
+use bouncycastle_core::errors::{KEMError, KeyMaterialError, RNGError};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
+    Algorithm, AlgorithmInfo, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
 };
 use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKeys};
 use bouncycastle_ed::x25519::{
-    DHKEM_SS_LEN, POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey, keygen,
-    keygen_from_seed,
+    DHKEM_SS_LEN, DHKEM_X25519_HKDF_SHA256, POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey,
+    X25519PublicKey, keygen, keygen_from_seed,
 };
 use bouncycastle_hex as hex;
 use bouncycastle_hpke::dhkem::DHKEM;
@@ -268,16 +268,34 @@ fn kem_keys_framework() {
         .test_keys::<X25519PublicKey, X25519PrivateKey, POINT_LEN, SCALAR_LEN>(keygen_kem);
 }
 
+/// Every public key in Wycheproof's `x25519_test.json` (testvectors_v1, tcId 32, 33, 63 to 68,
+/// 74 to 77, 81 and 82) whose shared secret is all zero: u = 0 and u = 1, the two points of
+/// order 8, u = p - 1, p and p + 1, and each of them again with the ignored bit 255 set. Kept
+/// here so that the check does not depend on the Wycheproof checkout being present.
+const LOW_ORDER_PUBLIC_KEYS: [&str; 14] = [
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0100000000000000000000000000000000000000000000000000000000000000",
+    "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800",
+    "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b880",
+    "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f11d7",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "0000000000000000000000000000000000000000000000000000000000000080",
+    "0100000000000000000000000000000000000000000000000000000000000080",
+    "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+];
+
 /// Low-order public keys give an all-zero X25519 output, which RFC 9180 Section 7.1.4 requires
 /// both sides to reject.
 #[test]
 fn rejects_low_order_public_key() {
     let (_, sk) = keygen(&mut DefaultRNG::default()).unwrap();
-    let mut zero_bit_255 = [0_u8; 32];
-    zero_bit_255[31] = 0x80;
-    let p = decode_32("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f");
 
-    for u in [[0_u8; 32], p, zero_bit_255] {
+    for u in LOW_ORDER_PUBLIC_KEYS.map(decode_32) {
         match X25519PublicKey::from_bytes(&u)
             .unwrap()
             .encaps(&mut HashDRBG_SHA512::new_from_os(), ())
@@ -360,4 +378,31 @@ fn the_kem_workers_leave_stale_buffers_zeroized_on_a_small_order_key() {
     ));
     assert_eq!(ss.key_type(), KeyType::Zeroized);
     assert_eq!(ss.key_len(), 0);
+}
+
+/// The KEM roles name the KEM, not the function under it, and at X25519's strength.
+#[test]
+fn the_kem_workers_name_dhkem() {
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
+    let encapsulator = pk.create_encapsulator(()).unwrap();
+    let decapsulator = sk.create_decapsulator(()).unwrap();
+    assert_eq!(encapsulator.alg_name(), "DHKEM(X25519, HKDF-SHA256)");
+    assert_eq!(decapsulator.alg_name(), "DHKEM(X25519, HKDF-SHA256)");
+    assert_eq!(DHKEM_X25519_HKDF_SHA256::ALG_NAME, "DHKEM(X25519, HKDF-SHA256)");
+    assert_eq!(DHKEM_X25519_HKDF_SHA256::MAX_SECURITY_STRENGTH, X25519::MAX_SECURITY_STRENGTH);
+    assert_eq!(encapsulator.max_security_strength(), SecurityStrength::_128bit);
+}
+
+/// The all-zero key that `keygen_out` writes into makes no decapsulator until it is filled.
+#[test]
+fn an_unfilled_key_makes_no_decapsulator() {
+    let unfilled = X25519PrivateKey::zeroized();
+    assert!(matches!(
+        unfilled.create_decapsulator(()),
+        Err(KEMError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey))
+    ));
+    assert!(matches!(
+        unfilled.decaps(&[9u8; POINT_LEN], ()),
+        Err(KEMError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey))
+    ));
 }
