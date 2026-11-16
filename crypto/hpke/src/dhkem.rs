@@ -1,7 +1,7 @@
 //! The DH-Based KEM (DHKEM) of RFC 9180 Section 4.1, generic over the Diffie-Hellman group.
 //!
 //! A group's crate implements [`DHKEMParams`] for its algorithm struct and then calls
-//! [`DHKEM::encap_rng`] and [`DHKEM::decap`] from the workers its keys hand out through
+//! [`DHKEM::encap_rng_out`] and [`DHKEM::decap_out`] from the workers its keys hand out through
 //! [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) and
 //! [`DecapsulatingKey`](bouncycastle_core::kem_key::DecapsulatingKey).
 
@@ -56,10 +56,14 @@ pub trait DHKEMParams<const N_PK: usize, const N_SK: usize, const N_DH: usize>: 
     /// The `kem_id` of RFC 9180 Section 7.1, Table 2.
     const KEM_ID: u16;
 
-    /// `GenerateKeyPair()` (RFC 9180 Section 4), drawing its randomness from `rng`.
-    fn generate_key_pair_rng(
+    /// `GenerateKeyPair()` (RFC 9180 Section 4), drawing its randomness from `rng`, with the pair
+    /// lent to `f` rather than returned: the implementation generates the private key in a slot
+    /// of its own frame and drops it there, so the ephemeral key of an encapsulation is never
+    /// moved.
+    fn with_generated_key_pair<R>(
         rng: &mut dyn RNG,
-    ) -> Result<(Self::PublicKey, Self::PrivateKey), KEMError>;
+        f: impl FnOnce(&Self::PublicKey, &Self::PrivateKey) -> R,
+    ) -> Result<R, KEMError>;
 
     /// The private key with the byte string `sk` as its value, as `DeriveKeyPair` (RFC 9180
     /// Section 7.1.3) requires.
@@ -96,7 +100,28 @@ pub trait DHKEMParams<const N_PK: usize, const N_SK: usize, const N_DH: usize>: 
 /// The const parameters are `G`'s sizes (see [`DHKEMParams`]) plus `N_SECRET`, the Nsecret of RFC
 /// 9180 Section 7.1, which must equal the output length of [`DHKEMParams::KDFHash`] (Section 4.1:
 /// "the size Nsecret of the KEM shared secret is equal to the output length of the hash function
-/// underlying the KDF").
+/// underlying the KDF"). That, and the other relations between the parameters, are checked when
+/// a DHKEM is used, so DHKEM(X25519, HKDF-SHA256) with its Nsecret of 32 compiles:
+///
+/// ```
+/// use bouncycastle_core::traits::KEMPrivateKey;
+/// use bouncycastle_ed::x25519::{X25519, X25519PrivateKey};
+/// use bouncycastle_hpke::dhkem::DHKEM;
+///
+/// let sk = <X25519PrivateKey as KEMPrivateKey<32>>::from_bytes(&[7u8; 32]).unwrap();
+/// let _ = DHKEM::<X25519, 32, 32, 32, 32>::decap(&[9u8; 32], &sk);
+/// ```
+///
+/// and with an Nsecret that is not SHA-256's output length it does not:
+///
+/// ```compile_fail
+/// use bouncycastle_core::traits::KEMPrivateKey;
+/// use bouncycastle_ed::x25519::{X25519, X25519PrivateKey};
+/// use bouncycastle_hpke::dhkem::DHKEM;
+///
+/// let sk = <X25519PrivateKey as KEMPrivateKey<32>>::from_bytes(&[7u8; 32]).unwrap();
+/// let _ = DHKEM::<X25519, 32, 32, 32, 64>::decap(&[9u8; 32], &sk);
+/// ```
 pub struct DHKEM<G, const N_PK: usize, const N_SK: usize, const N_DH: usize, const N_SECRET: usize>
 {
     _group: PhantomData<G>,
@@ -154,15 +179,18 @@ impl<
         if rng.security_strength() < G::MAX_SECURITY_STRENGTH {
             return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
         }
-        // skE, pkE = GenerateKeyPair()
-        let (pk_e, sk_e) = G::generate_key_pair_rng(rng)?;
-        // dh = DH(skE, pkR)
+        // skE, pkE = GenerateKeyPair(); skE stays in the group's frame and is wiped there.
         let mut dh = Secret::<[u8; N_DH]>::new();
-        G::dh_into(&sk_e, pk_r, &mut dh).map_err(|_| {
+        G::with_generated_key_pair(rng, |pk_e, sk_e| {
+            // dh = DH(skE, pkR)
+            G::dh_into(sk_e, pk_r, &mut dh)?;
+            // enc = SerializePublicKey(pkE)
+            *enc = G::serialize_public_key(pk_e);
+            Ok(())
+        })?
+        .map_err(|_: KeyAgreementError| {
             KEMError::InvalidPublicKey("The recipient's public key failed validation")
         })?;
-        // enc = SerializePublicKey(pkE)
-        *enc = G::serialize_public_key(&pk_e);
         // pkRm = SerializePublicKey(pkR); kem_context = concat(enc, pkRm)
         let pk_rm = G::serialize_public_key(pk_r);
         // shared_secret = ExtractAndExpand(dh, kem_context)
@@ -230,6 +258,115 @@ impl<
     /// # Errors
     ///
     /// [`KEMError::KeyGenError`] if `ikm` does not meet those requirements.
+    ///
+    /// A group that declares the expand form ([`DHKEMParams::DERIVE_KEY_PAIR_BY_EXPAND`])
+    /// compiles:
+    ///
+    /// ```
+    /// # use bouncycastle_core::errors::{KEMError, KeyAgreementError};
+    /// # use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+    /// # use bouncycastle_core::security_strength::SecurityStrength;
+    /// # use bouncycastle_core::traits::{Algorithm, RNG};
+    /// # use bouncycastle_ed::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
+    /// # use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams};
+    /// # use bouncycastle_utils::secret::Secret;
+    /// # type Sk = X25519PrivateKey;
+    /// # type Pk = X25519PublicKey;
+    /// # // X25519 with its DeriveKeyPair form as a parameter.
+    /// # struct Group<const BY_EXPAND: bool>;
+    /// # impl<const B: bool> Algorithm for Group<B> {
+    /// #     const ALG_NAME: &'static str = "test group";
+    /// #     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    /// # }
+    /// # impl<const B: bool> DHKEMParams<32, 32, 32> for Group<B> {
+    /// #     type PublicKey = Pk;
+    /// #     type PrivateKey = Sk;
+    /// #     type KDFHash = <X25519 as DHKEMParams<32, 32, 32>>::KDFHash;
+    /// #     const KEM_ID: u16 = 0x0020;
+    /// #     const DERIVE_KEY_PAIR_BY_EXPAND: bool = B;
+    /// #     fn with_generated_key_pair<R>(
+    /// #         rng: &mut dyn RNG,
+    /// #         f: impl FnOnce(&Pk, &Sk) -> R,
+    /// #     ) -> Result<R, KEMError> {
+    /// #         <X25519 as DHKEMParams<32, 32, 32>>::with_generated_key_pair(rng, f)
+    /// #     }
+    /// #     fn private_key_from_bytes(sk: &[u8; 32]) -> Sk {
+    /// #         <X25519 as DHKEMParams<32, 32, 32>>::private_key_from_bytes(sk)
+    /// #     }
+    /// #     fn pk(sk: &Sk) -> Pk {
+    /// #         <X25519 as DHKEMParams<32, 32, 32>>::pk(sk)
+    /// #     }
+    /// #     fn dh_into(
+    /// #         sk: &Sk,
+    /// #         pk: &Pk,
+    /// #         out: &mut Secret<[u8; 32]>,
+    /// #     ) -> Result<(), KeyAgreementError> {
+    /// #         <X25519 as DHKEMParams<32, 32, 32>>::dh_into(sk, pk, out)
+    /// #     }
+    /// #     fn serialize_public_key(pk: &Pk) -> [u8; 32] {
+    /// #         <X25519 as DHKEMParams<32, 32, 32>>::serialize_public_key(pk)
+    /// #     }
+    /// #     fn deserialize_public_key(pkm: &[u8; 32]) -> Result<Pk, KEMError> {
+    /// #         <X25519 as DHKEMParams<32, 32, 32>>::deserialize_public_key(pkm)
+    /// #     }
+    /// # }
+    /// let ikm = KeyMaterial256::from_bytes_as_type(&[7u8; 32], KeyType::Seed).unwrap();
+    /// let _ = DHKEM::<Group<true>, 32, 32, 32, 32>::derive_key_pair(&ikm);
+    /// ```
+    ///
+    /// and one that does not is refused at compile time:
+    ///
+    /// ```compile_fail
+    /// # use bouncycastle_core::errors::{KEMError, KeyAgreementError};
+    /// # use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+    /// # use bouncycastle_core::security_strength::SecurityStrength;
+    /// # use bouncycastle_core::traits::{Algorithm, RNG};
+    /// # use bouncycastle_ed::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
+    /// # use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams};
+    /// # use bouncycastle_utils::secret::Secret;
+    /// # type Sk = X25519PrivateKey;
+    /// # type Pk = X25519PublicKey;
+    /// # // X25519 with its DeriveKeyPair form as a parameter.
+    /// # struct Group<const BY_EXPAND: bool>;
+    /// # impl<const B: bool> Algorithm for Group<B> {
+    /// #     const ALG_NAME: &'static str = "test group";
+    /// #     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    /// # }
+    /// # impl<const B: bool> DHKEMParams<32, 32, 32> for Group<B> {
+    /// #     type PublicKey = Pk;
+    /// #     type PrivateKey = Sk;
+    /// #     type KDFHash = <X25519 as DHKEMParams<32, 32, 32>>::KDFHash;
+    /// #     const KEM_ID: u16 = 0x0020;
+    /// #     const DERIVE_KEY_PAIR_BY_EXPAND: bool = B;
+    /// #     fn with_generated_key_pair<R>(
+    /// #         rng: &mut dyn RNG,
+    /// #         f: impl FnOnce(&Pk, &Sk) -> R,
+    /// #     ) -> Result<R, KEMError> {
+    /// #         <X25519 as DHKEMParams<32, 32, 32>>::with_generated_key_pair(rng, f)
+    /// #     }
+    /// #     fn private_key_from_bytes(sk: &[u8; 32]) -> Sk {
+    /// #         <X25519 as DHKEMParams<32, 32, 32>>::private_key_from_bytes(sk)
+    /// #     }
+    /// #     fn pk(sk: &Sk) -> Pk {
+    /// #         <X25519 as DHKEMParams<32, 32, 32>>::pk(sk)
+    /// #     }
+    /// #     fn dh_into(
+    /// #         sk: &Sk,
+    /// #         pk: &Pk,
+    /// #         out: &mut Secret<[u8; 32]>,
+    /// #     ) -> Result<(), KeyAgreementError> {
+    /// #         <X25519 as DHKEMParams<32, 32, 32>>::dh_into(sk, pk, out)
+    /// #     }
+    /// #     fn serialize_public_key(pk: &Pk) -> [u8; 32] {
+    /// #         <X25519 as DHKEMParams<32, 32, 32>>::serialize_public_key(pk)
+    /// #     }
+    /// #     fn deserialize_public_key(pkm: &[u8; 32]) -> Result<Pk, KEMError> {
+    /// #         <X25519 as DHKEMParams<32, 32, 32>>::deserialize_public_key(pkm)
+    /// #     }
+    /// # }
+    /// let ikm = KeyMaterial256::from_bytes_as_type(&[7u8; 32], KeyType::Seed).unwrap();
+    /// let _ = DHKEM::<Group<false>, 32, 32, 32, 32>::derive_key_pair(&ikm);
+    /// ```
     pub fn derive_key_pair(
         ikm: &impl KeyMaterialTrait,
     ) -> Result<(G::PublicKey, G::PrivateKey), KEMError> {
@@ -255,7 +392,8 @@ impl<
         }
 
         // dkp_prk = LabeledExtract("", "dkp_prk", ikm)
-        let dkp_prk = Self::labeled_extract(LABEL_DKP_PRK, ikm.ref_to_bytes());
+        let mut dkp_prk = KeyMaterial::<MAX_NH>::new();
+        Self::labeled_extract_into(LABEL_DKP_PRK, ikm.ref_to_bytes(), &mut dkp_prk);
         // sk = LabeledExpand(dkp_prk, "sk", "", Nsk)
         let mut sk = Secret::<[u8; N_SK]>::new();
         Self::labeled_expand(&dkp_prk, LABEL_SK, &[], &mut *sk);
@@ -274,7 +412,8 @@ impl<
     fn extract_and_expand_into(dh: &[u8], kem_context: &[&[u8]], out: &mut KeyMaterial<N_SECRET>) {
         out.zeroize();
         // eae_prk = LabeledExtract("", "eae_prk", dh)
-        let eae_prk = Self::labeled_extract(LABEL_EAE_PRK, dh);
+        let mut eae_prk = KeyMaterial::<MAX_NH>::new();
+        Self::labeled_extract_into(LABEL_EAE_PRK, dh, &mut eae_prk);
         // shared_secret = LabeledExpand(eae_prk, "shared_secret", kem_context, Nsecret)
         let mut shared_secret = Secret::<[u8; N_SECRET]>::new();
         Self::labeled_expand(&eae_prk, LABEL_SHARED_SECRET, kem_context, &mut *shared_secret);
@@ -297,8 +436,9 @@ impl<
     /// `LabeledExtract("", label, ikm)` (RFC 9180 Section 4), where `Extract` is HKDF-Extract
     /// (RFC 5869 Section 2.2) over [`DHKEMParams::KDFHash`]. Every call in a DHKEM has an empty salt.
     ///
-    /// Returns the PRK as a MAC key, ready for [`Self::labeled_expand`].
-    fn labeled_extract(label: &[u8], ikm: &[u8]) -> KeyMaterial<MAX_NH> {
+    /// Writes the PRK into `prk` as a MAC key, ready for [`Self::labeled_expand`]: into the
+    /// caller's buffer rather than returned, so that it is not moved.
+    fn labeled_extract_into(label: &[u8], ikm: &[u8], prk: &mut KeyMaterial<MAX_NH>) {
         // PRK = HMAC-Hash(salt, IKM)
         // An empty salt is an empty HMAC key. RFC 5869 Section 2.2 says an absent salt "is set to a
         // string of HashLen zeros", which is the same HMAC key, as HMAC zero-pads its key.
@@ -316,15 +456,15 @@ impl<
         hmac.do_update(label);
         hmac.do_update(ikm);
 
-        let mut prk = Secret::<[u8; MAX_NH]>::new();
-        // Cannot fail: the buffer is at least the hash output length (PARAMS_CHECK).
+        let mut bytes = Secret::<[u8; MAX_NH]>::new();
+        // The whole tag: the buffer is the hash output length, at most MAX_NH (PARAMS_CHECK).
         let nh = <G::KDFHash as HashAlgParams>::OUTPUT_LEN;
-        let nh = hmac_hazmat::finish_out(&salt, &mut hmac, &mut prk[..nh]);
+        let nh = hmac_hazmat::finish_out(&salt, &mut hmac, &mut bytes[..nh]);
         // nh <= MAX_NH bytes fit a KeyMaterial<MAX_NH>; the one way this fails is an all-zero
         // PRK (one HMAC output in 2^(8 * nh)), which the buffer types Zeroized and the expand's
         // HmacKey then refuses. Not reachable in practice; a panic is the right report for it.
-        KeyMaterial::from_bytes_as_type(&prk[..nh], KeyType::MACKey)
-            .expect("an all-zero PRK, one HMAC output in 2^(8 * nh)")
+        prk.set_bytes_as_type(&bytes[..nh], KeyType::MACKey)
+            .expect("an all-zero PRK, one HMAC output in 2^(8 * nh)");
     }
 
     /// `LabeledExpand(prk, label, info, L)` (RFC 9180 Section 4), where `Expand` is HKDF-Expand (RFC
@@ -340,9 +480,9 @@ impl<
         let mut t = Secret::<[u8; MAX_NH]>::new();
         let mut t_len = 0;
         // N = ceil(L/HashLen); T = T(1) | T(2) | ... | T(N); OKM = first L octets of T
-        // The PRK keys one HmacKey for the whole expand (review of PR #186: keying it per
-        // iteration left one more SHA-256 schedule of `prk XOR opad` per block). It refuses an
-        // all-zero PRK, one HMAC output in 2^(8 * nh); see labeled_extract.
+        // The PRK keys one HmacKey for the whole expand, so that its pads are scheduled once
+        // and not once per block. It refuses an
+        // all-zero PRK, one HMAC output in 2^(8 * nh); see labeled_extract_into.
         let key = HmacKey::<G::KDFHash>::from_key_material(prk)
             .expect("an all-zero PRK, one HMAC output in 2^(8 * nh)");
         // Each chunk of `out` is one T(i), the last one truncated.
@@ -351,7 +491,7 @@ impl<
             let mut hmac = hmac_hazmat::inner_state(&key);
             hmac.do_update(&t[..t_len]);
             // labeled_info = concat(I2OSP(L, 2), "HPKE-v1", suite_id, label, info)
-            // Deviation from the RFC: absorbed in parts, as in labeled_extract.
+            // Deviation from the RFC: absorbed in parts, as in labeled_extract_into.
             hmac.do_update(&l);
             hmac.do_update(HPKE_VERSION_LABEL);
             hmac.do_update(&Self::SUITE_ID);
@@ -361,7 +501,7 @@ impl<
             }
             // i <= N <= 255, since L <= 255*HashLen.
             hmac.do_update(&[(i + 1) as u8]);
-            // Cannot fail: the buffer is at least the hash output length (PARAMS_CHECK).
+            // The whole tag: the buffer is the hash output length (PARAMS_CHECK).
             t_len = hmac_hazmat::finish_out(&key, &mut hmac, &mut t[..nh]);
             okm_chunk.copy_from_slice(&t[..okm_chunk.len()]);
         }

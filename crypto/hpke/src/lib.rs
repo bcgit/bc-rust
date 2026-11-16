@@ -33,9 +33,9 @@
 //!   reached: the by-value `encap_rng`, `decap` and `derive_key_pair` move their result out of
 //!   the frame that built it, and the HMAC the KDF runs leaves its inner and outer chaining states
 //!   and the SHA-256 message schedule of `prk XOR opad` on the dead stack below this crate's
-//!   frames, from which the PRK is recoverable; that residue is `hmac`'s and `sha2`'s (the
-//!   review of PR #186 measured it), and the PRK keys one `HmacKey` per expand so it is left once.
-//! * The crate's own source is `no_std`, but `bouncycastle-core`, `hmac` and `hkdf` are not yet.
+//!   frames, from which the PRK is recoverable; that residue is `hmac`'s and `sha2`'s, and the
+//!   PRK keys one `HmacKey` per expand so it is left once.
+//! * The crate's own source is `no_std`, but `bouncycastle-core` and `hmac` are not yet.
 
 #![no_std]
 #![forbid(unsafe_code)]
