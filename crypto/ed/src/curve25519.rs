@@ -156,9 +156,7 @@ impl FieldElement25519 {
     /// [`Self::pow_p_sub5_div8`] writes `x^3` and `x^((p-5)/8)` into this frame's two buffers.
     /// Raising the second to the 8th and multiplying by the first gives exponent
     /// `8 * (2^252 - 3) + 3 == 2^255 - 21 == p - 2`. Costs 254 squarings and 12 multiplies. The
-    /// two buffers are wiped when this frame drops them, which a pair returned by value was not:
-    /// a move out of the callee's frame runs no `Drop`, and the pair, which together gives
-    /// `x^-1`, stayed on the dead stack.
+    /// two buffers, which together give `x^-1`, are wiped when this frame drops them.
     ///
     /// Constant time: a fixed addition chain, with no data-dependent branch or index.
     ///
@@ -255,11 +253,6 @@ impl FieldElement25519 {
     /// prime. The non-canonical values are 2^255 - 19 through 2^255 - 1": `v >= p` if and only
     /// if `v + 19 >= 2^255`. The `normalize_edge_values` unit test pins `p - 1`, `p` and
     /// `2^255 - 1`.
-    ///
-    /// The two-pass form this replaced was wrong for `V` in `[p - 19, p - 1]` with a limb 4 of
-    /// `2^51` or more (its single fold produced a negative value, which the second pass then
-    /// mis-corrected), and its debug assertion rejected the valid outputs of the last multiply
-    /// whose value lay in `[2^255, 2^255 + p)`; the test module holds both cases.
     pub(crate) fn normalize(&self) -> NormalizedFieldElement25519 {
         NormalizedFieldElement25519(self.reduce(0).reduce(0).reduce(1).reduce(-1))
     }

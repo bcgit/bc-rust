@@ -159,19 +159,16 @@
 //! (Section 7), so `K` would be the same for every private key and known to whoever chose the
 //! peer key.
 //!
-//! **What step-4-style destruction reaches here, and what it does not.** `K`, the decoded
-//! scalar, the ladder's and the inversion's field elements and the DHKEM's intermediates each
-//! live in a `Secret` or a self-wiping field element and are cleared at the end of their
-//! lifetime, `agree_out` writes into the caller's buffer, and [`keygen_out`] and
-//! [`keygen_from_seed_out`] draw the scalar straight into a key the caller holds. What is not
-//! reached: a key pair returned by value from [`keygen`], [`keygen_from_seed`], the trait's
-//! `from_bytes` or `DeriveKeyPair` is moved out of the frame that built it, and a move does not
-//! wipe its source, so copies of the scalar stay on the dead stack (two for the keygens, one
-//! move into the pair and one into the `Result`); `encode` returns the clamped scalar as a plain
-//! array by the trait's contract; the by-value `agree`, `encaps` and `decaps` of `core` move
-//! their result out the same way; and HKDF's frame keeps its copies of `K` and of the PRK's
-//! HMAC states in the pairing and the DHKEM (see `bouncycastle_hpke`'s Security
-//! Considerations). Use the `_out` forms into a buffer or key you own where that matters.
+//! **What is wiped, and what is not.** `K`, the decoded scalar, the ladder's and the
+//! inversion's field elements and the DHKEM's intermediates each live in a `Secret` or a
+//! self-wiping field element and are cleared at the end of their lifetime; `agree_out` writes
+//! into the caller's buffer, and [`keygen_out`] and [`keygen_from_seed_out`] draw the scalar
+//! straight into a key the caller holds. A value returned by value is moved, and a move does
+//! not wipe its source: that holds for the key pairs of [`keygen`], [`keygen_from_seed`], the
+//! trait's `from_bytes` and `DeriveKeyPair`, for the clamped scalar `encode` returns, and for
+//! the results of `core`'s by-value `agree`, `encaps` and `decaps`. Use the `_out` forms into a
+//! buffer or key you own where that matters. What HKDF's own frames keep is in
+//! `bouncycastle_hpke`'s Security Considerations.
 //!
 //! The pairing's derived key carries the least of X25519's 128 bits, the KDF's and the length's
 //! strength, so a `LEN` below 16 bytes is typed `CryptographicRandom` at less than 128 bits.
@@ -255,8 +252,8 @@ impl KeyAgreementAlgorithm for X25519 {}
 /// are the private key (RFC 7748 Section 6.1: "Alice generates 32 random bytes in a\[0\] to
 /// a\[31\]").
 ///
-/// [`keygen_out`] into a key you hold, moved out of this frame: a move wipes nothing, so copies
-/// of the scalar stay on the dead stack (the module's Security Considerations).
+/// [`keygen_out`] into a key you hold, moved out of this frame; a move wipes nothing (the
+/// module's Security Considerations).
 ///
 /// # Errors
 /// [`KeyAgreementError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver.
@@ -294,8 +291,8 @@ pub fn keygen_out(
 /// more. The bytes are kept as given; the clamping of RFC 7748 Section 5 is applied when they
 /// are used, and the encoding is the clamped form.
 ///
-/// [`keygen_from_seed_out`] into a key you hold, moved out of this frame: a move wipes nothing,
-/// so copies of the scalar stay on the dead stack (the module's Security Considerations).
+/// [`keygen_from_seed_out`] into a key you hold, moved out of this frame; a move wipes nothing
+/// (the module's Security Considerations).
 ///
 /// # Errors
 /// [`KeyAgreementError::KeyMaterialError`] for a seed of another type or length, or of too
