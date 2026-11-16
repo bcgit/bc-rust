@@ -21,6 +21,43 @@
 //! The rest of HPKE (the key schedule, AEAD encryption and secret export of RFC 9180 Section 5) is
 //! not yet implemented.
 //!
+//! # Usage Examples
+//!
+//! A group's keys are the usual way in (`pk.encaps(&mut rng, ())` on an X25519 public key). The
+//! generic DHKEM can also be driven directly, here as DHKEM(X25519, HKDF-SHA256):
+//!
+//! ```
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
+//! use bouncycastle_ed::x25519::{X25519, keygen};
+//! use bouncycastle_hpke::dhkem::DHKEM;
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! // Npk = Nsk = Ndh = Nsecret = 32 (RFC 9180 Section 7.1).
+//! type Kem = DHKEM<X25519, 32, 32, 32, 32>;
+//!
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let (pk_r, sk_r) = keygen(&mut rng).unwrap();
+//!
+//! // The sender: the shared secret, and `enc` to send.
+//! let mut enc = [0u8; 32];
+//! let mut sender_secret = KeyMaterial::<32>::new();
+//! Kem::encap_rng_out(&pk_r, &mut rng, &mut enc, &mut sender_secret)?;
+//!
+//! // The recipient recovers the same shared secret from `enc`.
+//! let mut recipient_secret = KeyMaterial::<32>::new();
+//! Kem::decap_out(&enc, &sk_r, &mut recipient_secret)?;
+//! assert_eq!(sender_secret.ref_to_bytes(), recipient_secret.ref_to_bytes());
+//! # Ok::<(), bouncycastle_core::errors::KEMError>(())
+//! ```
+//!
+//! # Memory Usage
+//!
+//! [`dhkem::DHKEM`] is a set of functions over its group, with no state of its own, no lookup
+//! tables and no heap allocation. A call's working memory is on the stack: the DH output (Ndh
+//! bytes), one PRK and one HKDF-Expand block, each sized for the largest hash of RFC 9180
+//! Section 7.2 (64 bytes), and the HMAC states of the extract and the expand. The per-call stack
+//! figures for the X25519 instantiation are in `bouncycastle_ed::x25519`'s Memory Usage table.
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! * [`dhkem::DHKEMParams::dh_into`] must perform the group's validation of the DH output (RFC 9180
