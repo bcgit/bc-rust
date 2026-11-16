@@ -254,14 +254,14 @@ impl TestFrameworkAEADCipher {
             // the in-place one-shots, drawing and supplied-nonce
             let mut buf = msg.to_vec();
             let (ip_nonce, ip_tag) =
-                key.encrypt_detached_in_place(&mut fixed_rng(), aad, &mut buf).unwrap();
+                key.encrypt_detached_inplace(&mut fixed_rng(), aad, &mut buf).unwrap();
             assert_eq!(ip_nonce, pinned_nonce, "len {len}: in place, the pinned nonce");
             assert_eq!((&buf[..], ip_tag), (&detached[..len], detached_tag), "len {len}: in place");
-            key.decrypt_detached_in_place(&ip_nonce, aad, &mut buf, &ip_tag).unwrap();
+            key.decrypt_detached_inplace(&ip_nonce, aad, &mut buf, &ip_tag).unwrap();
             assert_eq!(&buf[..], msg, "len {len}: in-place round trip");
-            let ip_tag = key.encrypt_detached_in_place_nonce(&pinned_nonce, aad, &mut buf).unwrap();
+            let ip_tag = key.encrypt_detached_inplace_nonce(&pinned_nonce, aad, &mut buf).unwrap();
             assert_eq!((&buf[..], ip_tag), (&detached[..len], detached_tag), "len {len}: in place");
-            key.decrypt_detached_in_place(&pinned_nonce, aad, &mut buf, &ip_tag).unwrap();
+            key.decrypt_detached_inplace(&pinned_nonce, aad, &mut buf, &ip_tag).unwrap();
             assert_eq!(&buf[..], msg, "len {len}: in-place round trip under the nonce");
 
             // the streaming constructor under the pinned RNG draws the pinned nonce, and the
@@ -560,7 +560,7 @@ impl TestFrameworkAEADCipher {
                 "the one-shot decrypt must zeroize the buffer when the tag check fails"
             );
             let mut buf = tampered.clone();
-            match key.decrypt_detached_in_place(&nonce, aad, &mut buf, &tag) {
+            match key.decrypt_detached_inplace(&nonce, aad, &mut buf, &tag) {
                 Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
                 other => panic!("a modified ciphertext must fail in place too, got {other:?}"),
             };

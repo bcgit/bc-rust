@@ -20,7 +20,8 @@ use bouncycastle_core::signature_key::{
     DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{
-    AlgorithmInfo, Hash, HashAlgParams, HashOneShot, RNG, SignatureSigner, SignatureVerifier,
+    AlgorithmInfo, FinishToken, Hash, HashAlgParams, HashOneShot, RNG, SignatureSigner,
+    SignatureVerifier,
 };
 
 /// An RSA signature algorithm: the modulus size, the message hash, and the scheme's EMSA
@@ -173,16 +174,20 @@ where
         self.hash.do_update(msg_chunk);
     }
 
-    fn do_final(self) -> Result<[u8; K_LEN], SignatureError> {
+    fn finish_signature_into(
+        &mut self,
+        token: &FinishToken,
+        output: &mut [u8; K_LEN],
+    ) -> Result<usize, SignatureError> {
+        output.fill(0);
         let h_len = A::Hash::OUTPUT_LEN;
         let mut m_hash = [0u8; MAX_HASH_LEN];
-        self.hash.do_final_out(&mut m_hash[..h_len]);
-        sign_from_hash_with_salt::<A, K_LEN>(self.sk, &m_hash[..h_len], &self.salt[..A::SALT_LEN])
-    }
-
-    fn do_final_out(self, output: &mut [u8; K_LEN]) -> Result<usize, SignatureError> {
-        output.fill(0);
-        *output = self.do_final()?;
+        self.hash.finish_into(token, &mut m_hash[..h_len]);
+        *output = sign_from_hash_with_salt::<A, K_LEN>(
+            self.sk,
+            &m_hash[..h_len],
+            &self.salt[..A::SALT_LEN],
+        )?;
         Ok(K_LEN)
     }
 }
@@ -206,16 +211,16 @@ where
         self.hash.do_update(msg_chunk);
     }
 
-    fn do_final(self) -> Result<[u8; K_LEN], SignatureError> {
+    fn finish_signature_into(
+        &mut self,
+        token: &FinishToken,
+        output: &mut [u8; K_LEN],
+    ) -> Result<usize, SignatureError> {
+        output.fill(0);
         let h_len = A::Hash::OUTPUT_LEN;
         let mut m_hash = [0u8; MAX_HASH_LEN];
-        self.hash.do_final_out(&mut m_hash[..h_len]);
-        sign_from_hash_deterministic::<A, K_LEN>(self.sk, &m_hash[..h_len])
-    }
-
-    fn do_final_out(self, output: &mut [u8; K_LEN]) -> Result<usize, SignatureError> {
-        output.fill(0);
-        *output = self.do_final()?;
+        self.hash.finish_into(token, &mut m_hash[..h_len]);
+        *output = sign_from_hash_deterministic::<A, K_LEN>(self.sk, &m_hash[..h_len])?;
         Ok(K_LEN)
     }
 }
@@ -239,7 +244,11 @@ where
         self.hash.do_update(msg_chunk);
     }
 
-    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+    fn finish_signature_verify(
+        &mut self,
+        token: &FinishToken,
+        sig: &[u8],
+    ) -> Result<(), SignatureError> {
         // RFC 8017 §8.1.2 / §8.2.2 step 1: a signature of the wrong length is rejected for its
         // length.
         let sig: &[u8; K_LEN] = sig.try_into().map_err(|_| {
@@ -247,7 +256,7 @@ where
         })?;
         let h_len = A::Hash::OUTPUT_LEN;
         let mut m_hash = [0u8; MAX_HASH_LEN];
-        self.hash.do_final_out(&mut m_hash[..h_len]);
+        self.hash.finish_into(token, &mut m_hash[..h_len]);
         // Step 2.b: RSAVP1's "signature representative out of range" is "invalid signature" here;
         // one answer for every way a signature can fail.
         verify_from_hash::<A, K_LEN>(self.pk, &m_hash[..h_len], sig)

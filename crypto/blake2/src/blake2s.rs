@@ -9,7 +9,9 @@ use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, Suspendab
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{Hash, HashOneShot, MACGenerator, MACVerifier, RNG, Suspendable};
+use bouncycastle_core::traits::{
+    FinishToken, Hash, HashOneShot, MACGenerator, MACVerifier, RNG, Suspendable,
+};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{ct, min, secret::Secret};
 use core::marker::PhantomData;
@@ -243,7 +245,7 @@ impl Blake2sCore {
 
     /// RFC 7693 s. 3.3 final block, then "RETURN first "nn" bytes from little-endian word array
     /// h[]". Zeroizes all of `output`, writes `min(output.len(), nn)` bytes and returns that count.
-    fn finalize(mut self, output: &mut [u8]) -> usize {
+    fn finalize(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
         // Final block: IF kk = 0 THEN h := F( h, d[dd - 1], ll, TRUE )
         //              ELSE       h := F( h, d[dd - 1], ll + bb, TRUE )
         // `t` already counts every compressed block (the key block included), so adding the bytes
@@ -369,24 +371,8 @@ impl Hash for BLAKE2s_256 {
         self.core.update(data);
     }
 
-    fn do_final(self) -> Vec<u8> {
-        let mut output = vec![0u8; NN];
-        self.do_final_out(&mut output);
-        output
-    }
-
-    fn do_final_out(self, output: &mut [u8]) -> usize {
-        self.core.finalize(output)
-    }
-
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        let mut output = vec![0u8; NN];
-        self.do_final_partial_bits_out(partial_byte, num_bits, &mut output)?;
-        Ok(output)
+    fn finish_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.core.finalize(token, output)
     }
 
     /// BLAKE2 is byte-oriented (RFC 7693 s. 2.1 counts "Input bytes"), so it has no encoding for a
@@ -398,8 +384,9 @@ impl Hash for BLAKE2s_256 {
     ///
     /// `num_bits == 0` means the message ended on a byte boundary and is exactly
     /// [`Hash::do_final_out`]; `partial_byte` is ignored.
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        token: &FinishToken,
         _partial_byte: u8,
         num_bits: usize,
         output: &mut [u8],
@@ -413,7 +400,7 @@ impl Hash for BLAKE2s_256 {
                 "BLAKE2 is byte-oriented (RFC 7693 s. 2.1) and cannot hash a partial final byte",
             ));
         }
-        Ok(self.do_final_out(output))
+        Ok(self.core.finalize(token, output))
     }
 }
 
@@ -578,8 +565,8 @@ impl MACGenerator<NN> for BLAKE2s_256_MAC<'_, Encrypting> {
         self.core.update(data);
     }
 
-    fn do_final_out(self, out: &mut [u8; NN]) -> usize {
-        self.core.finalize(out)
+    fn finish_mac_into(&mut self, token: &FinishToken, out: &mut [u8; NN]) -> usize {
+        self.core.finalize(token, out)
     }
 }
 
@@ -589,11 +576,11 @@ impl MACVerifier<NN> for BLAKE2s_256_MAC<'_, Decrypting> {
     }
 
     /// Recomputes the tag and compares it in constant time.
-    fn do_verify_final(self, mac: &[u8; NN]) -> Result<(), MACError> {
+    fn finish_mac_verify(&mut self, token: &FinishToken, mac: &[u8; NN]) -> Result<(), MACError> {
         // The recomputed tag is the valid tag of whatever message was absorbed, so it is kept
         // off the stack's leftovers.
         let mut computed: Secret<[u8; NN]> = Secret::new();
-        self.core.finalize(&mut *computed);
+        self.core.finalize(token, &mut *computed);
         if ct::ct_eq_bytes(&*computed, mac) { Ok(()) } else { Err(MACError::VerificationFailed) }
     }
 }

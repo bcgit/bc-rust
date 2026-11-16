@@ -61,16 +61,16 @@ fn a_1_sm4_gcm() {
     let aad: [u8; 20] = bytes(AAD);
 
     let mut buf: [u8; 64] = bytes(PLAINTEXT);
-    let tag = key.encrypt_detached_in_place_nonce(&nonce, &aad, &mut buf).expect("encryption");
+    let tag = key.encrypt_detached_inplace_nonce(&nonce, &aad, &mut buf).expect("encryption");
     assert_eq!(buf, bytes::<64>(GCM_CT), "A.1 ciphertext");
     assert_eq!(tag, bytes::<16>(GCM_TAG), "A.1 tag");
 
-    key.decrypt_detached_in_place(&nonce, &aad, &mut buf, &tag).expect("decryption");
+    key.decrypt_detached_inplace(&nonce, &aad, &mut buf, &tag).expect("decryption");
     assert_eq!(buf, bytes::<64>(PLAINTEXT), "A.1 plaintext back");
 
     let mut tampered = tag;
     tampered[0] ^= 1;
-    assert!(key.decrypt_detached_in_place(&nonce, &aad, &mut buf, &tampered).is_err());
+    assert!(key.decrypt_detached_inplace(&nonce, &aad, &mut buf, &tampered).is_err());
 }
 
 #[test]
@@ -80,14 +80,14 @@ fn a_2_sm4_ccm() {
     let aad: [u8; 20] = bytes(AAD);
 
     let mut buf: [u8; 64] = bytes(PLAINTEXT);
-    let tag = key.encrypt_detached_in_place_nonce(&nonce, &aad, &mut buf).expect("encryption");
+    let tag = key.encrypt_detached_inplace_nonce(&nonce, &aad, &mut buf).expect("encryption");
     assert_eq!(buf, bytes::<64>(CCM_CT), "A.2 ciphertext");
     assert_eq!(tag, bytes::<16>(CCM_TAG), "A.2 tag");
 
-    key.decrypt_detached_in_place(&nonce, &aad, &mut buf, &tag).expect("decryption");
+    key.decrypt_detached_inplace(&nonce, &aad, &mut buf, &tag).expect("decryption");
     assert_eq!(buf, bytes::<64>(PLAINTEXT), "A.2 plaintext back");
 
     let mut tampered = tag;
     tampered[0] ^= 1;
-    assert!(key.decrypt_detached_in_place(&nonce, &aad, &mut buf, &tampered).is_err());
+    assert!(key.decrypt_detached_inplace(&nonce, &aad, &mut buf, &tampered).is_err());
 }

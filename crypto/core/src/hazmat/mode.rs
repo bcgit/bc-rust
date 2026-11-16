@@ -97,29 +97,29 @@ pub trait AeadEncryptMode<
     ///
     /// # Errors
     /// As [`encrypt_init`](Self::encrypt_init), or any error of the encryptor's streaming methods.
-    fn encrypt_detached_in_place(
+    fn encrypt_detached_inplace(
         state: &Self::KeyState,
         rng: &mut dyn RNG,
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
         let (enc, nonce) = Self::encrypt_init(state, rng)?;
-        let tag = crate::provided::encrypt_detached_in_place(enc, aad, buf)?;
+        let tag = crate::provided::encrypt_detached_inplace(enc, aad, buf)?;
         Ok((nonce, tag))
     }
 
-    /// As [`encrypt_detached_in_place`](Self::encrypt_detached_in_place) under a nonce the caller
+    /// As [`encrypt_detached_inplace`](Self::encrypt_detached_inplace) under a nonce the caller
     /// supplies, over [`encrypt_init_nonce`](Self::encrypt_init_nonce).
     ///
     /// # Errors
     /// Any error of the encryptor's streaming methods.
-    fn encrypt_detached_in_place_nonce(
+    fn encrypt_detached_inplace_nonce(
         state: &Self::KeyState,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        crate::provided::encrypt_detached_in_place(Self::encrypt_init_nonce(state, nonce), aad, buf)
+        crate::provided::encrypt_detached_inplace(Self::encrypt_init_nonce(state, nonce), aad, buf)
     }
 }
 
@@ -144,19 +144,19 @@ pub trait AeadDecryptMode<
     /// Decrypts `buf` in place from `state` under `nonce` and `aad`, and checks `tag`. On any
     /// error `buf` is left zeroized, since the plaintext was written into it before the tag could
     /// be checked. Provided over [`decrypt_init`](Self::decrypt_init) as
-    /// [`AeadEncryptMode::encrypt_detached_in_place`] is over its constructor.
+    /// [`AeadEncryptMode::encrypt_detached_inplace`] is over its constructor.
     ///
     /// # Errors
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, or any error of
     /// the decryptor's streaming methods.
-    fn decrypt_detached_in_place(
+    fn decrypt_detached_inplace(
         state: &Self::KeyState,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         buf: &mut [u8],
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
-        crate::provided::decrypt_detached_in_place(Self::decrypt_init(state, nonce), aad, buf, tag)
+        crate::provided::decrypt_detached_inplace(Self::decrypt_init(state, nonce), aad, buf, tag)
     }
 }
 
@@ -207,31 +207,31 @@ pub trait AeadDeclaredEncryptMode<
     ///
     /// # Errors
     /// As [`encrypt_init`](Self::encrypt_init), or any error of the encryptor's streaming methods.
-    fn encrypt_detached_in_place(
+    fn encrypt_detached_inplace(
         state: &Self::KeyState,
         rng: &mut dyn RNG,
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
         let (enc, nonce) = Self::encrypt_init(state, rng, aad.len(), buf.len())?;
-        let tag = crate::provided::encrypt_detached_in_place(enc, aad, buf)?;
+        let tag = crate::provided::encrypt_detached_inplace(enc, aad, buf)?;
         Ok((nonce, tag))
     }
 
-    /// As [`encrypt_detached_in_place`](Self::encrypt_detached_in_place) under a nonce the caller
+    /// As [`encrypt_detached_inplace`](Self::encrypt_detached_inplace) under a nonce the caller
     /// supplies.
     ///
     /// # Errors
     /// As [`encrypt_init_nonce`](Self::encrypt_init_nonce), or any error of the encryptor's
     /// streaming methods.
-    fn encrypt_detached_in_place_nonce(
+    fn encrypt_detached_inplace_nonce(
         state: &Self::KeyState,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
         let enc = Self::encrypt_init_nonce(state, nonce, aad.len(), buf.len())?;
-        crate::provided::encrypt_detached_in_place(enc, aad, buf)
+        crate::provided::encrypt_detached_inplace(enc, aad, buf)
     }
 }
 
@@ -269,7 +269,7 @@ pub trait AeadDeclaredDecryptMode<
     /// # Errors
     /// As [`decrypt_init`](Self::decrypt_init), [`SymmetricCipherError::AEADTagCheckFailed`] if
     /// the tag does not verify, or any error of the decryptor's streaming methods.
-    fn decrypt_detached_in_place(
+    fn decrypt_detached_inplace(
         state: &Self::KeyState,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -277,7 +277,7 @@ pub trait AeadDeclaredDecryptMode<
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
         let dec = Self::decrypt_init(state, nonce, aad.len(), buf.len())?;
-        crate::provided::decrypt_detached_in_place(dec, aad, buf, tag)
+        crate::provided::decrypt_detached_inplace(dec, aad, buf, tag)
     }
 }
 

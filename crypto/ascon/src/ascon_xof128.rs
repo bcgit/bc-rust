@@ -7,7 +7,9 @@
 
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{
+    Algorithm, FinishToken, Hash, HashOneShot, Suspendable, XOF, XOFSqueezer,
+};
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
@@ -40,7 +42,7 @@ impl AsconXof128 {
     }
 
     /// Produces the next `output.len()` bytes of the XOF stream; the absorb phase was ended by
-    /// [`XOF::into_squeezer`].
+    /// [`XOF::into_squeezer`] or by the hash final.
     fn squeeze_into(&mut self, output: &mut [u8]) -> usize {
         output.fill(0);
         self.sponge.squeeze(output);
@@ -93,8 +95,8 @@ impl Hash for AsconXof128 {
     }
 
     fn do_update(&mut self, data: &[u8]) {
-        // A caller-visible AsconXof128 is always in the absorbing phase:
-        // into_squeezer() consumes it before output can begin.
+        // An AsconXof128 still in use is in the absorbing phase: into_squeezer() consumes it
+        // before output can begin, and a hash final ends it.
         debug_assert!(
             !self.sponge.squeezing(),
             "a reachable AsconXof128 must not already be squeezing"
@@ -103,43 +105,20 @@ impl Hash for AsconXof128 {
         self.sponge.absorb(data);
     }
 
-    fn do_final(self) -> Vec<u8> {
-        let output_len = self.output_len();
-        self.into_squeezer().do_output_final(output_len)
-    }
-
-    fn do_final_out(self, output: &mut [u8]) -> usize {
+    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
         let output_len = self.output_len();
         let written = output_len.min(output.len());
 
         // Hash::do_final_out requires bytes beyond output_len to be zero.
         output[written..].fill(0);
 
-        self.into_squeezer().do_output_final_out(&mut output[..written])
+        self.sponge.finish_absorb();
+        self.squeeze_into(&mut output[..written])
     }
 
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        if num_bits > 7 {
-            return Err(HashError::InvalidLength("num_bits must be in the range [0,7]"));
-        }
-
-        if num_bits != 0 {
-            return Err(HashError::InvalidInput(
-                "Ascon-XOF128 does not support partial byte input",
-            ));
-        }
-
-        // A zero-bit partial byte means the message is byte-aligned.
-        let _ = partial_byte;
-        Ok(self.do_final())
-    }
-
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        token: &FinishToken,
         partial_byte: u8,
         num_bits: usize,
         output: &mut [u8],
@@ -156,7 +135,7 @@ impl Hash for AsconXof128 {
 
         // A zero-bit partial byte means the message is byte-aligned.
         let _ = partial_byte;
-        Ok(self.do_final_out(output))
+        Ok(self.finish_into(token, output))
     }
 }
 

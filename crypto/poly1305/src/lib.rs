@@ -65,7 +65,7 @@ pub mod hazmat;
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, MACGenerator, MACVerifier};
+use bouncycastle_core::traits::{Algorithm, FinishToken, MACGenerator, MACVerifier};
 use bouncycastle_utils::ct::{self, Condition};
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
@@ -279,8 +279,9 @@ impl<Dir> Poly1305<Dir> {
         self.buffered = tail.len();
     }
 
-    /// Consumes this message and returns its full authentication tag: the body of both finals.
-    fn finalize(mut self) -> [u8; TAG_LEN] {
+    /// Finishes this message and returns its full authentication tag: the body of both finals,
+    /// whose token it takes.
+    fn finalize(&mut self, _token: &FinishToken) -> [u8; TAG_LEN] {
         if self.buffered != 0 {
             // The last, partial block: Sec 2.5.1's `| [0x01]` after its bytes, then zeros.
             // The bytes past `buffered` are already zero: the buffer is a fresh `Secret`
@@ -341,8 +342,8 @@ impl MACGenerator<TAG_LEN> for Poly1305<Encrypting> {
         self.absorb(data)
     }
 
-    fn do_final_out(self, out: &mut [u8; TAG_LEN]) -> usize {
-        *out = self.finalize();
+    fn finish_mac_into(&mut self, token: &FinishToken, out: &mut [u8; TAG_LEN]) -> usize {
+        *out = self.finalize(token);
         TAG_LEN
     }
 }
@@ -352,11 +353,15 @@ impl MACVerifier<TAG_LEN> for Poly1305<Decrypting> {
         self.absorb(data)
     }
 
-    fn do_verify_final(self, mac: &[u8; TAG_LEN]) -> Result<(), MACError> {
+    fn finish_mac_verify(
+        &mut self,
+        token: &FinishToken,
+        mac: &[u8; TAG_LEN],
+    ) -> Result<(), MACError> {
         // The recomputed tag is the valid tag of whatever message was absorbed, so it is kept
         // off the stack's leftovers, as the HMAC and KMAC verifiers keep theirs.
         let mut computed: Secret<[u8; TAG_LEN]> = Secret::new();
-        *computed = self.finalize();
+        *computed = self.finalize(token);
         if ct::ct_eq_bytes(&*computed, mac) { Ok(()) } else { Err(MACError::VerificationFailed) }
     }
 }

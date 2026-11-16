@@ -49,12 +49,15 @@
 //! ```
 
 use crate::cshake::{
-    CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer, absorb_encoded_string_into, right_encode,
+    CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer, absorb_encoded_string_into,
 };
 use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, Suspendable, XOF};
+// Named only by the doc links below.
+#[cfg(doc)]
+use bouncycastle_core::traits::XOFSqueezer;
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,
@@ -204,41 +207,23 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
         absorb_encoded_string_into(&mut self.cshake, data);
     }
 
-    fn do_final(mut self) -> Vec<u8> {
+    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
         let n = self.output_len;
-        let (buf, len) = right_encode((n as u64) * 8);
-        self.cshake.do_update(&buf[..len]);
-        self.cshake.into_squeezer().do_output(n)
-    }
-
-    fn do_final_out(mut self, output: &mut [u8]) -> usize {
-        let n = self.output_len;
-        let (buf, len) = right_encode((n as u64) * 8);
-        self.cshake.do_update(&buf[..len]);
         // Per Hash::do_final_out: a short buffer is filled and the digest truncated, a long one
         // takes the digest in its first output_len bytes and zeros after it. `n` is bound into the
         // computation either way -- the buffer's length never reaches right_encode above, so a
         // truncated read is this TupleHash cut short, not the TupleHash of a shorter length.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.cshake.into_squeezer().do_output_out(&mut output[..written])
+        self.cshake.finish_out_with_length((n as u64) * 8, &mut output[..written])
     }
 
     /// # Errors
     /// Always [`HashError::InvalidLength`] for a non-zero `num_bits`: `right_encode(L)` has to
     /// follow the tuple, which a partial final byte would prevent.
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        let mut out = vec![0u8; self.output_len];
-        self.do_final_partial_bits_out(partial_byte, num_bits, &mut out)?;
-        Ok(out)
-    }
-
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        token: &FinishToken,
         _partial_byte: u8,
         num_bits: usize,
         output: &mut [u8],
@@ -248,7 +233,7 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
                 "TupleHash cannot take a partial final byte: the length encoding must follow",
             ));
         }
-        Ok(self.do_final_out(output))
+        Ok(self.finish_into(token, output))
     }
 }
 
@@ -340,36 +325,22 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
 
     /// A final read at the nominal length, so `L` is bound: this is the fixed-length TupleHash of
     /// Sec 5.3 at `n = ` [`Hash::output_len`], not a prefix of the TupleHashXOF stream.
-    fn do_final(self) -> Vec<u8> {
-        let n = self.output_len();
-        self.into_squeezer().do_output_final(n)
-    }
-
-    fn do_final_out(self, output: &mut [u8]) -> usize {
+    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
         let n = self.output_len();
         // Per Hash::do_final_out, as for the fixed-length form: a short buffer truncates this
         // TupleHash rather than computing the TupleHash of a shorter length, because `n` is what
         // reaches right_encode, not the buffer's length.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.into_squeezer().do_final_out_with_length((n as u64) * 8, &mut output[..written])
+        self.cshake.finish_out_with_length((n as u64) * 8, &mut output[..written])
     }
 
     /// # Errors
     /// Always [`HashError::InvalidLength`] for a non-zero `num_bits`; see
     /// [`TupleHashInternal::do_final_partial_bits`].
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        let mut out = vec![0u8; self.output_len()];
-        self.do_final_partial_bits_out(partial_byte, num_bits, &mut out)?;
-        Ok(out)
-    }
-
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        token: &FinishToken,
         _partial_byte: u8,
         num_bits: usize,
         output: &mut [u8],
@@ -379,7 +350,7 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
                 "TupleHashXOF cannot take a partial final byte: right_encode(0) must follow",
             ));
         }
-        Ok(self.do_final_out(output))
+        Ok(self.finish_into(token, output))
     }
 }
 

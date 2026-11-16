@@ -354,10 +354,10 @@ fn gcm_in_place_one_shots_match_the_out_forms_at_every_length() {
         let (nonce_o, ct_o, tag_o) = key.encrypt_detached(&mut rng(), AAD, &msg).unwrap();
 
         let mut buf = msg.clone();
-        let (nonce, tag) = key.encrypt_detached_in_place(&mut rng(), AAD, &mut buf).unwrap();
+        let (nonce, tag) = key.encrypt_detached_inplace(&mut rng(), AAD, &mut buf).unwrap();
         assert_eq!((nonce, &buf, tag), (nonce_o, &ct_o, tag_o), "len {len}");
 
-        key.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag).unwrap();
+        key.decrypt_detached_inplace(&nonce, AAD, &mut buf, &tag).unwrap();
         assert_eq!(buf, msg, "len {len}");
     }
 }
@@ -370,10 +370,10 @@ fn in_place_decryption_zeroizes_the_buffer_on_a_bad_tag() {
 
     let gcm = AES256Key::<GCM>::from_key_material(&material::<32>()).unwrap();
     let mut buf = msg.clone();
-    let (nonce, mut tag) = gcm.encrypt_detached_in_place(&mut rng(), AAD, &mut buf).unwrap();
+    let (nonce, mut tag) = gcm.encrypt_detached_inplace(&mut rng(), AAD, &mut buf).unwrap();
     tag[0] ^= 1;
     assert!(matches!(
-        gcm.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag),
+        gcm.decrypt_detached_inplace(&nonce, AAD, &mut buf, &tag),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
     assert!(buf.iter().all(|&b| b == 0));
@@ -400,7 +400,7 @@ fn supplied_nonce_forms_match_the_drawing_forms() {
         assert_eq!(&out[..n], &inline[..]);
 
         let mut buf = msg.to_vec();
-        assert_eq!(key.encrypt_detached_in_place_nonce(&nonce, AAD, &mut buf).unwrap(), tag);
+        assert_eq!(key.encrypt_detached_inplace_nonce(&nonce, AAD, &mut buf).unwrap(), tag);
         assert_eq!(buf, ct);
 
         let mut enc = key.create_encryptor_nonce(&nonce);

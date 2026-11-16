@@ -43,18 +43,18 @@
 //!
 //! // In place, with the tag detached.
 //! let mut buf = message.to_vec();
-//! let tag = Mode12::encrypt_detached_in_place_nonce(&state, &nonce, header, &mut buf).expect("encryption");
+//! let tag = Mode12::encrypt_detached_inplace_nonce(&state, &nonce, header, &mut buf).expect("encryption");
 //! let ciphertext = buf.clone();
-//! Mode12::decrypt_detached_in_place(&state, &nonce, header, &mut buf, &tag).expect("decryption");
+//! Mode12::decrypt_detached_inplace(&state, &nonce, header, &mut buf, &tag).expect("decryption");
 //! assert_eq!(&buf[..], message);
 //!
 //! // Tampering with the ciphertext, or changing the AAD, fails the tag check.
 //! let mut tampered = ciphertext.clone();
 //! tampered[0] ^= 1;
-//! assert_eq!(Mode12::decrypt_detached_in_place(&state, &nonce, header, &mut tampered, &tag).unwrap_err(),
+//! assert_eq!(Mode12::decrypt_detached_inplace(&state, &nonce, header, &mut tampered, &tag).unwrap_err(),
 //!            SymmetricCipherError::AEADTagCheckFailed);
 //! let mut other = ciphertext.clone();
-//! assert_eq!(Mode12::decrypt_detached_in_place(&state, &nonce, b"other header", &mut other, &tag).unwrap_err(),
+//! assert_eq!(Mode12::decrypt_detached_inplace(&state, &nonce, b"other header", &mut other, &tag).unwrap_err(),
 //!            SymmetricCipherError::AEADTagCheckFailed);
 //! ```
 //!
@@ -102,12 +102,12 @@ use crate::stream::{KeyStreamPolicy, StreamCipher};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
-    BlockPermutation, ElectronicCodeBook, KeyStream, Mode,
+    BlockPermutation, ElectronicCodeBook, KeyStream, Mode, finish_token,
 };
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, RNG, StreamCipherDecryptor,
     StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::ct::ct_eq_bytes;
@@ -490,7 +490,7 @@ where
     ///
     /// `S0 = CIPH_K(Ctr0)` is computed here rather than at construction because `Ctr0` is used
     /// exactly once, at the end; the payload keystream starts at `S1` (step 7).
-    fn finish_mac(mut self) -> [u8; TAG_LEN] {
+    fn finish_mac(&mut self, _token: &FinishToken) -> [u8; TAG_LEN] {
         // A.2.3: the payload's own blocks are zero-padded to a block boundary.
         self.mac_pad();
 
@@ -543,7 +543,10 @@ where
     /// [`SymmetricCipherError::StateError`] if less payload was supplied than the length declared
     /// at construction -- `B0` commits to that length, so a short message would produce a tag no
     /// verifier could reproduce -- or less AAD than declared, for the same reason.
-    pub(crate) fn do_encrypt_final(self) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+    pub(crate) fn finish_tag(
+        &mut self,
+        token: &FinishToken,
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
         if self.aad_owed != 0 {
             return Err(SymmetricCipherError::StateError(
                 "CCM was given less AAD than the declared AAD length",
@@ -554,7 +557,7 @@ where
                 "CCM was given less payload than the declared payload length, which B0 commits to",
             ));
         }
-        Ok(self.finish_mac())
+        Ok(self.finish_mac(token))
     }
 }
 
@@ -571,7 +574,7 @@ where
     /// step 5 and only then formats `(N, A, P)` in step 7, so the MAC is fed the plaintext here too,
     /// never the ciphertext.
     ///
-    /// The bytes this writes are **not authenticated** until [`Self::do_decrypt_final`] returns
+    /// The bytes this writes are **not authenticated** until [`Self::verify_tag`] returns
     /// `Ok`.
     ///
     /// # Errors
@@ -599,7 +602,11 @@ where
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, and
     /// [`SymmetricCipherError::StateError`] if less ciphertext was supplied than the length declared
     /// at construction, or less AAD than declared.
-    pub(crate) fn do_decrypt_final(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
+    pub(crate) fn verify_tag(
+        &mut self,
+        token: &FinishToken,
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
         if self.aad_owed != 0 {
             return Err(SymmetricCipherError::StateError(
                 "CCM was given less AAD than the declared AAD length",
@@ -610,7 +617,7 @@ where
                 "CCM was given less ciphertext than the declared payload length, which B0 commits to",
             ));
         }
-        if ct_eq_bytes(&self.finish_mac(), tag) {
+        if ct_eq_bytes(&self.finish_mac(token), tag) {
             Ok(())
         } else {
             Err(SymmetricCipherError::AEADTagCheckFailed)
@@ -1091,10 +1098,10 @@ where
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if fewer than `DATA_LEN` payload bytes were supplied:
     /// `B0` committed to `DATA_LEN`, so a shorter message would get a tag no verifier could
-    /// reproduce, and `Ccm::do_encrypt_final` refuses to produce one.
-    fn finish(mut self) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+    /// reproduce, and `Ccm::finish_tag` refuses to produce one.
+    fn finish(&mut self, token: &FinishToken) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
         self.0.begin_data();
-        self.0.ccm.do_encrypt_final()
+        self.0.ccm.finish_tag(token)
     }
 
     /// Begins an encryption from a key schedule that has already been expanded, under a nonce
@@ -1192,8 +1199,11 @@ where
     ///
     /// # Errors
     /// As [`AEADCipherEncryptor::do_encrypt_final_detached_out`].
-    fn do_encrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
-        Ok((self.finish()?, TAG_LEN))
+    fn finish_encrypt(
+        &mut self,
+        token: &FinishToken,
+    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        Ok((self.finish(token)?, TAG_LEN))
     }
 
     /// The ciphertext, which is as long as the plaintext, followed by the tag.
@@ -1231,12 +1241,13 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if fewer than `DATA_LEN` payload bytes were supplied.
-    fn do_encrypt_final_detached_out(
-        self,
+    fn finish_encrypt_detached_into(
+        &mut self,
+        token: &FinishToken,
         ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
         ciphertext.fill(0);
-        Ok((0, self.finish()?))
+        Ok((0, self.finish(token)?))
     }
 }
 
@@ -1319,16 +1330,20 @@ where
     }
 
     /// Every final comes here once it has settled which bytes are the tag: Sec 6.2 step 10,
-    /// through `Ccm::do_decrypt_final`. The header goes in first if no payload call put it
+    /// through `Ccm::verify_tag`. The header goes in first if no payload call put it
     /// there, which is the `DATA_LEN = 0` message.
     ///
     /// # Errors
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify. The callers have
-    /// already refused a short payload, so `Ccm::do_decrypt_final`'s own refusal of one is not
+    /// already refused a short payload, so `Ccm::verify_tag`'s own refusal of one is not
     /// reachable from here; it stays as the backstop it is for the inherent API.
-    fn finish(mut self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
+    fn finish(
+        &mut self,
+        token: &FinishToken,
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
         self.inner.begin_data();
-        self.inner.ccm.do_decrypt_final(tag)
+        self.inner.ccm.verify_tag(token, tag)
     }
 }
 
@@ -1401,14 +1416,17 @@ where
     /// [`SymmetricCipherError::DecryptionFailed`] if fewer than `DATA_LEN + TAG_LEN` bytes were
     /// supplied -- Sec 6.2 step 1's "If Clen <= Tlen, then return INVALID", for a `C` whose
     /// length is fixed; [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify.
-    fn do_decrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+    fn finish_decrypt(
+        &mut self,
+        token: &FinishToken,
+    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
         // Tag bytes are only held once the whole payload has been released, so a full tag means
         // a full payload too; a short payload shows up here as no tag at all.
         if self.tag_len < TAG_LEN {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
         let tag = self.tag;
-        self.finish(&tag)?;
+        self.finish(token, &tag)?;
         Ok(([0u8; TAG_LEN], 0))
     }
 
@@ -1448,8 +1466,9 @@ where
     /// [`SymmetricCipherError::DecryptionFailed`] if `C` was not exactly `DATA_LEN` bytes -- a
     /// payload still owed, or bytes held back as a possible inline tag that this layout has no
     /// place for; [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify.
-    fn do_decrypt_final_detached_out(
-        self,
+    fn finish_decrypt_detached_into(
+        &mut self,
+        token: &FinishToken,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; TAG_LEN],
     ) -> Result<usize, SymmetricCipherError> {
@@ -1457,7 +1476,7 @@ where
         if self.tag_len != 0 || self.inner.ccm.owed != 0 {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
-        self.finish(tag)?;
+        self.finish(token, tag)?;
         Ok(0)
     }
 }
@@ -1539,8 +1558,11 @@ where
         Ok(plaintext.len())
     }
 
-    fn do_encrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
-        Ok((self.0.do_encrypt_final()?, TAG_LEN))
+    fn finish_encrypt(
+        &mut self,
+        token: &FinishToken,
+    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        Ok((self.0.finish_tag(token)?, TAG_LEN))
     }
 
     fn encrypt_out_len(plaintext_len: usize) -> usize {
@@ -1557,12 +1579,13 @@ where
         self.0.do_update_aad(aad)
     }
 
-    fn do_encrypt_final_detached_out(
-        self,
+    fn finish_encrypt_detached_into(
+        &mut self,
+        token: &FinishToken,
         ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
         ciphertext.fill(0);
-        Ok((0, self.0.do_encrypt_final()?))
+        Ok((0, self.0.finish_tag(token)?))
     }
 
     fn encrypt_detached_out_len(plaintext_len: usize) -> usize {
@@ -1617,11 +1640,14 @@ where
 
     /// Sec 6.2 step 1 on the inline layout: the ciphertext must be exactly the declared
     /// payload and a whole tag, else it is malformed.
-    fn do_decrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+    fn finish_decrypt(
+        &mut self,
+        token: &FinishToken,
+    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
         if self.ccm.owed != 0 || self.tag_len != TAG_LEN {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
-        self.ccm.do_decrypt_final(&self.tag)?;
+        self.ccm.verify_tag(token, &self.tag)?;
         Ok(([0u8; TAG_LEN], 0))
     }
 
@@ -1640,8 +1666,9 @@ where
     }
 
     /// Detached: the ciphertext must be exactly the declared payload, with nothing after it.
-    fn do_decrypt_final_detached_out(
-        self,
+    fn finish_decrypt_detached_into(
+        &mut self,
+        token: &FinishToken,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; TAG_LEN],
     ) -> Result<usize, SymmetricCipherError> {
@@ -1649,7 +1676,7 @@ where
         if self.ccm.owed != 0 || self.tag_len != 0 {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
-        self.ccm.do_decrypt_final(tag)?;
+        self.ccm.verify_tag(token, tag)?;
         Ok(0)
     }
 
@@ -1702,7 +1729,7 @@ where
         Ok(CcmEncryptor(Ccm::from_perm_with_lengths(state, nonce, aad_len, payload_len)?))
     }
 
-    fn encrypt_detached_in_place_nonce(
+    fn encrypt_detached_inplace_nonce(
         state: &Self::KeyState,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -1711,7 +1738,7 @@ where
         let mut ccm =
             Ccm::<P, Encrypting, 16, NONCE_LEN, TAG_LEN>::from_perm(state, nonce, aad, buf.len())?;
         ccm.do_encrypt_inplace(buf)?;
-        ccm.do_encrypt_final()
+        ccm.finish_tag(&finish_token())
     }
 }
 
@@ -1740,7 +1767,7 @@ where
 
     /// `buf` is untouched if the lengths are refused, and zeroized on any error after that: the
     /// plaintext is in it before the tag is checked.
-    fn decrypt_detached_in_place(
+    fn decrypt_detached_inplace(
         state: &Self::KeyState,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -1749,7 +1776,8 @@ where
     ) -> Result<(), SymmetricCipherError> {
         let mut ccm =
             Ccm::<P, Decrypting, 16, NONCE_LEN, TAG_LEN>::from_perm(state, nonce, aad, buf.len())?;
-        let result = ccm.do_decrypt_inplace(buf).and_then(|()| ccm.do_decrypt_final(tag));
+        let result =
+            ccm.do_decrypt_inplace(buf).and_then(|()| ccm.verify_tag(&finish_token(), tag));
         if result.is_err() {
             buf.fill(0);
         }

@@ -60,14 +60,28 @@
   so an instantiation is `HKDF<SHA256>`. The SHA-3 family's suspended states are 10 bytes shorter than before
   (SHA-3 and SHAKE 405, cSHAKE 406, KMAC and TupleHash 414, ParallelHashXOF 832, ParallelHash 840), the KDF
   bookkeeping having left the sponge; a state suspended by an earlier build does not resume.
-* A worker held as `Box<dyn ..>` can finish its message (#173): each required consuming final has a `_boxed` twin
-  taking `self: Box<Self>` (`do_encrypt_final_boxed`, `do_decrypt_final_boxed`, `do_encrypt_final_detached_out_boxed`,
-  `do_decrypt_final_detached_out_boxed`, `do_final_out_boxed` on hashes, MAC generators and signers,
-  `do_verify_final_boxed` on MAC and signature verifiers), on a `*Boxed` supertrait of the worker trait that is
-  implemented for every implementor, so no worker type changes and a second final still does not compile. Not
-  covered: a hash's `Vec` and partial-bits finals and `XOF::into_squeezer`, which stay with the concrete value. The
-  twin moves the worker out of its box, so the freed heap block is not wiped, as the vacated stack slot of a
-  by-value final is not.
+* The AEAD keys' one-shots that work in the caller's buffer are spelled `_inplace`, as QUALITY_AND_STYLE.md's suffix
+  rule and every other in-place method already were: `encrypt_detached_inplace`, `encrypt_detached_inplace_nonce`
+  and `decrypt_detached_inplace` on the AEAD key and mode traits (formerly `_in_place`).
+* Workers are finished where they sit, and a worker held as `Box<dyn ..>` can finish its message (#173). Each worker
+  trait (`Hash`, the symmetric and AEAD encryptors and decryptors, `MACGenerator` / `MACVerifier`, `SignatureSigner` /
+  `SignatureVerifier`) now has one required finishing method on `&mut self` (`finish_into`,
+  `finish_partial_bits_into`, `finish_encrypt`, `finish_decrypt`,
+  `finish_encrypt_detached_into`, `finish_decrypt_detached_into`, `finish_mac_into`, `finish_mac_verify`,
+  `finish_signature_into`, `finish_signature_verify`), and the consuming finals are provided over it, each with a
+  `_boxed` twin taking `self: Box<Self>` (`do_final_out_boxed`, `do_final_partial_bits_out_boxed`,
+  `do_encrypt_final_boxed`, `do_decrypt_final_boxed`, `do_encrypt_final_detached_out_boxed`,
+  `do_decrypt_final_detached_out_boxed`, `do_verify_final_boxed`). A boxed worker's `Secret` state is wiped inside its
+  box, which the final never moves it out of. The finishing methods take a `&core::traits::FinishToken`, whose
+  constructor is private to `core`, so that they are called by the provided consuming finals and not a second time by
+  accident; a worker type that deliberately hands its token to a worker it only borrows can still defeat this. Callers
+  are unaffected; an implementor of a worker trait outside this workspace writes the in-place method instead of the
+  consuming final. Code that owns a worker without implementing a worker trait takes a token from
+  `core::hazmat::finish_token()` and with it the duty to finish the worker once and not use it again: the X9.63 and
+  concatenation KDFs' block loops, `MuBuilder::do_final`, `MACFactoryWorker`'s finals, CCM's in-place one-shots, and
+  HMAC's hazmat half `finish_out`, which now borrows the inner hash (`finish_out(&key, &mut inner, out)`) for HKDF and
+  RFC 6979. Not covered: a by-value final is still handed the worker by a move, which may leave a copy unwiped, as may
+  any move the caller makes, and `XOF::into_squeezer` still consumes.
 * KEM encapsulation and decapsulation move onto the keys, as signing did: the `EncapsulatingKey` /
   `DecapsulatingKey` roles in `core::kem_key` hand out `KEMEncapsulator` / `KEMDecapsulator` workers that
   borrow the key, implemented per algorithm over the parameters a worker is made from (`()` for ML-KEM, a

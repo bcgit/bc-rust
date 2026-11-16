@@ -74,7 +74,7 @@ use bouncycastle_core::errors::MACError;
 use bouncycastle_core::hazmat::{BlockPermutation, MacMode, Mode};
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, MACGenerator, MACVerifier};
+use bouncycastle_core::traits::{Algorithm, FinishToken, MACGenerator, MACVerifier};
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
@@ -254,7 +254,7 @@ where
     /// Sec 6.2 steps 4-6 for the final block, leaving `C_n` in `self.c`: `M_n = K1 (+) M_n*` if
     /// `M_n*` is complete, else `M_n = K2 (+) (M_n* || 10^j)`. An empty message (step 2's `n = 1`)
     /// is the incomplete case with an empty `M_n*`. Step 7 with `Tlen = b` is then `T = C_n`.
-    fn finish(&mut self) {
+    fn finish(&mut self, _token: &FinishToken) {
         let subkey = if self.pending_len == BLOCK_LEN {
             &self.key.k1
         } else {
@@ -286,8 +286,8 @@ where
     }
 
     /// The full `BLOCK_LEN`-byte tag, `T = C_n` (Sec 6.2 step 7 with `Tlen = b`).
-    fn do_final_out(mut self, out: &mut [u8; BLOCK_LEN]) -> usize {
-        self.finish();
+    fn finish_mac_into(&mut self, token: &FinishToken, out: &mut [u8; BLOCK_LEN]) -> usize {
+        self.finish(token);
         out.copy_from_slice(&self.c[..]);
         BLOCK_LEN
     }
@@ -302,8 +302,12 @@ where
     }
 
     /// Sec 6.3: recomputes the tag and compares it in constant time.
-    fn do_verify_final(mut self, mac: &[u8; BLOCK_LEN]) -> Result<(), MACError> {
-        self.finish();
+    fn finish_mac_verify(
+        &mut self,
+        token: &FinishToken,
+        mac: &[u8; BLOCK_LEN],
+    ) -> Result<(), MACError> {
+        self.finish(token);
         if ct_eq_bytes(mac, &self.c[..]) { Ok(()) } else { Err(MACError::VerificationFailed) }
     }
 }
