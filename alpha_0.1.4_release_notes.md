@@ -60,6 +60,14 @@
   so an instantiation is `HKDF<SHA256>`. The SHA-3 family's suspended states are 10 bytes shorter than before
   (SHA-3 and SHAKE 405, cSHAKE 406, KMAC and TupleHash 414, ParallelHashXOF 832, ParallelHash 840), the KDF
   bookkeeping having left the sponge; a state suspended by an earlier build does not resume.
+* A worker held as `Box<dyn ..>` can finish its message (#173): each required consuming final has a `_boxed` twin
+  taking `self: Box<Self>` (`do_encrypt_final_boxed`, `do_decrypt_final_boxed`, `do_encrypt_final_detached_out_boxed`,
+  `do_decrypt_final_detached_out_boxed`, `do_final_out_boxed` on hashes, MAC generators and signers,
+  `do_verify_final_boxed` on MAC and signature verifiers), on a `*Boxed` supertrait of the worker trait that is
+  implemented for every implementor, so no worker type changes and a second final still does not compile. Not
+  covered: a hash's `Vec` and partial-bits finals and `XOF::into_squeezer`, which stay with the concrete value. The
+  twin moves the worker out of its box, so the freed heap block is not wiped, as the vacated stack slot of a
+  by-value final is not.
 * KEM encapsulation and decapsulation move onto the keys, as signing did: the `EncapsulatingKey` /
   `DecapsulatingKey` roles in `core::kem_key` hand out `KEMEncapsulator` / `KEMDecapsulator` workers that
   borrow the key, implemented per algorithm over the parameters a worker is made from (`()` for ML-KEM, a
