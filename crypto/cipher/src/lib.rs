@@ -42,3 +42,9 @@ pub use key::BlockCipherKey;
 // `bouncycastle_cipher::{Encrypting, Decrypting, Direction}` stays the path the cipher crates
 // use; the MAC crates take them from `core`, which does not depend on this crate.
 pub use bouncycastle_core::direction::{Decrypting, Direction, Encrypting};
+
+pub(crate) mod sealed {
+    /// Private supertrait of [`KeyStreamPolicy`](crate::stream::KeyStreamPolicy): only this
+    /// crate's keystream types implement it, beside their definitions.
+    pub trait Sealed {}
+}

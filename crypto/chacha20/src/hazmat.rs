@@ -8,6 +8,7 @@
 //! and is the cipher to use.
 
 use crate::{BLOCK_LEN, ChaCha20Key, KEY_LEN, NONCE_LEN};
+use bouncycastle_cipher::stream::hazmat::PermutationFreeKeyStream;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -122,6 +123,9 @@ pub fn keystream_at<'k>(
 ) -> ChaCha20KeyStream<'k> {
     ChaCha20KeyStream::start_at(&key.state, nonce, initial_counter)
 }
+
+// The block function is all there is: no block permutation, so no decrypt-only one.
+impl PermutationFreeKeyStream for ChaCha20KeyStream<'_> {}
 
 impl Algorithm for ChaCha20KeyStream<'_> {
     const ALG_NAME: &'static str = "ChaCha20";

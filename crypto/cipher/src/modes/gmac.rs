@@ -67,7 +67,7 @@ use bouncycastle_core::errors::MACError;
 use bouncycastle_core::hazmat::{BlockPermutation, Mode, NonceMacMode};
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, MACGenerator, MACVerifier, RNG};
+use bouncycastle_core::traits::{Algorithm, FinishToken, MACGenerator, MACVerifier, RNG};
 
 /// The GMAC mode type: the `M` of a mode-bound key such as `AES128Key<GMAC>`. `GMAC` is GMAC with
 /// the full 128-bit tag; `GMAC<12>` and so on select a shorter tag, within the `12..=16` byte
@@ -182,8 +182,8 @@ where
         self.gcm.absorb_aad(data).expect(AAD_INFALLIBLE);
     }
 
-    fn do_final_out(self, out: &mut [u8; TAG_LEN]) -> usize {
-        *out = self.gcm.finish();
+    fn finish_mac_into(&mut self, token: &FinishToken, out: &mut [u8; TAG_LEN]) -> usize {
+        *out = self.gcm.finish(token);
         TAG_LEN
     }
 }
@@ -209,7 +209,11 @@ where
     }
 
     /// `Gcm`'s tag check, in constant time.
-    fn do_verify_final(self, tag: &[u8; TAG_LEN]) -> Result<(), MACError> {
-        self.gcm.finish(tag).map_err(|_| MACError::VerificationFailed)
+    fn finish_mac_verify(
+        &mut self,
+        token: &FinishToken,
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), MACError> {
+        self.gcm.finish(token, tag).map_err(|_| MACError::VerificationFailed)
     }
 }

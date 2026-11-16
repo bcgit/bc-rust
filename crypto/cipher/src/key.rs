@@ -32,7 +32,7 @@ use bouncycastle_core::traits::RNG;
 ///
 /// Which workers a key hands out is decided by its mode, through the mode traits `M` implements
 /// over `P` in [`bouncycastle_core::hazmat`]: the symmetric pair for the stream modes and the
-/// padded block modes (`CFB`, `CFB8`, `CTR<N>` at any nonce length, `CBC<PKCS7>`,
+/// padded block modes (`CFB`, `CFB8`, `OFB`, `CTR<N>` at any nonce length, `CBC<PKCS7>`,
 /// `CBC<NoPadding>`, `ECB<PKCS7>`, `ECB<NoPadding>`), the block pair for `CBC<Blocks>`, the
 /// `hazmat` ECB pair for `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, the MAC
 /// pair for `CMAC`, the key-wrap pair for `KW` and `KWP`, and for `GMAC`, whose tag is
@@ -170,22 +170,22 @@ where
 
     // Forwarded rather than left to the trait's provided body so that a mode can override it:
     // CCM's streaming worker is fixed-frame, and its in-place one-shot goes another way.
-    fn encrypt_detached_in_place(
+    fn encrypt_detached_inplace(
         &self,
         rng: &mut dyn RNG,
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        M::encrypt_detached_in_place(&self.state, rng, aad, buf)
+        M::encrypt_detached_inplace(&self.state, rng, aad, buf)
     }
 
-    fn encrypt_detached_in_place_nonce(
+    fn encrypt_detached_inplace_nonce(
         &self,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        M::encrypt_detached_in_place_nonce(&self.state, nonce, aad, buf)
+        M::encrypt_detached_inplace_nonce(&self.state, nonce, aad, buf)
     }
 }
 
@@ -209,14 +209,14 @@ where
         M::decrypt_init(&self.state, nonce)
     }
 
-    fn decrypt_detached_in_place(
+    fn decrypt_detached_inplace(
         &self,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         buf: &mut [u8],
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
-        M::decrypt_detached_in_place(&self.state, nonce, aad, buf, tag)
+        M::decrypt_detached_inplace(&self.state, nonce, aad, buf, tag)
     }
 }
 
@@ -255,22 +255,22 @@ where
     }
 
     // Forwarded so that the mode's own in-place path is the one that runs.
-    fn encrypt_detached_in_place(
+    fn encrypt_detached_inplace(
         &self,
         rng: &mut dyn RNG,
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        M::encrypt_detached_in_place(&self.state, rng, aad, buf)
+        M::encrypt_detached_inplace(&self.state, rng, aad, buf)
     }
 
-    fn encrypt_detached_in_place_nonce(
+    fn encrypt_detached_inplace_nonce(
         &self,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        M::encrypt_detached_in_place_nonce(&self.state, nonce, aad, buf)
+        M::encrypt_detached_inplace_nonce(&self.state, nonce, aad, buf)
     }
 }
 
@@ -299,14 +299,14 @@ where
         M::decrypt_init(&self.state, nonce, aad_len, payload_len)
     }
 
-    fn decrypt_detached_in_place(
+    fn decrypt_detached_inplace(
         &self,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         buf: &mut [u8],
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
-        M::decrypt_detached_in_place(&self.state, nonce, aad, buf, tag)
+        M::decrypt_detached_inplace(&self.state, nonce, aad, buf, tag)
     }
 }
 

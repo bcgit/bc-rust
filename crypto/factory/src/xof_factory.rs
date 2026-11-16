@@ -42,7 +42,7 @@ use bouncycastle_ascon::AsconXof128;
 use bouncycastle_blake3::{BLAKE3, BLAKE3_NAME};
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{AlgorithmInfo, Hash, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{AlgorithmInfo, FinishToken, Hash, XOF, XOFSqueezer};
 use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::{SHAKE128_NAME, SHAKE256_NAME};
 
@@ -187,48 +187,29 @@ impl Hash for XOFFactory {
         }
     }
 
-    fn do_final(self) -> Vec<u8> {
+    fn finish_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
         match self {
-            Self::SHAKE128(h) => h.do_final(),
-            Self::SHAKE256(h) => h.do_final(),
-            Self::AsconXof128(h) => h.do_final(),
-            Self::BLAKE3(h) => h.do_final(),
+            Self::SHAKE128(h) => h.finish_into(token, output),
+            Self::SHAKE256(h) => h.finish_into(token, output),
+            Self::AsconXof128(h) => h.finish_into(token, output),
+            Self::BLAKE3(h) => h.finish_into(token, output),
         }
     }
 
-    fn do_final_out(self, output: &mut [u8]) -> usize {
-        match self {
-            Self::SHAKE128(h) => h.do_final_out(output),
-            Self::SHAKE256(h) => h.do_final_out(output),
-            Self::AsconXof128(h) => h.do_final_out(output),
-            Self::BLAKE3(h) => h.do_final_out(output),
-        }
-    }
-
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        match self {
-            Self::SHAKE128(h) => h.do_final_partial_bits(partial_byte, num_bits),
-            Self::SHAKE256(h) => h.do_final_partial_bits(partial_byte, num_bits),
-            Self::AsconXof128(h) => h.do_final_partial_bits(partial_byte, num_bits),
-            Self::BLAKE3(h) => h.do_final_partial_bits(partial_byte, num_bits),
-        }
-    }
-
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        token: &FinishToken,
         partial_byte: u8,
         num_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
         match self {
-            Self::SHAKE128(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
-            Self::SHAKE256(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
-            Self::AsconXof128(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
-            Self::BLAKE3(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
+            Self::SHAKE128(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::SHAKE256(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::AsconXof128(h) => {
+                h.finish_partial_bits_into(token, partial_byte, num_bits, output)
+            }
+            Self::BLAKE3(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
         }
     }
 }

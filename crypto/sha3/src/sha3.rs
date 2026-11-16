@@ -5,7 +5,7 @@ use crate::keccak::{
 };
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, Suspendable};
+use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, HashOneShot, Suspendable};
 use bouncycastle_utils::min;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
@@ -38,7 +38,7 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
     /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
     /// truncates the digest, a longer one is zero-filled past the digest.
     fn do_final_bits_out(
-        mut self,
+        &mut self,
         partial_byte: u8,
         num_partial_bits: usize,
         output: &mut [u8],
@@ -64,7 +64,8 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         }
 
         // Infallible: the queue is byte-aligned here, final_bits is in 0..=7 by construction, and a
-        // Hash object cannot have started squeezing (do_final_bits_out consumes self and is the only squeeze path).
+        // Hash object still in use has not started squeezing (do_final_bits_out is the only
+        // squeeze path, and it runs as the object is finished).
         self.keccak
             .absorb_bits(final_input as u8, final_bits)
             .expect("absorb_bits is infallible on a byte-aligned, not-yet-squeezing Hash");
@@ -101,32 +102,14 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         self.keccak.absorb(data)
     }
 
-    fn do_final(self) -> Vec<u8> {
-        let dbg_rslt_len = self.output_len();
-        let mut output: Vec<u8> = vec![0u8; self.output_len()];
-        let bytes_written = self.do_final_out(output.as_mut_slice());
-        debug_assert_eq!(bytes_written, dbg_rslt_len);
-
-        output
-    }
-
-    fn do_final_out(self, output: &mut [u8]) -> usize {
+    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
         // A whole-byte message is the zero-partial-bits case of the general finalization.
         self.do_final_bits_out(0, 0, output)
     }
 
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_partial_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        let mut output: Vec<u8> = vec![0u8; PARAMS::OUTPUT_LEN];
-        self.do_final_partial_bits_out(partial_byte, num_partial_bits, &mut output)?;
-        Ok(output)
-    }
-
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        _token: &FinishToken,
         partial_byte: u8,
         num_partial_bits: usize,
         output: &mut [u8],
@@ -165,7 +148,7 @@ impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<
         let rate = PARAMS::SIZE.rate_bits();
         let keccak = deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 
-        // A SHA3 is only ever suspended while absorbing: finalisation consumes it. A state in
+        // A SHA3 is only ever suspended while absorbing: finalisation ends it. A state in
         // the squeezing phase is not one this type produced, and every finalisation of it would
         // fail on absorb_bits' phase check, so refuse it here as SHAKE does.
         if keccak.squeezing {

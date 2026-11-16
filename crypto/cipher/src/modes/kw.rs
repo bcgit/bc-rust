@@ -73,12 +73,13 @@
 //! ));
 //! ```
 //!
-//! # No direction marker
+//! # The direction is in the type
 //!
-//! Unlike [`Ecb`](crate::modes::hazmat::ecb::Ecb) and the other modes, [`Kw`] has no `Dir`
-//! parameter. The wrapping and unwrapping halves are already separate traits ([`KeyWrapper`] /
-//! [`KeyUnwrapper`]), so a policy can import one trait and not the other, and there is no
-//! per-direction state for a marker type to select.
+//! [`Kw<'k, P, Dir>`](Kw) carries [`Encrypting`] or [`Decrypting`] as the cipher modes do:
+//! [`KeyWrapper`] is implemented for the encrypting worker alone and [`KeyUnwrapper`] for the
+//! decrypting one, so an unwrapper has no wrapping method to call, and a permutation that
+//! decrypts only ([`BlockPermutation::DECRYPT_ONLY`]) is refused a wrapper at compile time in
+//! `wrap_init`. The worker has no per-direction state; the marker is zero-sized.
 //!
 //! # The wrapping function runs in place, without the shift register
 //!
@@ -120,6 +121,7 @@
 //! [`KeyUnwrappingKey`]: bouncycastle_core::symmetric_key::KeyUnwrappingKey
 
 use super::ModeNames;
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     BlockPermutation, ElectronicCodeBook, KeyUnwrapMode, KeyWrapMode, Mode,
@@ -129,6 +131,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KeyUnwrapper, KeyWrapper};
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
+use core::marker::PhantomData;
 
 /// The block length, in bytes, of the permutation under KW and KWP. SP 800-38F Sec 5.1: "For KW
 /// and KWP, the underlying block cipher shall be approved, and the block size shall be 128 bits."
@@ -167,71 +170,87 @@ pub(crate) const fn kw_wrapped_len(len: usize) -> usize {
     len.saturating_add(SEMIBLOCK_LEN)
 }
 
-/// The wrapping function W (SP 800-38F Algorithm 1), in place over `S = a || r`.
+/// The wrapping function W (SP 800-38F Algorithm 1), in place over `S = a || r`, with
+/// `SEMI`-byte semiblocks over a `BLOCK`-byte permutation: 8 and 16 for KW and KWP, 4 and 8 for
+/// TKW, whose TW (Algorithm 7) is this same loop with `[t]32` in place of `[t]64`.
 ///
 /// `a` holds `S1` and `r` holds `S2 .. Sn`, so `r.len() == n - 1`, which must be at least 2
 /// (Algorithm 1 is defined for `n >= 3`). On return `a` holds `C1` and `r` holds `C2 .. Cn`.
 ///
 /// Runs in place rather than through the shift register of the spec's step 2; see the module
 /// docs for why the two are the same computation.
-pub(crate) fn w<P>(perm: &P, a: &mut [u8; SEMIBLOCK_LEN], r: &mut [[u8; SEMIBLOCK_LEN]])
-where
-    P: BlockPermutation<KW_BLOCK_LEN>,
+pub(crate) fn w<P, const BLOCK: usize, const SEMI: usize>(
+    perm: &P,
+    a: &mut [u8; SEMI],
+    r: &mut [[u8; SEMI]],
+) where
+    P: BlockPermutation<BLOCK>,
 {
+    const { assert!(2 * SEMI == BLOCK, "a semiblock is half a block (SP 800-38F Sec 4.1)") };
     debug_assert!(r.len() >= 2, "Algorithm 1 is defined on n >= 3 semiblocks");
     // Everything that passes through `block` is derived from the key being wrapped, so it is
     // scrubbed when this function returns.
-    let mut block: Secret<[u8; KW_BLOCK_LEN]> = Secret::new();
+    let mut block: Secret<[u8; BLOCK]> = Secret::new();
     // Step 1a: s = 6(n-1) steps, indexed by t = 1, ..., s.
     let mut t: u64 = 0;
     for _ in 0..6 {
         for r_i in r.iter_mut() {
             t += 1;
             // Step 2: CIPH_K(A_{t-1} || R2_{t-1}), where R2_{t-1} is this register (module docs).
-            let (halves, _) = block.as_chunks_mut::<SEMIBLOCK_LEN>();
+            let (halves, _) = block.as_chunks_mut::<SEMI>();
             halves[0] = *a;
             halves[1] = *r_i;
             perm.encrypt_block(&mut block);
-            let (halves, _) = block.as_chunks::<SEMIBLOCK_LEN>();
-            // Step 2a: A_t = MSB64(CIPH_K(...)) xor [t]64.
+            let (halves, _) = block.as_chunks::<SEMI>();
+            // Step 2a: A_t = MSB(CIPH_K(...)) xor [t]: the counter as a big-endian semiblock, the
+            // low SEMI bytes of its 8-byte form.
+            let t_bytes = t.to_be_bytes();
             for (a_byte, (c_byte, t_byte)) in
-                a.iter_mut().zip(halves[0].iter().zip(t.to_be_bytes()))
+                a.iter_mut().zip(halves[0].iter().zip(&t_bytes[8 - SEMI..]))
             {
                 *a_byte = c_byte ^ t_byte;
             }
-            // Step 2c: R_n_t = LSB64(CIPH_K(...)), which lands back in this register.
+            // Step 2c: R_n_t = LSB(CIPH_K(...)), which lands back in this register.
             *r_i = halves[1];
         }
     }
     debug_assert_eq!(t as usize, 6 * r.len(), "Algorithm 1 step 1a: s = 6(n-1)");
 }
 
-/// The unwrapping function W⁻¹ (SP 800-38F Algorithm 2), in place over `C = a || r`.
+/// The unwrapping function W⁻¹ (SP 800-38F Algorithm 2), in place over `C = a || r`, with the
+/// same `BLOCK` / `SEMI` parameters as [`w`] (TW⁻¹, Algorithm 8, is the 4-byte-semiblock form).
 ///
 /// `a` holds `C1` and `r` holds `C2 .. Cn`, with `r.len() == n - 1 >= 2`. On return `a` holds
 /// `S1` and `r` holds `S2 .. Sn`. The registers are visited in the reverse of the order [`w`]
 /// visits them, so that step `t` here undoes step `t` there.
-pub(crate) fn w_inv<P>(perm: &P, a: &mut [u8; SEMIBLOCK_LEN], r: &mut [[u8; SEMIBLOCK_LEN]])
-where
-    P: BlockPermutation<KW_BLOCK_LEN>,
+pub(crate) fn w_inv<P, const BLOCK: usize, const SEMI: usize>(
+    perm: &P,
+    a: &mut [u8; SEMI],
+    r: &mut [[u8; SEMI]],
+) where
+    P: BlockPermutation<BLOCK>,
 {
+    const { assert!(2 * SEMI == BLOCK, "a semiblock is half a block (SP 800-38F Sec 4.1)") };
     debug_assert!(r.len() >= 2, "Algorithm 2 is defined on n >= 3 semiblocks");
-    let mut block: Secret<[u8; KW_BLOCK_LEN]> = Secret::new();
+    let mut block: Secret<[u8; BLOCK]> = Secret::new();
     // Step 1a: s = 6(n-1); step 2 runs t = s, s-1, ..., 1.
     let mut t: u64 = 6 * r.len() as u64;
     for _ in 0..6 {
         for r_i in r.iter_mut().rev() {
-            // Steps 2a/2b: CIPH⁻¹_K((A_t xor [t]64) || R_n_t), where R_n_t is this register.
-            let (halves, _) = block.as_chunks_mut::<SEMIBLOCK_LEN>();
-            for (b, (a_byte, t_byte)) in halves[0].iter_mut().zip(a.iter().zip(t.to_be_bytes())) {
+            // Steps 2a/2b: CIPH⁻¹_K((A_t xor [t]) || R_n_t), where R_n_t is this register.
+            let t_bytes = t.to_be_bytes();
+            let (halves, _) = block.as_chunks_mut::<SEMI>();
+            for (b, (a_byte, t_byte)) in
+                halves[0].iter_mut().zip(a.iter().zip(&t_bytes[8 - SEMI..]))
+            {
                 *b = a_byte ^ t_byte;
             }
             halves[1] = *r_i;
             perm.decrypt_block(&mut block);
-            let (halves, _) = block.as_chunks::<SEMIBLOCK_LEN>();
-            // Step 2a: A_{t-1} = MSB64(...).
+            let (halves, _) = block.as_chunks::<SEMI>();
+            // Step 2a: A_{t-1} = MSB(...).
             *a = halves[0];
-            // Step 2b: R2_{t-1} = LSB64(...), which lands back in this register.
+            // Step 2b: R2_{t-1} = LSB(...), which lands back in this register.
             *r_i = halves[1];
             t -= 1;
         }
@@ -261,11 +280,17 @@ where
     P: ElectronicCodeBook<KEK_LEN, KW_BLOCK_LEN> + ModeNames + Clone,
 {
     type Wrapper<'k>
-        = Kw<'k, P>
+        = Kw<'k, P, Encrypting>
     where
         P: 'k;
 
     fn wrap_init<'k>(state: &'k Self::KeyState) -> Self::Wrapper<'k> {
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no wrapper may be made over it"
+            )
+        };
         Kw::from_perm(state)
     }
 }
@@ -275,7 +300,7 @@ where
     P: ElectronicCodeBook<KEK_LEN, KW_BLOCK_LEN> + ModeNames + Clone,
 {
     type Unwrapper<'k>
-        = Kw<'k, P>
+        = Kw<'k, P, Decrypting>
     where
         P: 'k;
 
@@ -287,28 +312,29 @@ where
 /// KW over any 128-bit permutation that impls [`BlockPermutation`]: the one-shot worker a
 /// [`KW`]-bound key hands out, borrowing the keyed permutation for `'k`.
 ///
-/// There is no state beyond the borrow and no direction marker: both halves of the algorithm are
-/// the [`KeyWrapper`] and [`KeyUnwrapper`] traits, which this type implements together. See the
-/// module docs for usage and the security notes.
-pub struct Kw<'k, P>
+/// There is no state beyond the borrow; `Dir` is [`Encrypting`] for the wrapper, which alone
+/// implements [`KeyWrapper`], and [`Decrypting`] for the unwrapper, which alone implements
+/// [`KeyUnwrapper`]. See the module docs for usage and the security notes.
+pub struct Kw<'k, P, Dir>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
     perm: &'k P,
+    _dir: PhantomData<Dir>,
 }
 
-impl<'k, P> Kw<'k, P>
+impl<'k, P, Dir> Kw<'k, P, Dir>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
     /// Over an already-keyed permutation, which the worker borrows: what [`KW`]'s mode impls
     /// build for a key's roles.
     pub(crate) fn from_perm(perm: &'k P) -> Self {
-        Self { perm }
+        Self { perm, _dir: PhantomData }
     }
 }
 
-impl<'k, P> Algorithm for Kw<'k, P>
+impl<'k, P, Dir> Algorithm for Kw<'k, P, Dir>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
@@ -318,7 +344,7 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P> KeyWrapper for Kw<'k, P>
+impl<'k, P> KeyWrapper for Kw<'k, P, Encrypting>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
@@ -374,12 +400,12 @@ where
         r.copy_from_slice(plaintext);
         let (r, _) = r.as_chunks_mut::<SEMIBLOCK_LEN>();
         // Step 3: C = W(S).
-        w(self.perm, a, r);
+        w::<P, KW_BLOCK_LEN, SEMIBLOCK_LEN>(self.perm, a, r);
         Ok(ct_len)
     }
 }
 
-impl<'k, P> KeyUnwrapper for Kw<'k, P>
+impl<'k, P> KeyUnwrapper for Kw<'k, P, Decrypting>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
@@ -437,7 +463,7 @@ where
         let r = &mut plaintext[..pt_len];
         r.copy_from_slice(&ciphertext[SEMIBLOCK_LEN..]);
         let (r, _) = r.as_chunks_mut::<SEMIBLOCK_LEN>();
-        w_inv(self.perm, &mut a, r);
+        w_inv::<P, KW_BLOCK_LEN, SEMIBLOCK_LEN>(self.perm, &mut a, r);
 
         // Step 3: if MSB64(S) != ICV1, FAIL. Compared in constant time, and the buffer is scrubbed
         // so that a caller who ignores the `Result` is not left holding the unauthenticated bytes.

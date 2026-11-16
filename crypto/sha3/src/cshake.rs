@@ -5,7 +5,7 @@ use crate::shake::{SHAKEInternal, SHAKESqueezer};
 use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
 };
@@ -251,44 +251,54 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
     /// Like SHAKE and unlike the SP 800-185 functions built on it, cSHAKE has no length to bind --
     /// `L` reaches it as "how much to read", not as absorbed input (Sec 3.3) -- so these are the
     /// same bytes the squeezer produces. What the `Hash` view fixes is how many.
-    fn do_final(self) -> Vec<u8> {
-        let n = self.output_len();
-        self.into_squeezer().do_output_final(n)
-    }
-
-    fn do_final_out(self, output: &mut [u8]) -> usize {
+    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
         let n = self.output_len();
         // Per Hash::do_final_out: a short buffer is filled and the output truncated, a long one
         // takes it in its first output_len bytes and zeros after. To fill a longer buffer, use the
         // XOF spelling, which takes its length from the buffer.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.into_squeezer().do_output_final_out(&mut output[..written])
+        self.finish_out(&mut output[..written])
     }
 
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        let mut out = vec![0u8; self.output_len()];
-        self.do_final_partial_bits_out(partial_byte, num_bits, &mut out)?;
-        Ok(out)
-    }
-
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        _token: &FinishToken,
         partial_byte: u8,
         num_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
         let n = self.output_len();
         // Validated before anything is written, so a rejected call leaves `output` untouched.
-        let squeezer = self.into_squeezer_partial_bits(partial_byte, num_bits)?;
+        let (suffix, bits) = self.suffix();
+        self.shake.end_absorbing_partial_bits_with_suffix(partial_byte, num_bits, suffix, bits)?;
         // The buffer rule of do_final_out applies here too: output_len bytes, then zeros.
         let written = n.min(output.len());
         output[written..].fill(0);
-        Ok(squeezer.do_output_final_out(&mut output[..written]))
+        Ok(self.shake.squeeze_internal_out(&mut output[..written]))
+    }
+}
+
+impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
+    /// The domain separator that ends the input: cSHAKE's, or, by Sec 3.3 step 1, SHAKE's
+    /// "1111" (FIPS 202 s. 6.2) when there is no N and no S.
+    fn suffix(&self) -> (u8, usize) {
+        if self.customized { CSHAKE_SUFFIX } else { (0x0F, 4) }
+    }
+
+    /// [`XOF::into_squeezer`] then a read into `output`, where the sponge sits.
+    pub(crate) fn finish_out(&mut self, output: &mut [u8]) -> usize {
+        let (suffix, bits) = self.suffix();
+        self.shake.end_absorbing_with_suffix(suffix, bits);
+        self.shake.squeeze_internal_out(output)
+    }
+
+    /// Absorbs `right_encode(length_bits)`, the tail of every SP 800-185 function's input, then
+    /// [`Self::finish_out`].
+    pub(crate) fn finish_out_with_length(&mut self, length_bits: u64, output: &mut [u8]) -> usize {
+        let (buf, len) = right_encode(length_bits);
+        self.do_update(&buf[..len]);
+        self.finish_out(output)
     }
 }
 
@@ -296,13 +306,8 @@ impl<PARAMS: SHAKEParams> XOF for CSHAKEInternal<PARAMS> {
     type Squeezer = SHAKESqueezer<PARAMS>;
 
     fn into_squeezer(self) -> Self::Squeezer {
-        if self.customized {
-            let (suffix, bits) = CSHAKE_SUFFIX;
-            self.shake.into_squeezer_with_suffix(suffix, bits)
-        } else {
-            // Sec 3.3 step 1: with no N and no S this is SHAKE, separator included.
-            self.shake.into_squeezer()
-        }
+        let (suffix, bits) = self.suffix();
+        self.shake.into_squeezer_with_suffix(suffix, bits)
     }
 
     fn into_squeezer_partial_bits(
@@ -310,12 +315,8 @@ impl<PARAMS: SHAKEParams> XOF for CSHAKEInternal<PARAMS> {
         partial_byte: u8,
         num_bits: usize,
     ) -> Result<Self::Squeezer, HashError> {
-        if self.customized {
-            let (suffix, bits) = CSHAKE_SUFFIX;
-            self.shake.into_squeezer_partial_bits_with_suffix(partial_byte, num_bits, suffix, bits)
-        } else {
-            self.shake.into_squeezer_partial_bits(partial_byte, num_bits)
-        }
+        let (suffix, bits) = self.suffix();
+        self.shake.into_squeezer_partial_bits_with_suffix(partial_byte, num_bits, suffix, bits)
     }
 }
 
@@ -417,17 +418,6 @@ impl<PARAMS: SHAKEParams> CSHAKESqueezer<PARAMS> {
     /// Wraps a cSHAKE with everything but its `right_encode(L)` absorbed.
     pub(crate) fn new(cshake: CSHAKEInternal<PARAMS>) -> Self {
         Self { phase: Phase::Unbound(cshake) }
-    }
-
-    /// [`XOFSqueezer::do_output_final_out`] with `L` given rather than taken from the buffer.
-    ///
-    /// For the `Hash` view of these functions, whose length is fixed by the type: it binds the
-    /// nominal output length and then writes as much of it as the caller's buffer has room for,
-    /// which is what [`Hash::do_final_out`] promises. Going through
-    /// [`XOFSqueezer::do_output_final_out`] would bind the buffer's length instead, and a short
-    /// buffer would then compute a different function rather than truncating this one.
-    pub(crate) fn do_final_out_with_length(mut self, length_bits: u64, output: &mut [u8]) -> usize {
-        self.read(length_bits, output)
     }
 
     /// Fills `output` from the stream, absorbing `right_encode(length_bits)` first if this is the

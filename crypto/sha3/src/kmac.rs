@@ -56,7 +56,7 @@
 //! assert_ne!(bound[..16], first[..]);
 //! ```
 
-use crate::cshake::{CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer, right_encode};
+use crate::cshake::{CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer};
 use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
@@ -64,8 +64,11 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{
-    Algorithm, Hash, MACGenerator, MACVerifier, RNG, Suspendable, XOF, XOFSqueezer,
+    Algorithm, FinishToken, Hash, MACGenerator, MACVerifier, RNG, Suspendable, XOF,
 };
+// Named only by the doc links below.
+#[cfg(doc)]
+use bouncycastle_core::traits::XOFSqueezer;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{
@@ -324,7 +327,7 @@ impl<PARAMS: SHAKEParams, Dir, const MAC_LEN: usize> Algorithm
 impl<PARAMS: SHAKEParams, Dir, const MAC_LEN: usize> KMACInternal<PARAMS, Dir, MAC_LEN> {
     /// Sec 4.3 step 1's tail: `right_encode(L)` absorbed after the message, then `L` bytes
     /// squeezed into `out`.
-    fn finish(mut self, out: &mut [u8; MAC_LEN]) -> usize {
+    fn finish(&mut self, _token: &FinishToken, out: &mut [u8; MAC_LEN]) -> usize {
         // The floor on the worker as well as on the key: every tag in either direction passes
         // here, so none is produced or verified below it, not even by a worker resumed from a
         // state whose stored length says otherwise.
@@ -334,9 +337,7 @@ impl<PARAMS: SHAKEParams, Dir, const MAC_LEN: usize> KMACInternal<PARAMS, Dir, M
                 "a KMAC output length is from 4 bytes (SP 800-185 Sec 8.4.2) to what right_encode takes"
             )
         };
-        let (buf, len) = right_encode((MAC_LEN as u64) * 8);
-        self.cshake.do_update(&buf[..len]);
-        self.cshake.into_squeezer().do_output_out(out)
+        self.cshake.finish_out_with_length((MAC_LEN as u64) * 8, out)
     }
 }
 
@@ -396,8 +397,8 @@ impl<PARAMS: SHAKEParams, const MAC_LEN: usize> MACGenerator<MAC_LEN>
         self.cshake.do_update(data);
     }
 
-    fn do_final_out(self, out: &mut [u8; MAC_LEN]) -> usize {
-        self.finish(out)
+    fn finish_mac_into(&mut self, token: &FinishToken, out: &mut [u8; MAC_LEN]) -> usize {
+        self.finish(token, out)
     }
 }
 
@@ -409,9 +410,13 @@ impl<PARAMS: SHAKEParams, const MAC_LEN: usize> MACVerifier<MAC_LEN>
     }
 
     /// Recomputes the tag and compares it in constant time.
-    fn do_verify_final(self, mac: &[u8; MAC_LEN]) -> Result<(), MACError> {
+    fn finish_mac_verify(
+        &mut self,
+        token: &FinishToken,
+        mac: &[u8; MAC_LEN],
+    ) -> Result<(), MACError> {
         let mut computed: Secret<[u8; MAC_LEN]> = Secret::new();
-        self.finish(&mut computed);
+        self.finish(token, &mut computed);
         if ct::ct_eq_bytes(&*computed, mac) { Ok(()) } else { Err(MACError::VerificationFailed) }
     }
 }
@@ -516,12 +521,7 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
     /// A final read at the nominal length, so `L` is bound: this is `KMAC(K, X, 8n, S)` for
     /// `n = ` [`Hash::output_len`] -- the fixed-length KMAC of Sec 4.3, not a prefix of the
     /// KMACXOF stream.
-    fn do_final(self) -> Vec<u8> {
-        let n = self.output_len();
-        self.into_squeezer().do_output_final(n)
-    }
-
-    fn do_final_out(self, output: &mut [u8]) -> usize {
+    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
         let n = self.output_len();
         // Per Hash::do_final_out: a short buffer is filled and the output truncated, a long one
         // takes it in its first output_len bytes and zeros after. `n` is what reaches
@@ -529,26 +529,16 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
         // KMAC of the buffer's length.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.into_squeezer().do_final_out_with_length((n as u64) * 8, &mut output[..written])
+        self.cshake.finish_out_with_length((n as u64) * 8, &mut output[..written])
     }
 
     /// # Errors
     /// Always [`HashError::InvalidLength`] for a non-zero `num_bits`: `right_encode(0)` has to
     /// follow the message, and a partial final byte would leave the sponge unable to absorb it
     /// byte-aligned. `num_bits` of 0 means the message ended on a byte boundary and is accepted.
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        let n = self.output_len();
-        let mut out = vec![0u8; n];
-        self.do_final_partial_bits_out(partial_byte, num_bits, &mut out)?;
-        Ok(out)
-    }
-
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        token: &FinishToken,
         _partial_byte: u8,
         num_bits: usize,
         output: &mut [u8],
@@ -558,7 +548,7 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
                 "KMACXOF cannot take a partial final byte: right_encode(0) must follow the message",
             ));
         }
-        Ok(self.do_final_out(output))
+        Ok(self.finish_into(token, output))
     }
 }
 

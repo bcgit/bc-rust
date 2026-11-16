@@ -34,7 +34,7 @@ fn hmac_k<H: HMACParams>(key: &[u8], data: &[&[u8]], out: &mut [u8]) {
     for piece in data {
         inner.do_update(piece);
     }
-    hmac_hazmat::finish_out(&hmac_key, inner, out);
+    hmac_hazmat::finish_out(&hmac_key, &mut inner, out);
 }
 
 /// RFC 6979 Section 2.3.4 `bits2octets(h1)`: `bits2int(h1)` (Section 2.3.2: the leftmost

@@ -46,7 +46,7 @@
 //!     | bc-rust aes128-kw -d encrypt --key 000102030405060708090a0b0c0d0e0f -x
 //! ```
 
-use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
+use crate::helpers::block_mode_helpers::{CipherDirection, InputLimit, load_key_object};
 use crate::helpers::write_bytes_or_hex;
 use bouncycastle::cipher::BlockCipherKey;
 use bouncycastle::cipher::modes::ModeNames;
@@ -72,6 +72,7 @@ pub(crate) fn kw_cmd<P, const KEY_LEN: usize>(
     run::<_, KEY_LEN>(
         direction,
         &load_key_object::<BlockCipherKey<P, KW>, KEY_LEN>(key, key_file, &alg),
+        None,
         output_hex,
         &alg,
     );
@@ -91,29 +92,52 @@ pub(crate) fn kwp_cmd<P, const KEY_LEN: usize>(
     run::<_, KEY_LEN>(
         direction,
         &load_key_object::<BlockCipherKey<P, KWP>, KEY_LEN>(key, key_file, &alg),
+        None,
         output_hex,
         &alg,
     );
 }
 
 /// Reads all of stdin, wraps or unwraps it under `kek`, and writes the result. `alg` names the
-/// algorithm in error messages.
-fn run<K, const KEK_LEN: usize>(direction: &CipherDirection, kek: &K, output_hex: bool, alg: &str)
-where
+/// algorithm in error messages. Shared with the other block ciphers' key-wrap commands.
+pub(crate) fn run<K, const KEK_LEN: usize>(
+    direction: &CipherDirection,
+    kek: &K,
+    limit: Option<&InputLimit>,
+    output_hex: bool,
+    alg: &str,
+) where
     K: KeyWrappingKey<KEK_LEN> + KeyUnwrappingKey<KEK_LEN>,
 {
+    match direction {
+        CipherDirection::Encrypt => run_with(|input| kek.wrap(input), limit, output_hex, alg),
+        CipherDirection::Decrypt => run_with(|input| kek.unwrap(input), None, output_hex, alg),
+    }
+}
+
+/// Reads all of stdin, applies `op` to it and writes the result; the unwrap-only commands pass
+/// their key's `unwrap` alone, so that no wrapper is ever instantiated for their key type.
+/// `limit`, for a wrapping command whose standard bounds what one key may protect, is checked
+/// against the whole input before `op` runs.
+pub(crate) fn run_with(
+    op: impl FnOnce(&[u8]) -> Result<Vec<u8>, SymmetricCipherError>,
+    limit: Option<&InputLimit>,
+    output_hex: bool,
+    alg: &str,
+) {
     let mut input = Vec::new();
     if let Err(e) = std::io::stdin().read_to_end(&mut input) {
         eprintln!("Error: couldn't read stdin: {e}");
         exit(-1);
     }
+    if let Some(limit) = limit
+        && input.len() as u64 > limit.max_bytes
+    {
+        eprintln!("Error: {}", limit.message);
+        exit(-1);
+    }
 
-    let result = match direction {
-        CipherDirection::Encrypt => kek.wrap(&input),
-        CipherDirection::Decrypt => kek.unwrap(&input),
-    };
-
-    match result {
+    match op(&input) {
         Ok(output) => write_bytes_or_hex(&output, output_hex),
         Err(SymmetricCipherError::DecryptionFailed) => {
             eprintln!(

@@ -74,7 +74,7 @@
 #![forbid(missing_docs)]
 
 use bouncycastle_core::errors::KDFError;
-use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token};
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -254,7 +254,7 @@ impl<H: X963KDFParams> X963KDF<H> {
                 }
                 hash.do_update(&counter.to_be_bytes());
                 hash.do_update(shared_info);
-                let len = hash.do_final_out(&mut block[..H::OUTPUT_LEN]);
+                let len = hash.finish_into(&finish_token(), &mut block[..H::OUTPUT_LEN]);
                 // Step 5: K is the leftmost keydatalen octets of K_1 || K_2 || ...
                 let take = *min(&len, &(key_data_len - written));
                 out[written..written + take].copy_from_slice(&block[..take]);

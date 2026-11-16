@@ -319,7 +319,7 @@ impl<
         let mut prk = Secret::<[u8; MAX_NH]>::new();
         // Cannot fail: the buffer is at least the hash output length (PARAMS_CHECK).
         let nh = <G::KDFHash as HashAlgParams>::OUTPUT_LEN;
-        let nh = hmac_hazmat::finish_out(&salt, hmac, &mut prk[..nh]);
+        let nh = hmac_hazmat::finish_out(&salt, &mut hmac, &mut prk[..nh]);
         // nh <= MAX_NH bytes fit a KeyMaterial<MAX_NH>; the one way this fails is an all-zero
         // PRK (one HMAC output in 2^(8 * nh)), which the buffer types Zeroized and the expand's
         // HmacKey then refuses. Not reachable in practice; a panic is the right report for it.
@@ -362,7 +362,7 @@ impl<
             // i <= N <= 255, since L <= 255*HashLen.
             hmac.do_update(&[(i + 1) as u8]);
             // Cannot fail: the buffer is at least the hash output length (PARAMS_CHECK).
-            t_len = hmac_hazmat::finish_out(&key, hmac, &mut t[..nh]);
+            t_len = hmac_hazmat::finish_out(&key, &mut hmac, &mut t[..nh]);
             okm_chunk.copy_from_slice(&t[..okm_chunk.len()]);
         }
     }

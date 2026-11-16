@@ -15,7 +15,7 @@ use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType}
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{
-    Hash, HashOneShot, MACGenerator, MACVerifier, RNG, Suspendable, XOF, XOFSqueezer,
+    FinishToken, Hash, HashOneShot, MACGenerator, MACVerifier, RNG, Suspendable, XOF, XOFSqueezer,
 };
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{ct, min, secret::Secret};
@@ -461,6 +461,14 @@ impl<K: KeyWords> Blake3Core<K> {
         }
     }
 
+    /// The default-length hash: zeroizes `output`, then writes `min(output.len(), 32)` bytes of
+    /// root output read from `&self`, so the state is finished where it sits.
+    fn finish_default_len(&self, output: &mut [u8]) -> usize {
+        output.fill(0);
+        let n = *min(&output.len(), &OUT_LEN);
+        BLAKE3Squeezer::new(self.root_output()).do_output_out(&mut output[..n])
+    }
+
     /// The root node's held-back compression.
     ///
     /// BLAKE3 spec s. 5.1.2: "Once we reach the end of the input, we can use a simpler algorithm
@@ -618,44 +626,27 @@ impl Hash for BLAKE3 {
         self.core.update(data);
     }
 
-    fn do_final(self) -> Vec<u8> {
-        let mut output = vec![0u8; OUT_LEN];
-        self.do_final_out(&mut output);
-        output
-    }
-
     /// Writes `min(output.len(), 32)` bytes of the default-length hash and zeroizes the rest of
     /// `output`. To fill a longer buffer with extended output, use [`XOF::xof_out`] or
     /// [`XOFSqueezer::do_output_out`].
-    fn do_final_out(self, output: &mut [u8]) -> usize {
-        output.fill(0);
-        let n = *min(&output.len(), &OUT_LEN);
-        self.into_squeezer().do_output_out(&mut output[..n])
+    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
+        self.core.finish_default_len(output)
     }
 
     /// Only `num_bits == 0` is accepted (BLAKE3 is byte-oriented; s. 2.1): it is identical to
     /// [`Hash::do_final`] and `partial_byte` is ignored. `num_bits` in `1..=7` returns
     /// [`HashError::InvalidInput`], and larger values [`HashError::InvalidLength`].
-    fn do_final_partial_bits(
-        self,
-        _partial_byte: u8,
-        num_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        check_partial_bits(num_bits)?;
-        Ok(self.do_final())
-    }
-
-    /// As [`Hash::do_final_partial_bits`]; `output` is zeroized first, so a rejected call leaves
-    /// it all zeros.
-    fn do_final_partial_bits_out(
-        self,
+    /// `output` is zeroized first, so a rejected call leaves it all zeros.
+    fn finish_partial_bits_into(
+        &mut self,
+        _token: &FinishToken,
         _partial_byte: u8,
         num_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
         output.fill(0);
         check_partial_bits(num_bits)?;
-        Ok(self.do_final_out(output))
+        Ok(self.core.finish_default_len(output))
     }
 }
 
@@ -965,30 +956,19 @@ impl Hash for BLAKE3DeriveKey {
         self.0.do_update(data)
     }
 
-    fn do_final(self) -> Vec<u8> {
-        self.0.do_final()
-    }
-
-    fn do_final_out(self, output: &mut [u8]) -> usize {
-        self.0.do_final_out(output)
+    fn finish_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.0.finish_into(token, output)
     }
 
     /// As on [`BLAKE3`]: only `num_bits == 0` is accepted.
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        self.0.do_final_partial_bits(partial_byte, num_bits)
-    }
-
-    fn do_final_partial_bits_out(
-        self,
+    fn finish_partial_bits_into(
+        &mut self,
+        token: &FinishToken,
         partial_byte: u8,
         num_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
-        self.0.do_final_partial_bits_out(partial_byte, num_bits, output)
+        self.0.finish_partial_bits_into(token, partial_byte, num_bits, output)
     }
 }
 
@@ -1157,8 +1137,8 @@ impl MACGenerator<OUT_LEN> for BLAKE3KeyedHash<'_, Encrypting> {
         self.core.update(data);
     }
 
-    fn do_final_out(self, out: &mut [u8; OUT_LEN]) -> usize {
-        self.into_squeezer().do_output_out(out)
+    fn finish_mac_into(&mut self, _token: &FinishToken, out: &mut [u8; OUT_LEN]) -> usize {
+        BLAKE3Squeezer::new(self.core.root_output()).do_output_out(out)
     }
 }
 
@@ -1168,7 +1148,11 @@ impl MACVerifier<OUT_LEN> for BLAKE3KeyedHash<'_, Decrypting> {
     }
 
     /// Recomputes the tag and compares it in constant time.
-    fn do_verify_final(self, mac: &[u8; OUT_LEN]) -> Result<(), MACError> {
+    fn finish_mac_verify(
+        &mut self,
+        _token: &FinishToken,
+        mac: &[u8; OUT_LEN],
+    ) -> Result<(), MACError> {
         // The recomputed tag is the valid tag of whatever message was absorbed, so it is kept
         // off the stack's leftovers.
         let mut computed: Secret<[u8; OUT_LEN]> = Secret::new();

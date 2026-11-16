@@ -21,18 +21,18 @@
 //! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
 //! messages as needed: `CBC<PKCS7>` for CBC (NIST SP 800-38A Sec 6.2) with PKCS#7 padding, `CFB`
 //! for CFB128 (Sec 6.3), `CFB8` for the `s = 8` segment size, a different and non-interoperable
-//! mode costing one ARIA call per byte, and `CTR` for CTR (Sec 6.5) with a 12-byte nonce and a
-//! 4-byte counter; `GCM` and `CCM<N, T>` for the authenticated modes (NIST SP 800-38D and
-//! 800-38C), `CMAC` and `GMAC` for the MACs, and `KW` and `KWP` for the key wraps (SP 800-38F;
-//! RFC 5794 Appendix B). The aliases [`ARIA_CBC_128`], [`ARIA_CFB_128`], [`ARIA_CFB8_128`],
-//! [`ARIA_CTR_128`], [`ARIA_GCM_128`], [`ARIA_CCM_128`], [`ARIA_CMAC_128`], [`ARIA_GMAC_128`],
-//! [`ARIA_KW_128`], [`ARIA_KWP_128`] and their `_192` / `_256` siblings name the workers the keys
-//! hand out.
+//! mode costing one ARIA call per byte, `OFB` for OFB (Sec 6.4), and `CTR` for CTR (Sec 6.5) with a
+//! 12-byte nonce and a 4-byte counter; `GCM` and `CCM<N, T>` for the authenticated modes (NIST SP
+//! 800-38D and 800-38C), `CMAC` and `GMAC` for the MACs, and `KW` and `KWP` for the key wraps (SP
+//! 800-38F; RFC 5794 Appendix B). The aliases [`ARIA_CBC_128`], [`ARIA_CFB_128`],
+//! [`ARIA_CFB8_128`], [`ARIA_OFB_128`], [`ARIA_CTR_128`], [`ARIA_GCM_128`], [`ARIA_CCM_128`],
+//! [`ARIA_CMAC_128`], [`ARIA_GMAC_128`], [`ARIA_KW_128`], [`ARIA_KWP_128`] and their `_192` /
+//! `_256` siblings name the workers the keys hand out.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
-//! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
-//! length with no padding at all; GCM and CCM authenticate as well as encrypt, and are the modes
-//! to prefer. See the `bouncycastle_cipher::modes` crate docs for the comparison.
+//! padding scheme to bridge the difference; the CFB modes, OFB and CTR are stream ciphers and take
+//! any length with no padding at all; GCM and CCM authenticate as well as encrypt, and are the
+//! modes to prefer. See the `bouncycastle_cipher::modes` crate docs for the comparison.
 //!
 //! ```
 //! use bouncycastle_aria::ARIA256Key;
@@ -307,13 +307,13 @@
 //! * **The bit-plane transpose** is translated from BearSSL's `aes_ct` by Thomas Pornin (MIT
 //!   licence), as in the AES crate.
 //! * Verified against RFC 5794 Appendix A -- the three ciphertexts, and for the 128-bit key every
-//!   round key `ek1 .. ek13` and every intermediate value `P1 .. P11`; the ECB, CBC, CFB128, CFB8
-//!   and CTR vectors of OpenSSL's `evpciph_aria.txt`, which are KISA's published ARIA test vectors
-//!   (10 blocks under each key length); the vectors and invariants of `tests/bc_java_tests.rs`; the
-//!   transcription of the source engine on thousands of keys and blocks in every lane, both
-//!   directions; and Project Wycheproof's `aria_cbc_pkcs5_test.json` through the padded CBC
-//!   keys, with `aria_ccm_test.json` and `aria_gcm_test.json` through the `CCM` and `GCM` mode
-//!   traits over the engines.
+//!   round key `ek1 .. ek13` and every intermediate value `P1 .. P11`; the ECB, CBC, CFB128, CFB8,
+//!   OFB and CTR vectors of OpenSSL's `evpciph_aria.txt`, which are KISA's published ARIA test
+//!   vectors (10 blocks under each key length); the vectors and invariants of
+//!   `tests/bc_java_tests.rs`; the transcription of the source engine on thousands of keys and
+//!   blocks in every lane, both directions; and Project Wycheproof's `aria_cbc_pkcs5_test.json`
+//!   through the padded CBC keys, with `aria_ccm_test.json` and `aria_gcm_test.json` through the
+//!   `CCM` and `GCM` mode traits over the engines.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -331,6 +331,7 @@ mod gmac;
 pub mod hazmat;
 mod key;
 mod kw;
+mod ofb;
 mod round;
 mod sbox;
 mod schedule;
@@ -352,6 +353,7 @@ pub use gcm::{ARIA_GCM_128, ARIA_GCM_192, ARIA_GCM_256};
 pub use gmac::{ARIA_GMAC_128, ARIA_GMAC_192, ARIA_GMAC_256};
 pub use key::{ARIA128Key, ARIA192Key, ARIA256Key};
 pub use kw::{ARIA_KW_128, ARIA_KW_192, ARIA_KW_256, ARIA_KWP_128, ARIA_KWP_192, ARIA_KWP_256};
+pub use ofb::{ARIA_OFB_128, ARIA_OFB_192, ARIA_OFB_256};
 pub use schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams};
 
 // Imports needed for docs

@@ -2,7 +2,8 @@
 
 use crate::{H, MLDSA_MU_LEN, MLDSA_TR_LEN};
 use bouncycastle_core::errors::{SignatureError, SuspendableError};
-use bouncycastle_core::traits::{Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::hazmat::finish_token;
+use bouncycastle_core::traits::{FinishToken, Hash, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_sha3::SUSPENDED_SHA3_STATE_LEN;
 
 /// Implements parts of Algorithm 2 and Line 6 of Algorithm 7 of FIPS 204: the message
@@ -58,12 +59,19 @@ impl MuBuilder {
     }
 
     /// Finalize and return the mu value.
-    pub fn do_final(self) -> [u8; MLDSA_MU_LEN] {
+    pub fn do_final(mut self) -> [u8; MLDSA_MU_LEN] {
+        self.finish(&finish_token())
+    }
+
+    /// As [`do_final`](Self::do_final), where the builder sits, for a worker's in-place final.
+    pub fn finish(&mut self, token: &FinishToken) -> [u8; MLDSA_MU_LEN] {
         // Completion of
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         let mut mu = [0u8; MLDSA_MU_LEN];
-        self.h.into_squeezer().do_output_out(&mut mu);
+        // H is SHAKE256, whose Hash output is its first 64 bytes: the mu of do_final.
+        let written = self.h.finish_into(token, &mut mu);
+        debug_assert_eq!(written, MLDSA_MU_LEN, "SHAKE256's Hash output is the whole of mu");
 
         mu
     }

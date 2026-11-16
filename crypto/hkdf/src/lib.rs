@@ -443,7 +443,7 @@ impl<H: HMACParams> HKDF<H> {
                     hmac.do_update(info);
                     hmac.do_update(&[i]);
 
-                    t_len = hmac_hazmat::finish_out(&prk_key, hmac, &mut T[..hash_len]);
+                    t_len = hmac_hazmat::finish_out(&prk_key, &mut hmac, &mut T[..hash_len]);
                     debug_assert_eq!(t_len, hash_len); // this will be true for every iteration after T(0) / T(1)
                     out[bytes_written..bytes_written + t_len].copy_from_slice(&T[..t_len]);
                     bytes_written += t_len;
@@ -460,7 +460,7 @@ impl<H: HMACParams> HKDF<H> {
             hmac.do_update(info);
             hmac.do_update(&[i]);
 
-            t_len = hmac_hazmat::finish_out(&prk_key, hmac, &mut T[..hash_len]);
+            t_len = hmac_hazmat::finish_out(&prk_key, &mut hmac, &mut T[..hash_len]);
             debug_assert_eq!(t_len, hash_len);
 
             do_hazardous_operations(okm, |okm| {
@@ -656,7 +656,7 @@ impl<H: HMACParams> HKDF<H> {
     /// The PRK is `HashLen` bytes (RFC 5869 Section 2.2), which the provided KeyMaterial always holds.
     #[allow(non_snake_case)]
     pub fn do_extract_final_out(
-        self,
+        mut self,
         prk: &mut KeyMaterial<MAX_HMAC_OUTPUT_LEN>,
     ) -> Result<usize, MACError> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
@@ -668,12 +668,12 @@ impl<H: HMACParams> HKDF<H> {
         };
         debug_assert!(self.hmac.is_some());
 
-        let output_key_type = self.entropy.get_output_key_type(); // need to do this above self.hmac.do_final_out, which will consume self.
+        let output_key_type = self.entropy.get_output_key_type();
 
         let mut bytes_written = 0;
-        let HkdfExtract { key, inner } = self.hmac.unwrap();
+        let HkdfExtract { key, inner } = self.hmac.as_mut().unwrap();
         do_hazardous_operations(prk, |okm| {
-            bytes_written = hmac_hazmat::finish_out(&key, inner, okm.ref_to_bytes_mut()?);
+            bytes_written = hmac_hazmat::finish_out(key, inner, okm.ref_to_bytes_mut()?);
             okm.set_key_len(bytes_written)?;
             okm.set_key_type(output_key_type)?;
             if output_key_type <= KeyType::Unknown {

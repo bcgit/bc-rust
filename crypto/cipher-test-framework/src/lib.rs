@@ -6,8 +6,8 @@
 //! * [`mode_keys`] -- the keys under every mode through the `core-test-framework` conformance
 //!   suites, and what tells the modes apart on the key path.
 //! * [`padded`] -- padded CBC through the key: the padding parameter selects the scheme.
-//! * [`stream`] -- CFB, CFB8 and CTR through the key: any length, any chunking, a fresh IV, and
-//!   the three modes distinct.
+//! * [`stream`] -- CFB, CFB8, OFB and CTR through the key: any length, any chunking, a fresh IV,
+//!   and the four modes distinct.
 //! * [`wycheproof`] -- the Project Wycheproof CBC-PKCS5, CCM, GCM, CMAC and key-wrap sets, run
 //!   through the key at one key length per call.
 //!

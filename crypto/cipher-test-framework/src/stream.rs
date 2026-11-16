@@ -1,11 +1,11 @@
-//! CFB, CFB8 and CTR through the key: the direction selects the encryptor or the decryptor, the
-//! init data is the length the mode defines, and the three modes are distinct from each other.
+//! CFB, CFB8, OFB and CTR through the key: the direction selects the encryptor or the decryptor,
+//! the init data is the length the mode defines, and the four modes are distinct from each other.
 //! The modes are tested in their own right in `bouncycastle_cipher::modes`; this is the wiring.
 
 use crate::Permutation;
 use crate::material::{filler, material, rng};
 use bouncycastle_cipher::BlockCipherKey;
-use bouncycastle_cipher::modes::{CFB, CFB8, CTR};
+use bouncycastle_cipher::modes::{CFB, CFB8, CTR, OFB};
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
@@ -43,6 +43,7 @@ where
 pub fn round_trips_at_any_length<P: Permutation<KEY_LEN>, const KEY_LEN: usize>(name: &str) {
     round_trips_one::<KEY_LEN, BLOCK_LEN, _>(&format!("{name} CFB"), &key::<P, CFB, KEY_LEN>());
     round_trips_one::<KEY_LEN, BLOCK_LEN, _>(&format!("{name} CFB8"), &key::<P, CFB8, KEY_LEN>());
+    round_trips_one::<KEY_LEN, BLOCK_LEN, _>(&format!("{name} OFB"), &key::<P, OFB, KEY_LEN>());
     round_trips_one::<KEY_LEN, CTR_NONCE_LEN, _>(&format!("{name} CTR"), &key::<P, CTR, KEY_LEN>());
 }
 
@@ -72,6 +73,7 @@ pub fn chunking_does_not_change_the_ciphertext<P: Permutation<KEY_LEN>, const KE
 ) {
     chunking_one::<KEY_LEN, BLOCK_LEN, _>(&format!("{name} CFB"), &key::<P, CFB, KEY_LEN>());
     chunking_one::<KEY_LEN, BLOCK_LEN, _>(&format!("{name} CFB8"), &key::<P, CFB8, KEY_LEN>());
+    chunking_one::<KEY_LEN, BLOCK_LEN, _>(&format!("{name} OFB"), &key::<P, OFB, KEY_LEN>());
     chunking_one::<KEY_LEN, CTR_NONCE_LEN, _>(&format!("{name} CTR"), &key::<P, CTR, KEY_LEN>());
 }
 
@@ -101,6 +103,7 @@ pub fn each_encryption_gets_fresh_init_data<P: Permutation<KEY_LEN>, const KEY_L
 ) {
     fresh_one::<KEY_LEN, BLOCK_LEN, _>(&format!("{name} CFB"), &key::<P, CFB, KEY_LEN>());
     fresh_one::<KEY_LEN, BLOCK_LEN, _>(&format!("{name} CFB8"), &key::<P, CFB8, KEY_LEN>());
+    fresh_one::<KEY_LEN, BLOCK_LEN, _>(&format!("{name} OFB"), &key::<P, OFB, KEY_LEN>());
     fresh_one::<KEY_LEN, CTR_NONCE_LEN, _>(&format!("{name} CTR"), &key::<P, CTR, KEY_LEN>());
 }
 
@@ -144,4 +147,29 @@ pub fn ctr_is_not_cfb<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     iv_from_nonce[..CTR_NONCE_LEN].copy_from_slice(&nonce);
     cfb_key.decrypt_inplace(&iv_from_nonce, &mut misread).expect("decryption runs");
     assert_ne!(misread, plaintext, "CFB must not decrypt a CTR ciphertext");
+}
+
+/// OFB is not CFB. Both compute `C1 = P1 XOR CIPH_K(IV)`, so under the same key and IV the first
+/// block agrees; from the second block CFB enciphers the last ciphertext block and OFB the last
+/// output block (SP 800-38A Sec 6.3 and 6.4), so the rest differs, and a CFB decryptor recovers
+/// only the first block of an OFB ciphertext.
+pub fn ofb_is_not_cfb<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
+    let iv = [0x0Au8; BLOCK_LEN];
+    let plaintext = filler(3 * BLOCK_LEN, 4_242);
+
+    let mut as_ofb = plaintext.clone();
+    let ofb_key = key::<P, OFB, KEY_LEN>();
+    ofb_key.create_encryptor_nonce(&iv).do_encrypt_inplace(&mut as_ofb).expect("OFB");
+
+    let cfb_key = key::<P, CFB, KEY_LEN>();
+    let mut as_cfb = plaintext.clone();
+    cfb_key.create_encryptor_nonce(&iv).do_encrypt_inplace(&mut as_cfb).expect("CFB");
+
+    assert_eq!(as_ofb[..BLOCK_LEN], as_cfb[..BLOCK_LEN], "both compute P1 XOR CIPH_K(IV)");
+    assert_ne!(as_ofb[BLOCK_LEN..], as_cfb[BLOCK_LEN..], "and diverge from the second block");
+
+    let mut misread = as_ofb.clone();
+    cfb_key.decrypt_inplace(&iv, &mut misread).expect("decryption runs");
+    assert_eq!(misread[..BLOCK_LEN], plaintext[..BLOCK_LEN], "the first block is shared");
+    assert_ne!(misread[BLOCK_LEN..], plaintext[BLOCK_LEN..], "CFB must not decrypt OFB past it");
 }
