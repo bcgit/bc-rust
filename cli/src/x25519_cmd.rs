@@ -3,14 +3,17 @@
 //! the raw shared secret for a KDF (`hkdf-* --ikm-file` and the others), as `eccdh-*` does.
 
 use crate::helpers::{
-    println_stdout, read_input_file, read_input_file_or_stdin, read_secret_file,
-    read_secret_file_or_stdin, write_bytes_or_hex, write_bytes_or_hex_to_file, write_stdout,
+    SecretBytes, println_stdout, read_input_file, read_input_file_or_stdin, read_secret_file,
+    read_secret_file_or_stdin, write_bytes_or_hex, write_bytes_or_hex_to_file,
+    write_secret_bytes_or_hex, write_stdout,
 };
 use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
-use bouncycastle::ed::x25519::{POINT_LEN, X25519PrivateKey, X25519PublicKey, keygen_out};
+use bouncycastle::ed::x25519::{
+    POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen_out,
+};
 use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::Secret;
 use clap::ValueEnum;
@@ -47,20 +50,19 @@ pub(crate) fn x25519_cmd(
                 eprintln!("Error: key generation failed: {e:?}");
                 exit(-1);
             });
-            // The encoding lives in a Secret until it is written; the hex form the writer
-            // builds is the shared helper's, as for every other key the CLI prints.
-            let mut sk_bytes = Secret::<[u8; POINT_LEN]>::new();
+            let mut sk_bytes = Secret::<[u8; SCALAR_LEN]>::new();
             sk.encode_out(&mut sk_bytes);
-            write_bytes_or_hex(&*sk_bytes, output_hex);
+            write_secret_bytes_or_hex(&*sk_bytes, output_hex);
         }
         X25519Action::PkFromSk => {
-            let sk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes());
-            write_bytes_or_hex(&sk.pk().encode(), output_hex);
+            let pk = load_sk(skfile).pk();
+            write_bytes_or_hex(&pk.encode(), output_hex);
         }
         X25519Action::CheckConsistency => {
-            let sk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes());
             let pk = parse_pk(&read_pkfile(pkfile));
-            if sk.pk() == pk {
+            // The private key is dropped, and so wiped, before either branch exits.
+            let matches = load_sk(skfile).pk() == pk;
+            if matches {
                 println_stdout("SUCCESS: pk and sk match.");
             } else {
                 eprintln!("FAILURE: pk and sk do not match.");
@@ -68,13 +70,17 @@ pub(crate) fn x25519_cmd(
             }
         }
         X25519Action::Agree => {
-            let sk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes());
             let pk = parse_pk(&read_pkfile(pkfile));
-            let z = sk.agree(&pk, ()).unwrap_or_else(|e| {
+            // `exit` runs no destructors, so the key is dropped before the result is looked at.
+            let z = {
+                let sk = load_sk(skfile);
+                sk.agree(&pk, ())
+            };
+            let z = z.unwrap_or_else(|e| {
                 eprintln!("Error: key agreement failed: {e:?}");
                 exit(-1);
             });
-            write_bytes_or_hex(z.ref_to_bytes(), output_hex);
+            write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
         }
         X25519Action::Encaps => {
             let pk = parse_pk(&read_input_file_or_stdin(pkfile));
@@ -84,31 +90,34 @@ pub(crate) fn x25519_cmd(
             });
             if let Some(ctfile) = ctfile {
                 write_bytes_or_hex_to_file(&ct, ctfile, output_hex);
-                write_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+                write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
             } else {
                 write_bytes_or_hex(&ct, true);
                 write_stdout(b"\n");
-                write_bytes_or_hex(ss.ref_to_bytes(), true);
+                write_secret_bytes_or_hex(ss.ref_to_bytes(), true);
             }
         }
         X25519Action::Decaps => {
-            let sk = match skfile {
-                Some(f) => parse_sk(read_secret_file(f).ref_to_bytes()),
-                None => {
-                    eprintln!("Error: no skfile provided.");
-                    exit(-1);
-                }
+            let Some(skfile) = skfile else {
+                eprintln!("Error: no skfile provided.");
+                exit(-1);
             };
+            // The ciphertext is checked before the private key is read.
             let ct = read_input_file_or_stdin(ctfile);
             let Ok(ct) = <[u8; POINT_LEN]>::try_from(ct.as_slice()) else {
                 eprintln!("Error: ciphertext is not the correct length.");
                 exit(-1);
             };
-            let ss = sk.decaps(&ct, ()).unwrap_or_else(|e| {
+            // `exit` runs no destructors, so the key is dropped before the result is looked at.
+            let ss = {
+                let sk = parse_sk(|| read_secret_file(skfile));
+                sk.decaps(&ct, ())
+            };
+            let ss = ss.unwrap_or_else(|e| {
                 eprintln!("Error: decapsulation failed: {e:?}");
                 exit(-1);
             });
-            write_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
         }
     }
 }
@@ -123,8 +132,19 @@ fn read_pkfile(pkfile: &Option<String>) -> Vec<u8> {
     }
 }
 
-fn parse_sk(bytes: &[u8]) -> X25519PrivateKey {
-    X25519PrivateKey::from_bytes(bytes).unwrap_or_else(|_| {
+/// The private key in `--skfile`, or on stdin.
+fn load_sk(skfile: &Option<String>) -> X25519PrivateKey {
+    parse_sk(|| read_secret_file_or_stdin(skfile))
+}
+
+/// The private key that the bytes `read` returns encode. The bytes go out of scope, and so are
+/// wiped, before a failure exits.
+fn parse_sk(read: impl FnOnce() -> SecretBytes) -> X25519PrivateKey {
+    let parsed = {
+        let bytes = read();
+        X25519PrivateKey::from_bytes(bytes.ref_to_bytes())
+    };
+    parsed.unwrap_or_else(|_| {
         eprintln!("Error: couldn't parse the input as a 32-byte X25519 private key.");
         exit(-1);
     })
