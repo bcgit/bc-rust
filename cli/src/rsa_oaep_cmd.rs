@@ -15,9 +15,9 @@ use crate::helpers::{
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::key_transport_key::{KeyTransportDecryptingKey, KeyTransportEncryptingKey};
-use bouncycastle::core::traits::{HashAlgParams, HashOneShot, PrivateKey, PublicKey};
+use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::rng::HashDRBG_SHA512;
-use bouncycastle::rsa::rsaes_oaep::OaepParams;
+use bouncycastle::rsa::rsaes_oaep::{OaepHash, OaepParams};
 use bouncycastle::rsa::rsasve::{RSASVE, RsaKEMPrivateKey, RsaKEMPublicKey};
 use bouncycastle::rsa::size::{RsaSigningSize, RsaSize};
 use bouncycastle::rsa::{RSA2048, RSA3072, RSA4096, RSA8192};
@@ -98,8 +98,8 @@ fn run<K, H, M, const N: usize, const PK_LEN: usize, const SK_LEN: usize>(
             PublicKeyEncoded = [u8; PK_LEN],
             PrivateKeyEncoded = [u8; SK_LEN],
         >,
-    H: HashOneShot + HashAlgParams,
-    M: HashOneShot + HashAlgParams,
+    H: OaepHash,
+    M: OaepHash,
 {
     let label = args.label.as_ref().map(|l| decode_hex_arg(l, "label")).unwrap_or_default();
     let params = OaepParams::<H, M, KEM_KEY_LEN>::new(&label);
@@ -226,7 +226,7 @@ fn with_mgf<K, H, const N: usize, const PK_LEN: usize, const SK_LEN: usize>(
             PublicKeyEncoded = [u8; PK_LEN],
             PrivateKeyEncoded = [u8; SK_LEN],
         >,
-    H: HashOneShot + HashAlgParams,
+    H: OaepHash,
 {
     match args.mgf_hash.unwrap_or(args.hash) {
         RSAOAEPHash::Sha1 => run::<K, H, SHA1, N, PK_LEN, SK_LEN>(args, alg_name),
