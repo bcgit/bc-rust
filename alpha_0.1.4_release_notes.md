@@ -39,6 +39,23 @@
   `keygen` draws the key from the caller's RNG; checked against RFC 7748's vectors, RFC 9180 Appendix A.1.1, A.1.2, A.2.1, A.2.2, A.7.1 and A.7.2, and
   Wycheproof's X25519 set; the `x25519` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree, encaps
   and decaps.
+* DHKEM over P-256, P-384 and P-521 -- RFC 9180 Section 4.1's DHKEM(P-256, HKDF-SHA256), DHKEM(P-384, HKDF-SHA384)
+  and DHKEM(P-521, HKDF-SHA512) (`kem_id` 0x0010 to 0x0012) on the ECC CDH keys: `ECCDHPublicKey<C>` and
+  `ECCDHPrivateKey<C>` over `P256`, `P384` and `P521` carry the KEM roles with `()` as the parameters, under the
+  markers `DHKEM_P256_HKDF_SHA256`, `DHKEM_P384_HKDF_SHA384` and `DHKEM_P521_HKDF_SHA512` (`ECDHKEM<C>`), with
+  `dhkem::derive_key_pair` for Section 7.1.3's `DeriveKeyPair`. `bouncycastle-hpke` gains the rejection-sampling
+  form of `DeriveKeyPair` beside the expand form: `DHKEMParams::DERIVE_KEY_PAIR_BY_EXPAND` is replaced by
+  `DERIVE_KEY_PAIR`, a `DeriveKeyPairForm`, and `DHKEMParams::private_key_from_bytes` returns an `Option`, a change
+  for implementors of a DHKEM group. Checked against the RFC's machine-readable vectors for P-256 and P-521 (32
+  sets each; P-521's key derivation is the first two-block `LabeledExpand`), and, for P-384, which the RFC defines
+  but publishes no vectors for, against BC Java 1.84 in both directions.
+* HPKE -- RFC 9180 Sections 5 and 6 in all four modes, as `bouncycastle-hpke`, on the X25519, P-256, P-384 and
+  P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
+  (Auth, AuthPSK) give contexts with `seal_out` / `open_out` and `export_out`; HKDF over SHA-256, SHA-384 or
+  SHA-512 with AES-128-GCM, AES-256-GCM, ChaCha20Poly1305 or export-only. No CLI command yet.
+* `bouncycastle-dhkem` -- the generic DHKEM leaves `bouncycastle-hpke` for a crate of its own
+  (`bouncycastle_hpke::dhkem::*` is now `bouncycastle_dhkem::*`), and gains `AuthEncap` and `AuthDecap`. Its
+  `_out` functions return the number of bytes written.
 
 ## Minor features / bug fixes
 
@@ -68,6 +85,11 @@
   so an instantiation is `HKDF<SHA256>`. The SHA-3 family's suspended states are 10 bytes shorter than before
   (SHA-3 and SHAKE 405, cSHAKE 406, KMAC and TupleHash 414, ParallelHashXOF 832, ParallelHash 840), the KDF
   bookkeeping having left the sponge; a state suspended by an earlier build does not resume.
+* Cipher workers are no longer `Clone` (#173), for the same reason: two copies of an encryptor go on from one nonce,
+  counter or keystream position. The CBC, CFB, CFB8, CTR, OFB, ECB, GCM and CCM packet workers, the padded encryptor
+  and decryptor and `Ascon_AEAD128` lose it, both directions; a second worker is made from the key. The declared-length
+  CCM workers, the MAC workers other than KMAC's, the key-wrap workers and the ChaCha20 family were already not
+  `Clone`. Nothing else changes: the keys, key states, hashes, XOFs and KMAC workers that were `Clone` still are.
 * The AEAD keys' one-shots that work in the caller's buffer are spelled `_inplace`, as QUALITY_AND_STYLE.md's suffix
   rule and every other in-place method already were: `encrypt_detached_inplace`, `encrypt_detached_inplace_nonce`
   and `decrypt_detached_inplace` on the AEAD key and mode traits (formerly `_in_place`).
@@ -213,4 +235,8 @@
   encodings and the default pairings' outputs are unchanged. The tests now cover the CAVP SigGen and SigVer matrix
   for P-256, P-384 and P-521 under SHA-224 to SHA-512, RFC 6979's appendix under the same hashes, and every
   Wycheproof ECDSA file for these curves, SHA-3 included.
+* The six per-role key encoding traits are one pair, `PrivateKey<N>` / `PublicKey<N>`, with `from_bytes` returning
+  `KeyDecodingError`, which converts into each role's error as its `DecodingError`. A key that serves two roles, such
+  as X25519 in key agreement and as a KEM, implements it once, so `encode` and `from_bytes` are no longer ambiguous
+  on it.
 

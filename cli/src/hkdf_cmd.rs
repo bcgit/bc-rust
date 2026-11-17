@@ -3,7 +3,8 @@
 use std::process::exit;
 
 use crate::helpers::{
-    SecretBytes, decode_hex_arg, load_secret, read_input_file, write_bytes_or_hex, write_stdout,
+    SecretBytes, decode_hex_arg, load_secret, read_input_file, write_secret_bytes_or_hex,
+    write_stdout,
 };
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -77,7 +78,7 @@ pub(crate) fn hkdf_cmd(
         exit(-1);
     }
 
-    write_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
+    write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
     if output_hex {
         write_stdout(b"\n");
     }

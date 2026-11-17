@@ -16,7 +16,8 @@ Hashes, XOFs and KMAC implement `Suspendable`, so that a computation in progress
 resumed later. Keyed workers -- the encryptors, decryptors, generators and verifiers a key object hands out, HMAC's
 included -- and HKDF do not: a suspended or cloned worker is a second copy of a nonce, counter or keystream position,
 and two copies that both go on to encrypt reuse keystream (#173). Those workers implement neither `Suspendable` nor
-`Clone`; a message is paused by holding its worker, and the worker traits are kept `dyn`-compatible so it can be held as
+`Clone` (KMAC's keep both: a copy of a MAC computation repeats no nonce and no keystream); a message is paused by
+holding its worker, and the worker traits are kept `dyn`-compatible so it can be held as
 `&mut dyn` or, where allocation is acceptable, `Box<dyn>`. A worker held as `Box<dyn>` is finished through the `_boxed`
 twin of its consuming final (`do_encrypt_final_boxed(self: Box<Self>)`). Both are provided over the one finishing method
 an implementor writes, which takes `&mut self` so that a worker can be finished, and its `Secret` fields then wiped,
@@ -24,8 +25,7 @@ where it sits: the boxed final never moves the worker out of its box. That metho
 constructor is private to `core`, so that it is called by the provided consuming finals and not by accident a second
 time; an implementor passes the token only to a worker it owns and is finishing with itself, and code that owns a worker
 without being one (a KDF's block loop) takes a token from `core::hazmat::finish_token()`. A by-value final is still
-handed the worker by a move, and a move, the caller's own included, may leave the vacated memory unwiped. The `Clone`
-impls the cipher workers still carry come out in the #173 sweep's next step.
+handed the worker by a move, and a move, the caller's own included, may leave the vacated memory unwiped.
 
 `Clone` belongs on the types, not on the `core` traits. Every hash and XOF type is `Clone`, so a computation can be
 forked mid-stream and each copy finished on its own; `Hash` itself carries no `Clone` (and no `Default`), because both

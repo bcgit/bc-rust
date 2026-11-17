@@ -126,7 +126,6 @@ use crate::{Decrypting, Direction, Encrypting};
 /// methods and nothing else, and `Ccm<'k, P, Decrypting, ..>` has Sec 6.2's. A.1's shape
 /// conditions on `NONCE_LEN` and `TAG_LEN` are asserted at compile time in `check_shape`, which
 /// every constructor runs; the pair's docs carry the `compile_fail` cases.
-#[derive(Clone)]
 pub(crate) struct Ccm<
     'k,
     P,
@@ -643,7 +642,6 @@ where
 /// Crate-private: CCM's CTR half alone is an unauthenticated cipher, and is only reachable
 /// through `Ccm`. It shares its key schedule with the CBC-MAC half, which reaches it through
 /// [`StreamCipher::keystream`].
-#[derive(Clone)]
 struct CcmKeyStream<'k, P, const BLOCK_LEN: usize, const NONCE_LEN: usize>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
@@ -778,7 +776,6 @@ where
 /// `DATA_LEN` is an exact length, not a capacity, and is committed to `B0` here: the payload
 /// then streams through `Ccm`'s own `owed` accounting, which refuses more and whose finals
 /// refuse less.
-#[derive(Clone)]
 struct CcmAdapter<
     'k,
     P,
@@ -1051,7 +1048,6 @@ where
 /// // t = 15 is not in {4, 6, 8, 10, 12, 14, 16}.
 /// let _ = CCM_Packet::<12, 15, 64, 256>::encrypt_init_nonce(&state, &[0u8; 12]);
 /// ```
-#[derive(Clone)]
 pub struct CcmPacketEncryptor<
     'k,
     P,
@@ -1273,7 +1269,6 @@ where
 /// `Ccm::do_decrypt_inplace` has it too. Sec 6.2's "the payload P and the MAC T shall not be
 /// revealed" on INVALID is honoured by the one-shots, which zeroize what they wrote before
 /// returning the error.
-#[derive(Clone)]
 pub struct CcmPacketDecryptor<
     'k,
     P,

@@ -7,7 +7,7 @@ mod cavp_common;
 
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::key_material::KeyMaterialTrait;
-use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ec::P256;
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};

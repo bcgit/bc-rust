@@ -1,13 +1,13 @@
 //! Generic behaviour tests for the KEM role traits of `bouncycastle_core::kem_key` and the
 //! workers they produce.
 
-use bouncycastle_core::errors::KEMError;
+use bouncycastle_core::errors::{KEMError, KeyDecodingError};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_core::traits::{
-    AlgorithmInfo, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
+    AlgorithmInfo, KEMDecapsulator, KEMEncapsulator, PrivateKey, PublicKey, RNG,
 };
 use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_utils::min;
@@ -210,8 +210,8 @@ impl TestFrameworkKEMKeys {
     /// Since key generation is not part of the KEM traits, the caller supplies a
     /// `keygen` function pointer (the inherent `keygen` associated function on the algorithm struct).
     pub fn test_keys<
-        PK: KEMPublicKey<PK_LEN>,
-        SK: KEMPrivateKey<SK_LEN>,
+        PK: PublicKey<PK_LEN>,
+        SK: PrivateKey<SK_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
     >(
@@ -223,8 +223,8 @@ impl TestFrameworkKEMKeys {
 
     /// Tests the correct behaviour on buffers too large / too small.
     fn test_boundary_conditions<
-        PK: KEMPublicKey<PK_LEN>,
-        SK: KEMPrivateKey<SK_LEN>,
+        PK: PublicKey<PK_LEN>,
+        SK: PrivateKey<SK_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
     >(
@@ -237,7 +237,7 @@ impl TestFrameworkKEMKeys {
         assert_eq!(pk_bytes.len(), PK_LEN);
         // too short
         match PK::from_bytes(&pk_bytes[..PK_LEN - 1]) {
-            Err(KEMError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
         // too long
@@ -245,7 +245,7 @@ impl TestFrameworkKEMKeys {
         bytes_too_long.append(&mut Vec::from(&pk_bytes[..PK_LEN]));
         bytes_too_long.push(0xFF);
         match PK::from_bytes(&bytes_too_long) {
-            Err(KEMError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
 
@@ -253,7 +253,7 @@ impl TestFrameworkKEMKeys {
         assert_eq!(sk_bytes.len(), SK_LEN);
         // too short
         match SK::from_bytes(&sk_bytes[..SK_LEN - 1]) {
-            Err(KEMError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
         // too long
@@ -261,7 +261,7 @@ impl TestFrameworkKEMKeys {
         bytes_too_long.append(&mut Vec::from(&sk_bytes[..SK_LEN]));
         bytes_too_long.push(0xFF);
         match SK::from_bytes(&bytes_too_long) {
-            Err(KEMError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
     }

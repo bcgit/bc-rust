@@ -9,7 +9,7 @@ mod mldsa_key_tests {
     use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+    use bouncycastle_core::traits::{PrivateKey, PublicKey};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignatureKeys;
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa_lowmemory::mldsa::{MLDSA_SEED_LEN, MLDSA44_FULL_SK_LEN};

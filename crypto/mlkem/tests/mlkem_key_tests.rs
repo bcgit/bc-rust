@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod mlkem_key_tests {
-    use bouncycastle_core::errors::KEMError;
+    use bouncycastle_core::errors::KeyDecodingError;
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey};
+    use bouncycastle_core::traits::{PrivateKey, PublicKey};
     use bouncycastle_hex as hex;
     use bouncycastle_mlkem::{MLKEM512, MLKEM768, MLKEM1024};
     use bouncycastle_mlkem::{
@@ -100,7 +100,9 @@ mod mlkem_key_tests {
         // now try loading it
         match MLKEM512PrivateKey::from_bytes(&sk_bytes) {
             Ok(_) => panic!("Expected error loading private key with invalid H(ek)"),
-            Err(KEMError::ConsistencyCheckFailed(_)) => { /* good */ }
+            Err(KeyDecodingError(
+                "Corrupted private key: computed hash of ek != h_ek stored in private key",
+            )) => { /* good */ }
             _ => panic!("Unexpected error loading private key with invalid H(ek)"),
         }
 
@@ -214,12 +216,12 @@ mod mlkem_key_tests {
         // Test these conditions in both private key s_hat and public key t_hat
 
         match MLKEM512PrivateKey::from_bytes(&[255u8; MLKEM512_SK_LEN]) {
-            Err(KEMError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Expected malformed key to be rejected"),
         };
 
         match MLKEM512PublicKey::from_bytes(&[255u8; MLKEM512_PK_LEN]) {
-            Err(KEMError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Expected malformed key to be rejected"),
         };
     }
@@ -236,7 +238,7 @@ mod mlkem_key_tests {
         bytes[0] = (coeff & 0xFF) as u8;
         bytes[1] = (bytes[1] & 0xF0) | ((coeff >> 8) as u8);
         match MLKEM512PrivateKey::from_bytes(&bytes) {
-            Err(KEMError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             other => panic!("expected a DecodingError, got {other:?}"),
         }
         // and q - 1 is in range

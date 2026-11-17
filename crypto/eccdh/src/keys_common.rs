@@ -7,11 +7,11 @@
 //! two are bound to different public-key traits.
 
 use bouncycastle_core::errors::KeyAgreementError;
-use bouncycastle_core::traits::{KeyAgreementPublicKey, RNG};
+use bouncycastle_core::traits::{PublicKey, RNG};
 
 /// Implemented by the private key: recomputes the matching public key `Q = [d]G` from the
 /// wrapped private scalar `d`, with the fixed-base multiplier `keygen` uses.
-pub trait DerivePublicKey<PK: KeyAgreementPublicKey<PK_LEN>, const PK_LEN: usize> {
+pub trait DerivePublicKey<PK: PublicKey<PK_LEN>, const PK_LEN: usize> {
     /// Recomputes `Q = [d]G`.
     fn derive_pk(&self) -> PK;
 }

@@ -28,7 +28,6 @@ const GROUP: usize = 8;
 /// `plaintext_len / BLOCK_LEN + 1` blocks for a scheme that always pads (PKCS7), and exactly the
 /// input length for one that never does (`NoPadding`, which rejects an unaligned input at
 /// `do_encrypt_final`). The buffered partial plaintext block is held in a [`Secret`].
-#[derive(Clone)]
 pub struct PaddedBlockCipherEncryptor<E, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
 where
     E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>,
@@ -175,7 +174,6 @@ where
 /// Only the last block carries padding, so [`do_update_out`](Self::do_decrypt_out) always withholds
 /// the most recent complete block and [`do_decrypt_final`](Self::do_decrypt_final) unpads it.
 /// One-shot: the key's `decrypt_out`.
-#[derive(Clone)]
 pub struct PaddedBlockCipherDecryptor<D, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
 where
     D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>,

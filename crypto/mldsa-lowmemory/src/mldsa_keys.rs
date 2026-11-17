@@ -3,13 +3,11 @@ use crate::mldsa::{H, MLDSA_MU_LEN, MLDSA_RND_LEN, N, POLY_T0PACKED_LEN, POLY_T1
 use crate::mldsa::{MuBuilder, Rnd, draw_rnd, sign_internal, verify_internal};
 use crate::params::{FullPrivateKeyLen, PrivateKeyLen, PublicKeyLen, SignatureLen};
 use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{
-    Hash, RNG, SignaturePrivateKey, SignaturePublicKey, XOF, XOFSqueezer,
-};
+use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, RNG, XOF, XOFSqueezer};
 use bouncycastle_mldsa_common::aux_functions::{
     bit_pack_eta, bit_pack_t0, power_2_round, rej_bounded_poly, simple_bit_pack_t1,
     simple_bit_unpack_t1,
@@ -166,9 +164,7 @@ impl<P: MLDSAParams> MLDSAPublicKeyInternalTrait<P> for MLDSAPublicKey<P> {
     }
 }
 
-impl<P: PublicKeyLen<PK_LEN>, const PK_LEN: usize> SignaturePublicKey<PK_LEN>
-    for MLDSAPublicKey<P>
-{
+impl<P: PublicKeyLen<PK_LEN>, const PK_LEN: usize> PublicKey<PK_LEN> for MLDSAPublicKey<P> {
     /// Algorithm 22 pkEncode(𝜌, 𝐭1)
     /// Encodes a public key for ML-DSA into a byte string.
     /// Input:𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
@@ -194,11 +190,9 @@ impl<P: PublicKeyLen<PK_LEN>, const PK_LEN: usize> SignaturePublicKey<PK_LEN>
         PK_LEN
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         if bytes.len() != PK_LEN {
-            return Err(SignatureError::DecodingError(
-                "Provided key bytes are the incorrect length",
-            ));
+            return Err(KeyDecodingError("Provided key bytes are the incorrect length"));
         }
         let sized_bytes: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
         Ok(Self::pk_decode(&sized_bytes))
@@ -539,9 +533,7 @@ impl<P: MLDSAParams> MLDSASeedPrivateKey<P> {
     }
 }
 
-impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> SignaturePrivateKey<SK_LEN>
-    for MLDSASeedPrivateKey<P>
-{
+impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> PrivateKey<SK_LEN> for MLDSASeedPrivateKey<P> {
     /// Encodes the private key seed.
     fn encode(&self) -> [u8; SK_LEN] {
         self.seed.ref_to_bytes().try_into().unwrap()
@@ -560,17 +552,19 @@ impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> SignaturePrivateKey<SK_LEN>
     /// bytes are the key, so there is nothing here to check them against: a caller importing a
     /// seed from storage vouches for how it was generated. [`crate::MLDSATrait::keygen_from_seed`]
     /// on typed [`KeyMaterial`] keeps the key-type and strength checks.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         if bytes.len() != 32 {
-            return Err(SignatureError::DecodingError("Invalid seed length"));
+            return Err(KeyDecodingError("Invalid seed length"));
         }
-        let mut keymat = KeyMaterial::<32>::from_bytes(bytes)?;
+        let mut keymat = KeyMaterial::<32>::from_bytes(bytes)
+            .map_err(|_| KeyDecodingError("Invalid ML-DSA seed private key"))?;
         do_hazardous_operations(&mut keymat, |keymat| {
             keymat.set_key_type(KeyType::Seed)?;
             keymat.set_security_strength(SecurityStrength::_256bit)
-        })?;
+        })
+        .map_err(|_| KeyDecodingError("Invalid ML-DSA seed private key"))?;
 
-        Self::new(&keymat)
+        Self::new(&keymat).map_err(|_| KeyDecodingError("Invalid ML-DSA seed private key"))
     }
 }
 

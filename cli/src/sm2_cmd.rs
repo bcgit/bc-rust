@@ -9,13 +9,11 @@
 
 use crate::helpers::{
     println_stdout, read_input_file, read_secret_file, read_secret_file_or_stdin, stream_stdin,
-    write_bytes_or_hex,
+    write_bytes_or_hex, write_private_key,
 };
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::signature_key::{SigningKey, VerifyingKey};
-use bouncycastle::core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
-};
+use bouncycastle::core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
 use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle::sm2::keys::{SM2PrivateKey, SM2PublicKey, keygen};
 use clap::ValueEnum;
@@ -51,7 +49,7 @@ pub(crate) fn sm2_cmd(
     match action {
         SM2Action::Keygen => {
             let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         SM2Action::PkFromSk => {
             let sk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes());

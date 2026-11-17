@@ -813,58 +813,6 @@ pub trait KEMEncapsulator<const CT_LEN: usize, const SS_LEN: usize>: AlgorithmIn
     }
 }
 
-// todo: could the public and private key types impl Into<T: AsRef<[u8]>> and From<T: AsRef<[u8]>>
-//       that automatically call the encode and from_bytes() ?
-
-/// A private key for a KEM algorithm, often denoted "sk" (for "secret key").
-pub trait KEMPrivateKey<const SK_LEN: usize>: PartialEq + Eq + Clone + Sized {
-    /// Write it out to bytes in its standard encoding.
-    fn encode(&self) -> [u8; SK_LEN];
-    /// Write it out to bytes in its standard encoding.
-    /// The entire output buffer is zeroized before the encoding is written.
-    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
-    /// Read it in from bytes in its standard encoding.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError>;
-}
-
-/// A public key for a KEM algorithm, often denoted "pk".
-pub trait KEMPublicKey<const PK_LEN: usize>:
-    PartialEq + Eq + Clone + Debug + Display + Sized
-{
-    /// Write it out to bytes in its standard encoding.
-    fn encode(&self) -> [u8; PK_LEN];
-    /// Write it out to bytes in its standard encoding.
-    /// The entire output buffer is zeroized before the encoding is written.
-    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
-    /// Read it in from bytes in its standard encoding.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError>;
-}
-
-/// A private key for a key-agreement algorithm, often denoted "sk" (for "secret key").
-pub trait KeyAgreementPrivateKey<const SK_LEN: usize>: PartialEq + Eq + Clone + Sized {
-    /// Write it out to bytes in its standard encoding.
-    fn encode(&self) -> [u8; SK_LEN];
-    /// Write it out to bytes in its standard encoding.
-    /// The entire output buffer is zeroized before the encoding is written.
-    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
-    /// Read it in from bytes in its standard encoding.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError>;
-}
-
-/// A public key for a key-agreement algorithm, often denoted "pk". Decoding it validates it as
-/// the algorithm requires, so a key that exists has passed the checks the agreement relies on.
-pub trait KeyAgreementPublicKey<const PK_LEN: usize>:
-    PartialEq + Eq + Clone + Debug + Display + Sized
-{
-    /// Write it out to bytes in its standard encoding.
-    fn encode(&self) -> [u8; PK_LEN];
-    /// Write it out to bytes in its standard encoding.
-    /// The entire output buffer is zeroized before the encoding is written.
-    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
-    /// Read it in from bytes in its standard encoding.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError>;
-}
-
 /// A two-party key agreement in progress: the worker an agreement key hands out through
 /// [`AgreementKey`](crate::agreement_key::AgreementKey). The own key and any parameters the
 /// algorithm takes were fixed when the worker was made, so the peer's public key is the only
@@ -1178,6 +1126,34 @@ pub trait BlockCipherPadding<const BLOCK_LEN: usize> {
     fn unpad(block: &[u8; BLOCK_LEN]) -> Result<usize, PaddingError>;
 }
 
+/// A private key with a standard encoding of `SK_LEN` bytes, often denoted "sk" (for "secret
+/// key"). One trait for every role: a key that serves more than one (X25519, in key agreement
+/// and as a KEM) implements it once, and what the key does is said by the role traits of
+/// [`kem_key`](crate::kem_key), [`agreement_key`](crate::agreement_key) and
+/// [`signature_key`](crate::signature_key).
+pub trait PrivateKey<const SK_LEN: usize>: PartialEq + Eq + Clone + Sized {
+    /// Write it out to bytes in its standard encoding.
+    fn encode(&self) -> [u8; SK_LEN];
+    /// Write it out to bytes in its standard encoding.
+    /// The entire output buffer is zeroized before the encoding is written.
+    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
+    /// Read it in from bytes in its standard encoding.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError>;
+}
+
+/// A public key with a standard encoding of `PK_LEN` bytes, often denoted "pk". Decoding it
+/// validates it as the algorithm requires, so a key that exists has passed the checks its use
+/// relies on. One trait for every role, as [`PrivateKey`] is.
+pub trait PublicKey<const PK_LEN: usize>: PartialEq + Eq + Clone + Debug + Display + Sized {
+    /// Write it out to bytes in its standard encoding.
+    fn encode(&self) -> [u8; PK_LEN];
+    /// Write it out to bytes in its standard encoding.
+    /// The entire output buffer is zeroized before the encoding is written.
+    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
+    /// Read it in from bytes in its standard encoding.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError>;
+}
+
 /// An interface for random number generation.
 /// This interface is meant to be simpler and more ergonomic than the interfaces provided by the
 /// `rng` crate, but that one should
@@ -1217,33 +1193,6 @@ pub trait RNG {
     // todo: we should do a refactor to make [Algorithm] be a `security_strength()` function instead of constant,
     //      then have `RNG: Algorithm`, then delete this function.
     fn security_strength(&self) -> SecurityStrength;
-}
-
-// todo: could the public and private key types impl Into<T: AsRef<[u8]>> and From<T: AsRef<[u8]>>
-// todo: that automatically call the encode and from_bytes() ?
-
-/// A private key for a signature algorithm, often denoted "sk" (for "secret key").
-pub trait SignaturePrivateKey<const SK_LEN: usize>: PartialEq + Eq + Clone + Sized {
-    /// Write it out to bytes in its standard encoding.
-    fn encode(&self) -> [u8; SK_LEN];
-    /// Write it out to bytes in its standard encoding.
-    /// The entire output buffer is zeroized before the encoding is written.
-    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
-    /// Read it in from bytes in its standard encoding.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
-}
-
-/// A public key for a signature algorithm, often denoted "pk".
-pub trait SignaturePublicKey<const PK_LEN: usize>:
-    PartialEq + Eq + Clone + Debug + Display + Sized
-{
-    /// Write it out to bytes in its standard encoding.
-    fn encode(&self) -> [u8; PK_LEN];
-    /// Write it out to bytes in its standard encoding.
-    /// The entire output buffer is zeroized before the encoding is written.
-    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
-    /// Read it in from bytes in its standard encoding.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
 }
 
 /// The signing half of a signature in progress: the streaming worker a signing key hands out

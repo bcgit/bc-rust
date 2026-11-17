@@ -7,7 +7,7 @@
 //! 1234567`.
 
 use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ec::Secp256K1;
 use bouncycastle_ec::hazmat::p256k1_comb::comb_multiply_base_point;
 use bouncycastle_ec::hazmat::p256k1_scalar::P256K1Scalar;

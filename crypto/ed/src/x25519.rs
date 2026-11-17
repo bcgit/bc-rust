@@ -39,7 +39,7 @@
 //! use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 //! use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 //! use bouncycastle_core::security_strength::SecurityStrength;
-//! use bouncycastle_core::traits::KeyAgreementPublicKey;
+//! use bouncycastle_core::traits::PublicKey;
 //! use bouncycastle_ed::x25519::keygen;
 //! use bouncycastle_hkdf::HkdfDescription;
 //! use bouncycastle_rng::HashDRBG_SHA512;
@@ -118,17 +118,18 @@
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //! [`X25519PrivateKey`] holds its public key alongside the 32-byte scalar.
 //!
-//! Per-call stack usage, measured as the deepest frame chain below each entry point of
-//! `mem_usage_benches`' x25519 harness in the release build (x86-64 Linux, rustc 1.97.0-nightly,
-//! return addresses included), on the key agreement roles with the field element's wipe:
+//! Per-call stack usage, measured as the deepest frame chain from the `measure` wrapper of
+//! `mem_usage_benches`' x25519 harness down, the wrapper's own frame included, in the release
+//! build (x86-64 Linux, rustc 1.97.0-nightly, return addresses included), on the key agreement
+//! roles with the field element's wipe:
 //!
 //! | Entry point                     | Stack  |
 //! |---------------------------------|--------|
-//! | `keygen_from_seed`              | 1784 B |
-//! | `X25519PrivateKey::from_bytes`  | 1704 B |
-//! | `agree` on the private key      | 1816 B |
-//! | `encaps` on the public key      | 2792 B |
-//! | `decaps` on the private key     | 2264 B |
+//! | `keygen_from_seed`              | 1816 B |
+//! | `X25519PrivateKey::from_bytes`  | 1800 B |
+//! | `agree` on the private key      | 1848 B |
+//! | `encaps` on the public key      | 2840 B |
+//! | `decaps` on the private key     | 2152 B |
 //!
 //! Key generation, decoding a private key, and key agreement each run one Montgomery ladder plus
 //! the field inversion: the chain is the in-place scalar multiplication, the ladder and a field
@@ -168,7 +169,7 @@
 //! trait's `from_bytes` and `DeriveKeyPair`, for the clamped scalar `encode` returns, and for
 //! the results of `core`'s by-value `agree`, `encaps` and `decaps`. Use the `_out` forms into a
 //! buffer or key you own where that matters. What HKDF's own frames keep is in
-//! `bouncycastle_hpke`'s Security Considerations.
+//! `bouncycastle_dhkem`'s Security Considerations.
 //!
 //! The pairing's derived key carries the least of X25519's 128 bits, the KDF's and the length's
 //! strength, so a `LEN` below 16 bytes is typed `CryptographicRandom` at less than 128 bits.
@@ -182,18 +183,21 @@
 //! suitable protocol is layered on top.
 
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
-use bouncycastle_core::errors::{KEMError, KeyAgreementError, KeyMaterialError, RNGError};
+use bouncycastle_core::errors::{
+    KEMError, KeyAgreementError, KeyDecodingError, KeyMaterialError, RNGError,
+};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kdf_params::KdfParams;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorithm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, KeyAgreement,
-    KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG,
+    Algorithm, KEMDecapsulator, KEMEncapsulator, KeyAgreement, PrivateKey, PublicKey, RNG,
+};
+use bouncycastle_dhkem::{
+    AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEM, DHKEMParams, DeriveKeyPairForm, HpkeKem,
 };
 use bouncycastle_hkdf::HkdfDescription;
-use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams};
 use bouncycastle_sha2::SHA256;
 use bouncycastle_utils::ct::{Condition, ct_eq_bytes, ct_eq_zero_bytes};
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
@@ -511,6 +515,12 @@ impl X25519PrivateKey {
     /// that the scalar is drawn where it will live and never moved. It is not a generated key:
     /// its public key is all zero until one of them fills it, and until then it makes no
     /// agreement and no decapsulator ([`KeyMaterialError::ActingOnZeroizedKey`]).
+    ///
+    /// # 🚨 Security Considerations 🚨
+    ///
+    /// The encoding of this key is not refused, the encoding methods having no error to give:
+    /// it is the clamped all-zero scalar, which anyone can compute. Do not store or send the
+    /// encoding of a key whose generation failed.
     pub fn zeroized() -> Self {
         Self { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) }
     }
@@ -558,7 +568,7 @@ fn clamp(k: &mut [u8; SCALAR_LEN]) {
 /// §5), so keys that compare equal have the same encoding. This is also the DHKEM serialization:
 /// RFC 9180 §7.1.2 says "The SerializePrivateKey() function MUST clamp its output and the
 /// DeserializePrivateKey() function MUST clamp its input".
-impl KeyAgreementPrivateKey<SCALAR_LEN> for X25519PrivateKey {
+impl PrivateKey<SCALAR_LEN> for X25519PrivateKey {
     /// The clamped scalar as a plain array, the trait's contract; prefer `encode_out` into a
     /// buffer you own, since the array is moved out unwiped.
     fn encode(&self) -> [u8; SCALAR_LEN] {
@@ -576,11 +586,11 @@ impl KeyAgreementPrivateKey<SCALAR_LEN> for X25519PrivateKey {
     ///
     /// # Errors
     ///
-    /// [`KeyAgreementError::DecodingError`] if `bytes` is not 32 bytes.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError> {
-        let bytes: &[u8; SCALAR_LEN] = bytes.try_into().map_err(|_| {
-            KeyAgreementError::DecodingError("An X25519 private key must be 32 bytes")
-        })?;
+    /// [`KeyDecodingError`] if `bytes` is not 32 bytes.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
+        let bytes: &[u8; SCALAR_LEN] = bytes
+            .try_into()
+            .map_err(|_| KeyDecodingError("An X25519 private key must be 32 bytes"))?;
         let mut sk = Self { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) };
         *sk.k = *bytes;
         clamp(&mut sk.k);
@@ -616,8 +626,9 @@ impl X25519PublicKey {
     }
 }
 
-/// The encoding is the 32 bytes of the u-coordinate, as is (RFC 7748 §5).
-impl KeyAgreementPublicKey<POINT_LEN> for X25519PublicKey {
+/// The encoding is the 32 bytes of the u-coordinate, as is (RFC 7748 §5). This is also the DHKEM
+/// serialization: RFC 9180 §7.1.1 makes serialization the identity function for X25519.
+impl PublicKey<POINT_LEN> for X25519PublicKey {
     fn encode(&self) -> [u8; POINT_LEN] {
         self.0
     }
@@ -633,11 +644,11 @@ impl KeyAgreementPublicKey<POINT_LEN> for X25519PublicKey {
     ///
     /// # Errors
     ///
-    /// [`KeyAgreementError::DecodingError`] if `bytes` is not 32 bytes.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError> {
-        let bytes: &[u8; POINT_LEN] = bytes.try_into().map_err(|_| {
-            KeyAgreementError::DecodingError("An X25519 public key must be 32 bytes")
-        })?;
+    /// [`KeyDecodingError`] if `bytes` is not 32 bytes.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
+        let bytes: &[u8; POINT_LEN] = bytes
+            .try_into()
+            .map_err(|_| KeyDecodingError("An X25519 public key must be 32 bytes"))?;
         Ok(Self(*bytes))
     }
 }
@@ -950,13 +961,14 @@ impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X25519 {
         Ok(f(&pk, &sk))
     }
 
-    const DERIVE_KEY_PAIR_BY_EXPAND: bool = true;
+    const DERIVE_KEY_PAIR: DeriveKeyPairForm = DeriveKeyPairForm::Expand;
 
-    fn private_key_from_bytes(sk: &[u8; SCALAR_LEN]) -> X25519PrivateKey {
+    // Every 32 bytes are an X25519 private key (RFC 7748 Section 5), so this is never `None`.
+    fn private_key_from_bytes(sk: &[u8; SCALAR_LEN]) -> Option<X25519PrivateKey> {
         let mut key = X25519PrivateKey { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) };
         *key.k = *sk;
         key.pk = scalar_mult_base(&key.k);
-        key
+        Some(key)
     }
 
     fn pk(sk: &X25519PrivateKey) -> X25519PublicKey {
@@ -968,6 +980,12 @@ impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X25519 {
         pk: &X25519PublicKey,
         out: &mut Secret<[u8; POINT_LEN]>,
     ) -> Result<(), KeyAgreementError> {
+        // The group functions are reachable without a key's role (`DHKEM::decap_out`), so the
+        // key that has not been filled is refused here as its roles refuse it.
+        if !sk.is_filled() {
+            zeroize_in_place(&mut **out);
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
         raw_shared_secret(sk, pk, out)
     }
 
@@ -994,6 +1012,10 @@ impl Algorithm for DHKEM_X25519_HKDF_SHA256 {
 }
 
 impl KEMAlgorithm for DHKEM_X25519_HKDF_SHA256 {}
+
+impl HpkeKem for DHKEM_X25519_HKDF_SHA256 {
+    const KEM_ID: u16 = <X25519 as DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN>>::KEM_ID;
+}
 
 /// The encapsulator an [`X25519PublicKey`] hands out through [`EncapsulatingKey`]:
 /// DHKEM(X25519, HKDF-SHA256) of RFC 9180 §4.1, where the ciphertext is an ephemeral public key
@@ -1024,8 +1046,7 @@ impl KEMEncapsulator<POINT_LEN, DHKEM_SS_LEN> for X25519Encapsulator<'_> {
     ) -> Result<usize, KEMError> {
         ct.fill(0);
         ss.zeroize();
-        X25519DHKEM::encap_rng_out(self.pk, rng, ct, ss)?;
-        Ok(POINT_LEN)
+        X25519DHKEM::encap_rng_out(self.pk, rng, ct, ss)
     }
 }
 
@@ -1036,6 +1057,56 @@ impl EncapsulatingKey<(), POINT_LEN, DHKEM_SS_LEN> for X25519PublicKey {
 
     fn create_encapsulator<'k>(&'k self, _params: ()) -> Result<X25519Encapsulator<'k>, KEMError> {
         Ok(X25519Encapsulator { pk: self })
+    }
+}
+
+/// `AuthEncap(pkR, skS)` of DHKEM(X25519, HKDF-SHA256) (RFC 9180 §4.1), on the recipient's
+/// public key: what HPKE's Auth and AuthPSK modes run over.
+impl AuthEncapsulatingKey<POINT_LEN, DHKEM_SS_LEN> for X25519PublicKey {
+    type SenderPrivateKey = X25519PrivateKey;
+
+    /// # Errors
+    ///
+    /// * [`KEMError::RNGError`] if `rng`'s security strength is below 128 bits.
+    /// * [`KEMError::InvalidPublicKey`] if the key gives an all-zero X25519 output.
+    /// * [`KEMError::KeyMaterialError`] if `sk_s` has not been filled.
+    fn auth_encaps_out(
+        &self,
+        rng: &mut dyn RNG,
+        sk_s: &X25519PrivateKey,
+        enc: &mut [u8; POINT_LEN],
+        ss: &mut KeyMaterial<DHKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        enc.fill(0);
+        ss.zeroize();
+        if !sk_s.is_filled() {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
+        X25519DHKEM::auth_encap_rng_out(self, sk_s, rng, enc, ss)
+    }
+}
+
+/// `AuthDecap(enc, skR, pkS)` of DHKEM(X25519, HKDF-SHA256) (RFC 9180 §4.1), on the recipient's
+/// private key.
+impl AuthDecapsulatingKey<POINT_LEN, DHKEM_SS_LEN> for X25519PrivateKey {
+    type SenderPublicKey = X25519PublicKey;
+
+    /// # Errors
+    ///
+    /// * [`KEMError::DecapsulationFailed`] if `enc` gives an all-zero X25519 output.
+    /// * [`KEMError::InvalidPublicKey`] if `pk_s` does.
+    /// * [`KEMError::KeyMaterialError`] if this key has not been filled.
+    fn auth_decaps_out(
+        &self,
+        enc: &[u8; POINT_LEN],
+        pk_s: &X25519PublicKey,
+        ss: &mut KeyMaterial<DHKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
+        if !self.is_filled() {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
+        X25519DHKEM::auth_decap_out(enc, self, pk_s, ss)
     }
 }
 
@@ -1062,8 +1133,7 @@ impl KEMDecapsulator<POINT_LEN, DHKEM_SS_LEN> for X25519Decapsulator<'_> {
         ss: &mut KeyMaterial<DHKEM_SS_LEN>,
     ) -> Result<usize, KEMError> {
         ss.zeroize();
-        X25519DHKEM::decap_out(ct, self.sk, ss)?;
-        Ok(DHKEM_SS_LEN)
+        X25519DHKEM::decap_out(ct, self.sk, ss)
     }
 }
 
@@ -1077,45 +1147,5 @@ impl DecapsulatingKey<(), POINT_LEN, DHKEM_SS_LEN> for X25519PrivateKey {
             return Err(KeyMaterialError::ActingOnZeroizedKey.into());
         }
         Ok(X25519Decapsulator { sk: self })
-    }
-}
-
-/// The same clamped encoding as the [`KeyAgreementPrivateKey`] impl, which RFC 9180 §7.1.2 requires
-/// of a DHKEM.
-impl KEMPrivateKey<SCALAR_LEN> for X25519PrivateKey {
-    fn encode(&self) -> [u8; SCALAR_LEN] {
-        <Self as KeyAgreementPrivateKey<SCALAR_LEN>>::encode(self)
-    }
-
-    fn encode_out(&self, out: &mut [u8; SCALAR_LEN]) -> usize {
-        <Self as KeyAgreementPrivateKey<SCALAR_LEN>>::encode_out(self, out)
-    }
-
-    /// # Errors
-    ///
-    /// [`KEMError::DecodingError`] if `bytes` is not 32 bytes.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
-        <Self as KeyAgreementPrivateKey<SCALAR_LEN>>::from_bytes(bytes)
-            .map_err(|_| KEMError::DecodingError("An X25519 private key must be 32 bytes"))
-    }
-}
-
-/// The same encoding as the [`KeyAgreementPublicKey`] impl: RFC 9180 §7.1.1 makes serialization the
-/// identity function for X25519.
-impl KEMPublicKey<POINT_LEN> for X25519PublicKey {
-    fn encode(&self) -> [u8; POINT_LEN] {
-        <Self as KeyAgreementPublicKey<POINT_LEN>>::encode(self)
-    }
-
-    fn encode_out(&self, out: &mut [u8; POINT_LEN]) -> usize {
-        <Self as KeyAgreementPublicKey<POINT_LEN>>::encode_out(self, out)
-    }
-
-    /// # Errors
-    ///
-    /// [`KEMError::DecodingError`] if `bytes` is not 32 bytes.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
-        <Self as KeyAgreementPublicKey<POINT_LEN>>::from_bytes(bytes)
-            .map_err(|_| KEMError::DecodingError("An X25519 public key must be 32 bytes"))
     }
 }

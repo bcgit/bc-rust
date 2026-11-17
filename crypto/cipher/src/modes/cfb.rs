@@ -240,7 +240,6 @@ where
 /// runtime check.
 ///
 /// The initialization data is one block, so `INIT_DATA_LEN == BLOCK_LEN`.
-#[derive(Clone)]
 pub struct Cfb<'k, P, Dir, const BLOCK_LEN: usize>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,

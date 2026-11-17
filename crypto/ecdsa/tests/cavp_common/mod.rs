@@ -199,7 +199,7 @@ pub fn result_is_pass(fields: &BTreeMap<String, String>) -> bool {
 }
 
 use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;

@@ -157,7 +157,6 @@ where
 /// Note what is *not* stored: the output block `Oj`. It is recomputed from the register on each
 /// byte and lives only in a local, so no keystream outlives the call that used it. No partial
 /// segment is stored either, because a segment is one byte.
-#[derive(Clone)]
 pub struct Cfb8<'k, P, Dir, const BLOCK_LEN: usize>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,

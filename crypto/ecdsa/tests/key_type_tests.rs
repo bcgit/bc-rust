@@ -3,7 +3,7 @@
 //! lesser of the curve's and the hash's, whichever side is weaker.
 
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, SignaturePublicKey};
+use bouncycastle_core::traits::{Algorithm, PublicKey};
 use bouncycastle_ec::{P256, P384};
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::keys::{ECDSAPublicKey, keygen};

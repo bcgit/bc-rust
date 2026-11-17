@@ -14,9 +14,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     DeterministicPreHashSigningKey, PreHashVerifyingKey, VerifyingKey,
 };
-use bouncycastle_core::traits::{
-    Hash, HashOneShot, SignaturePrivateKey, SignaturePublicKey, XOF, XOFSqueezer,
-};
+use bouncycastle_core::traits::{Hash, HashOneShot, PrivateKey, PublicKey, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa::{

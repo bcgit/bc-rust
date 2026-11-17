@@ -1,21 +1,22 @@
 //! X25519 as a KEM: DHKEM(X25519, HKDF-SHA256) of RFC 9180 Section 4.1, against the RFC 9180
 //! Appendix A.1 vectors and the core-test-framework KEM suites.
 
-use bouncycastle_core::errors::{KEMError, KeyMaterialError, RNGError};
+use bouncycastle_core::errors::{KEMError, KeyAgreementError, KeyMaterialError, RNGError};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmInfo, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
+    Algorithm, AlgorithmInfo, KEMDecapsulator, KEMEncapsulator, PrivateKey, PublicKey, RNG,
 };
 use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKeys};
+use bouncycastle_dhkem::{AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEM, DHKEMParams};
 use bouncycastle_ed::x25519::{
     DHKEM_SS_LEN, DHKEM_X25519_HKDF_SHA256, POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey,
     X25519PublicKey, keygen, keygen_from_seed,
 };
 use bouncycastle_hex as hex;
-use bouncycastle_hpke::dhkem::DHKEM;
 use bouncycastle_rng::{DefaultRNG, FixedSeedRNG, HashDRBG_SHA512};
+use bouncycastle_utils::secret::Secret;
 
 type X25519DHKEM = DHKEM<X25519, POINT_LEN, SCALAR_LEN, POINT_LEN, DHKEM_SS_LEN>;
 
@@ -174,11 +175,11 @@ fn derive_key_pair_rejects_bad_ikm() {
         _ => panic!("expected KeyGenError for the wrong key type"),
     }
 
+    // RFC 9180 Section 7.1.3's "SHOULD have length at least Nsk" is not enforced; the strength
+    // is. A 31-byte seed still carries X25519's 128 bits.
     let short = KeyMaterial256::from_bytes_as_type(&decode_32(ikm)[..31], KeyType::Seed).unwrap();
-    match X25519DHKEM::derive_key_pair(&short) {
-        Err(KEMError::KeyGenError(_)) => { /* good */ }
-        _ => panic!("expected KeyGenError for a 31-byte ikm"),
-    }
+    assert!(short.security_strength() >= SecurityStrength::_128bit);
+    X25519DHKEM::derive_key_pair(&short).unwrap();
 
     let mut weak = seed(ikm);
     weak.set_security_strength(SecurityStrength::_112bit).unwrap();
@@ -336,7 +337,7 @@ fn private_key_encoding_is_clamped() {
 #[test]
 fn public_key_encoding() {
     let bytes = decode_32(VECTORS[0].pk_rm);
-    let pk = <X25519PublicKey as KEMPublicKey<32>>::from_bytes(&bytes).unwrap();
+    let pk = X25519PublicKey::from_bytes(&bytes).unwrap();
     assert_eq!(pk.encode(), bytes);
     let mut out = [0xFF_u8; 32];
     assert_eq!(pk.encode_out(&mut out), 32);
@@ -405,4 +406,128 @@ fn an_unfilled_key_makes_no_decapsulator() {
         unfilled.decaps(&[9u8; POINT_LEN], ()),
         Err(KEMError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey))
     ));
+
+    // Nor through the generic DHKEM, which takes the key without its role: the group's DH
+    // refuses it, and the secret is left zeroized.
+    let mut ss = KeyMaterial::<32>::from_bytes(&[7u8; 32]).unwrap();
+    assert_eq!(
+        DHKEM::<X25519, 32, 32, 32, 32>::decap_out(&[9u8; POINT_LEN], &unfilled, &mut ss),
+        Err(KEMError::DecapsulationFailed)
+    );
+    assert_eq!(ss.key_type(), KeyType::Zeroized);
+    let mut dh = Secret::<[u8; POINT_LEN]>::new();
+    *dh = [0xFF; POINT_LEN];
+    let peer = X25519PublicKey::from_bytes(&[9u8; POINT_LEN]).unwrap();
+    assert_eq!(
+        <X25519 as DHKEMParams<32, 32, 32>>::dh_into(&unfilled, &peer, &mut dh),
+        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey))
+    );
+    assert_eq!(*dh, [0u8; POINT_LEN]);
+
+    // The generic authenticated forms, which reach the same hook: an unfilled sender key in
+    // AuthEncap and an unfilled recipient key in AuthDecap, with the outputs left zeroized.
+    let filled = X25519PrivateKey::from_bytes(&[7u8; POINT_LEN]).unwrap();
+    let mut enc = [0xFFu8; POINT_LEN];
+    let mut ss = KeyMaterial::<32>::from_bytes(&[7u8; 32]).unwrap();
+    assert!(matches!(
+        DHKEM::<X25519, 32, 32, 32, 32>::auth_encap_rng_out(
+            &filled.pk(),
+            &unfilled,
+            &mut FixedSeedRNG::new([0x5A; 64]),
+            &mut enc,
+            &mut ss
+        ),
+        Err(KEMError::InvalidPublicKey(_))
+    ));
+    assert_eq!(enc, [0u8; POINT_LEN]);
+    assert_eq!(ss.key_type(), KeyType::Zeroized);
+    let mut ss = KeyMaterial::<32>::from_bytes(&[7u8; 32]).unwrap();
+    assert_eq!(
+        DHKEM::<X25519, 32, 32, 32, 32>::auth_decap_out(
+            &[9u8; POINT_LEN], &unfilled, &peer, &mut ss
+        ),
+        Err(KEMError::DecapsulationFailed)
+    );
+    assert_eq!(ss.key_type(), KeyType::Zeroized);
+}
+
+/// RFC 9180 Appendix A.1.3 (Auth) and A.1.4 (AuthPSK): pkRm, skRm, pkSm, skSm, skEm, enc,
+/// shared_secret.
+const AUTH_VECTORS: [[&str; 7]; 2] = [
+    [
+        "1632d5c2f71c2b38d0a8fcc359355200caa8b1ffdf28618080466c909cb69b2e",
+        "fdea67cf831f1ca98d8e27b1f6abeb5b7745e9d35348b80fa407ff6958f9137e",
+        "8b0c70873dc5aecb7f9ee4e62406a397b350e57012be45cf53b7105ae731790b",
+        "dc4a146313cce60a278a5323d321f051c5707e9c45ba21a3479fecdf76fc69dd",
+        "ff4442ef24fbc3c1ff86375b0be1e77e88a0de1e79b30896d73411c5ff4c3518",
+        "23fb952571a14a25e3d678140cd0e5eb47a0961bb18afcf85896e5453c312e76",
+        "2d6db4cf719dc7293fcbf3fa64690708e44e2bebc81f84608677958c0d4448a7",
+    ],
+    [
+        "1d11a3cd247ae48e901939659bd4d79b6b959e1f3e7d66663fbc9412dd4e0976",
+        "cb29a95649dc5656c2d054c1aa0d3df0493155e9d5da6d7e344ed8b6a64a9423",
+        "2bfb2eb18fcad1af0e4f99142a1c474ae74e21b9425fc5c589382c69b50cc57e",
+        "fc1c87d2f3832adb178b431fce2ac77c7ca2fd680f3406c77b5ecdf818b119f4",
+        "14de82a5897b613616a00c39b87429df35bc2b426bcfd73febcb45e903490768",
+        "820818d3c23993492cc5623ab437a48a0a7ca3e9639c140fe1e33811eb844b7c",
+        "f9d0e870aba28d04709b2680cb8185466c6a6ff1d6e9d1091d5bf5e10ce3a577",
+    ],
+];
+
+/// `AuthEncap` and `AuthDecap` on the keys, against the RFC's vectors.
+#[test]
+fn rfc9180_auth_encaps_and_auth_decaps() {
+    for (i, [pk_rm, sk_rm, pk_sm, sk_sm, sk_em, enc, shared_secret]) in
+        AUTH_VECTORS.iter().enumerate()
+    {
+        let pk_r = X25519PublicKey::from_bytes(&decode_32(pk_rm)).unwrap();
+        let sk_r = X25519PrivateKey::from_bytes(&decode_32(sk_rm)).unwrap();
+        let pk_s = X25519PublicKey::from_bytes(&decode_32(pk_sm)).unwrap();
+        let sk_s = X25519PrivateKey::from_bytes(&decode_32(sk_sm)).unwrap();
+
+        let mut enc_out = [0xFFu8; POINT_LEN];
+        let mut ss = KeyMaterial::<DHKEM_SS_LEN>::from_bytes(&[0xFF; 32]).unwrap();
+        let mut rng = FixedSeedRNG::new(decode_32(sk_em));
+        assert_eq!(pk_r.auth_encaps_out(&mut rng, &sk_s, &mut enc_out, &mut ss), Ok(POINT_LEN));
+        assert_eq!(enc_out, decode_32(enc), "vector {i}: enc");
+        assert_eq!(ss.ref_to_bytes(), decode_32(shared_secret), "vector {i}: shared_secret");
+
+        let mut ss = KeyMaterial::<DHKEM_SS_LEN>::from_bytes(&[0xFF; 32]).unwrap();
+        assert_eq!(sk_r.auth_decaps_out(&decode_32(enc), &pk_s, &mut ss), Ok(DHKEM_SS_LEN));
+        assert_eq!(ss.ref_to_bytes(), decode_32(shared_secret), "vector {i}: AuthDecap");
+        assert_eq!(ss.key_type(), KeyType::CryptographicRandom);
+        assert_eq!(ss.security_strength(), SecurityStrength::_128bit);
+    }
+}
+
+/// The authenticated forms refuse a key that has not been filled, on either side, and a
+/// small-order sender key, and leave their outputs zeroized.
+#[test]
+fn the_authenticated_forms_refuse_unusable_keys() {
+    let pk_r = X25519PublicKey::from_bytes(&decode_32(AUTH_VECTORS[0][0])).unwrap();
+    let sk_r = X25519PrivateKey::from_bytes(&decode_32(AUTH_VECTORS[0][1])).unwrap();
+    let pk_s = X25519PublicKey::from_bytes(&decode_32(AUTH_VECTORS[0][2])).unwrap();
+    let enc = decode_32(AUTH_VECTORS[0][5]);
+    let unfilled = X25519PrivateKey::zeroized();
+    let zeroized = KEMError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey);
+
+    let mut enc_out = [0xFFu8; POINT_LEN];
+    let mut ss = KeyMaterial::<DHKEM_SS_LEN>::from_bytes(&[0xFF; 32]).unwrap();
+    let mut rng = FixedSeedRNG::new([0x5A; 64]);
+    assert_eq!(pk_r.auth_encaps_out(&mut rng, &unfilled, &mut enc_out, &mut ss), Err(zeroized));
+    assert_eq!(enc_out, [0u8; POINT_LEN]);
+    assert_eq!(ss.key_type(), KeyType::Zeroized);
+
+    let zeroized = KEMError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey);
+    let mut ss = KeyMaterial::<DHKEM_SS_LEN>::from_bytes(&[0xFF; 32]).unwrap();
+    assert_eq!(unfilled.auth_decaps_out(&enc, &pk_s, &mut ss), Err(zeroized));
+    assert_eq!(ss.key_type(), KeyType::Zeroized);
+
+    let small_order = X25519PublicKey::from_bytes(&[0u8; POINT_LEN]).unwrap();
+    let mut ss = KeyMaterial::<DHKEM_SS_LEN>::from_bytes(&[0xFF; 32]).unwrap();
+    assert!(matches!(
+        sk_r.auth_decaps_out(&enc, &small_order, &mut ss),
+        Err(KEMError::InvalidPublicKey(_))
+    ));
+    assert_eq!(ss.key_type(), KeyType::Zeroized);
 }

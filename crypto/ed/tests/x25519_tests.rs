@@ -5,7 +5,7 @@ use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterial0, KeyMaterial256, KeyMaterialTrait, KeyType,
 };
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{KDF, KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey};
+use bouncycastle_core::traits::{KDF, KeyAgreement, PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreement;
 use bouncycastle_ed::x25519::{

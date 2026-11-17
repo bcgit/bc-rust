@@ -42,5 +42,11 @@ pub(crate) fn tdes2_tkw_cmd(
 ) {
     let DecryptOnlyAction::Decrypt = action;
     let kek = load_key_object::<TDES2Key<TKW>, KEY_LEN_2KEY>(key, key_file, "two-key TDES");
-    run_with(|input| kek.unwrap(input), None, output_hex, "two-key TDES-TKW");
+    run_with(
+        |len| kek.unwrap_out_max_len(len),
+        |input, out| kek.unwrap_out(input, out),
+        None,
+        output_hex,
+        "two-key TDES-TKW",
+    );
 }

@@ -2,13 +2,13 @@
 //! and the workers they produce.
 
 use crate::DUMMY_SEED;
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::signature_key::{
     DeterministicPreHashSigningKey, DeterministicSigningKey, PreHash, PreHashSigningKey,
     PreHashVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{
-    AlgorithmInfo, RNG, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
+    AlgorithmInfo, PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier,
 };
 use bouncycastle_rng::FixedSeedRNG;
 
@@ -480,8 +480,8 @@ impl TestFrameworkSignatureKeys {
     /// Since key generation is not part of any signature trait, the caller supplies a
     /// `keygen` function pointer (the inherent `keygen` associated function on the algorithm struct).
     pub fn test_keys<
-        PK: SignaturePublicKey<PK_LEN>,
-        SK: SignaturePrivateKey<SK_LEN>,
+        PK: PublicKey<PK_LEN>,
+        SK: PrivateKey<SK_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
     >(
@@ -493,8 +493,8 @@ impl TestFrameworkSignatureKeys {
 
     /// Tests the correct behaviour on buffers too large / too small.
     fn test_boundary_conditions<
-        PK: SignaturePublicKey<PK_LEN>,
-        SK: SignaturePrivateKey<SK_LEN>,
+        PK: PublicKey<PK_LEN>,
+        SK: PrivateKey<SK_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
     >(
@@ -507,7 +507,7 @@ impl TestFrameworkSignatureKeys {
         assert_eq!(pk_bytes.len(), PK_LEN);
         // too short
         match PK::from_bytes(&pk_bytes[..PK_LEN - 1]) {
-            Err(SignatureError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
         // too long
@@ -515,7 +515,7 @@ impl TestFrameworkSignatureKeys {
         bytes_too_long.append(&mut Vec::from(&pk_bytes[..PK_LEN]));
         bytes_too_long.push(0xFF);
         match PK::from_bytes(&bytes_too_long) {
-            Err(SignatureError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
 
@@ -523,7 +523,7 @@ impl TestFrameworkSignatureKeys {
         assert_eq!(sk_bytes.len(), SK_LEN);
         // too short
         match SK::from_bytes(&sk_bytes[..SK_LEN - 1]) {
-            Err(SignatureError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
         // too long
@@ -531,7 +531,7 @@ impl TestFrameworkSignatureKeys {
         bytes_too_long.append(&mut Vec::from(&sk_bytes[..SK_LEN]));
         bytes_too_long.push(0xFF);
         match SK::from_bytes(&bytes_too_long) {
-            Err(SignatureError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
     }

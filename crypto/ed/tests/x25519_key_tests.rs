@@ -1,7 +1,7 @@
-use bouncycastle_core::errors::{KeyAgreementError, KeyMaterialError, RNGError};
+use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError, KeyMaterialError, RNGError};
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreementKeys;
 use bouncycastle_ed::x25519::{
     POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen, keygen_from_seed,
@@ -182,22 +182,22 @@ fn clamp(mut k: [u8; 32]) -> [u8; 32] {
 fn public_key_encoding() {
     let bytes = decode_32(ALICE_PK);
     let pk = X25519PublicKey::from_bytes(&bytes).unwrap();
-    assert_eq!(KeyAgreementPublicKey::encode(&pk), bytes);
+    assert_eq!(pk.encode(), bytes);
 
     let mut out = [0xFF_u8; 32];
-    assert_eq!(KeyAgreementPublicKey::encode_out(&pk, &mut out), 32);
+    assert_eq!(pk.encode_out(&mut out), 32);
     assert_eq!(out, bytes);
 
     // Decoding round-trips, and accepts any 32 bytes, including bit 255 set (RFC 7748 Section 5).
-    let decoded = <X25519PublicKey as KeyAgreementPublicKey<32>>::from_bytes(&bytes).unwrap();
+    let decoded = X25519PublicKey::from_bytes(&bytes).unwrap();
     assert_eq!(decoded, pk);
     let top_bit = [0xFF_u8; 32];
-    let decoded = <X25519PublicKey as KeyAgreementPublicKey<32>>::from_bytes(&top_bit).unwrap();
-    assert_eq!(KeyAgreementPublicKey::encode(&decoded), top_bit);
+    let decoded = X25519PublicKey::from_bytes(&top_bit).unwrap();
+    assert_eq!(decoded.encode(), top_bit);
 
     for len in [0, 31, 33] {
-        match <X25519PublicKey as KeyAgreementPublicKey<32>>::from_bytes(&vec![1_u8; len]) {
-            Err(KeyAgreementError::DecodingError(_)) => { /* good */ }
+        match X25519PublicKey::from_bytes(&vec![1_u8; len]) {
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("expected DecodingError for {len} bytes"),
         }
     }
@@ -209,26 +209,26 @@ fn private_key_encoding() {
     let raw = decode_32(ALICE_SK);
     assert_ne!(raw, clamp(raw));
 
-    let sk = <X25519PrivateKey as KeyAgreementPrivateKey<32>>::from_bytes(&raw).unwrap();
-    assert_eq!(KeyAgreementPrivateKey::encode(&sk), clamp(raw));
+    let sk = X25519PrivateKey::from_bytes(&raw).unwrap();
+    assert_eq!(sk.encode(), clamp(raw));
     assert_eq!(sk.pk().as_bytes(), &decode_32(ALICE_PK));
 
     let mut out = [0xFF_u8; 32];
-    assert_eq!(KeyAgreementPrivateKey::encode_out(&sk, &mut out), 32);
+    assert_eq!(sk.encode_out(&mut out), 32);
     assert_eq!(out, clamp(raw));
 
     // A key built from the unclamped seed is the same key, with the same encoding, and it
     // round-trips through its encoding.
     let (_, from_seed) = keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap();
     assert!(from_seed == sk);
-    assert_eq!(KeyAgreementPrivateKey::encode(&from_seed), clamp(raw));
-    let encoded = KeyAgreementPrivateKey::encode(&from_seed);
-    let decoded = <X25519PrivateKey as KeyAgreementPrivateKey<32>>::from_bytes(&encoded).unwrap();
+    assert_eq!(from_seed.encode(), clamp(raw));
+    let encoded = from_seed.encode();
+    let decoded = X25519PrivateKey::from_bytes(&encoded).unwrap();
     assert!(decoded == from_seed);
 
     for len in [0, 31, 33] {
-        match <X25519PrivateKey as KeyAgreementPrivateKey<32>>::from_bytes(&vec![1_u8; len]) {
-            Err(KeyAgreementError::DecodingError(_)) => { /* good */ }
+        match X25519PrivateKey::from_bytes(&vec![1_u8; len]) {
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("expected DecodingError for {len} bytes"),
         }
     }

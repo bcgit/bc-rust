@@ -17,12 +17,12 @@
 
 #![allow(dead_code)]
 
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::VerifyingKey;
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, wycheproof_json};
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa::{
@@ -232,16 +232,13 @@ impl MLDSASignNoSeedTestCase {
 
         let sk = match MLDSA44PrivateKey::from_bytes(&hex::decode(&self.private_key).unwrap()) {
             Ok(sk) => sk,
-            Err(SignatureError::DecodingError(_)) => {
+            Err(KeyDecodingError(_)) => {
                 if self.result == "invalid" {
                     /* good */
                     return;
                 } else {
                     panic!("Failed to decode private key: {}", self.comment);
                 }
-            }
-            _ => {
-                panic!("something else went wrong");
             }
         };
 
@@ -300,16 +297,13 @@ impl MLDSASignNoSeedTestCase {
 
         let sk = match MLDSA65PrivateKey::from_bytes(&hex::decode(&self.private_key).unwrap()) {
             Ok(sk) => sk,
-            Err(SignatureError::DecodingError(_)) => {
+            Err(KeyDecodingError(_)) => {
                 if self.result == "invalid" {
                     /* good */
                     return;
                 } else {
                     panic!("Failed to decode private key: {}", self.comment);
                 }
-            }
-            _ => {
-                panic!("something else went wrong");
             }
         };
 
@@ -368,16 +362,13 @@ impl MLDSASignNoSeedTestCase {
 
         let sk = match MLDSA87PrivateKey::from_bytes(&hex::decode(&self.private_key).unwrap()) {
             Ok(sk) => sk,
-            Err(SignatureError::DecodingError(_)) => {
+            Err(KeyDecodingError(_)) => {
                 if self.result == "invalid" {
                     /* good */
                     return;
                 } else {
                     panic!("Failed to decode private key: {}", self.comment);
                 }
-            }
-            _ => {
-                panic!("something else went wrong");
             }
         };
 

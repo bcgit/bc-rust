@@ -9,7 +9,7 @@
 
 use crate::helpers::{
     parse_seed, read_input_file, read_input_file_or_stdin, read_secret_file,
-    read_secret_file_or_stdin, seed_error, stream_stdin, write_bytes_or_hex,
+    read_secret_file_or_stdin, seed_error, stream_stdin, write_bytes_or_hex, write_private_key,
 };
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
@@ -17,9 +17,7 @@ use bouncycastle::core::signature_key::{
     DeterministicPreHashSigningKey, DeterministicSigningKey, PreHashSigningKey,
     PreHashVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
-use bouncycastle::core::traits::{
-    RNG, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
-};
+use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier};
 use bouncycastle::mldsa::{
     MLDSA_MU_LEN, MLDSA_SEED_LEN, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN,
     MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN,
@@ -172,8 +170,8 @@ pub(crate) const MLDSA87_SET: ParameterSet<
 /// `deterministic` the variant with `rnd` all zero (Section 3.4) over the hedged one.
 pub(crate) fn mldsa_cmd<
     A: SignatureAlgorithm,
-    PK: SignaturePublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN> + PreHashVerifyingKey<A, SIG_LEN>,
-    SK: SignaturePrivateKey<SK_LEN>
+    PK: PublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN> + PreHashVerifyingKey<A, SIG_LEN>,
+    SK: PrivateKey<SK_LEN>
         + SigningKey<A, SIG_LEN>
         + DeterministicSigningKey<A, SIG_LEN>
         + PreHashSigningKey<A, SIG_LEN>
@@ -193,14 +191,14 @@ pub(crate) fn mldsa_cmd<
         MLDSAAction::Keygen => {
             let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os())
                 .unwrap_or_else(|e| keygen_error(e));
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
             let input = read_secret_file_or_stdin(files.sk);
             let seed = parse_seed::<MLDSA_SEED_LEN>(input.ref_to_bytes())
                 .unwrap_or_else(|e| seed_error::<MLDSA_SEED_LEN>(e));
             let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap_or_else(|e| keygen_error(e));
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         MLDSAAction::PkFromSk => {
             let sk = parse_sk(set, read_secret_file_or_stdin(files.sk).ref_to_bytes());
@@ -421,7 +419,7 @@ fn read_required_secret(file: &Option<String>, flag: &str) -> crate::helpers::Se
 fn parse_sk<
     A,
     PK,
-    SK: SignaturePrivateKey<SK_LEN>,
+    SK: PrivateKey<SK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
@@ -449,7 +447,7 @@ fn parse_sk<
 /// A public key from its bytes.
 fn parse_pk<
     A,
-    PK: SignaturePublicKey<PK_LEN>,
+    PK: PublicKey<PK_LEN>,
     SK,
     const PK_LEN: usize,
     const SK_LEN: usize,
