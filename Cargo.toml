@@ -33,6 +33,7 @@ bouncycastle-factory = { path = "./crypto/factory" }
 bouncycastle-hex = { path = "./crypto/hex" }
 bouncycastle-hkdf = { path = "./crypto/hkdf" }
 bouncycastle-hmac = { path = "./crypto/hmac" }
+bouncycastle-dhkem = { path = "./crypto/dhkem" }
 bouncycastle-hpke = { path = "./crypto/hpke" }
 bouncycastle-mlkem = { path = "./crypto/mlkem" }
 bouncycastle-mlkem-common = { path = "./crypto/mlkem-common" }
@@ -98,6 +99,7 @@ bouncycastle-factory.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-hkdf.workspace = true
 bouncycastle-hmac.workspace = true
+bouncycastle-dhkem.workspace = true
 bouncycastle-hpke.workspace = true
 bouncycastle-mldsa.workspace = true
 bouncycastle-mldsa-lowmemory.workspace = true

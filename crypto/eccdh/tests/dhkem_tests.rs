@@ -3,9 +3,9 @@
 //! Known answers for P-256 and P-521 are the RFC's own vectors: `bc-test-data/crypto/hpke.txt`
 //! is the machine-readable set RFC 9180 Appendix A cites as `[TestVectors]`, 32 entries for each
 //! of `kem_id` 16 (P-256) and 18 (P-521); Appendix A.3 to A.6 print a few of them. Every entry
-//! gives `DeriveKeyPair` vectors (`ikmR`, `ikmE`, and `ikmS` in the authenticated modes); the
-//! entries of modes 0 and 1 (base and PSK) also give `Encap`'s `enc` and `shared_secret`, which
-//! are checked through `Decap`. Modes 2 and 3 use `AuthEncap`, which is not implemented.
+//! gives `DeriveKeyPair` vectors (`ikmR`, `ikmE`, and `ikmS` in the authenticated modes), and
+//! `enc` and `shared_secret`: `Encap`'s in modes 0 and 1 (base and PSK), checked through
+//! `Decap`, and `AuthEncap`'s in modes 2 and 3, checked through `AuthDecap` with `pkSm`.
 //!
 //! `Encap` cannot be run against the vectors: its ephemeral key comes from the extra-random-bits
 //! key generation of SP 800-56A, not from raw RNG bytes, so no RNG yields the vector's `skEm`.
@@ -29,6 +29,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKeys};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
+use bouncycastle_dhkem::{AuthDecapsulatingKey, AuthEncapsulatingKey};
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ec::{P256, P384, P521};
 use bouncycastle_eccdh::dhkem::{
@@ -37,7 +38,7 @@ use bouncycastle_eccdh::dhkem::{
 };
 use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
 use bouncycastle_hex as hex;
-use bouncycastle_rng::{DefaultRNG, HashDRBG_SHA512};
+use bouncycastle_rng::{DefaultRNG, FixedSeedRNG, HashDRBG_SHA512};
 use std::collections::HashMap;
 
 /// The entries of `hpke.txt`: each starts at a `count = N` line and holds `name = hex` lines
@@ -97,6 +98,19 @@ where
             // The ephemeral public key is the ciphertext (Section 4.1: enc = SerializePublicKey(pkE)).
             assert_eq!(get("enc"), get("pkEm"), "count {count}");
             decapped += 1;
+        } else {
+            // AuthDecap(enc, skR, pkS) is shared_secret, where the vector's came from AuthEncap.
+            let sk_r = ECCDHPrivateKey::<C>::from_bytes(&get("skRm")).unwrap();
+            let pk_s = ECCDHPublicKey::<C>::from_bytes(&get("pkSm")).unwrap();
+            let enc: [u8; N_PK] = get("enc").try_into().expect("enc is Nenc bytes");
+            let mut ss = KeyMaterial::<N_SECRET>::new();
+            assert_eq!(sk_r.auth_decaps_out(&enc, &pk_s, &mut ss), Ok(N_SECRET));
+            assert_eq!(ss.ref_to_bytes(), get("shared_secret"), "count {count} shared_secret");
+            assert_eq!(ss.key_type(), KeyType::CryptographicRandom);
+            assert_eq!(ss.security_strength(), C::STRENGTH);
+            // The unauthenticated Decap of the same enc, without pkS, is another secret.
+            assert_ne!(sk_r.decaps(&enc, ()).unwrap().ref_to_bytes(), get("shared_secret"));
+            decapped += 1;
         }
     }
     Some((derived, decapped))
@@ -108,7 +122,7 @@ fn p256_matches_the_rfc_9180_vectors() {
         return;
     };
     // 32 entries: 16 in the unauthenticated modes with two ikm each, 16 authenticated with three.
-    assert_eq!((derived, decapped), (80, 16));
+    assert_eq!((derived, decapped), (80, 32));
 }
 
 /// Nsk = 66 against Nh = 64: every `DeriveKeyPair` here runs the two-block `LabeledExpand`.
@@ -117,7 +131,7 @@ fn p521_matches_the_rfc_9180_vectors() {
     let Some((derived, decapped)) = run_vectors::<P521, 133, 66, 64>("18") else {
         return;
     };
-    assert_eq!((derived, decapped), (80, 16));
+    assert_eq!((derived, decapped), (80, 32));
 }
 
 /// One printed vector for a curve, so that a known answer runs when `bc-test-data` is absent.
@@ -364,4 +378,54 @@ fn an_rng_failure_during_encapsulation_is_reported_as_the_rngs() {
     ));
     assert_eq!(ct, [0u8; 65]);
     assert_eq!(ss.key_type(), KeyType::Zeroized);
+}
+
+/// `AuthEncap` and `AuthDecap` on the keys of one curve: they agree, the sender's key is bound
+/// into the secret, and the outputs are zeroized first and left so on an error.
+fn auth_round_trip<C, const N_ENC: usize, const N_SECRET: usize>()
+where
+    C: DhkemCurve<SharedSecret = KeyMaterial<N_SECRET>> + Curve<PkUncompressed = [u8; N_ENC]>,
+{
+    let mut rng = HashDRBG_SHA512::new_from_os();
+    let (pk_r, sk_r) = keygen::<C>(&mut rng).unwrap();
+    let (pk_s, sk_s) = keygen::<C>(&mut rng).unwrap();
+    let (pk_other, _) = keygen::<C>(&mut rng).unwrap();
+
+    let mut enc = [0xFFu8; N_ENC];
+    let mut ss = KeyMaterial::<N_SECRET>::from_bytes(&[0xFF; 32]).unwrap();
+    assert_eq!(pk_r.auth_encaps_out(&mut rng, &sk_s, &mut enc, &mut ss), Ok(N_ENC));
+    assert_eq!(enc[0], 0x04, "enc is an uncompressed point");
+    assert_eq!(ss.key_len(), N_SECRET);
+
+    let mut got = KeyMaterial::<N_SECRET>::from_bytes(&[0xFF; 32]).unwrap();
+    assert_eq!(sk_r.auth_decaps_out(&enc, &pk_s, &mut got), Ok(N_SECRET));
+    assert!(got.equals(&ss));
+    // Another sender's public key gives another secret, not an error.
+    assert_eq!(sk_r.auth_decaps_out(&enc, &pk_other, &mut got), Ok(N_SECRET));
+    assert!(!got.equals(&ss));
+
+    // An enc that is not a point, and an RNG below the curve's strength.
+    let mut got = KeyMaterial::<N_SECRET>::from_bytes(&[0xFF; 32]).unwrap();
+    assert_eq!(
+        sk_r.auth_decaps_out(&[0x04; N_ENC], &pk_s, &mut got),
+        Err(KEMError::DecapsulationFailed)
+    );
+    assert_eq!(got.key_type(), KeyType::Zeroized);
+    let mut weak = FixedSeedRNG::new([0x5A; 64]);
+    weak.set_security_strength(SecurityStrength::_112bit);
+    let mut enc = [0xFFu8; N_ENC];
+    let mut ss = KeyMaterial::<N_SECRET>::from_bytes(&[0xFF; 32]).unwrap();
+    assert!(matches!(
+        pk_r.auth_encaps_out(&mut weak, &sk_s, &mut enc, &mut ss),
+        Err(KEMError::RNGError(_))
+    ));
+    assert_eq!(enc, [0u8; N_ENC]);
+    assert_eq!(ss.key_type(), KeyType::Zeroized);
+}
+
+#[test]
+fn auth_encaps_and_auth_decaps_agree_on_every_curve() {
+    auth_round_trip::<P256, 65, 32>();
+    auth_round_trip::<P384, 97, 48>();
+    auth_round_trip::<P521, 133, 64>();
 }

@@ -16,8 +16,8 @@ use bouncycastle_core::errors::{KEMError, KeyAgreementError};
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, RNG};
+use bouncycastle_dhkem::{DHKEM, DHKEMParams, DeriveKeyPairForm};
 use bouncycastle_ed::x25519::X25519;
-use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams, DeriveKeyPairForm};
 use bouncycastle_utils::secret::Secret;
 use std::cell::RefCell;
 
