@@ -37,7 +37,7 @@
 
 use crate::helpers::{
     println_stdout, read_input_file, read_secret_file, stream_stdin, write_bytes_or_hex,
-    write_bytes_or_hex_to_file,
+    write_bytes_or_hex_to_file, write_private_key,
 };
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
@@ -203,7 +203,7 @@ fn rsa_keygen_cmd<A: RsaSignatureAlgorithm, const PK_LEN: usize, const SK_LEN: u
         exit(-1);
     });
     write_bytes_or_hex_to_file(&pk.encode(), pkfile, output_hex);
-    write_bytes_or_hex(&sk.encode(), output_hex);
+    write_private_key(&sk, output_hex);
 }
 
 /// One RSASSA-PSS pairing: `keygen` and `verify` as for every scheme; `sign` draws the salt from
