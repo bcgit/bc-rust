@@ -1,88 +1,118 @@
-//! Building blocks of Hybrid Public Key Encryption (HPKE), as specified in RFC 9180.
+//! Hybrid Public Key Encryption (HPKE), as specified in RFC 9180.
 //!
-//! This is a utility crate and is not intended to be used directly. It provides
-//! [`dhkem::DHKEM`] -- the DH-Based KEM of RFC 9180 Section 4.1, generic over any Diffie-Hellman
-//! group that implements [`dhkem::DHKEMParams`], the extension point through which a group
-//! declares its keys, its DH operation and the KDF that the DHKEM pairs it with. Each group's crate
-//! implements that trait and exposes the result through the
-//! [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) and
-//! [`DecapsulatingKey`](bouncycastle_core::kem_key::DecapsulatingKey) roles on its own key types.
+//! This crate is HPKE itself, in its four modes: a setup on the recipient's public key gives
+//! the sender `enc` and an encryption context, the same setup on the private key gives the
+//! recipient its context, and the contexts seal and open the messages of the exchange and
+//! export secrets from it (RFC 9180 Sections 5 and 6).
 //!
-//! For example:
+//! The KEM is the key's: every key with the
+//! [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) or
+//! [`DecapsulatingKey`](bouncycastle_core::kem_key::DecapsulatingKey) role over `()` whose
+//! algorithm is a [`bouncycastle_dhkem::HpkeKem`] is an HPKE key: X25519's
+//! (`bouncycastle_ed::x25519`) and the ECC CDH keys over P-256, P-384 and P-521
+//! (`bouncycastle_eccdh`), each through `bouncycastle-dhkem`'s generic DHKEM.
 //!
-//! | KEM                        | kem_id | Exposed as                                                     |
-//! |----------------------------|--------|----------------------------------------------------------------|
-//! | DHKEM(P-256, HKDF-SHA256)  | 0x0010 | `bouncycastle_eccdh`'s keys over `P256`                        |
-//! | DHKEM(P-384, HKDF-SHA384)  | 0x0011 | `bouncycastle_eccdh`'s keys over `P384`                        |
-//! | DHKEM(P-521, HKDF-SHA512)  | 0x0012 | `bouncycastle_eccdh`'s keys over `P521`                        |
-//! | DHKEM(X25519, HKDF-SHA256) | 0x0020 | `bouncycastle_ed::x25519::{X25519PublicKey, X25519PrivateKey}` |
-//!
-//! Both forms of RFC 9180 Section 7.1.3's `DeriveKeyPair` are implemented
-//! ([`dhkem::DeriveKeyPairForm`]): the expand form of X25519 and X448, and the rejection
-//! sampling of the NIST curves.
-//!
-//! The KDF is HKDF over the hash named by [`dhkem::DHKEMParams::KDFHash`], computed on
-//! [`HMAC`](bouncycastle_hmac::HMAC) as RFC 5869 defines it, so any hash that
-//! [`HMAC`](bouncycastle_hmac::HMAC) supports can be used.
-//!
-//! The rest of HPKE (the key schedule, AEAD encryption and secret export of RFC 9180 Section 5) is
-//! not yet implemented.
+//! The Base and PSK modes are [`HpkeSender`] and [`HpkeRecipient`]. The Auth and AuthPSK modes
+//! (RFC 9180 Sections 5.1.3 and 5.1.4), in which the sender also uses a key pair of its own
+//! whose public key the recipient holds, are [`HpkeAuthSender`] and [`HpkeAuthRecipient`].
 //!
 //! # Usage Examples
 //!
-//! A group's keys are the usual way in (`pk.encaps(&mut rng, ())` on an X25519 public key). The
-//! generic DHKEM can also be driven directly, here as DHKEM(X25519, HKDF-SHA256):
+//! ## Encrypting to a public key
+//!
+//! The suite is the KEM of the key, here DHKEM(X25519, HKDF-SHA256), and the KDF and AEAD named
+//! by the parameters. The contexts seal and open in step; each message has its own nonce,
+//! derived from its position.
 //!
 //! ```
+//! use bouncycastle_aes::AES128Key;
+//! use bouncycastle_cipher::modes::GCM;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
-//! use bouncycastle_ed::x25519::{X25519, keygen};
-//! use bouncycastle_hpke::dhkem::DHKEM;
+//! use bouncycastle_ed::x25519::keygen;
+//! use bouncycastle_hpke::{HpkeParams, HpkeRecipient, HpkeSender, NT};
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//!
-//! // Npk = Nsk = Ndh = Nsecret = 32 (RFC 9180 Section 7.1).
-//! type Kem = DHKEM<X25519, 32, 32, 32, 32>;
+//! use bouncycastle_sha2::SHA256;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let (pk_r, sk_r) = keygen(&mut rng).unwrap();
+//! let params = HpkeParams::<SHA256, AES128Key<GCM>>::new(b"application info");
 //!
-//! // The sender: the shared secret, and `enc` to send.
-//! let mut enc = [0u8; 32];
-//! let mut sender_secret = KeyMaterial::<32>::new();
-//! Kem::encap_rng_out(&pk_r, &mut rng, &mut enc, &mut sender_secret)?;
+//! // The sender: `enc` goes to the recipient with the ciphertexts.
+//! let (enc, mut sender) = pk_r.setup_sender(&mut rng, params)?;
+//! let mut ct = [0u8; 5 + NT];
+//! sender.seal_out(b"aad", b"hello", &mut ct)?;
 //!
-//! // The recipient recovers the same shared secret from `enc`.
-//! let mut recipient_secret = KeyMaterial::<32>::new();
-//! Kem::decap_out(&enc, &sk_r, &mut recipient_secret)?;
-//! assert_eq!(sender_secret.ref_to_bytes(), recipient_secret.ref_to_bytes());
-//! # Ok::<(), bouncycastle_core::errors::KEMError>(())
+//! // The recipient, with the same parameters.
+//! let mut recipient = sk_r.setup_recipient(&enc, params)?;
+//! let mut pt = [0u8; 5 + NT];
+//! let n = recipient.open_out(b"aad", &ct, &mut pt)?;
+//! assert_eq!(&pt[..n], b"hello");
+//!
+//! // Both sides can export secrets bound to the exchange.
+//! let (mut a, mut b) = (KeyMaterial::<32>::new(), KeyMaterial::<32>::new());
+//! sender.export_out(b"exporter context", &mut a);
+//! recipient.export_out(b"exporter context", &mut b);
+//! assert_eq!(a.ref_to_bytes(), b.ref_to_bytes());
+//! # Ok::<(), bouncycastle_hpke::HpkeError>(())
 //! ```
+//!
+//! To authenticate the sender by its key pair, the setups are
+//! `pk_r.setup_auth_sender(&mut rng, &sk_s, params)` and
+//! `sk_r.setup_auth_recipient(&enc, &pk_s, params)`.
+//! With a pre-shared key the parameters are `params.with_psk(Psk::new(&psk, b"psk id")?)` on
+//! both sides. A single message needs no context: `pk_r.seal_out(..)` and `sk_r.open_out(..)`
+//! are a setup and one message, and `send_export_out` and `receive_export_out` a setup and one
+//! export, for which the AEAD can be [`ExportOnly`].
 //!
 //! # Memory Usage
 //!
-//! [`dhkem::DHKEM`] is a set of functions over its group, with no state of its own, no lookup
-//! tables and no heap allocation. A call's working memory is on the stack: the DH output (Ndh
-//! bytes), one PRK and one HKDF-Expand block, each sized for the largest hash of RFC 9180
-//! Section 7.2 (64 bytes), and the HMAC states of the extract and the expand. The per-call stack
-//! figures for the X25519 instantiation are in `bouncycastle_ed::x25519`'s Memory Usage table.
+//! Nothing here allocates, and there are no lookup tables of this crate's own. An
+//! [`HpkeContext`] holds the AEAD's key object, a 12-byte base nonce, the sequence number
+//! and the exporter secret.
+//!
+//! Peak stack usage in bytes for DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM, as the
+//! deepest frame chain from the `mem_usage_benches` hpke harness's `measure` wrapper down, the
+//! wrapper's own frame included (release build, x86-64, rustc 1.97.0-nightly). The setups
+//! include the KEM operation; the figures for the DHKEM alone are in
+//! `bouncycastle_ed::x25519`'s and `bouncycastle_eccdh`'s Memory Usage tables.
+//!
+//! | Operation              | Stack |
+//! |------------------------|-------|
+//! | `setup_sender`         | 4,728 |
+//! | `setup_recipient`      | 3,832 |
+//! | `setup_auth_sender`    | 4,760 |
+//! | `setup_auth_recipient` | 3,832 |
+//! | `seal_out`             | 1,280 |
+//! | `open_out`             | 1,264 |
+//! | `export_out`           | 1,936 |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! * [`dhkem::DHKEMParams::dh_into`] must perform the group's validation of the DH output (RFC 9180
-//!   Section 7.1.4), such as rejecting the all-zero X25519 output. [`dhkem::DHKEM`] relies on it to
-//!   reject unusable public keys.
-//! * [`dhkem::DHKEM::derive_key_pair`] is deterministic: the key pair is only as secret as the
-//!   input keying material.
-//! * The DH output, the PRKs and the derived values live in `Secret`s here and are wiped at the
-//!   end of their lifetime, and the `_out` forms write into the caller's buffers. What is not
-//!   reached: the by-value `encap_rng`, `decap` and `derive_key_pair` move their result out of
-//!   the frame that built it, and the HMAC the KDF runs leaves its inner and outer chaining states
-//!   and the SHA-256 message schedule of `prk XOR opad` on the dead stack below this crate's
-//!   frames, from which the PRK is recoverable; that residue is `hmac`'s and `sha2`'s, and the
-//!   PRK keys one `HmacKey` per expand so it is left once.
+//! * **The Base mode does not authenticate the sender.** Anyone with the recipient's public key
+//!   can send; the PSK mode shows the sender held the pre-shared key, and nothing more.
+//! * **The Auth modes authenticate a key pair, and only while the recipient's key is safe.** A
+//!   message that opens was sealed by a holder of the sender's private key or of the
+//!   recipient's own: whoever has the recipient's private key can forge messages from any
+//!   sender to it (key-compromise impersonation, RFC 9180 Sections 4.1 and 9.1.1). The sender's
+//!   identity is its public key and nothing else; bind any other identifier through `info`
+//!   (Section 5.1.3).
+//! * **A pre-shared key must be a key, not a password** (RFC 9180 Section 9.5): HKDF does not
+//!   slow a dictionary attack. [`Psk`] requires 32 bytes credited with 256 bits.
+//! * **Messages open only in the order they were sealed**, and a context is for one direction
+//!   (Section 9.8); a reply needs its own setup, or keys exported from this one.
+//! * **The plaintext's length is not hidden** (Section 9.7.6): a ciphertext is 16 bytes longer.
+//! * **There is no forward secrecy against the recipient's compromise** (Section 9.7.4): its
+//!   private key opens every exchange ever made to it.
+//! * **`info` and the PSK identifier are not secret** and are not sent by HPKE; both sides must
+//!   already agree on them.
+//! * **A context is returned by value** from its setup, a move that does not wipe where it was
+//!   built; the context itself wipes its key, nonce and exporter secret when dropped.
 //! * The crate's own source is `no_std`, but `bouncycastle-core` and `hmac` are not yet.
 
 #![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-pub mod dhkem;
+mod hpke;
+
+pub use hpke::*;

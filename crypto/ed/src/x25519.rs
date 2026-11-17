@@ -169,7 +169,7 @@
 //! trait's `from_bytes` and `DeriveKeyPair`, for the clamped scalar `encode` returns, and for
 //! the results of `core`'s by-value `agree`, `encaps` and `decaps`. Use the `_out` forms into a
 //! buffer or key you own where that matters. What HKDF's own frames keep is in
-//! `bouncycastle_hpke`'s Security Considerations.
+//! `bouncycastle_dhkem`'s Security Considerations.
 //!
 //! The pairing's derived key carries the least of X25519's 128 bits, the KDF's and the length's
 //! strength, so a `LEN` below 16 bytes is typed `CryptographicRandom` at less than 128 bits.
@@ -194,8 +194,10 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, KEMDecapsulator, KEMEncapsulator, KeyAgreement, PrivateKey, PublicKey, RNG,
 };
+use bouncycastle_dhkem::{
+    AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEM, DHKEMParams, DeriveKeyPairForm, HpkeKem,
+};
 use bouncycastle_hkdf::HkdfDescription;
-use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams, DeriveKeyPairForm};
 use bouncycastle_sha2::SHA256;
 use bouncycastle_utils::ct::{Condition, ct_eq_bytes, ct_eq_zero_bytes};
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
@@ -999,6 +1001,10 @@ impl Algorithm for DHKEM_X25519_HKDF_SHA256 {
 
 impl KEMAlgorithm for DHKEM_X25519_HKDF_SHA256 {}
 
+impl HpkeKem for DHKEM_X25519_HKDF_SHA256 {
+    const KEM_ID: u16 = <X25519 as DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN>>::KEM_ID;
+}
+
 /// The encapsulator an [`X25519PublicKey`] hands out through [`EncapsulatingKey`]:
 /// DHKEM(X25519, HKDF-SHA256) of RFC 9180 §4.1, where the ciphertext is an ephemeral public key
 /// (`enc`) and the shared secret is derived with HKDF-SHA256 from the X25519 output and both
@@ -1040,6 +1046,58 @@ impl EncapsulatingKey<(), POINT_LEN, DHKEM_SS_LEN> for X25519PublicKey {
 
     fn create_encapsulator<'k>(&'k self, _params: ()) -> Result<X25519Encapsulator<'k>, KEMError> {
         Ok(X25519Encapsulator { pk: self })
+    }
+}
+
+/// `AuthEncap(pkR, skS)` of DHKEM(X25519, HKDF-SHA256) (RFC 9180 §4.1), on the recipient's
+/// public key: what HPKE's Auth and AuthPSK modes run over.
+impl AuthEncapsulatingKey<POINT_LEN, DHKEM_SS_LEN> for X25519PublicKey {
+    type SenderPrivateKey = X25519PrivateKey;
+
+    /// # Errors
+    ///
+    /// * [`KEMError::RNGError`] if `rng`'s security strength is below 128 bits.
+    /// * [`KEMError::InvalidPublicKey`] if the key gives an all-zero X25519 output.
+    /// * [`KEMError::KeyMaterialError`] if `sk_s` has not been filled.
+    fn auth_encaps_out(
+        &self,
+        rng: &mut dyn RNG,
+        sk_s: &X25519PrivateKey,
+        enc: &mut [u8; POINT_LEN],
+        ss: &mut KeyMaterial<DHKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        enc.fill(0);
+        ss.zeroize();
+        if !sk_s.is_filled() {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
+        X25519DHKEM::auth_encap_rng_out(self, sk_s, rng, enc, ss)?;
+        Ok(POINT_LEN)
+    }
+}
+
+/// `AuthDecap(enc, skR, pkS)` of DHKEM(X25519, HKDF-SHA256) (RFC 9180 §4.1), on the recipient's
+/// private key.
+impl AuthDecapsulatingKey<POINT_LEN, DHKEM_SS_LEN> for X25519PrivateKey {
+    type SenderPublicKey = X25519PublicKey;
+
+    /// # Errors
+    ///
+    /// * [`KEMError::DecapsulationFailed`] if `enc` gives an all-zero X25519 output.
+    /// * [`KEMError::InvalidPublicKey`] if `pk_s` does.
+    /// * [`KEMError::KeyMaterialError`] if this key has not been filled.
+    fn auth_decaps_out(
+        &self,
+        enc: &[u8; POINT_LEN],
+        pk_s: &X25519PublicKey,
+        ss: &mut KeyMaterial<DHKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
+        if !self.is_filled() {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
+        X25519DHKEM::auth_decap_out(enc, self, pk_s, ss)?;
+        Ok(DHKEM_SS_LEN)
     }
 }
 
