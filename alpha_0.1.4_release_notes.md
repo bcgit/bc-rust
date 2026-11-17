@@ -62,7 +62,10 @@
   `sha1` CLI command. Checked against NIST's CAVP SHAVS vectors and RFC 3174's.
 * RSAES-OAEP -- RFC 8017 Section 7.1 key transport on the RSA key-establishment keys, under `OaepParams<H, M, LEN>`
   (label hash, MGF1 hash, label): as a KEM that draws the key (KTS-OAEP-basic, SP 800-56B Rev. 2) and, through
-  the new `core::key_transport_key` roles, for a key the caller holds; the `rsa-oaep-<size>` CLI commands.
+  the new `core::key_transport_key` roles, for a key the caller holds; the `rsa-oaep-<size>` CLI commands. The hashes
+  are RFC 8017's seven (SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, SHA-512/256), a sealed trait
+  `OaepHash`. `dev_scripts/check_oaep_ct.sh`, run on pull requests, puts the decoding under memcheck with the encoded
+  message undefined and reads its Cortex-M0 and RISC-V 32I assembly.
 
 ## Minor features / bug fixes
 

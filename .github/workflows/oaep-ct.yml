@@ -1,0 +1,29 @@
+name: OAEP Constant-Time Decode
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oaep-ct-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  oaep-ct:
+    if: github.repository == 'bcgit/bc-rust'
+    name: oaep-ct
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+
+      - name: Install nightly with rust-src
+        run: rustup toolchain install nightly --profile minimal --component rust-src
+
+      - name: Check the EME-OAEP decode under memcheck and in the Cortex-M0 and RISC-V 32I assembly
+        run: ./dev_scripts/check_oaep_ct.sh
