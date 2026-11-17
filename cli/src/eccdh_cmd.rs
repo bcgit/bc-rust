@@ -5,19 +5,18 @@
 //! key. `encaps` and `decaps` are DHKEM (RFC 9180 Section 4.1) on the same key pair, for the
 //! three curves RFC 9180 defines it over: P-256, P-384 and P-521.
 
+use crate::helpers::kem_helpers::{decaps_cmd, encaps_cmd};
 use crate::helpers::{
-    println_stdout, read_input_file, read_input_file_or_stdin, read_secret_file,
-    read_secret_file_or_stdin, write_bytes_or_hex, write_bytes_or_hex_to_file,
-    write_secret_bytes_or_hex, write_stdout,
+    println_stdout, read_input_file, read_secret_file_or_stdin, write_bytes_or_hex,
+    write_private_key, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::errors::KeyAgreementError;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
-use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
+use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle::ec::curve::Curve;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
-use bouncycastle::eccdh::dhkem::DhkemCurve;
 use bouncycastle::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
 use bouncycastle::eccdh::keys_common::DerivePublicKey;
 use bouncycastle::rng::HashDRBG_SHA512;
@@ -65,7 +64,7 @@ pub(crate) fn eccdh_cmd<
                 eprintln!("Error: key generation failed: {e:?}");
                 exit(-1);
             });
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         ECCDHAction::PkFromSk => {
             let sk =
@@ -92,7 +91,7 @@ pub(crate) fn eccdh_cmd<
                 eprintln!("Error: key agreement failed: {e:?}");
                 exit(-1);
             });
-            write_bytes_or_hex(z.ref_to_bytes(), output_hex);
+            write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
         }
         // The three curves with a DHKEM take these two in `dhkem_cmd`.
         ECCDHAction::Encaps | ECCDHAction::Decaps => {
@@ -104,7 +103,7 @@ pub(crate) fn eccdh_cmd<
     }
 }
 
-/// `encaps` and `decaps`: DHKEM over `C` (RFC 9180 Section 4.1), as `x25519_cmd` does them.
+/// `encaps` and `decaps`: DHKEM over `C` (RFC 9180 Section 4.1), through the shared KEM actions.
 fn dhkem_cmd<C, const SK_LEN: usize, const N_ENC: usize, const N_SECRET: usize>(
     action: &ECCDHAction,
     skfile: &Option<String>,
@@ -113,56 +112,17 @@ fn dhkem_cmd<C, const SK_LEN: usize, const N_ENC: usize, const N_SECRET: usize>(
     output_hex: bool,
     alg_name: &str,
 ) where
-    C: DhkemCurve<SharedSecret = KeyMaterial<N_SECRET>>
-        + Curve<PkUncompressed = [u8; N_ENC], ScalarBytes = [u8; SK_LEN]>,
+    C: Curve,
+    ECCDHPublicKey<C>: PublicKey<N_ENC> + EncapsulatingKey<(), N_ENC, N_SECRET>,
+    ECCDHPrivateKey<C>: PrivateKey<SK_LEN> + DecapsulatingKey<(), N_ENC, N_SECRET>,
 {
     match action {
-        ECCDHAction::Encaps => {
-            let pk =
-                parse_pk::<ECCDHPublicKey<C>, N_ENC>(&read_input_file_or_stdin(pkfile), alg_name);
-            let (ss, ct) = pk.encaps(&mut HashDRBG_SHA512::new_from_os(), ()).unwrap_or_else(|e| {
-                eprintln!("Error: encapsulation failed: {e:?}");
-                exit(-1);
-            });
-            if let Some(ctfile) = ctfile {
-                write_bytes_or_hex_to_file(&ct, ctfile, output_hex);
-                write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
-            } else {
-                write_bytes_or_hex(&ct, true);
-                write_stdout(b"\n");
-                write_secret_bytes_or_hex(ss.ref_to_bytes(), true);
-            }
-        }
-        ECCDHAction::Decaps => {
-            let Some(skfile) = skfile else {
-                eprintln!("Error: no skfile provided.");
-                exit(-1);
-            };
-            // The ciphertext is checked before the private key is read.
-            let ct = read_input_file_or_stdin(ctfile);
-            let Ok(ct) = <[u8; N_ENC]>::try_from(ct.as_slice()) else {
-                eprintln!("Error: ciphertext is not the correct length.");
-                exit(-1);
-            };
-            // `exit` runs no destructors, so the key file's bytes and the key are dropped, and
-            // so wiped, before either result is looked at.
-            let ss = {
-                let sk = {
-                    let bytes = read_secret_file(skfile);
-                    ECCDHPrivateKey::<C>::from_bytes(bytes.ref_to_bytes())
-                };
-                sk.as_ref().map(|sk| sk.decaps(&ct, ())).map_err(|_| ())
-            };
-            let ss = ss.unwrap_or_else(|_| {
-                eprintln!("Error: couldn't parse the input as a valid {alg_name} private key.");
-                exit(-1);
-            });
-            let ss = ss.unwrap_or_else(|e| {
-                eprintln!("Error: decapsulation failed: {e:?}");
-                exit(-1);
-            });
-            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
-        }
+        ECCDHAction::Encaps => encaps_cmd::<ECCDHPublicKey<C>, N_ENC, N_ENC, N_SECRET>(
+            pkfile, ctfile, output_hex, alg_name,
+        ),
+        ECCDHAction::Decaps => decaps_cmd::<ECCDHPrivateKey<C>, SK_LEN, N_ENC, N_SECRET>(
+            skfile, ctfile, output_hex, alg_name,
+        ),
         _ => unreachable!("the callers pass encaps and decaps only"),
     }
 }

@@ -4,7 +4,7 @@
 //! salt. The X9.63 KDF is SEC 1 v2 Section 3.6.1 and the concatenation KDF is SP 800-56C Rev. 2
 //! Section 4.1 (Option 1, `H(x) = hash(x)`); which one runs is the instance `main` passes.
 
-use crate::helpers::{decode_hex_arg, load_secret, read_input_file, write_bytes_or_hex};
+use crate::helpers::{decode_hex_arg, load_secret, read_input_file, write_secret_bytes_or_hex};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::traits::KDF;
 use std::process::exit;
@@ -41,7 +41,7 @@ pub(crate) fn kdf_cmd(
         eprintln!("Error: key derivation failed: {e:?}");
         exit(-1);
     }
-    write_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
+    write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
 }
 
 /// The `KDF` trait derives from an empty key (the framework's suites hold that), which no user

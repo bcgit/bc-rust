@@ -10,7 +10,8 @@ use bouncycastle::rng::{HashDRBG_SHA256, HashDRBG_SHA512, Sp80090ADrbg};
 use clap::ValueEnum;
 use std::process::exit;
 
-use crate::helpers::{CHUNK_LEN, read_secret_file, write_bytes_or_hex, write_stdout};
+use crate::helpers::{CHUNK_LEN, read_secret_file, write_secret_bytes_or_hex, write_stdout};
+use bouncycastle_utils::secret::Secret;
 
 /// The hash under the DRBG: SHA-256 gives a 128-bit instance, SHA-512 a 256-bit one.
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -62,21 +63,20 @@ fn seeded<D: NewUninitialized + Sp80090ADrbg>(file: &str, strength: SecurityStre
 }
 
 fn generate(mut rng: impl RNG, len: Option<u32>, output_hex: bool) {
-    let mut buf = vec![0u8; CHUNK_LEN];
+    // The output may be used as a key: the buffer is wiped when the function returns.
+    let mut buf = Secret::<[u8; CHUNK_LEN]>::new();
 
     let loop_forever = len.is_none();
     let mut bytes_left_to_write = len.unwrap_or(u32::MAX) as usize;
     while loop_forever || bytes_left_to_write > 0 {
-        rng.next_bytes_out(&mut buf).unwrap_or_else(|e| {
+        rng.next_bytes_out(&mut *buf).unwrap_or_else(|e| {
             eprintln!("Error: the DRBG refused to generate: {e:?}");
             exit(-1);
         });
 
-        if bytes_left_to_write < buf.len() {
-            buf.truncate(bytes_left_to_write);
-        }
-        write_bytes_or_hex(&buf, output_hex);
-        bytes_left_to_write -= buf.len();
+        let n = bytes_left_to_write.min(CHUNK_LEN);
+        write_secret_bytes_or_hex(&buf[..n], output_hex);
+        bytes_left_to_write -= n;
     }
     // Only a hex line gets a terminator: raw output is exactly `len` bytes, so that
     // `rng --len 16 > key.bin` is a 16-byte key and not a 17-byte one.

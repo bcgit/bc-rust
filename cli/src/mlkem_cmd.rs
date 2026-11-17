@@ -12,7 +12,7 @@
 use crate::helpers::{
     SecretBytes, decode_hex_arg, load_secret, parse_seed, read_input_file,
     read_input_file_or_stdin, read_secret_file_or_stdin, seed_error, write_bytes_or_hex,
-    write_bytes_or_hex_to_file,
+    write_bytes_or_hex_to_file, write_private_key, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::errors::KEMError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
@@ -156,14 +156,14 @@ pub(crate) fn mlkem_cmd<
         MLKEMAction::Keygen => {
             let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os())
                 .unwrap_or_else(|e| keygen_error(e));
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         MLKEMAction::KeygenFromSeed => {
             let input = read_secret_file_or_stdin(skfile);
             let seed = parse_seed::<SEED_LEN>(input.ref_to_bytes())
                 .unwrap_or_else(|e| seed_error::<SEED_LEN>(e));
             let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap_or_else(|e| keygen_error(e));
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         MLKEMAction::PkFromSk => {
             let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
@@ -196,7 +196,7 @@ pub(crate) fn mlkem_cmd<
                 eprintln!("Error: decapsulation failed: {e:?}");
                 exit(-1);
             });
-            write_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
         }
     }
 }
@@ -292,7 +292,7 @@ pub(crate) fn mlkem_hkdf_cmd<
                 eprintln!("Error: decapsulation failed: {e:?}");
                 exit(-1);
             });
-            write_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
         }
     }
 }
@@ -307,11 +307,11 @@ fn write_encaps_output<const SS_LEN: usize, const CT_LEN: usize>(
 ) {
     if let Some(ctfile) = ctfile {
         write_bytes_or_hex_to_file(ct, ctfile, output_hex);
-        write_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+        write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
     } else {
         write_bytes_or_hex(ct, true);
         crate::helpers::write_stdout(b"\n");
-        write_bytes_or_hex(ss.ref_to_bytes(), true);
+        write_secret_bytes_or_hex(ss.ref_to_bytes(), true);
     }
 }
 

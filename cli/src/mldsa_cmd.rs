@@ -9,7 +9,7 @@
 
 use crate::helpers::{
     parse_seed, read_input_file, read_input_file_or_stdin, read_secret_file,
-    read_secret_file_or_stdin, seed_error, stream_stdin, write_bytes_or_hex,
+    read_secret_file_or_stdin, seed_error, stream_stdin, write_bytes_or_hex, write_private_key,
 };
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
@@ -191,14 +191,14 @@ pub(crate) fn mldsa_cmd<
         MLDSAAction::Keygen => {
             let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os())
                 .unwrap_or_else(|e| keygen_error(e));
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
             let input = read_secret_file_or_stdin(files.sk);
             let seed = parse_seed::<MLDSA_SEED_LEN>(input.ref_to_bytes())
                 .unwrap_or_else(|e| seed_error::<MLDSA_SEED_LEN>(e));
             let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap_or_else(|e| keygen_error(e));
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         MLDSAAction::PkFromSk => {
             let sk = parse_sk(set, read_secret_file_or_stdin(files.sk).ref_to_bytes());

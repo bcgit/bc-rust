@@ -21,7 +21,7 @@
 
 use crate::helpers::{
     println_stdout, read_input_file, read_secret_file, read_secret_file_or_stdin, stream_stdin,
-    write_bytes_or_hex,
+    write_bytes_or_hex, write_private_key,
 };
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
@@ -80,7 +80,7 @@ pub(crate) fn ecdsa_cmd<
     match action {
         ECDSAAction::Keygen => {
             let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         ECDSAAction::PkFromSk => {
             let sk =

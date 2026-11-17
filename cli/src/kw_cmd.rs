@@ -47,14 +47,13 @@
 //! ```
 
 use crate::helpers::block_mode_helpers::{CipherDirection, InputLimit, load_key_object};
-use crate::helpers::write_bytes_or_hex;
+use crate::helpers::{read_secret_stdin_all, wipe, write_secret_bytes_or_hex};
 use bouncycastle::cipher::BlockCipherKey;
 use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::cipher::modes::{KW, KWP};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{KeyUnwrappingKey, KeyWrappingKey};
-use std::io::Read;
 use std::process::exit;
 
 /// KW under a `KEY_LEN`-byte key-encryption key for the permutation `P`; `alg` names the cipher
@@ -110,35 +109,58 @@ pub(crate) fn run<K, const KEK_LEN: usize>(
     K: KeyWrappingKey<KEK_LEN> + KeyUnwrappingKey<KEK_LEN>,
 {
     match direction {
-        CipherDirection::Encrypt => run_with(|input| kek.wrap(input), limit, output_hex, alg),
-        CipherDirection::Decrypt => run_with(|input| kek.unwrap(input), None, output_hex, alg),
+        CipherDirection::Encrypt => run_with(
+            |len| kek.wrap_out_len(len),
+            |input, out| kek.wrap_out(input, out),
+            limit,
+            output_hex,
+            alg,
+        ),
+        CipherDirection::Decrypt => run_with(
+            |len| kek.unwrap_out_max_len(len),
+            |input, out| kek.unwrap_out(input, out),
+            None,
+            output_hex,
+            alg,
+        ),
     }
 }
 
 /// Reads all of stdin, applies `op` to it and writes the result; the unwrap-only commands pass
-/// their key's `unwrap` alone, so that no wrapper is ever instantiated for their key type.
-/// `limit`, for a wrapping command whose standard bounds what one key may protect, is checked
-/// against the whole input before `op` runs.
+/// their key's `unwrap_out` alone, so that no wrapper is ever instantiated for their key type.
+/// `out_len` is the output buffer `op` needs for an input of the given length. `limit`, for a
+/// wrapping command whose standard bounds what one key may protect, is checked against the whole
+/// input before `op` runs.
+///
+/// One side of either direction is a key in the clear, so the input and the output are both
+/// wiped before the function returns or exits.
 pub(crate) fn run_with(
-    op: impl FnOnce(&[u8]) -> Result<Vec<u8>, SymmetricCipherError>,
+    out_len: impl FnOnce(usize) -> usize,
+    op: impl FnOnce(&[u8], &mut [u8]) -> Result<usize, SymmetricCipherError>,
     limit: Option<&InputLimit>,
     output_hex: bool,
     alg: &str,
 ) {
-    let mut input = Vec::new();
-    if let Err(e) = std::io::stdin().read_to_end(&mut input) {
-        eprintln!("Error: couldn't read stdin: {e}");
-        exit(-1);
-    }
+    let mut input = read_secret_stdin_all();
+    let input_len = input.len();
     if let Some(limit) = limit
-        && input.len() as u64 > limit.max_bytes
+        && input_len as u64 > limit.max_bytes
     {
+        wipe(&mut input);
         eprintln!("Error: {}", limit.message);
         exit(-1);
     }
 
-    match op(&input) {
-        Ok(output) => write_bytes_or_hex(&output, output_hex),
+    let mut output = vec![0u8; out_len(input_len)];
+    let result = op(&input, &mut output);
+    wipe(&mut input);
+    if let Ok(written) = result {
+        write_secret_bytes_or_hex(&output[..written], output_hex);
+    }
+    wipe(&mut output);
+
+    match result {
+        Ok(_) => {}
         Err(SymmetricCipherError::DecryptionFailed) => {
             eprintln!(
                 "Error: {alg} unwrap failed: the input is not an authentic {alg} ciphertext under \
@@ -148,7 +170,7 @@ pub(crate) fn run_with(
             exit(-1);
         }
         Err(SymmetricCipherError::InvalidInputLength(why)) => {
-            eprintln!("Error: {alg}: input of {} bytes rejected: {why}.", input.len());
+            eprintln!("Error: {alg}: input of {input_len} bytes rejected: {why}.");
             exit(-1);
         }
         Err(e) => {
