@@ -187,13 +187,15 @@ taught, as mechanics to apply next time a cipher type is shaped or reshaped:
 - **Fold wrapper state into the struct.** A decrypt-only buffer (the held-back tag) is carried on
   both directions, unused when encrypting, as `Gcm` already does; that is cheaper than a second
   type.
-- **Keyed workers do not suspend.** As of #173 no cipher or MAC worker implements
-  `SuspendableComponent`, and `hazmat::ModeKey` is gone with them; `SuspendableKeyed` itself went
-  with HMAC's and HKDF's impls (a worker cannot be rebuilt without its key, and its state is
-  key-derived material anyway), and the hashes, XOFs and KMAC keep `Suspendable`. A message in progress is paused by holding its worker. A test that needs a
-  worker at a limit the public API cannot reach (GCM at `MAX_DATA_LEN`, the last counter block)
-  is a unit test in the mode's file that sets the private field, not a resume from a patched
-  state.
+- **Keyed workers do not suspend, and cipher workers do not clone.** As of #173 no cipher
+  worker is `Clone`, and of the MAC workers only KMAC's are (a copied MAC computation repeats
+  no nonce or keystream). No cipher or MAC worker implements `SuspendableComponent`, and
+  `hazmat::ModeKey` is gone with them; `SuspendableKeyed` itself went with HMAC's and HKDF's
+  impls (a worker cannot be rebuilt without its key, and its state is key-derived material
+  anyway), and the hashes, XOFs and KMAC keep `Suspendable`. A message in progress is paused by
+  holding its worker. A test that needs a worker at a limit the public API cannot reach (GCM at
+  `MAX_DATA_LEN`, the last counter block) is a unit test in the mode's file that sets the
+  private field, not a resume from a patched state.
 - **When public items go, the tests follow the API, and the benches get built.** Integration
   tests move onto the trait methods rather than the inherent ones surviving for their sake.
   `cargo test --workspace` does not compile `benches/` or `mem_usage_benches`, so finish with
@@ -335,6 +337,38 @@ direction in the worker types. Mechanics to reuse:
 - **A run-time-length tag has one home, the factory.** `MACFactory` and the `kmac*` CLI
   commands (which bind their length through KMACXOF's final read, SP 800-185 Sec 4.3.1) are
   where a length chosen at run time lives; everywhere else it is the key type's.
+
+## Lessons from the in-place finals (November 2026)
+
+Issue #173's last steps made workers finishable where they sit, so that a `Box<dyn ..>` worker can
+end its message, and took `Clone` off the cipher workers. QUALITY_AND_STYLE.md has the rule (the
+`finish_ / _into` naming and the "Architecture" paragraph); the mechanics behind it:
+
+- **A by-value final is not in the vtable.** `do_final(self)` cannot be called on `Box<dyn ..>`,
+  and a `self: Box<Self>` twin written as a forward moves the worker out of its box, leaving the
+  heap block unwiped. Each worker trait therefore has a required `&mut self` finishing method
+  (`finish_into`, `finish_encrypt`, `finish_mac_into`, `finish_signature_verify`, ...; `Hash`
+  has a second for a partial last byte); the consuming finals and their `_boxed` twins are
+  provided over it, and an implementor writes only the `finish_` methods.
+- **The token guards against accidents, not against intent.** The `finish_` methods take a
+  `&FinishToken` whose constructor is private to `core`, so only a provided final calls them.
+  Code that owns a worker without being one (a KDF's block loop, `MuBuilder::do_final`,
+  `MACFactoryWorker`, CCM's in-place one-shots, HMAC's hazmat `finish_out`) takes a token from
+  `core::hazmat::finish_token()` and with it the duty to finish once and not use the worker
+  again. Crate-internal keyed helpers take the token as a parameter rather than minting one.
+- **A new worker type owes the `finish_` method, not a final.** A worker that implements only
+  `do_*_final` no longer compiles, the `finish_` method being the required one; convert a
+  branch's workers before it merges a release tip that has the token (`feature/rsa-sig`'s
+  signers and verifiers had to be).
+- **Not-`Clone` is asserted at compile time, per crate.** `crypto/aes/tests/worker_not_clone_tests.rs`
+  lists the cipher crate's workers over the AES permutation and fails to compile if one becomes
+  `Clone`; add a new mode's workers to it. A worker in its own crate is asserted there, by the
+  same test (Ascon) or a doctest (ChaCha20, Poly1305). A wrapper over another worker must be
+  named over a `Clone` inner type, or a derived `Clone`, being conditional, passes unnoticed.
+  Check a new assertion by putting `Clone` back on the type. `Tkw`, `HMAC`, the BLAKE MACs,
+  `MACFactoryWorker` and `HpkeContext` are not `Clone` but have no assertion yet.
+- **`git stash create` fails with an intent-to-add file in the tree;** stage the file before
+  pushing a work-in-progress tree to apollo for a mutants run.
 
 ## KDF descriptions must stay readable by hardware (November 2026)
 

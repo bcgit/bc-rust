@@ -135,21 +135,6 @@ pub struct Ascon_AEAD128<Dir> {
     _dir: PhantomData<Dir>,
 }
 
-// Written out rather than derived so that `Dir`, a marker type, need not be `Clone`.
-impl<Dir> Clone for Ascon_AEAD128<Dir> {
-    fn clone(&self) -> Self {
-        Self {
-            key: self.key.clone(),
-            state: self.state.clone(),
-            pos: self.pos,
-            phase: self.phase,
-            held: self.held,
-            held_len: self.held_len,
-            _dir: PhantomData,
-        }
-    }
-}
-
 impl<Dir> Ascon_AEAD128<Dir> {
     /// Validate a [`KeyMaterial`] for use with Ascon-AEAD128 and return its key words.
     /// The key must be tagged as a [`KeyType::SymmetricCipherKey`] and carry at least the

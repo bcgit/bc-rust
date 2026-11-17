@@ -319,7 +319,6 @@ enum Phase {
 /// [`Encrypting`] / [`Decrypting`]. See the module docs for the two APIs this type exposes and
 /// [`GCM_NONCE_LEN`] / `TAG_LEN` for what is fixed and what is chosen. A worker borrows the key
 /// state it was made from for `'k`: the schedule and `H` stay in the key.
-#[derive(Clone)]
 pub struct Gcm<'k, P, Dir, const TAG_LEN: usize>
 where
     P: BlockPermutation<16> + ModeNames,
@@ -961,7 +960,6 @@ mod ghash {
     /// intermediate values in the execution of the GCM functions shall be secret"), so both live in a
     /// [`Secret`] and are zeroized on drop; the pending partial block is live plaintext-or-ciphertext
     /// bytes still waiting to be absorbed and is wrapped for the same reason.
-    #[derive(Clone)]
     pub(crate) struct Ghash {
         /// The hash subkey `H = CIPH_K(0^128)`.
         h: Secret<Block>,

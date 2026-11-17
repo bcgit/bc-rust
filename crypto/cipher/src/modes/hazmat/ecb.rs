@@ -209,7 +209,6 @@ where
 /// Only a reference to the permutation, which owns the key schedule and keeps it in a
 /// zeroize-on-drop wrapper. Nothing chains from one block to the next, so unlike `Cbc` and `Cfb`
 /// there is no block of chaining value: an `Ecb` is the reference and nothing else.
-#[derive(Clone)]
 pub struct Ecb<'k, P, Dir, const BLOCK_LEN: usize>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,

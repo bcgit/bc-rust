@@ -25,7 +25,6 @@ use crate::stream::{KeyStreamPolicy, StreamCipher};
 ///
 /// A reference to the permutation, which the key owns, and one block: `Oj-1`, which is both the
 /// last keystream block produced and the input to the next cipher call.
-#[derive(Clone)]
 pub struct OfbKeyStream<'k, P, const BLOCK_LEN: usize>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,

@@ -260,7 +260,6 @@ where
 /// Two fields: a reference to the permutation, whose key schedule stays in the key, and one block
 /// of chaining value. The chaining value is an IV or a
 /// ciphertext block, both of which are public, so it is deliberately not wrapped in a `Secret`.
-#[derive(Clone)]
 pub struct Cbc<'k, P, Dir, const BLOCK_LEN: usize>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
