@@ -24,16 +24,15 @@
 //!   anything that tells a peer why a ciphertext was refused.
 //! * **The label is not secret and is not sent.** It binds a ciphertext to its use; a
 //!   ciphertext made under one label does not decrypt under another.
-//! * **SHA-1** (`bouncycastle_sha1::SHA1`) is accepted as either hash, for peers that use it.
+//! * **The hashes are RFC 8017's** ([`OaepHash`]). **SHA-1** is among them, for peers that use it.
 //!   OAEP does not rest on collision resistance, so the algorithm's strength is the modulus's,
 //!   capped by what the shorter hash output can carry; prefer SHA-256 or longer where the
 //!   choice is open.
 
 use crate::eme_oaep::{self, HashBuf};
-use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
+use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey, in_open_range};
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{KEMError, KeyMaterialError, KeyTransportError, RNGError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorithm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::key_transport_key::{
@@ -43,9 +42,35 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, HashAlgParams, HashOneShot, KEMDecapsulator, KEMEncapsulator, RNG,
 };
+use bouncycastle_sha1::SHA1;
+use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use bouncycastle_utils::const_str::ConstStr;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
+
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// A hash RSAES-OAEP may use for its label and under MGF1: the `OAEP-PSSDigestAlgorithms` of
+/// RFC 8017 Appendix A.2.1, SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224 and
+/// SHA-512/256. Sealed: the buffers and the strength below are sized for these.
+pub trait OaepHash: HashOneShot + HashAlgParams + sealed::Sealed {}
+
+impl sealed::Sealed for SHA1 {}
+impl OaepHash for SHA1 {}
+impl sealed::Sealed for SHA224 {}
+impl OaepHash for SHA224 {}
+impl sealed::Sealed for SHA256 {}
+impl OaepHash for SHA256 {}
+impl sealed::Sealed for SHA384 {}
+impl OaepHash for SHA384 {}
+impl sealed::Sealed for SHA512 {}
+impl OaepHash for SHA512 {}
+impl sealed::Sealed for SHA512_224 {}
+impl OaepHash for SHA512_224 {}
+impl sealed::Sealed for SHA512_256 {}
+impl OaepHash for SHA512_256 {}
 
 /// RSAES-OAEP at the modulus size `K` with the label hash `H` and MGF1 over `M`: the algorithm
 /// the key-establishment keys run under [`OaepParams`], named
@@ -55,8 +80,9 @@ pub struct RSAES_OAEP<K: RsaSize, H, M = H> {
     _params: PhantomData<(K, H, M)>,
 }
 
-/// What a hash output of `h_len` bytes can carry as a preimage strength: OAEP's hashes are
-/// used as random oracles, not for collision resistance.
+/// What a hash output of `h_len` bytes can carry as a preimage strength, which for the hashes
+/// of [`OaepHash`] is the output's length: OAEP's hashes are used as random oracles, not for
+/// collision resistance.
 const fn hash_output_strength(h_len: usize) -> SecurityStrength {
     match h_len {
         32.. => SecurityStrength::_256bit,
@@ -71,7 +97,7 @@ const fn min_strength(a: SecurityStrength, b: SecurityStrength) -> SecurityStren
     if (a as u8) < (b as u8) { a } else { b }
 }
 
-impl<K: RsaSize, H: HashAlgParams, M: HashAlgParams> RSAES_OAEP<K, H, M> {
+impl<K: RsaSize, H: OaepHash, M: OaepHash> RSAES_OAEP<K, H, M> {
     const NAME: ConstStr<64> =
         ConstStr::concat(&["RSAES-OAEP-", K::BITS_NAME, "-", H::ALG_NAME, "-MGF1-", M::ALG_NAME]);
 
@@ -89,20 +115,21 @@ impl<K: RsaSize, H: HashAlgParams, M: HashAlgParams> RSAES_OAEP<K, H, M> {
     };
 }
 
-impl<K: RsaSize, H: HashAlgParams, M: HashAlgParams> Algorithm for RSAES_OAEP<K, H, M> {
+impl<K: RsaSize, H: OaepHash, M: OaepHash> Algorithm for RSAES_OAEP<K, H, M> {
     const ALG_NAME: &'static str = Self::NAME.as_str();
     const MAX_SECURITY_STRENGTH: SecurityStrength = Self::STRENGTH;
 }
 
-impl<K: RsaSize, H: HashAlgParams, M: HashAlgParams> KEMAlgorithm for RSAES_OAEP<K, H, M> {}
+impl<K: RsaSize, H: OaepHash, M: OaepHash> KEMAlgorithm for RSAES_OAEP<K, H, M> {}
 
-impl<K: RsaSize, H: HashAlgParams, M: HashAlgParams> KeyTransportAlgorithm for RSAES_OAEP<K, H, M> {}
+impl<K: RsaSize, H: OaepHash, M: OaepHash> KeyTransportAlgorithm for RSAES_OAEP<K, H, M> {}
 
 /// The parameters of RSAES-OAEP: the label hash `H`, the MGF1 hash `M` (the same hash unless
 /// spelled), the label, and for the KEM roles the length `LEN` of the key to transport.
 ///
 /// The KEM roles check `LEN` against the modulus when they are compiled; RSA-2048 with
-/// SHA-256 carries at most 190 bytes:
+/// SHA-256 carries at most 190 bytes, so 190 builds (`tests/rsaes_oaep_tests.rs`) and 191 does
+/// not:
 ///
 /// ```compile_fail
 /// use bouncycastle_core::kem_key::EncapsulatingKey;
@@ -149,8 +176,8 @@ fn encrypt<K, H, M, const N: usize>(
 ) -> Result<(), RNGError>
 where
     K: RsaSize<Modulus = [u8; N]>,
-    H: HashOneShot + HashAlgParams,
-    M: HashOneShot + HashAlgParams,
+    H: OaepHash,
+    M: OaepHash,
 {
     ct.fill(0);
     let h_len = H::OUTPUT_LEN;
@@ -184,15 +211,17 @@ fn decrypt<K, H, M, const N: usize>(
 ) -> Option<usize>
 where
     K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
-    H: HashOneShot + HashAlgParams,
-    M: HashOneShot + HashAlgParams,
+    H: OaepHash,
+    M: OaepHash,
 {
     out.fill(0);
-    // Step 2.a, 2.b: c = OS2IP(C); "If RSADP outputs 'ciphertext representative out of range'
-    // (meaning that c >= n), output 'decryption error' and stop". The ciphertext and the
-    // modulus are public, so this branch tells an observer nothing it could not compute.
+    // Step 2.a: c = OS2IP(C). RFC 8017 step 2.b refuses c >= n ("ciphertext representative
+    // out of range"); SP 800-56B Rev. 2 §7.2.2.4 step 2.c is narrower, "If the ciphertext
+    // integer c is not such that 1 < c < (n - 1), output an indication of erroneous input",
+    // and is what is applied. The ciphertext and the modulus are public, so this branch tells
+    // an observer nothing it could not compute; the error is the one every failure gives.
     let c = K::limbs_from_be_bytes(ct);
-    if !K::is_less(&c, sk.n()) {
+    if !in_open_range::<K>(&c, sk.n()) {
         return None;
     }
     // m = RSADP(K, c), constant time in the key; step 2.c: EM = I2OSP(m, k).
@@ -207,30 +236,30 @@ where
 }
 
 /// The transported key into the caller's buffer, typed `CryptographicRandom` at the lesser of
-/// `strength` and what its length carries; zeroized first and left so on error.
+/// `strength` and what its length carries; zeroized first and left so on error. An empty or
+/// all-zero key is a value, not an error: the buffer types it `Zeroized`, with no strength.
 fn key_into<const N: usize>(
     bytes: &[u8],
     strength: SecurityStrength,
     key: &mut KeyMaterial<N>,
 ) -> Result<(), KeyMaterialError> {
     key.zeroize();
-    let result = do_hazardous_operations(key, |key| {
-        // An empty or all-zero key is typed Zeroized by the buffer and carries no strength;
-        // that is a value, not an error.
-        match key.set_bytes_as_type(bytes, KeyType::CryptographicRandom) {
-            Ok(()) => {}
-            Err(KeyMaterialError::ActingOnZeroizedKey) => return Ok(()),
-            Err(e) => return Err(e),
+    match key.set_bytes_as_type(bytes, KeyType::CryptographicRandom) {
+        Ok(()) => {}
+        Err(KeyMaterialError::ActingOnZeroizedKey) => return Ok(()),
+        Err(e) => {
+            key.zeroize();
+            return Err(e);
         }
-        if key.security_strength() > strength {
-            key.set_security_strength(strength)?;
-        }
-        Ok(())
-    });
-    if result.is_err() {
-        key.zeroize();
     }
-    result
+    if key.security_strength() > strength {
+        // Lowering a strength is always permitted.
+        if let Err(e) = key.set_security_strength(strength) {
+            key.zeroize();
+            return Err(e);
+        }
+    }
+    Ok(())
 }
 
 /// The worker [`EncapsulatingKey::create_encapsulator`] hands out under [`OaepParams`]: the
@@ -240,7 +269,7 @@ pub struct RsaOaepEncapsulator<'k, 'l, K: RsaSize, H, M, const LEN: usize> {
     params: OaepParams<'l, H, M, LEN>,
 }
 
-impl<K: RsaSize, H: HashAlgParams, M: HashAlgParams, const LEN: usize> Algorithm
+impl<K: RsaSize, H: OaepHash, M: OaepHash, const LEN: usize> Algorithm
     for RsaOaepEncapsulator<'_, '_, K, H, M, LEN>
 {
     const ALG_NAME: &'static str = RSAES_OAEP::<K, H, M>::ALG_NAME;
@@ -251,8 +280,8 @@ impl<K, H, M, const N: usize, const LEN: usize> KEMEncapsulator<N, LEN>
     for RsaOaepEncapsulator<'_, '_, K, H, M, LEN>
 where
     K: RsaSize<Modulus = [u8; N]>,
-    H: HashOneShot + HashAlgParams,
-    M: HashOneShot + HashAlgParams,
+    H: OaepHash,
+    M: OaepHash,
 {
     /// KTS-OAEP-basic, party U (SP 800-56B Rev. 2 §9.2.3), with the keying material drawn
     /// here: `LEN` bytes from `rng` into `ss`, and `C = RSA-OAEP.ENCRYPT(PubKeyV, K, A)` into
@@ -289,7 +318,7 @@ pub struct RsaOaepDecapsulator<'k, 'l, K: RsaSize, H, M, const LEN: usize> {
     params: OaepParams<'l, H, M, LEN>,
 }
 
-impl<K: RsaSize, H: HashAlgParams, M: HashAlgParams, const LEN: usize> Algorithm
+impl<K: RsaSize, H: OaepHash, M: OaepHash, const LEN: usize> Algorithm
     for RsaOaepDecapsulator<'_, '_, K, H, M, LEN>
 {
     const ALG_NAME: &'static str = RSAES_OAEP::<K, H, M>::ALG_NAME;
@@ -300,8 +329,8 @@ impl<K, H, M, const N: usize, const LEN: usize> KEMDecapsulator<N, LEN>
     for RsaOaepDecapsulator<'_, '_, K, H, M, LEN>
 where
     K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
-    H: HashOneShot + HashAlgParams,
-    M: HashOneShot + HashAlgParams,
+    H: OaepHash,
+    M: OaepHash,
 {
     /// KTS-OAEP-basic, party V (SP 800-56B Rev. 2 §9.2.3):
     /// `K = RSA-OAEP.DECRYPT(PrivKeyV, C, A)` into `ss`, zeroized first and left so on error.
@@ -323,8 +352,8 @@ impl<'l, K, H, M, const N: usize, const LEN: usize>
     EncapsulatingKey<OaepParams<'l, H, M, LEN>, N, LEN> for RsaKEMPublicKey<K>
 where
     K: RsaSize<Modulus = [u8; N]>,
-    H: HashOneShot + HashAlgParams,
-    M: HashOneShot + HashAlgParams,
+    H: OaepHash,
+    M: OaepHash,
 {
     type Algorithm = RSAES_OAEP<K, H, M>;
     type Encapsulator<'k>
@@ -337,7 +366,10 @@ where
         &'k self,
         params: OaepParams<'l, H, M, LEN>,
     ) -> Result<Self::Encapsulator<'k>, KEMError> {
-        const { assert!(LEN <= RSAES_OAEP::<K, H, M>::MAX_MESSAGE_LEN, "LEN > k - 2hLen - 2") };
+        const {
+            assert!(LEN > 0, "a key has at least one byte");
+            assert!(LEN <= RSAES_OAEP::<K, H, M>::MAX_MESSAGE_LEN, "LEN > k - 2hLen - 2");
+        }
         Ok(RsaOaepEncapsulator { pk: self, params })
     }
 }
@@ -346,8 +378,8 @@ impl<'l, K, H, M, const N: usize, const LEN: usize>
     DecapsulatingKey<OaepParams<'l, H, M, LEN>, N, LEN> for RsaKEMPrivateKey<K>
 where
     K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
-    H: HashOneShot + HashAlgParams,
-    M: HashOneShot + HashAlgParams,
+    H: OaepHash,
+    M: OaepHash,
 {
     type Algorithm = RSAES_OAEP<K, H, M>;
     type Decapsulator<'k>
@@ -360,7 +392,10 @@ where
         &'k self,
         params: OaepParams<'l, H, M, LEN>,
     ) -> Result<Self::Decapsulator<'k>, KEMError> {
-        const { assert!(LEN <= RSAES_OAEP::<K, H, M>::MAX_MESSAGE_LEN, "LEN > k - 2hLen - 2") };
+        const {
+            assert!(LEN > 0, "a key has at least one byte");
+            assert!(LEN <= RSAES_OAEP::<K, H, M>::MAX_MESSAGE_LEN, "LEN > k - 2hLen - 2");
+        }
         Ok(RsaOaepDecapsulator { sk: self, params })
     }
 }
@@ -371,8 +406,8 @@ impl<'l, K, H, M, const N: usize, const LEN: usize>
     KeyTransportEncryptingKey<OaepParams<'l, H, M, LEN>, N> for RsaKEMPublicKey<K>
 where
     K: RsaSize<Modulus = [u8; N]>,
-    H: HashOneShot + HashAlgParams,
-    M: HashOneShot + HashAlgParams,
+    H: OaepHash,
+    M: OaepHash,
 {
     type Algorithm = RSAES_OAEP<K, H, M>;
 
@@ -392,7 +427,8 @@ where
         if key.key_type() == KeyType::Zeroized {
             return Err(KeyMaterialError::ActingOnZeroizedKey.into());
         }
-        // RFC 8017 §7.1.1 step 1.b: "If mLen > k - 2hLen - 2, output 'message too long'".
+        // RFC 8017 §7.1.1 step 1.b: "If mLen > k - 2hLen - 2, output "message too long" and
+        // stop."
         if key.key_len() > RSAES_OAEP::<K, H, M>::MAX_MESSAGE_LEN {
             return Err(KeyTransportError::KeyTooLong);
         }
@@ -410,8 +446,8 @@ impl<'l, K, H, M, const N: usize, const LEN: usize>
     KeyTransportDecryptingKey<OaepParams<'l, H, M, LEN>, N> for RsaKEMPrivateKey<K>
 where
     K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
-    H: HashOneShot + HashAlgParams,
-    M: HashOneShot + HashAlgParams,
+    H: OaepHash,
+    M: OaepHash,
 {
     type Algorithm = RSAES_OAEP<K, H, M>;
 

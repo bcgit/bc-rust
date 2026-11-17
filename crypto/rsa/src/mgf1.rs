@@ -1,7 +1,7 @@
-//! MGF1 (RFC 8017 Appendix B.2.1): a mask generation function based on a hash function, used by
-//! [`crate::emsa_pss`]. Specialized to PSS's own call shape (`MGF(H, maskLen)`, where `H` is
-//! always the hash's own `hLen`-byte output) rather than MGF1's fully general arbitrary-length
-//! seed: `mgfSeed` here is always exactly `H_LEN` bytes.
+//! MGF1 (RFC 8017 Appendix B.2.1), a mask generation function based on a hash function, in the
+//! two shapes this crate calls it in: [`mgf1`] for EMSA-PSS, whose seed is a hash output and
+//! whose mask is wanted on its own, and [`mgf1_xor`] for EME-OAEP, whose seeds are of any length
+//! and whose masks are XORed into what they mask.
 
 use bouncycastle_core::traits::{HashAlgParams, HashOneShot};
 use bouncycastle_utils::secret::Secret;
@@ -46,7 +46,7 @@ pub fn mgf1<H: HashOneShot + HashAlgParams>(seed: &[u8], mask: &mut [u8]) {
 pub(crate) fn mgf1_xor<M: HashOneShot + HashAlgParams>(seed: &[u8], target: &mut [u8]) {
     let h_len = M::OUTPUT_LEN;
     let mut block = Secret::<[u8; MAX_HASH_LEN]>::new();
-    // "For counter from 0 to ceil(maskLen / hLen) - 1": C = I2OSP(counter, 4),
+    // "For counter from 0 to \ceil (maskLen / hLen) - 1": C = I2OSP (counter, 4),
     // T = T || Hash(mgfSeed || C). Each chunk of the target takes one block of T.
     for (counter, chunk) in target.chunks_mut(h_len).enumerate() {
         let mut hash = M::default();

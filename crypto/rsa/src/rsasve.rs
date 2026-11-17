@@ -92,7 +92,7 @@ fn has_full_bit_length<K: RsaSize>(n: &K::Limbs) -> bool {
 }
 
 /// Whether `1 < x < n - 1` (§7.2.1.2 step 2's range, §7.2.1.3 step 1's check).
-fn in_open_range<K: RsaSize>(x: &K::Limbs, n: &K::Limbs) -> bool {
+pub(crate) fn in_open_range<K: RsaSize>(x: &K::Limbs, n: &K::Limbs) -> bool {
     // `n` is odd (every key type here checks it), so `n - 1` is `n` with its low bit cleared and
     // needs no borrow propagation.
     let mut n_minus_1 = *n;

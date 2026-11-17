@@ -7,7 +7,7 @@
 //! that an opponent cannot distinguish the different error conditions in Step 3.g, whether by
 //! error message or timing, and, more generally, that an opponent cannot learn partial
 //! information about the encoded message EM." [`decode_out`] folds every check into one mask,
-//! reads the whole of `DB` whatever it holds, and copies the message out without branching or
+//! reads the whole of `DB` whatever it holds, and moves the message out without branching or
 //! indexing on where it starts.
 
 use crate::mgf1::{MAX_HASH_LEN, mgf1_xor};
@@ -15,17 +15,28 @@ use bouncycastle_core::traits::{HashAlgParams, HashOneShot};
 use bouncycastle_utils::ct::value_barrier;
 use bouncycastle_utils::secret::Secret;
 
+// The masks below are built the way `bouncycastle_utils::ct` builds its own (see its
+// "Optimisation barrier" section and `acc_is_zero`): the identity "the top bit of x | -x is set
+// exactly when x is not zero" is taken apart with a barrier after each step, because written in
+// one piece the compiler recognises it as `x != 0` and some targets lower that to a compare and
+// branch; and a mask is passed through a barrier again where it selects or is tested.
+
+/// 1 if `x` is not zero, else 0, without a branch.
+fn not_zero_bit(x: u32) -> u32 {
+    let x = value_barrier(x);
+    let top = value_barrier(x | x.wrapping_neg());
+    value_barrier(top >> 31)
+}
+
 /// `0xFF` if `x` is not zero, else `0x00`, without a branch.
 fn nonzero_mask(x: u8) -> u8 {
-    let x = value_barrier(x as u32);
-    // x | -x has its top bit set exactly when x is not zero.
-    (((x | x.wrapping_neg()) >> 31) as u8).wrapping_neg()
+    value_barrier((not_zero_bit(x as u32) as u8).wrapping_neg())
 }
 
 /// `0xFF` if `a == b`, else `0x00`, without a branch.
 fn eq_mask_u32(a: u32, b: u32) -> u8 {
-    let x = value_barrier(a ^ b);
-    !(((x | x.wrapping_neg()) >> 31) as u8).wrapping_neg()
+    // The bit is 0 for equal values; subtracting 1 gives all ones.
+    value_barrier((not_zero_bit(a ^ b) as u8).wrapping_sub(1))
 }
 
 /// `lHash = Hash(L)` (§7.1.1 step 2.a) into the front of `out`; returns `hLen`.
@@ -101,11 +112,11 @@ where
 
     // g. DB = lHash' || PS || 0x01 || M. "If there is no octet with hexadecimal value 0x01 to
     // separate PS from M, if lHash does not equal lHash', or if Y is nonzero, output
-    // 'decryption error'". `bad` gathers all three, and the length checks below.
+    // "decryption error" and stop." `bad` gathers all three, and the length checks below.
     let mut bad = nonzero_mask(y[0]);
-    let (l_hash_prime, ps_and_m) = db.split_at(h_len);
+    let (l_hash_prime, ps_and_m) = db.split_at_mut(h_len);
     let mut diff = 0u8;
-    for (a, b) in l_hash.iter().zip(l_hash_prime) {
+    for (a, b) in l_hash.iter().zip(l_hash_prime.iter()) {
         diff |= a ^ b;
     }
     bad |= nonzero_mask(diff);
@@ -117,12 +128,12 @@ where
     let mut index = 0u32;
     for (i, b) in ps_and_m.iter().enumerate() {
         let nonzero = nonzero_mask(*b);
-        let first = nonzero & !found;
+        let first = value_barrier(nonzero & !found);
         bad |= first & nonzero_mask(*b ^ 0x01);
-        // index = first ? i : index
-        let first32 = (first as u32).wrapping_mul(0x0101_0101);
-        index = (first32 & i as u32) | (!first32 & index);
-        found |= nonzero;
+        // index = first ? i : index, with `first` widened to 32 bits by a subtraction.
+        let first32 = value_barrier(0u32.wrapping_sub((first & 1) as u32));
+        index = value_barrier((first32 & i as u32) | (!first32 & index));
+        found = value_barrier(found | nonzero);
     }
     bad |= !found;
 
@@ -133,25 +144,36 @@ where
         Some(len) => bad |= !eq_mask_u32(m_len, len as u32),
         // m_len > out.len(): the subtraction borrows.
         None => {
-            bad |= ((((out.len() as u32).wrapping_sub(value_barrier(m_len))) >> 31) as u8)
-                .wrapping_neg()
+            let borrow = value_barrier((out.len() as u32).wrapping_sub(value_barrier(m_len)) >> 31);
+            bad |= value_barrier((borrow as u8).wrapping_neg());
         }
     }
 
-    // out[j] = ps_and_m[m_start + j], taken by scanning every octet of DB for every octet of
-    // the output, so that no address depends on m_start. Positions past the message stay zero.
-    let good = !bad;
-    for (j, o) in out.iter_mut().enumerate() {
-        let want = m_start.wrapping_add(j as u32);
-        let mut byte = 0u8;
-        for (i, b) in ps_and_m.iter().enumerate() {
-            byte |= b & eq_mask_u32(i as u32, want);
+    // The message is moved to the front of its buffer by a shift of m_start octets, done as
+    // one conditional shift per bit of m_start: every pass reads and writes every octet,
+    // whether or not it moves, so no address or branch depends on where the message starts.
+    let good = value_barrier(!bad);
+    let len = ps_and_m.len();
+    let mut bit = 0;
+    while (1usize << bit) <= len {
+        let step = 1usize << bit;
+        let take = value_barrier(0u8.wrapping_sub(((m_start >> bit) & 1) as u8));
+        for i in 0..len {
+            // The octet `step` places on, or zero past the end; `i + step` is public.
+            let from = if i + step < len { ps_and_m[i + step] } else { 0 };
+            ps_and_m[i] = (ps_and_m[i] & !take) | (from & take);
         }
-        *o = byte & good;
+        bit += 1;
+    }
+    // The message is now ps_and_m[..m_len]; what `out` can hold of the buffer is copied, zeroed
+    // on failure, and the rest of `out` stays zero. A message longer than `out` is already in
+    // `bad`.
+    for (o, b) in out.iter_mut().zip(ps_and_m.iter()) {
+        *o = b & good;
     }
 
     // The one visible outcome: the error, or the length.
-    if bad != 0 {
+    if value_barrier(bad) != 0 {
         return None;
     }
     Some(m_len as usize)
