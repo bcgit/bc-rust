@@ -13,6 +13,7 @@ pub mod hazmat;
 pub mod kdf_params;
 pub mod kem_key;
 pub mod key_material;
+pub mod key_transport_key;
 mod provided;
 pub mod security_strength;
 pub mod signature_key;
