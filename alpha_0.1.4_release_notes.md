@@ -49,6 +49,10 @@
   for implementors of a DHKEM group. Checked against the RFC's machine-readable vectors for P-256 and P-521 (32
   sets each; P-521's key derivation is the first two-block `LabeledExpand`), and, for P-384, which the RFC defines
   but publishes no vectors for, against BC Java 1.84 in both directions.
+* SHA-1 -- `bouncycastle-sha1`, FIPS 180-4's SHA-1 on the `Hash` traits, for interoperation with what already
+  uses it (an older peer's RSA-OAEP hash or MGF1, a fingerprint): not collision resistant, so it is credited with
+  no security strength (`SecurityStrength::None`) and is reached only by name; `HashFactory` "SHA1" and the
+  `sha1` CLI command. Checked against NIST's CAVP SHAVS vectors and RFC 3174's.
 
 ## Minor features / bug fixes
 
