@@ -48,3 +48,7 @@ pub const CT_LEN: usize = RSA8192::K_LEN;
 pub const SS_LEN: usize = RSA8192::K_LEN;
 /// RSASVE at RSA-8192; `RSASVE::keygen` gives the KEM pair.
 pub type RSASVE = crate::rsasve::RSASVE<RSA8192>;
+/// RSAES-OAEP at RSA-8192 with the label hash `H` and MGF1 over `M`; the key-establishment
+/// keys above run it under [`OaepParams`](crate::rsaes_oaep::OaepParams).
+#[allow(non_camel_case_types)]
+pub type RSAES_OAEP<H, M = H> = crate::rsaes_oaep::RSAES_OAEP<RSA8192, H, M>;

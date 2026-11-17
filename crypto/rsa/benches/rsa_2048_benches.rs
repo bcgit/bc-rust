@@ -9,7 +9,9 @@ use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, Veri
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::rsa_2048::{RSA2048KEMPrivateKey, RSA2048KEMPublicKey};
+use bouncycastle_rsa::rsaes_oaep::OaepParams;
 use bouncycastle_rsa::size::RsaSigningSize;
+use bouncycastle_sha2::SHA256;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -196,6 +198,17 @@ fn bench_rsa_2048(c: &mut Criterion) {
     });
     group.bench_function("rsasve_decaps", |b| {
         b.iter(|| black_box(black_box(&kem_sk).decaps(black_box(&kem_ct), ()).unwrap()))
+    });
+
+    // RSAES-OAEP (RFC 8017 §7.1) on the same KEM keys, with SHA-256: the encoding around the
+    // same two exponentiations.
+    let oaep = OaepParams::<SHA256>::new(b"");
+    let (_, oaep_ct) = kem_pk.encaps(&mut rng, oaep).unwrap();
+    group.bench_function("oaep_sha256_encaps", |b| {
+        b.iter(|| black_box(black_box(&kem_pk).encaps(&mut rng, oaep).unwrap()))
+    });
+    group.bench_function("oaep_sha256_decaps", |b| {
+        b.iter(|| black_box(black_box(&kem_sk).decaps(black_box(&oaep_ct), oaep).unwrap()))
     });
 
     group.finish();

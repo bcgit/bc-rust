@@ -1,5 +1,6 @@
-//! RSA digital signatures, RSASSA-PKCS1-v1_5 and RSASSA-PSS (RFC 8017 §8), and the RSASVE
-//! key-encapsulation mechanism (NIST SP 800-56B Rev. 2 §7.2.1), built on
+//! RSA digital signatures, RSASSA-PKCS1-v1_5 and RSASSA-PSS (RFC 8017 §8), the RSASVE
+//! key-encapsulation mechanism (NIST SP 800-56B Rev. 2 §7.2.1) and RSAES-OAEP key transport
+//! (RFC 8017 §7.1, SP 800-56B Rev. 2 §7.2.2), built on
 //! [`bouncycastle_ec`]'s constant-time limb arithmetic ([`bouncycastle_ec::nat`],
 //! [`bouncycastle_ec::montgomery`]) rather than a dedicated bignum type, for the same
 //! constant-time reasoning that motivates that crate's own custom-curve arithmetic: a modular
@@ -8,8 +9,9 @@
 //!
 //! # Scope
 //!
-//! Signature schemes, plus RSASVE as a KEM ([`rsasve`]; see below). There is no RSAES-OAEP or
-//! RSAES-PKCS1-v1_5 encryption, and so no KTS-OAEP. A modulus size is a marker type at the
+//! Signature schemes, plus RSASVE as a KEM ([`rsasve`]; see below) and RSAES-OAEP for
+//! transporting keys ([`rsaes_oaep`]). There is no RSAES-PKCS1-v1_5 encryption, and OAEP's
+//! plaintext is always a key, not a message. A modulus size is a marker type at the
 //! crate root, [`RSA2048`], [`RSA3072`], [`RSA4096`] and [`RSA8192`], which implement
 //! [`size::RsaSize`] (the size's lengths and limb types) and [`size::RsaSigningSize`] (key
 //! generation and the signing roles); [`RSA1024`] and [`RSA1536`] implement `RsaSize` only, so
@@ -213,6 +215,21 @@
 //! // A ciphertext outside (1, n - 1) is an error (SP 800-56B §7.1.2.3); a wrong length is a
 //! // type error, since the ciphertext is a `[u8; CT_LEN]`.
 //! assert!(sk.decaps(&[0u8; CT_LEN], ()).is_err());
+//!
+//! // RSAES-OAEP on the same keys, selected by its parameters: the label hash, MGF1's hash
+//! // (the same unless spelled), the label, and the length of the key to transport. As a KEM
+//! // the key is drawn here (KTS-OAEP-basic, SP 800-56B §9.2.3)...
+//! use bouncycastle_rsa::rsaes_oaep::OaepParams;
+//! let oaep = OaepParams::<SHA256>::new(b"example label");
+//! let (key_a, ct) = pk.encaps(&mut DefaultRNG::default(), oaep)?;
+//! assert_eq!(sk.decaps(&ct, oaep)?, key_a);
+//!
+//! // ...and through the key-transport roles the caller supplies it, as CMS and JOSE do.
+//! use bouncycastle_core::key_transport_key::{KeyTransportDecryptingKey, KeyTransportEncryptingKey};
+//! let ct = pk.transport(&mut DefaultRNG::default(), oaep, &key_a).expect("a 32-byte key fits");
+//! let mut key_c = bouncycastle_core::key_material::KeyMaterial::<32>::new();
+//! sk.recover_out(&ct, oaep, &mut key_c).expect("the ciphertext is ours");
+//! assert_eq!(key_c.ref_to_bytes(), key_a.ref_to_bytes());
 //! # Ok::<(), bouncycastle_core::errors::KEMError>(())
 //! ```
 //!
@@ -277,6 +294,8 @@
 //! | PKCS#1 v1.5 sign (SHA-256) | 10120    | 34216    |
 //! | RSASVE encaps              | 10696    | 35464    |
 //! | RSASVE decaps              | 10744    | 40776    |
+//! | OAEP encaps (SHA-256)      | 10280    | 31000    |
+//! | OAEP decaps (SHA-256)      | 10264    | 39976    |
 //!
 //! All values are in bytes. "On disk" is the `PublicKey`/`PrivateKey` raw
 //! layout ([`keys::RsaPublicKey`]'s and [`keys::RsaPrivateKey`]'s `# Encoding`: `n || e`, and
@@ -369,6 +388,7 @@
 #![forbid(missing_docs)]
 
 mod codec;
+mod eme_oaep;
 mod emsa_pkcs1_v1_5;
 mod emsa_pss;
 pub mod keygen;
@@ -382,6 +402,7 @@ pub mod rsa_3072;
 pub mod rsa_4096;
 pub mod rsa_8192;
 mod rsa_core;
+pub mod rsaes_oaep;
 pub mod rsassa;
 pub mod rsassa_pkcs1_v1_5;
 pub mod rsassa_pss;

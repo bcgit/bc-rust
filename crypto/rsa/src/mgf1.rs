@@ -4,6 +4,7 @@
 //! seed: `mgfSeed` here is always exactly `H_LEN` bytes.
 
 use bouncycastle_core::traits::{HashAlgParams, HashOneShot};
+use bouncycastle_utils::secret::Secret;
 
 /// MGF1 (RFC 8017 Appendix B.2.1), with `mgfSeed` fixed at `H_LEN` bytes and `maskLen` fixed at
 /// `MASK_LEN` (a compile-time constant here, since every call site in this crate knows its output
@@ -37,6 +38,27 @@ pub fn mgf1<H: HashOneShot + HashAlgParams>(seed: &[u8], mask: &mut [u8]) {
     }
 }
 
+/// MGF1 over `M` with a seed of any length, XORed into `target` (`target = target xor
+/// MGF(seed, target.len())`), which is how EME-OAEP uses both of its masks (RFC 8017 §7.1.1
+/// steps 2.e to 2.h): one of its seeds is `maskedDB`, most of a modulus long, which [`mgf1`]'s
+/// fixed input buffer does not hold. The hash block is in a `Secret`, wiped on return, and
+/// nothing here branches on the seed or the mask.
+pub(crate) fn mgf1_xor<M: HashOneShot + HashAlgParams>(seed: &[u8], target: &mut [u8]) {
+    let h_len = M::OUTPUT_LEN;
+    let mut block = Secret::<[u8; MAX_HASH_LEN]>::new();
+    // "For counter from 0 to ceil(maskLen / hLen) - 1": C = I2OSP(counter, 4),
+    // T = T || Hash(mgfSeed || C). Each chunk of the target takes one block of T.
+    for (counter, chunk) in target.chunks_mut(h_len).enumerate() {
+        let mut hash = M::default();
+        hash.do_update(seed);
+        hash.do_update(&(counter as u32).to_be_bytes());
+        hash.do_final_out(&mut block[..h_len]);
+        for (t, m) in chunk.iter_mut().zip(block.iter()) {
+            *t ^= m;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! `mgf1` is crate-private (only [`crate::emsa_pss`] needs it), so it is exercised here
@@ -52,6 +74,12 @@ mod tests {
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
         0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
         0x1e, 0x1f,
+    ];
+
+    const LONG_SEED_MASK: [u8; 40] = [
+        0x21, 0x6a, 0xa5, 0xdf, 0x88, 0xa3, 0xda, 0x51, 0x8c, 0x77, 0x98, 0x7f, 0x93, 0xb1, 0xf8,
+        0x71, 0x9f, 0xda, 0xb1, 0x64, 0x12, 0x57, 0x29, 0x86, 0x4b, 0xa8, 0x8b, 0x80, 0xc3, 0xa7,
+        0x70, 0x84, 0x2b, 0xe7, 0xb5, 0x93, 0x92, 0x67, 0x71, 0x7c,
     ];
 
     /// `MASK_LEN = 223`: the exact `DB_LEN` RSA-2048/SHA-256 PSS uses (`K_LEN - H_LEN - 1 = 256 -
@@ -92,5 +120,29 @@ mod tests {
         let mut longer = [0u8; 223];
         mgf1::<SHA256>(&SEED, &mut longer);
         assert_eq!(mask, longer[..70]);
+    }
+
+    /// `mgf1_xor` into zeros is the mask itself, and XORs into what is there.
+    #[test]
+    fn mgf1_xor_is_mgf1_xored_into_the_target() {
+        let mut mask = [0u8; 223];
+        mgf1::<SHA256>(&SEED, &mut mask);
+        let mut target = [0u8; 223];
+        mgf1_xor::<SHA256>(&SEED, &mut target);
+        assert_eq!(target, mask);
+        let mut target = [0xA5u8; 223];
+        mgf1_xor::<SHA256>(&SEED, &mut target);
+        assert!(target.iter().zip(mask).all(|(t, m)| *t == 0xA5 ^ m));
+    }
+
+    /// A seed longer than a hash output, as EME-OAEP's `maskedDB` is. The expected value was
+    /// computed with a direct Python transliteration of RFC 8017 Appendix B.2.1 using
+    /// `hashlib.sha256`, over the seed 0x00, 0x01, ..., 0xDE (223 bytes) and a 40-byte mask.
+    #[test]
+    fn mgf1_xor_takes_a_long_seed() {
+        let seed: [u8; 223] = core::array::from_fn(|i| i as u8);
+        let mut target = [0u8; 40];
+        mgf1_xor::<SHA256>(&seed, &mut target);
+        assert_eq!(target, LONG_SEED_MASK);
     }
 }

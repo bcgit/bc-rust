@@ -52,3 +52,7 @@ pub const CT_LEN: usize = RSA3072::K_LEN;
 pub const SS_LEN: usize = RSA3072::K_LEN;
 /// RSASVE at RSA-3072; `RSASVE::keygen` gives the KEM pair.
 pub type RSASVE = crate::rsasve::RSASVE<RSA3072>;
+/// RSAES-OAEP at RSA-3072 with the label hash `H` and MGF1 over `M`; the key-establishment
+/// keys above run it under [`OaepParams`](crate::rsaes_oaep::OaepParams).
+#[allow(non_camel_case_types)]
+pub type RSAES_OAEP<H, M = H> = crate::rsaes_oaep::RSAES_OAEP<RSA3072, H, M>;
