@@ -19,6 +19,7 @@ mod bench_mldsa_mem_usage;
 mod bench_mlkem_mem_usage;
 mod bench_poly1305_mem_usage;
 mod bench_rsa_mem_usage;
+mod bench_sha1_mem_usage;
 mod bench_sha2_mem_usage;
 mod bench_sha3_mem_usage;
 mod bench_sm2_mem_usage;
