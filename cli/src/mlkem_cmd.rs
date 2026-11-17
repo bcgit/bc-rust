@@ -19,7 +19,7 @@ use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle::core::traits::{KEMPrivateKey, KEMPublicKey, RNG};
+use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle::hkdf::HkdfDescription;
 use bouncycastle::hmac::HMACParams;
 use bouncycastle::mlkem::{
@@ -138,8 +138,8 @@ pub(crate) const MLKEM1024_SET: ParameterSet<
 };
 
 pub(crate) fn mlkem_cmd<
-    PK: KEMPublicKey<PK_LEN>,
-    SK: KEMPrivateKey<SK_LEN>,
+    PK: PublicKey<PK_LEN>,
+    SK: PrivateKey<SK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const CT_LEN: usize,
@@ -241,9 +241,9 @@ pub(crate) fn mlkem_hkdf_cmd<
     additional_input_file: &Option<String>,
     output_hex: bool,
 ) where
-    PK: KEMPublicKey<PK_LEN>
+    PK: PublicKey<PK_LEN>
         + for<'p> EncapsulatingKey<KdfParams<'p, HkdfDescription<'p, H>, SS_LEN>, CT_LEN, SS_LEN>,
-    SK: KEMPrivateKey<SK_LEN>
+    SK: PrivateKey<SK_LEN>
         + for<'p> DecapsulatingKey<KdfParams<'p, HkdfDescription<'p, H>, SS_LEN>, CT_LEN, SS_LEN>,
     H: HMACParams,
 {
@@ -342,8 +342,8 @@ fn read_required_file(file: &Option<String>, flag: &str) -> Vec<u8> {
 
 /// A private key from its bytes: a full key, or a seed.
 fn parse_sk<
-    PK: KEMPublicKey<PK_LEN>,
-    SK: KEMPrivateKey<SK_LEN>,
+    PK: PublicKey<PK_LEN>,
+    SK: PrivateKey<SK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const CT_LEN: usize,
@@ -371,8 +371,8 @@ fn parse_sk<
 
 /// A public key from its bytes.
 fn parse_pk<
-    PK: KEMPublicKey<PK_LEN>,
-    SK: KEMPrivateKey<SK_LEN>,
+    PK: PublicKey<PK_LEN>,
+    SK: PrivateKey<SK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const CT_LEN: usize,

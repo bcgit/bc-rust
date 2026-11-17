@@ -4,10 +4,10 @@ use crate::mlkem::{H, POLY_BYTES, q};
 use crate::params::{
     MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams, PrivateKeyLen, PublicKeyLen,
 };
-use bouncycastle_core::errors::KEMError;
+use bouncycastle_core::errors::{KEMError, KeyDecodingError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey};
 use bouncycastle_mlkem_common::aux_functions::{byte_decode, byte_encode, byte_encode_out};
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
@@ -52,7 +52,7 @@ pub type MLKEM1024PrivateKeyExpanded = MLKEMPrivateKeyExpanded<MLKEM1024Params>;
 
 /// An ML-KEM public key.
 ///
-/// The parameter set fixes every length, so `P` is the only type parameter. [`KEMPublicKey`]
+/// The parameter set fixes every length, so `P` is the only type parameter. [`PublicKey`]
 /// takes the encoded length as a const generic, and an associated const of a type parameter may
 /// not be used as one, so its impl is generic over the length and bound through the per-length
 /// trait (`P: PublicKeyLen<PK_LEN>`), which has one impl per parameter set and so lets the length
@@ -122,9 +122,9 @@ impl<P: MLKEMParams> MLKEMPublicKey<P> {
 
     /// The inverse of [`Self::encode_into`], with the Section 7.2 modulus check; see
     /// [`MLKEMPublicKeyTrait::pk_decode`].
-    pub(crate) fn decode_from(pk: &[u8]) -> Result<Self, KEMError> {
+    pub(crate) fn decode_from(pk: &[u8]) -> Result<Self, KeyDecodingError> {
         if pk.len() != P::PK_LEN {
-            return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
+            return Err(KeyDecodingError("Provided key bytes are the incorrect length"));
         }
         let (pk_chunks, last_chunk) = pk.as_chunks::<POLY_BYTES>();
 
@@ -146,7 +146,7 @@ impl<P: MLKEMParams> MLKEMPublicKey<P> {
                 //  Since this concerns to the case d=12, it should be checked that all coeffs are less than q-1
                 for coeff in t_i.coeffs.iter() {
                     if *coeff < 0 || *coeff >= q {
-                        return Err(KEMError::DecodingError("Invalid or corrupted key"));
+                        return Err(KeyDecodingError("Invalid or corrupted key"));
                     }
                 }
             }
@@ -164,7 +164,7 @@ impl<P: MLKEMParams> MLKEMPublicKeyTrait<P> for MLKEMPublicKey<P> {
     where
         P: PublicKeyLen<PK_LEN>,
     {
-        Self::decode_from(pk)
+        Ok(Self::decode_from(pk)?)
     }
 
     fn A_hat(&self) -> P::MatrixA {
@@ -200,7 +200,7 @@ impl<P: MLKEMParams> MLKEMPublicKeyInternalTrait<P> for MLKEMPublicKey<P> {
     }
 }
 
-impl<P: MLKEMParams + PublicKeyLen<PK_LEN>, const PK_LEN: usize> KEMPublicKey<PK_LEN>
+impl<P: MLKEMParams + PublicKeyLen<PK_LEN>, const PK_LEN: usize> PublicKey<PK_LEN>
     for MLKEMPublicKey<P>
 {
     /// Encodes the public key as per FIPS 203 Algorithm 13
@@ -219,9 +219,9 @@ impl<P: MLKEMParams + PublicKeyLen<PK_LEN>, const PK_LEN: usize> KEMPublicKey<PK
         PK_LEN
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         if bytes.len() != PK_LEN {
-            return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
+            return Err(KeyDecodingError("Provided key bytes are the incorrect length"));
         }
         Self::decode_from(bytes)
     }
@@ -285,7 +285,7 @@ impl<P: MLKEMParams> MLKEMPublicKeyInternalTrait<P> for MLKEMPublicKeyExpanded<P
     }
 }
 
-impl<P: MLKEMParams + PublicKeyLen<PK_LEN>, const PK_LEN: usize> KEMPublicKey<PK_LEN>
+impl<P: MLKEMParams + PublicKeyLen<PK_LEN>, const PK_LEN: usize> PublicKey<PK_LEN>
     for MLKEMPublicKeyExpanded<P>
 {
     fn encode(&self) -> [u8; PK_LEN] {
@@ -296,7 +296,7 @@ impl<P: MLKEMParams + PublicKeyLen<PK_LEN>, const PK_LEN: usize> KEMPublicKey<PK
         self.ek.encode_out(out)
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         Ok(Self::from(&MLKEMPublicKey::from_bytes(bytes)?))
     }
 }
@@ -572,7 +572,7 @@ impl<P: MLKEMParams> MLKEMPrivateKeyInternalTrait<P> for MLKEMPrivateKey<P> {
     }
 }
 
-impl<P: MLKEMParams + PrivateKeyLen<SK_LEN>, const SK_LEN: usize> KEMPrivateKey<SK_LEN>
+impl<P: MLKEMParams + PrivateKeyLen<SK_LEN>, const SK_LEN: usize> PrivateKey<SK_LEN>
     for MLKEMPrivateKey<P>
 {
     fn encode(&self) -> [u8; SK_LEN] {
@@ -588,12 +588,17 @@ impl<P: MLKEMParams + PrivateKeyLen<SK_LEN>, const SK_LEN: usize> KEMPrivateKey<
         self.sk_encode_out(out)
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         if bytes.len() != SK_LEN {
-            return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
+            return Err(KeyDecodingError("Provided key bytes are the incorrect length"));
         }
 
-        Self::sk_decode_from(bytes)
+        Self::sk_decode_from(bytes).map_err(|e| match e {
+            KEMError::DecodingError(msg) | KEMError::ConsistencyCheckFailed(msg) => {
+                KeyDecodingError(msg)
+            }
+            _ => KeyDecodingError("Invalid ML-KEM private key"),
+        })
     }
 }
 
@@ -672,7 +677,7 @@ impl<P: MLKEMParams> From<&MLKEMPrivateKey<P>> for MLKEMPrivateKeyExpanded<P> {
     }
 }
 
-impl<P: MLKEMParams + PrivateKeyLen<SK_LEN>, const SK_LEN: usize> KEMPrivateKey<SK_LEN>
+impl<P: MLKEMParams + PrivateKeyLen<SK_LEN>, const SK_LEN: usize> PrivateKey<SK_LEN>
     for MLKEMPrivateKeyExpanded<P>
 {
     fn encode(&self) -> [u8; SK_LEN] {
@@ -683,7 +688,7 @@ impl<P: MLKEMParams + PrivateKeyLen<SK_LEN>, const SK_LEN: usize> KEMPrivateKey<
         self.dk.encode_out(out)
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         Ok(Self::from(&MLKEMPrivateKey::from_bytes(bytes)?))
     }
 }

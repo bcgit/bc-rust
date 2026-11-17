@@ -39,7 +39,7 @@
 //! use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 //! use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 //! use bouncycastle_core::security_strength::SecurityStrength;
-//! use bouncycastle_core::traits::KeyAgreementPublicKey;
+//! use bouncycastle_core::traits::PublicKey;
 //! use bouncycastle_ed::x25519::keygen;
 //! use bouncycastle_hkdf::HkdfDescription;
 //! use bouncycastle_rng::HashDRBG_SHA512;
@@ -182,15 +182,16 @@
 //! suitable protocol is layered on top.
 
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
-use bouncycastle_core::errors::{KEMError, KeyAgreementError, KeyMaterialError, RNGError};
+use bouncycastle_core::errors::{
+    KEMError, KeyAgreementError, KeyDecodingError, KeyMaterialError, RNGError,
+};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kdf_params::KdfParams;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorithm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, KeyAgreement,
-    KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG,
+    Algorithm, KEMDecapsulator, KEMEncapsulator, KeyAgreement, PrivateKey, PublicKey, RNG,
 };
 use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams};
@@ -558,7 +559,7 @@ fn clamp(k: &mut [u8; SCALAR_LEN]) {
 /// §5), so keys that compare equal have the same encoding. This is also the DHKEM serialization:
 /// RFC 9180 §7.1.2 says "The SerializePrivateKey() function MUST clamp its output and the
 /// DeserializePrivateKey() function MUST clamp its input".
-impl KeyAgreementPrivateKey<SCALAR_LEN> for X25519PrivateKey {
+impl PrivateKey<SCALAR_LEN> for X25519PrivateKey {
     /// The clamped scalar as a plain array, the trait's contract; prefer `encode_out` into a
     /// buffer you own, since the array is moved out unwiped.
     fn encode(&self) -> [u8; SCALAR_LEN] {
@@ -576,11 +577,11 @@ impl KeyAgreementPrivateKey<SCALAR_LEN> for X25519PrivateKey {
     ///
     /// # Errors
     ///
-    /// [`KeyAgreementError::DecodingError`] if `bytes` is not 32 bytes.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError> {
-        let bytes: &[u8; SCALAR_LEN] = bytes.try_into().map_err(|_| {
-            KeyAgreementError::DecodingError("An X25519 private key must be 32 bytes")
-        })?;
+    /// [`KeyDecodingError`] if `bytes` is not 32 bytes.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
+        let bytes: &[u8; SCALAR_LEN] = bytes
+            .try_into()
+            .map_err(|_| KeyDecodingError("An X25519 private key must be 32 bytes"))?;
         let mut sk = Self { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) };
         *sk.k = *bytes;
         clamp(&mut sk.k);
@@ -616,8 +617,9 @@ impl X25519PublicKey {
     }
 }
 
-/// The encoding is the 32 bytes of the u-coordinate, as is (RFC 7748 §5).
-impl KeyAgreementPublicKey<POINT_LEN> for X25519PublicKey {
+/// The encoding is the 32 bytes of the u-coordinate, as is (RFC 7748 §5). This is also the DHKEM
+/// serialization: RFC 9180 §7.1.1 makes serialization the identity function for X25519.
+impl PublicKey<POINT_LEN> for X25519PublicKey {
     fn encode(&self) -> [u8; POINT_LEN] {
         self.0
     }
@@ -633,11 +635,11 @@ impl KeyAgreementPublicKey<POINT_LEN> for X25519PublicKey {
     ///
     /// # Errors
     ///
-    /// [`KeyAgreementError::DecodingError`] if `bytes` is not 32 bytes.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError> {
-        let bytes: &[u8; POINT_LEN] = bytes.try_into().map_err(|_| {
-            KeyAgreementError::DecodingError("An X25519 public key must be 32 bytes")
-        })?;
+    /// [`KeyDecodingError`] if `bytes` is not 32 bytes.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
+        let bytes: &[u8; POINT_LEN] = bytes
+            .try_into()
+            .map_err(|_| KeyDecodingError("An X25519 public key must be 32 bytes"))?;
         Ok(Self(*bytes))
     }
 }
@@ -1077,45 +1079,5 @@ impl DecapsulatingKey<(), POINT_LEN, DHKEM_SS_LEN> for X25519PrivateKey {
             return Err(KeyMaterialError::ActingOnZeroizedKey.into());
         }
         Ok(X25519Decapsulator { sk: self })
-    }
-}
-
-/// The same clamped encoding as the [`KeyAgreementPrivateKey`] impl, which RFC 9180 §7.1.2 requires
-/// of a DHKEM.
-impl KEMPrivateKey<SCALAR_LEN> for X25519PrivateKey {
-    fn encode(&self) -> [u8; SCALAR_LEN] {
-        <Self as KeyAgreementPrivateKey<SCALAR_LEN>>::encode(self)
-    }
-
-    fn encode_out(&self, out: &mut [u8; SCALAR_LEN]) -> usize {
-        <Self as KeyAgreementPrivateKey<SCALAR_LEN>>::encode_out(self, out)
-    }
-
-    /// # Errors
-    ///
-    /// [`KEMError::DecodingError`] if `bytes` is not 32 bytes.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
-        <Self as KeyAgreementPrivateKey<SCALAR_LEN>>::from_bytes(bytes)
-            .map_err(|_| KEMError::DecodingError("An X25519 private key must be 32 bytes"))
-    }
-}
-
-/// The same encoding as the [`KeyAgreementPublicKey`] impl: RFC 9180 §7.1.1 makes serialization the
-/// identity function for X25519.
-impl KEMPublicKey<POINT_LEN> for X25519PublicKey {
-    fn encode(&self) -> [u8; POINT_LEN] {
-        <Self as KeyAgreementPublicKey<POINT_LEN>>::encode(self)
-    }
-
-    fn encode_out(&self, out: &mut [u8; POINT_LEN]) -> usize {
-        <Self as KeyAgreementPublicKey<POINT_LEN>>::encode_out(self, out)
-    }
-
-    /// # Errors
-    ///
-    /// [`KEMError::DecodingError`] if `bytes` is not 32 bytes.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
-        <Self as KeyAgreementPublicKey<POINT_LEN>>::from_bytes(bytes)
-            .map_err(|_| KEMError::DecodingError("An X25519 public key must be 32 bytes"))
     }
 }

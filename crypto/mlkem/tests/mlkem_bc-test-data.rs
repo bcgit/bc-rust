@@ -9,7 +9,7 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kem_key::DecapsulatingKey;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use bouncycastle_mlkem::hazmat::EncapsWithRandomness;

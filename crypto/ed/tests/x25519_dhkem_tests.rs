@@ -6,7 +6,7 @@ use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmInfo, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
+    Algorithm, AlgorithmInfo, KEMDecapsulator, KEMEncapsulator, PrivateKey, PublicKey, RNG,
 };
 use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKeys};
 use bouncycastle_ed::x25519::{
@@ -336,7 +336,7 @@ fn private_key_encoding_is_clamped() {
 #[test]
 fn public_key_encoding() {
     let bytes = decode_32(VECTORS[0].pk_rm);
-    let pk = <X25519PublicKey as KEMPublicKey<32>>::from_bytes(&bytes).unwrap();
+    let pk = X25519PublicKey::from_bytes(&bytes).unwrap();
     assert_eq!(pk.encode(), bytes);
     let mut out = [0xFF_u8; 32];
     assert_eq!(pk.encode_out(&mut out), 32);

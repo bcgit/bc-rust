@@ -6,7 +6,7 @@
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ed::x25519::{
     DHKEM_SS_LEN, POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey,
 };

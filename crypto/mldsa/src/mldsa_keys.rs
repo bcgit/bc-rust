@@ -5,9 +5,9 @@ use crate::mldsa::{MLDSA_MU_LEN, MLDSA_RND_LEN};
 use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
 use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
 use crate::params::{PrivateKeyLen, PublicKeyLen, SignatureLen};
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey, XOF};
+use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG, XOF};
 use bouncycastle_mldsa_common::aux_functions::{
     bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, simple_bit_pack_t1,
     simple_bit_unpack_t1,
@@ -54,7 +54,7 @@ pub type MLDSA87PrivateKeyExpanded<'k> = MLDSAPrivateKeyExpanded<'k, MLDSA87Para
 
 /// An ML-DSA public key.
 ///
-/// The parameter set fixes every length, so `P` is the only type parameter. [`SignaturePublicKey`]
+/// The parameter set fixes every length, so `P` is the only type parameter. [`PublicKey`]
 /// and the role traits take the encoded lengths as const generics, and an associated const of a
 /// type parameter may not be used as one, so their impls are generic over the length and bound
 /// through the per-length traits (`P: PublicKeyLen<PK_LEN>`), which have one impl per parameter
@@ -221,9 +221,7 @@ impl<P: MLDSAParams> MLDSAPublicKeyInternalTrait<P> for MLDSAPublicKey<P> {
     }
 }
 
-impl<P: PublicKeyLen<PK_LEN>, const PK_LEN: usize> SignaturePublicKey<PK_LEN>
-    for MLDSAPublicKey<P>
-{
+impl<P: PublicKeyLen<PK_LEN>, const PK_LEN: usize> PublicKey<PK_LEN> for MLDSAPublicKey<P> {
     fn encode(&self) -> [u8; PK_LEN] {
         let mut pk = [0u8; PK_LEN];
         let bytes_written = self.encode_out(&mut pk);
@@ -238,11 +236,9 @@ impl<P: PublicKeyLen<PK_LEN>, const PK_LEN: usize> SignaturePublicKey<PK_LEN>
         self.pk_encode_out(out)
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         if bytes.len() != PK_LEN {
-            return Err(SignatureError::DecodingError(
-                "Provided key bytes are the incorrect length",
-            ));
+            return Err(KeyDecodingError("Provided key bytes are the incorrect length"));
         }
         let bytes_sized: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
         Ok(Self::pk_decode(&bytes_sized))
@@ -475,7 +471,9 @@ impl<P: MLDSAParams> MLDSAPrivateKey<P> {
     /// Input: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((ℓ+𝑘)⋅bitlen (2𝜂)+𝑑𝑘).
     /// Output: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 ,
     /// 𝐬1 ∈ 𝑅ℓ, 𝐬2 ∈ 𝑅𝑘, 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
-    pub(crate) fn sk_decode<const SK_LEN: usize>(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError>
+    pub(crate) fn sk_decode<const SK_LEN: usize>(
+        sk: &[u8; SK_LEN],
+    ) -> Result<Self, KeyDecodingError>
     where
         P: PrivateKeyLen<SK_LEN>,
     {
@@ -508,7 +506,7 @@ impl<P: MLDSAParams> MLDSAPrivateKey<P> {
             // check that the coefficients are within the expected range
             for coeff in s1_i.coeffs.iter() {
                 if *coeff < -eta || *coeff > eta {
-                    return Err(SignatureError::DecodingError("Invalid or corrupted key"));
+                    return Err(KeyDecodingError("Invalid or corrupted key"));
                 }
             }
         }
@@ -528,7 +526,7 @@ impl<P: MLDSAParams> MLDSAPrivateKey<P> {
             // check that the coefficients are within the expected range
             for coeff in s2_i.coeffs.iter() {
                 if *coeff < -eta || *coeff > eta {
-                    return Err(SignatureError::DecodingError("Invalid or corrupted key"));
+                    return Err(KeyDecodingError("Invalid or corrupted key"));
                 }
             }
         }
@@ -768,9 +766,7 @@ impl<P: MLDSAParams> MLDSAPrivateKeyInternalTrait<P> for MLDSAPrivateKey<P> {
     }
 }
 
-impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> SignaturePrivateKey<SK_LEN>
-    for MLDSAPrivateKey<P>
-{
+impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> PrivateKey<SK_LEN> for MLDSAPrivateKey<P> {
     fn encode(&self) -> [u8; SK_LEN] {
         let mut out = [0u8; SK_LEN];
         let bytes_written = self.sk_encode_out(&mut out);
@@ -785,11 +781,9 @@ impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> SignaturePrivateKey<SK_LEN>
         self.sk_encode_out(out)
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         if bytes.len() != SK_LEN {
-            return Err(SignatureError::DecodingError(
-                "Provided key bytes are the incorrect length",
-            ));
+            return Err(KeyDecodingError("Provided key bytes are the incorrect length"));
         }
         let bytes_sized: [u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
 

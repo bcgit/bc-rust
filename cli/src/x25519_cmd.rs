@@ -10,7 +10,7 @@ use crate::helpers::{
 use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
+use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::ed::x25519::{
     POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen_out,
 };

@@ -34,7 +34,7 @@
 
 use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
+use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::ec::curve::Curve;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};

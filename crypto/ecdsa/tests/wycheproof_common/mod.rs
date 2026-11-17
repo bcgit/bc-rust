@@ -21,7 +21,7 @@
 #![allow(dead_code)]
 
 use bouncycastle_core::signature_key::VerifyingKey;
-use bouncycastle_core::traits::SignaturePublicKey;
+use bouncycastle_core::traits::PublicKey;
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ecdsa::der;
 use bouncycastle_ecdsa::ecdsa::ECDSA;

@@ -10,7 +10,7 @@ use crate::helpers::{
 use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::errors::KeyAgreementError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG};
+use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle::ec::curve::Curve;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
@@ -35,10 +35,8 @@ pub(crate) enum ECCDHAction {
 
 #[allow(clippy::type_complexity)] // the keygen function pointer is the one per-curve input
 pub(crate) fn eccdh_cmd<
-    PK: KeyAgreementPublicKey<PK_LEN>,
-    SK: KeyAgreementPrivateKey<SK_LEN>
-        + DerivePublicKey<PK, PK_LEN>
-        + AgreementKey<(), SS_LEN, PublicKey = PK>,
+    PK: PublicKey<PK_LEN>,
+    SK: PrivateKey<SK_LEN> + DerivePublicKey<PK, PK_LEN> + AgreementKey<(), SS_LEN, PublicKey = PK>,
     const SK_LEN: usize,
     const PK_LEN: usize,
     const SS_LEN: usize,
@@ -101,10 +99,7 @@ fn require_file(file: &Option<String>, flag_name: &str) -> Vec<u8> {
 
 /// The key from its encoding; the bytes are what the file held, or its hex decoded under
 /// `--hex-input`, with nothing guessed from their shape.
-fn parse_sk<SK: KeyAgreementPrivateKey<SK_LEN>, const SK_LEN: usize>(
-    bytes: &[u8],
-    alg_name: &str,
-) -> SK {
+fn parse_sk<SK: PrivateKey<SK_LEN>, const SK_LEN: usize>(bytes: &[u8], alg_name: &str) -> SK {
     match SK::from_bytes(bytes) {
         Ok(sk) => sk,
         Err(_) => {
@@ -115,10 +110,7 @@ fn parse_sk<SK: KeyAgreementPrivateKey<SK_LEN>, const SK_LEN: usize>(
 }
 
 /// See [`parse_sk`]. A public key that parses has passed full validation.
-fn parse_pk<PK: KeyAgreementPublicKey<PK_LEN>, const PK_LEN: usize>(
-    bytes: &[u8],
-    alg_name: &str,
-) -> PK {
+fn parse_pk<PK: PublicKey<PK_LEN>, const PK_LEN: usize>(bytes: &[u8], alg_name: &str) -> PK {
     match PK::from_bytes(bytes) {
         Ok(pk) => pk,
         Err(_) => {

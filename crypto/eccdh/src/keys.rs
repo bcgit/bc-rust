@@ -2,8 +2,8 @@
 //! 5.6.1.2.1, 5.6.2.1.2 and 5.6.2.3.3).
 
 use crate::keys_common::{AgreementKeyPair, DerivePublicKey};
-use bouncycastle_core::errors::KeyAgreementError;
-use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG};
+use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError};
+use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_ec::curve::{Curve, SecretScalar, private_scalar_from_be_bytes};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -32,7 +32,7 @@ where
     }
 }
 
-impl<C, const SK_LEN: usize> KeyAgreementPrivateKey<SK_LEN> for ECCDHPrivateKey<C>
+impl<C, const SK_LEN: usize> PrivateKey<SK_LEN> for ECCDHPrivateKey<C>
 where
     C: Curve<ScalarBytes = [u8; SK_LEN]>,
 {
@@ -51,18 +51,18 @@ where
     /// as `d = 1`; the check and the load are
     /// [`private_scalar_from_be_bytes`],
     /// which stages the candidate in a `Secret` and reveals only whether the key loaded.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError> {
-        let bytes: &[u8; SK_LEN] = bytes.try_into().map_err(|_| {
-            KeyAgreementError::DecodingError("an ECC CDH private key is the curve's scalar length")
-        })?;
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
+        let bytes: &[u8; SK_LEN] = bytes
+            .try_into()
+            .map_err(|_| KeyDecodingError("an ECC CDH private key is the curve's scalar length"))?;
         private_scalar_from_be_bytes::<C>(bytes)
             .map(Self)
-            .ok_or(KeyAgreementError::DecodingError("ECC CDH private key must be in [1, n-1]"))
+            .ok_or(KeyDecodingError("ECC CDH private key must be in [1, n-1]"))
     }
 }
 
 /// An ECC CDH public key: `Q = [d]G`, stored as affine coordinates. A key that exists has
-/// passed full public-key validation (see [`KeyAgreementPublicKey::from_bytes`]). Encoded as
+/// passed full public-key validation (see [`PublicKey::from_bytes`]). Encoded as
 /// SEC 1 Section 2.3.3's uncompressed `04 || X || Y`, `C::PK_UNCOMPRESSED_LEN` bytes; the
 /// compressed form is also accepted on decode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,7 +71,7 @@ pub struct ECCDHPublicKey<C: Curve> {
     pub(crate) y: C::Fe,
 }
 
-impl<C, const PK_LEN: usize> KeyAgreementPublicKey<PK_LEN> for ECCDHPublicKey<C>
+impl<C, const PK_LEN: usize> PublicKey<PK_LEN> for ECCDHPublicKey<C>
 where
     C: Curve<PkUncompressed = [u8; PK_LEN]>,
 {
@@ -91,8 +91,8 @@ where
     /// coordinates in `[0, p-1]`; on the curve) are the curve's decoder's checks (SP 800-186
     /// Appendix D.1.1.1). Step 4, `nQ = O`, is not computed: every curve here has cofactor 1,
     /// so the curve group has prime order n and every point other than O has order n.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError> {
-        let (x, y) = C::decode(bytes).ok_or(KeyAgreementError::DecodingError(
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
+        let (x, y) = C::decode(bytes).ok_or(KeyDecodingError(
             "invalid or out-of-range SEC 1 point encoding for the curve",
         ))?;
         Ok(Self { x, y })

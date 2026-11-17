@@ -5,7 +5,7 @@
 
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle_core::signature_key::VerifyingKey;
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_mldsa as full;
 use bouncycastle_mldsa_lowmemory as low;
@@ -26,7 +26,7 @@ macro_rules! cross_check {
 
             assert_eq!(pk_full.encode().as_slice(), pk_low.encode().as_slice(), "pkEncode");
             assert_eq!(
-                SignaturePrivateKey::encode(&sk_full).as_slice(),
+                PrivateKey::encode(&sk_full).as_slice(),
                 sk_low.encode_full_sk().as_slice(),
                 "skEncode"
             );

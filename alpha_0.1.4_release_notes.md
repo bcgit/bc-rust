@@ -213,4 +213,8 @@
   encodings and the default pairings' outputs are unchanged. The tests now cover the CAVP SigGen and SigVer matrix
   for P-256, P-384 and P-521 under SHA-224 to SHA-512, RFC 6979's appendix under the same hashes, and every
   Wycheproof ECDSA file for these curves, SHA-3 included.
+* The six per-role key encoding traits are one pair, `PrivateKey<N>` / `PublicKey<N>`, with `from_bytes` returning
+  `KeyDecodingError`, which converts into each role's error as its `DecodingError`. A key that serves two roles, such
+  as X25519 in key agreement and as a KEM, implements it once, so `encode` and `from_bytes` are no longer ambiguous
+  on it.
 

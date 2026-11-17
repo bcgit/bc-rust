@@ -82,8 +82,8 @@
 //! off the curve never reaches an agreement:
 //!
 //! ```
-//! use bouncycastle_core::errors::KeyAgreementError;
-//! use bouncycastle_core::traits::KeyAgreementPublicKey;
+//! use bouncycastle_core::errors::KeyDecodingError;
+//! use bouncycastle_core::traits::PublicKey;
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_eccdh::keys::{ECCDHPublicKey, keygen};
 //! use bouncycastle_rng::HashDRBG_SHA512;
@@ -93,7 +93,7 @@
 //! off_curve[64] ^= 1;
 //! assert!(matches!(
 //!     ECCDHPublicKey::<P256>::from_bytes(&off_curve),
-//!     Err(KeyAgreementError::DecodingError(_))
+//!     Err(KeyDecodingError(_))
 //! ));
 //! # Ok::<(), bouncycastle_core::errors::KeyAgreementError>(())
 //! ```

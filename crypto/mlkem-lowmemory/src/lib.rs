@@ -256,7 +256,7 @@
 //! If using [`MLKEMTrait::keygen_from_seed`], it is the caller's responsibility to ensure that the seed is
 //! cryptographically random and unpredictable at a security strength that matches the ML-KEM parameter set.
 //!
-//! A private key here *is* its 64-byte seed. `KEMPrivateKey::from_bytes` therefore takes any 64 bytes
+//! A private key here *is* its 64-byte seed. `PrivateKey::from_bytes` therefore takes any 64 bytes
 //! as a seed at the parameter set's strength, with no check possible on where they came from, so an
 //! all-zero or otherwise weak file loads as a key; [`MLKEMTrait::keygen_from_seed`] on typed
 //! [`KeyMaterial`](bouncycastle_core::key_material::KeyMaterial) is the path that enforces key type

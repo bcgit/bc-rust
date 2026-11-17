@@ -14,7 +14,7 @@
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::KeyAgreementPublicKey;
+use bouncycastle_core::traits::PublicKey;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 use bouncycastle_ed::x25519::{
     POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen_from_seed,

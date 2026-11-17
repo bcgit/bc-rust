@@ -104,22 +104,22 @@ pub trait DHKEMParams<const N_PK: usize, const N_SK: usize, const N_DH: usize>: 
 /// a DHKEM is used, so DHKEM(X25519, HKDF-SHA256) with its Nsecret of 32 compiles:
 ///
 /// ```
-/// use bouncycastle_core::traits::KEMPrivateKey;
+/// use bouncycastle_core::traits::PrivateKey;
 /// use bouncycastle_ed::x25519::{X25519, X25519PrivateKey};
 /// use bouncycastle_hpke::dhkem::DHKEM;
 ///
-/// let sk = <X25519PrivateKey as KEMPrivateKey<32>>::from_bytes(&[7u8; 32]).unwrap();
+/// let sk = X25519PrivateKey::from_bytes(&[7u8; 32]).unwrap();
 /// let _ = DHKEM::<X25519, 32, 32, 32, 32>::decap(&[9u8; 32], &sk);
 /// ```
 ///
 /// and with an Nsecret that is not SHA-256's output length it does not:
 ///
 /// ```compile_fail
-/// use bouncycastle_core::traits::KEMPrivateKey;
+/// use bouncycastle_core::traits::PrivateKey;
 /// use bouncycastle_ed::x25519::{X25519, X25519PrivateKey};
 /// use bouncycastle_hpke::dhkem::DHKEM;
 ///
-/// let sk = <X25519PrivateKey as KEMPrivateKey<32>>::from_bytes(&[7u8; 32]).unwrap();
+/// let sk = X25519PrivateKey::from_bytes(&[7u8; 32]).unwrap();
 /// let _ = DHKEM::<X25519, 32, 32, 32, 64>::decap(&[9u8; 32], &sk);
 /// ```
 pub struct DHKEM<G, const N_PK: usize, const N_SK: usize, const N_DH: usize, const N_SECRET: usize>
