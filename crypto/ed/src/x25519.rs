@@ -515,6 +515,12 @@ impl X25519PrivateKey {
     /// that the scalar is drawn where it will live and never moved. It is not a generated key:
     /// its public key is all zero until one of them fills it, and until then it makes no
     /// agreement and no decapsulator ([`KeyMaterialError::ActingOnZeroizedKey`]).
+    ///
+    /// # 🚨 Security Considerations 🚨
+    ///
+    /// The encoding of this key is not refused, the encoding methods having no error to give:
+    /// it is the clamped all-zero scalar, which anyone can compute. Do not store or send the
+    /// encoding of a key whose generation failed.
     pub fn zeroized() -> Self {
         Self { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) }
     }
@@ -974,6 +980,12 @@ impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X25519 {
         pk: &X25519PublicKey,
         out: &mut Secret<[u8; POINT_LEN]>,
     ) -> Result<(), KeyAgreementError> {
+        // The group functions are reachable without a key's role (`DHKEM::decap_out`), so the
+        // key that has not been filled is refused here as its roles refuse it.
+        if !sk.is_filled() {
+            zeroize_in_place(&mut **out);
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
         raw_shared_secret(sk, pk, out)
     }
 

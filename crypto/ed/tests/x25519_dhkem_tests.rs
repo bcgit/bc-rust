@@ -1,7 +1,7 @@
 //! X25519 as a KEM: DHKEM(X25519, HKDF-SHA256) of RFC 9180 Section 4.1, against the RFC 9180
 //! Appendix A.1 vectors and the core-test-framework KEM suites.
 
-use bouncycastle_core::errors::{KEMError, KeyMaterialError, RNGError};
+use bouncycastle_core::errors::{KEMError, KeyAgreementError, KeyMaterialError, RNGError};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -9,13 +9,14 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, KEMDecapsulator, KEMEncapsulator, PrivateKey, PublicKey, RNG,
 };
 use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKeys};
-use bouncycastle_dhkem::{AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEM};
+use bouncycastle_dhkem::{AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEM, DHKEMParams};
 use bouncycastle_ed::x25519::{
     DHKEM_SS_LEN, DHKEM_X25519_HKDF_SHA256, POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey,
     X25519PublicKey, keygen, keygen_from_seed,
 };
 use bouncycastle_hex as hex;
 use bouncycastle_rng::{DefaultRNG, FixedSeedRNG, HashDRBG_SHA512};
+use bouncycastle_utils::secret::Secret;
 
 type X25519DHKEM = DHKEM<X25519, POINT_LEN, SCALAR_LEN, POINT_LEN, DHKEM_SS_LEN>;
 
@@ -405,6 +406,49 @@ fn an_unfilled_key_makes_no_decapsulator() {
         unfilled.decaps(&[9u8; POINT_LEN], ()),
         Err(KEMError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey))
     ));
+
+    // Nor through the generic DHKEM, which takes the key without its role: the group's DH
+    // refuses it, and the secret is left zeroized.
+    let mut ss = KeyMaterial::<32>::from_bytes(&[7u8; 32]).unwrap();
+    assert_eq!(
+        DHKEM::<X25519, 32, 32, 32, 32>::decap_out(&[9u8; POINT_LEN], &unfilled, &mut ss),
+        Err(KEMError::DecapsulationFailed)
+    );
+    assert_eq!(ss.key_type(), KeyType::Zeroized);
+    let mut dh = Secret::<[u8; POINT_LEN]>::new();
+    *dh = [0xFF; POINT_LEN];
+    let peer = X25519PublicKey::from_bytes(&[9u8; POINT_LEN]).unwrap();
+    assert_eq!(
+        <X25519 as DHKEMParams<32, 32, 32>>::dh_into(&unfilled, &peer, &mut dh),
+        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey))
+    );
+    assert_eq!(*dh, [0u8; POINT_LEN]);
+
+    // The generic authenticated forms, which reach the same hook: an unfilled sender key in
+    // AuthEncap and an unfilled recipient key in AuthDecap, with the outputs left zeroized.
+    let filled = X25519PrivateKey::from_bytes(&[7u8; POINT_LEN]).unwrap();
+    let mut enc = [0xFFu8; POINT_LEN];
+    let mut ss = KeyMaterial::<32>::from_bytes(&[7u8; 32]).unwrap();
+    assert!(matches!(
+        DHKEM::<X25519, 32, 32, 32, 32>::auth_encap_rng_out(
+            &filled.pk(),
+            &unfilled,
+            &mut FixedSeedRNG::new([0x5A; 64]),
+            &mut enc,
+            &mut ss
+        ),
+        Err(KEMError::InvalidPublicKey(_))
+    ));
+    assert_eq!(enc, [0u8; POINT_LEN]);
+    assert_eq!(ss.key_type(), KeyType::Zeroized);
+    let mut ss = KeyMaterial::<32>::from_bytes(&[7u8; 32]).unwrap();
+    assert_eq!(
+        DHKEM::<X25519, 32, 32, 32, 32>::auth_decap_out(
+            &[9u8; POINT_LEN], &unfilled, &peer, &mut ss
+        ),
+        Err(KEMError::DecapsulationFailed)
+    );
+    assert_eq!(ss.key_type(), KeyType::Zeroized);
 }
 
 /// RFC 9180 Appendix A.1.3 (Auth) and A.1.4 (AuthPSK): pkRm, skRm, pkSm, skSm, skEm, enc,
