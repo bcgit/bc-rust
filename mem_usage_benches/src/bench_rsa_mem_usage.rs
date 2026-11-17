@@ -38,11 +38,13 @@ use bouncycastle::rng::DefaultRNG;
 use bouncycastle::rsa::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,
 };
+use bouncycastle::rsa::rsaes_oaep::OaepParams;
 use bouncycastle::rsa::size::RsaSigningSize;
 use bouncycastle::rsa::{
     RSA1024, RSA1536, RSA2048, RSA3072, RSA4096, RSA8192, rsa_1024, rsa_1536, rsa_2048, rsa_3072,
     rsa_4096, rsa_8192,
 };
+use bouncycastle::sha2::SHA256;
 
 const MSG: &[u8] = b"peak stack usage of RSA sign/verify, held constant across every modulus size";
 
@@ -430,6 +432,66 @@ fn bench_8192_rsasve_decaps() {
     println!("{}", ss.key_len());
 }
 
+/// RSAES-OAEP encapsulation (RFC 8017 §7.1.1) with SHA-256: the EME-OAEP encoding and one
+/// public-exponent `mod_pow` at the modulus width.
+fn bench_2048_oaep_encaps() {
+    eprintln!("RSA-2048/OAEP encaps");
+    let sk = genuine_2048_key();
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
+    let pk = rsa_2048::RSA2048KEMPublicKey::from_bytes(
+        &pk.key::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>().encode(),
+    )
+    .unwrap();
+    let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), OaepParams::<SHA256>::new(b"")).unwrap();
+    println!("{:x?}", ct);
+    println!("{}", ss.key_len());
+}
+
+/// RSAES-OAEP decapsulation (RFC 8017 §7.1.2) with SHA-256: the CRT exponentiation and the
+/// constant-time EME-OAEP decoding. The ciphertext is not a valid one, so the result is the
+/// decryption error, which the decoding reaches only after doing all of its work.
+fn bench_2048_oaep_decaps() {
+    eprintln!("RSA-2048/OAEP decaps");
+    let sk = rsa_2048::RSA2048KEMPrivateKey::from_bytes(
+        &genuine_2048_key().key::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>().encode(),
+    )
+    .unwrap();
+    let mut ct = [0x5Au8; rsa_2048::CT_LEN];
+    ct[0] = 0x01; // below n
+    let result = sk.decaps(&ct, OaepParams::<SHA256>::new(b""));
+    println!("{}", result.is_err());
+}
+
+/// RSAES-OAEP encapsulation (RFC 8017 §7.1.1) with SHA-256: the EME-OAEP encoding and one
+/// public-exponent `mod_pow` at the modulus width.
+fn bench_8192_oaep_encaps() {
+    eprintln!("RSA-8192/OAEP encaps");
+    let sk = genuine_8192_key();
+    let pk = RsaPublicComponents::<RSA8192>::new(sk.n(), 0x10001).unwrap();
+    let pk = rsa_8192::RSA8192KEMPublicKey::from_bytes(
+        &pk.key::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>().encode(),
+    )
+    .unwrap();
+    let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), OaepParams::<SHA256>::new(b"")).unwrap();
+    println!("{:x?}", ct);
+    println!("{}", ss.key_len());
+}
+
+/// RSAES-OAEP decapsulation (RFC 8017 §7.1.2) with SHA-256: the CRT exponentiation and the
+/// constant-time EME-OAEP decoding. The ciphertext is not a valid one, so the result is the
+/// decryption error, which the decoding reaches only after doing all of its work.
+fn bench_8192_oaep_decaps() {
+    eprintln!("RSA-8192/OAEP decaps");
+    let sk = rsa_8192::RSA8192KEMPrivateKey::from_bytes(
+        &genuine_8192_key().key::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>().encode(),
+    )
+    .unwrap();
+    let mut ct = [0x5Au8; rsa_8192::CT_LEN];
+    ct[0] = 0x01; // below n
+    let result = sk.decaps(&ct, OaepParams::<SHA256>::new(b""));
+    println!("{}", result.is_err());
+}
+
 fn main() {
     print_key_sizes()
     // bench_do_nothing()
@@ -443,4 +505,8 @@ fn main() {
     // bench_2048_rsasve_decaps()
     // bench_8192_rsasve_encaps()
     // bench_8192_rsasve_decaps()
+    // bench_2048_oaep_encaps()
+    // bench_2048_oaep_decaps()
+    // bench_8192_oaep_encaps()
+    // bench_8192_oaep_decaps()
 }
