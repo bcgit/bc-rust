@@ -53,6 +53,9 @@
   uses it (an older peer's RSA-OAEP hash or MGF1, a fingerprint): not collision resistant, so it is credited with
   no security strength (`SecurityStrength::None`) and is reached only by name; `HashFactory` "SHA1" and the
   `sha1` CLI command. Checked against NIST's CAVP SHAVS vectors and RFC 3174's.
+* RSAES-OAEP -- RFC 8017 Section 7.1 key transport on the RSA key-establishment keys, under `OaepParams<H, M, LEN>`
+  (label hash, MGF1 hash, label): as a KEM that draws the key (KTS-OAEP-basic, SP 800-56B Rev. 2) and, through
+  the new `core::key_transport_key` roles, for a key the caller holds; the `rsa-oaep-<size>` CLI commands.
 
 ## Minor features / bug fixes
 
