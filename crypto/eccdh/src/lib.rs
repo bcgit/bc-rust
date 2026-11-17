@@ -137,22 +137,24 @@
 //! | ECC CDH brainpoolP384r1  | 97              | 96                | 48              | 48                |
 //! | ECC CDH brainpoolP512r1  | 129             | 128               | 64              | 64                |
 //!
-//! Peak stack usage of each operation, in bytes, as the deepest frame chain below the
-//! `mem_usage_benches` harness's `measure` wrapper (the sum of the frames on the deepest path
-//! through the crate's own symbols, plus a return address per hop, from the compiler's
-//! frame-layout remarks and the release binary's call graph; rustc 1.97.0-nightly, x86-64).
-//! `agree` is dominated by the variable-base multiplier's per-call table of sixteen Jacobian
-//! points; `keygen`'s figure excludes the caller's RNG, which it reaches through `dyn RNG`:
+//! Peak stack usage of each operation, in bytes, as the deepest frame chain from the
+//! `mem_usage_benches` harness's `measure` wrapper down (its own frame, which holds what the
+//! compiler inlined of the operation, plus the frames on the deepest path through the crate's
+//! own symbols and a return address per hop, from the compiler's frame-layout remarks and the
+//! release binary's call graph; rustc 1.97.0-nightly, x86-64). `agree` and the two DHKEM
+//! operations (RFC 9180 Section 4.1, [`dhkem`]) are dominated by the variable-base multiplier's
+//! per-call table of sixteen Jacobian points; the figures for `keygen` and `encaps` exclude the
+//! caller's RNG, which they reach through `dyn RNG`:
 //!
-//! | Curve           | keygen | agree |
-//! |-----------------|--------|-------|
-//! | P-256           | 2,600  | 4,216 |
-//! | P-384           | 2,232  | 5,736 |
-//! | P-521           | 5,352  | 8,520 |
-//! | secp256k1       | 2,424  | 4,056 |
-//! | brainpoolP256r1 | 2,712  | 4,312 |
-//! | brainpoolP384r1 | 2,528  | 5,712 |
-//! | brainpoolP512r1 | 4,672  | 7,600 |
+//! | Curve           | keygen | agree | encaps | decaps |
+//! |-----------------|--------|-------|--------|--------|
+//! | P-256           | 3,024  | 4,368 | 5,216  | 4,864  |
+//! | P-384           | 2,784  | 5,936 | 7,008  | 6,720  |
+//! | P-521           | 6,032  | 8,784 | 10,464 | 10,016 |
+//! | secp256k1       | 2,848  | 4,208 |        |        |
+//! | brainpoolP256r1 | 3,152  | 4,416 |        |        |
+//! | brainpoolP384r1 | 3,096  | 5,880 |        |        |
+//! | brainpoolP512r1 | 4,824  | 7,784 |        |        |
 //!
 //! # 🚨 Security Considerations 🚨
 //!

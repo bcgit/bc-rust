@@ -73,6 +73,15 @@ test_seed_file_gives_a_reproducible_stream() {
     assert_stderr_has "Error"
 }
 
+# The hex writer works a chunk at a time; a stream of several chunks and a part must be the hex
+# of the same raw stream.
+test_a_long_hex_stream_is_the_hex_of_the_raw_stream() {
+    rng 48 >"$TMP/seed"
+    "$BC_RUST" rng --len 5000 --seed-file "$TMP/seed" >"$TMP/raw"
+    "$BC_RUST" rng --len 5000 --seed-file "$TMP/seed" -x >"$TMP/hex"
+    assert_eq "$(tr -d '\n' <"$TMP/hex")" "$("$BC_RUST" hex-encode <"$TMP/raw" | tr -d '\n')" "rng -x over 5000 bytes"
+}
+
 test_hash_selects_the_drbg() {
     "$BC_RUST" rng --len 100 --hash sha256 >"$TMP/a"
     assert_size "$TMP/a" 100 "rng --hash sha256"

@@ -118,6 +118,17 @@ fn bench_x25519_keygen() {
     });
 }
 
+/// Decoding a private key, which computes its public key: one fixed-base scalar multiplication.
+fn bench_x25519_from_bytes() {
+    eprintln!("X25519/FromBytes");
+
+    let bytes = [0x2Au8; 32];
+    measure(|| {
+        let sk = X25519PrivateKey::from_bytes(&bytes).unwrap();
+        print!("{:x?}", sk.pk().encode());
+    });
+}
+
 /// Key agreement: one variable-base scalar multiplication and the all-zero check.
 fn bench_x25519_key_agreement() {
     eprintln!("X25519/KeyAgreement");
@@ -164,6 +175,7 @@ fn main() {
     // print_struct_sizes()
     // bench_do_nothing()
     bench_x25519_keygen()
+    // bench_x25519_from_bytes()
     // bench_x25519_key_agreement()
     // bench_x25519_encaps()
     // bench_x25519_decaps()
