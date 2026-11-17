@@ -20,6 +20,11 @@ impl<C: Curve> ECCDHPrivateKey<C> {
     pub(crate) fn scalar(&self) -> &C::Scalar {
         &self.0
     }
+
+    /// The key over a scalar already known to be in `[1, n-1]`.
+    pub(crate) fn from_scalar(d: C::Scalar) -> Self {
+        Self(d)
+    }
 }
 
 impl<C, const PK_LEN: usize> DerivePublicKey<ECCDHPublicKey<C>, PK_LEN> for ECCDHPrivateKey<C>

@@ -33,10 +33,12 @@
 #![allow(unused_imports)]
 
 use bouncycastle::core::agreement_key::AgreementKey;
-use bouncycastle::core::key_material::KeyMaterialTrait;
+use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::ec::curve::Curve;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
+use bouncycastle::eccdh::dhkem::DhkemCurve;
 use bouncycastle::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
 use bouncycastle::eccdh::keys_common::DerivePublicKey;
 use bouncycastle::rng::DefaultRNG;
@@ -107,12 +109,77 @@ where
     println!("{:x?}", z.ref_to_bytes());
 }
 
+/// The fixed private key d = 42. `#[inline(never)]` so its decode temporaries are popped before
+/// the operation runs.
+#[inline(never)]
+fn load_sk<C, const SK_LEN: usize>() -> ECCDHPrivateKey<C>
+where
+    C: Curve<ScalarBytes = [u8; SK_LEN]>,
+{
+    let mut bytes = [0u8; SK_LEN];
+    bytes[SK_LEN - 1] = 0x2A;
+    ECCDHPrivateKey::<C>::from_bytes(&bytes).unwrap()
+}
+
+/// The public key of [`load_sk`].
+#[inline(never)]
+fn load_pk<C, const PK_LEN: usize, const SK_LEN: usize>() -> ECCDHPublicKey<C>
+where
+    C: Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN]>,
+{
+    load_sk::<C, SK_LEN>().derive_pk()
+}
+
+/// DHKEM encapsulation (RFC 9180 Section 4.1) on one curve against a fixed key, including the
+/// ephemeral keygen and its RNG, since that is part of what an encapsulation costs.
+fn encaps_bench<C, const N_ENC: usize, const SK_LEN: usize, const N_SECRET: usize>(name: &str)
+where
+    C: DhkemCurve<SharedSecret = KeyMaterial<N_SECRET>>
+        + Curve<PkUncompressed = [u8; N_ENC], ScalarBytes = [u8; SK_LEN]>,
+{
+    eprintln!("DHKEM {name}/Encaps");
+
+    let pk = load_pk::<C, N_ENC, SK_LEN>();
+    measure(|| {
+        let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
+        print!("{:x?}", ss);
+        print!("{:x?}", ct);
+    });
+}
+
+/// DHKEM decapsulation on one curve with a fixed key; the ciphertext is the public key of d = 7.
+fn decaps_bench<C, const N_ENC: usize, const SK_LEN: usize, const N_SECRET: usize>(name: &str)
+where
+    C: DhkemCurve<SharedSecret = KeyMaterial<N_SECRET>>
+        + Curve<PkUncompressed = [u8; N_ENC], ScalarBytes = [u8; SK_LEN]>,
+{
+    eprintln!("DHKEM {name}/Decaps");
+
+    let mut bytes = [0u8; SK_LEN];
+    bytes[SK_LEN - 1] = 0x07;
+    let ct = ECCDHPrivateKey::<C>::from_bytes(&bytes).unwrap().derive_pk().encode();
+
+    let sk = load_sk::<C, SK_LEN>();
+    measure(|| {
+        let ss = sk.decaps(&ct, ()).unwrap();
+        print!("{:x?}", ss);
+    });
+}
+
 fn bench_p256_keygen() {
     keygen_bench::<P256, 65>("P-256");
 }
 
 fn bench_p256_agree() {
     agree_bench::<P256, 65, 32, 32>("P-256");
+}
+
+fn bench_p256_encaps() {
+    encaps_bench::<P256, 65, 32, 32>("P-256");
+}
+
+fn bench_p256_decaps() {
+    decaps_bench::<P256, 65, 32, 32>("P-256");
 }
 
 fn bench_p384_keygen() {
@@ -123,12 +190,28 @@ fn bench_p384_agree() {
     agree_bench::<P384, 97, 48, 48>("P-384");
 }
 
+fn bench_p384_encaps() {
+    encaps_bench::<P384, 97, 48, 48>("P-384");
+}
+
+fn bench_p384_decaps() {
+    decaps_bench::<P384, 97, 48, 48>("P-384");
+}
+
 fn bench_p521_keygen() {
     keygen_bench::<P521, 133>("P-521");
 }
 
 fn bench_p521_agree() {
     agree_bench::<P521, 133, 66, 66>("P-521");
+}
+
+fn bench_p521_encaps() {
+    encaps_bench::<P521, 133, 66, 64>("P-521");
+}
+
+fn bench_p521_decaps() {
+    decaps_bench::<P521, 133, 66, 64>("P-521");
 }
 
 fn bench_secp256k1_keygen() {
@@ -168,10 +251,16 @@ fn main() {
     // bench_do_nothing()
     // bench_p256_keygen()
     // bench_p256_agree()
+    // bench_p256_encaps()
+    // bench_p256_decaps()
     // bench_p384_keygen()
     // bench_p384_agree()
+    // bench_p384_encaps()
+    // bench_p384_decaps()
     // bench_p521_keygen()
     // bench_p521_agree()
+    // bench_p521_encaps()
+    // bench_p521_decaps()
     // bench_secp256k1_keygen()
     // bench_secp256k1_agree()
     // bench_bp256r1_keygen()
