@@ -27,7 +27,6 @@ use crate::stream::{KeyStreamPolicy, StreamCipher};
 /// A reference to the permutation, which the key owns, the nonce and the next counter value. The
 /// nonce and the counter are both public, so they are plain fields; no keystream is kept between
 /// calls.
-#[derive(Clone)]
 pub struct CtrKeyStream<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,

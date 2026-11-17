@@ -40,7 +40,6 @@ use core::marker::PhantomData;
 /// returns [`SymmetricCipherError::DataLimitExceeded`] and consumes nothing: the check is made up front,
 /// against the whole call, so a message is never half-processed before the cipher notices. Past
 /// that point the keystream would repeat, which is the two-time-pad failure within one message.
-#[derive(Clone)]
 pub struct StreamCipher<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
 where
     KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,

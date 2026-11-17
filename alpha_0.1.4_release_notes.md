@@ -95,6 +95,11 @@
   so an instantiation is `HKDF<SHA256>`. The SHA-3 family's suspended states are 10 bytes shorter than before
   (SHA-3 and SHAKE 405, cSHAKE 406, KMAC and TupleHash 414, ParallelHashXOF 832, ParallelHash 840), the KDF
   bookkeeping having left the sponge; a state suspended by an earlier build does not resume.
+* Cipher workers are no longer `Clone` (#173), for the same reason: two copies of an encryptor go on from one nonce,
+  counter or keystream position. The CBC, CFB, CFB8, CTR, OFB, ECB, GCM and CCM packet workers, the padded encryptor
+  and decryptor and `Ascon_AEAD128` lose it, both directions; a second worker is made from the key. The declared-length
+  CCM workers, the MAC workers other than KMAC's, the key-wrap workers and the ChaCha20 family were already not
+  `Clone`. Nothing else changes: the keys, key states, hashes, XOFs and KMAC workers that were `Clone` still are.
 * The AEAD keys' one-shots that work in the caller's buffer are spelled `_inplace`, as QUALITY_AND_STYLE.md's suffix
   rule and every other in-place method already were: `encrypt_detached_inplace`, `encrypt_detached_inplace_nonce`
   and `decrypt_detached_inplace` on the AEAD key and mode traits (formerly `_in_place`).
