@@ -20,7 +20,7 @@
 
 use crate::helpers::{
     println_stdout, read_input_file_or_stdin, read_secret_file, write_bytes_or_hex,
-    write_bytes_or_hex_to_file,
+    write_bytes_or_hex_to_file, write_private_key, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::errors::KEMError;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
@@ -87,7 +87,7 @@ fn rsasve_cmd<
                 exit(-1);
             });
             write_bytes_or_hex_to_file(&pk.encode(), pkfile, output_hex);
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         RSASVEAction::Encaps => {
             let pk = PK::from_bytes(&read_input_file_or_stdin(pkfile)).unwrap_or_else(|e| {
@@ -104,12 +104,12 @@ fn rsasve_cmd<
             match ctfile {
                 Some(ctfile) => {
                     write_bytes_or_hex_to_file(&ct, ctfile, output_hex);
-                    write_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+                    write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
                 }
                 None => {
                     write_bytes_or_hex(&ct, true);
                     println_stdout("");
-                    write_bytes_or_hex(ss.ref_to_bytes(), true);
+                    write_secret_bytes_or_hex(ss.ref_to_bytes(), true);
                 }
             }
         }
@@ -126,7 +126,7 @@ fn rsasve_cmd<
                 eprintln!("Error: {alg_name} decapsulation failed: {e:?}");
                 exit(-1);
             });
-            write_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
         }
     }
 }
