@@ -26,6 +26,7 @@ mod ofb_cmd;
 mod rng_cmd;
 mod rsa_cmd;
 mod rsasve_cmd;
+mod sha1_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
 mod sm2_cmd;
@@ -4331,6 +4332,15 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Perform SHA-1 (FIPS 180-4) of the content provided on stdin. SHA-1 is not collision
+    /// resistant; this is for checking against existing digests.
+    /// Supports streaming update for low memory footprint.
+    SHA1 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
     /// Perform SM3 of the content provided on stdin.
     /// Supports streaming update for low memory footprint.
     SM3 {
@@ -7907,6 +7917,9 @@ fn run() {
         }
         Some(Subcommands::SM2 { action, idfile, skfile, pkfile, sigfile, x }) => {
             sm2_cmd::sm2_cmd(action, idfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::SHA1 { x }) => {
+            sha1_cmd::sha1_cmd(*x);
         }
         Some(Subcommands::SM3 { x }) => {
             sm3_cmd::sm3_cmd(*x);
