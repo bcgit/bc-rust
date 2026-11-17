@@ -24,6 +24,7 @@ mod hash_factory_tests {
             (bouncycastle_sha3::SHA3_384_NAME, _192bit),
             (bouncycastle_sha3::SHA3_512_NAME, _256bit),
             (bouncycastle_sm3::SM3_NAME, _128bit),
+            (bouncycastle_sha1::SHA1_NAME, SecurityStrength::None),
             (bouncycastle_ascon::ASCON_HASH256_NAME, _128bit),
         ];
         for (name, strength) in table {
@@ -122,6 +123,25 @@ mod hash_factory_tests {
                     expected.len()
                 );
                 assert_eq!(&out, expected);
+            }
+        }
+
+        #[test]
+        fn sha1_hash_tests() {
+            // Expected values: RFC 3174 Section 7.3, TEST1 and TEST2.
+            for name in ["SHA1", bouncycastle_sha1::SHA1_NAME] {
+                let h = HashFactory::new(name).unwrap();
+                assert_eq!(h.output_len(), 20);
+                assert_eq!(h.block_bitlen(), 512);
+                assert_eq!(
+                    h.hash(b"abc"),
+                    b"\xa9\x99\x3e\x36\x47\x06\x81\x6a\xba\x3e\x25\x71\x78\x50\xc2\x6c\x9c\xd0\xd8\x9d"
+                );
+                let h = HashFactory::new(name).unwrap();
+                assert_eq!(
+                    h.hash(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+                    b"\x84\x98\x3e\x44\x1c\x3b\xd2\x6e\xba\xae\x4a\xa1\xf9\x51\x29\xe5\xe5\x46\x70\xf1"
+                );
             }
         }
 
