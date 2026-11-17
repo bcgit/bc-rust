@@ -3,7 +3,7 @@
 //! duplicate seven and three times respectively. That duplication is warranted for them -- each
 //! parameter set is its own concrete algorithm with its own quirks (a hash-then-sign variant, a
 //! from-seed variant, a bespoke consistency-check API) -- but every ECDSA curve implements the
-//! identical `Signer`/`SignatureVerifier`/`SignaturePrivateKey`/`SignaturePublicKey`/
+//! identical `Signer`/`SignatureVerifier`/`PrivateKey`/`PublicKey`/
 //! `DerivePublicKey` trait shape with no per-curve deviation, so a single generic function bound
 //! over those traits, monomorphised once per curve below, covers all seven without repeating the
 //! same match block.
@@ -28,9 +28,7 @@ use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::signature_key::{
     DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
-use bouncycastle::core::traits::{
-    RNG, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
-};
+use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier};
 use bouncycastle::ec::curve::Curve;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle::ecdsa::ecdsa::{
@@ -61,8 +59,8 @@ pub(crate) enum ECDSAAction {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn ecdsa_cmd<
     A: SignatureAlgorithm,
-    PK: SignaturePublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN>,
-    SK: SignaturePrivateKey<SK_LEN>
+    PK: PublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN>,
+    SK: PrivateKey<SK_LEN>
         + DerivePublicKey<PK, PK_LEN>
         + SigningKey<A, SIG_LEN>
         + DeterministicSigningKey<A, SIG_LEN>,
@@ -164,10 +162,7 @@ fn require_secret(file: &Option<String>, flag_name: &str) -> crate::helpers::Sec
 
 /// The key from its encoding; the bytes are what the file held, or its hex decoded under
 /// `--hex-input`, with nothing guessed from their shape.
-fn parse_sk<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize>(
-    bytes: &[u8],
-    alg_name: &str,
-) -> SK {
+fn parse_sk<SK: PrivateKey<SK_LEN>, const SK_LEN: usize>(bytes: &[u8], alg_name: &str) -> SK {
     match SK::from_bytes(bytes) {
         Ok(sk) => sk,
         Err(_) => {
@@ -178,10 +173,7 @@ fn parse_sk<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize>(
 }
 
 /// See [`parse_sk`].
-fn parse_pk<PK: SignaturePublicKey<PK_LEN>, const PK_LEN: usize>(
-    bytes: &[u8],
-    alg_name: &str,
-) -> PK {
+fn parse_pk<PK: PublicKey<PK_LEN>, const PK_LEN: usize>(bytes: &[u8], alg_name: &str) -> PK {
     match PK::from_bytes(bytes) {
         Ok(pk) => pk,
         Err(_) => {

@@ -306,7 +306,7 @@ fn verify_final(
     // valid signature in a roomy buffer. Accepting them would let anyone turn one valid
     // signature into unlimited distinct byte strings that all verify -- malleability that
     // breaks any caller treating the signature as an opaque, comparable blob. This matches how
-    // `SignaturePublicKey`/`SignaturePrivateKey::from_bytes` already reject an over-long
+    // `PublicKey`/`PrivateKey::from_bytes` already reject an over-long
     // encoding here (see `core-test-framework`'s own `test_boundary_conditions`).
     if sig.len() != SIG_LEN {
         return Err(SignatureError::LengthError("SM2 signature must be exactly 64 bytes"));

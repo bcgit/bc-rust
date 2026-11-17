@@ -44,15 +44,15 @@
 //! amounts to full public-key validation, which §6.4.2.2 notes "is not specified in this
 //! Recommendation".
 
-use crate::keys::{RsaPrivateComponents, RsaPublicComponents};
+use crate::keys::{RsaPrivateComponents, RsaPublicComponents, decoding_error};
 use crate::size::{RsaSigningSize, RsaSize};
-use bouncycastle_core::errors::{KEMError, RNGError, SignatureError};
+use bouncycastle_core::errors::{KEMError, KeyDecodingError, RNGError, SignatureError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorithm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
+    Algorithm, KEMDecapsulator, KEMEncapsulator, PrivateKey, PublicKey, RNG,
 };
 use bouncycastle_utils::const_str::ConstStr;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
@@ -74,6 +74,15 @@ fn kem_error(e: SignatureError) -> KEMError {
         SignatureError::RNGError(e) => KEMError::RNGError(e),
         SignatureError::GenericError(s) => KEMError::GenericError(s),
         _ => KEMError::GenericError("unexpected error from the RSA key layer"),
+    }
+}
+
+/// A KEM key constructor's failure as the error a key's `from_bytes` returns, keeping the
+/// message of a decoding failure, which is the only kind `from_rsa_key` produces.
+fn kem_decoding_error(e: KEMError) -> KeyDecodingError {
+    match e {
+        KEMError::DecodingError(msg) => KeyDecodingError(msg),
+        _ => KeyDecodingError("invalid RSA key encoding"),
     }
 }
 
@@ -340,7 +349,7 @@ where
     }
 }
 
-impl<K, const SK_LEN: usize> KEMPrivateKey<SK_LEN> for RsaKEMPrivateKey<K>
+impl<K, const SK_LEN: usize> PrivateKey<SK_LEN> for RsaKEMPrivateKey<K>
 where
     K: RsaSigningSize + RsaSize<PrivateKeyEncoded = [u8; SK_LEN]>,
 {
@@ -353,17 +362,16 @@ where
         SK_LEN
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         let bytes: &[u8; SK_LEN] = bytes.try_into().map_err(|_| {
-            KEMError::DecodingError(
-                "an RSA private key is five components of half the modulus length",
-            )
+            KeyDecodingError("an RSA private key is five components of half the modulus length")
         })?;
-        Self::from_rsa_key(RsaPrivateComponents::from_bytes_raw(bytes).map_err(kem_error)?)
+        Self::from_rsa_key(RsaPrivateComponents::from_bytes_raw(bytes).map_err(decoding_error)?)
+            .map_err(kem_decoding_error)
     }
 }
 
-impl<K, const PK_LEN: usize> KEMPublicKey<PK_LEN> for RsaKEMPublicKey<K>
+impl<K, const PK_LEN: usize> PublicKey<PK_LEN> for RsaKEMPublicKey<K>
 where
     K: RsaSize<PublicKeyEncoded = [u8; PK_LEN]>,
 {
@@ -376,11 +384,12 @@ where
         PK_LEN
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         let bytes: &[u8; PK_LEN] = bytes.try_into().map_err(|_| {
-            KEMError::DecodingError("an RSA public key is the modulus length plus four bytes")
+            KeyDecodingError("an RSA public key is the modulus length plus four bytes")
         })?;
-        Self::from_rsa_key(RsaPublicComponents::from_bytes_raw(bytes).map_err(kem_error)?)
+        Self::from_rsa_key(RsaPublicComponents::from_bytes_raw(bytes).map_err(decoding_error)?)
+            .map_err(kem_decoding_error)
     }
 }
 

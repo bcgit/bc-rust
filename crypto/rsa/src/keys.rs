@@ -16,15 +16,15 @@
 //! supported: every real RSA private key ships as the CRT form because CRT-based signing (RFC
 //! 8017 §5.2.1 step 2.b) is the only signing path this crate implements.
 //!
-//! The keys implement `bouncycastle_core`'s `SignaturePublicKey` / `SignaturePrivateKey`, the
+//! The keys implement `bouncycastle_core`'s `PublicKey` / `PrivateKey`, the
 //! private key only at a [`RsaSigningSize`], with the byte layouts described on the components.
 //! The scheme is not encoded, so a key file is decoded under the key type it is for.
 
 use crate::rsassa::RsaSignatureAlgorithm;
 use crate::size::{RsaSigningSize, RsaSize};
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -35,7 +35,7 @@ use core::marker::PhantomData;
 ///
 /// # Encoding
 ///
-/// The keys' `SignaturePublicKey::encode`/`from_bytes` use the raw layout `n || e`: `n` as `K::K_LEN`
+/// The keys' `PublicKey::encode`/`from_bytes` use the raw layout `n || e`: `n` as `K::K_LEN`
 /// big-endian bytes (RFC 8017 §4.1's I2OSP), then `e` as 4 big-endian bytes, `K::PK_LEN` in all.
 /// Not an RFC 8017 or ASN.1 format -- this crate has no DER encoder/decoder -- just a fixed-width
 /// layout that round-trips, for `cli/src/rsa_cmd.rs` to read and write public keys as files.
@@ -117,7 +117,7 @@ impl<K: RsaSize> RsaPublicComponents<K> {
 ///
 /// # Encoding
 ///
-/// The keys' `SignaturePrivateKey::encode`/`from_bytes`, at a signing size, use the raw layout
+/// The keys' `PrivateKey::encode`/`from_bytes`, at a signing size, use the raw layout
 /// `p || q || dP || dQ || qInv`, each `K::K_LEN / 2` big-endian bytes, `K::SK_LEN` in all. Not an
 /// RFC 8017 or ASN.1 format -- see [`RsaPublicKey`]'s `# Encoding` for why -- just a fixed-width
 /// layout that round-trips, for `cli/src/rsa_cmd.rs` to read and write private keys as files.
@@ -316,7 +316,7 @@ impl<A: RsaSignatureAlgorithm> PartialEq for RsaPublicKey<A> {
 
 impl<A: RsaSignatureAlgorithm> Eq for RsaPublicKey<A> {}
 
-impl<A, const PK_LEN: usize> SignaturePublicKey<PK_LEN> for RsaPublicKey<A>
+impl<A, const PK_LEN: usize> PublicKey<PK_LEN> for RsaPublicKey<A>
 where
     A: RsaSignatureAlgorithm,
     A::Size: RsaSize<PublicKeyEncoded = [u8; PK_LEN]>,
@@ -330,17 +330,19 @@ where
         PK_LEN
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         let bytes: &[u8; PK_LEN] = bytes.try_into().map_err(|_| {
-            SignatureError::DecodingError("an RSA public key is the modulus length plus four bytes")
+            KeyDecodingError("an RSA public key is the modulus length plus four bytes")
         })?;
-        Ok(Self::from_components(RsaPublicComponents::from_bytes_raw(bytes)?))
+        Ok(Self::from_components(
+            RsaPublicComponents::from_bytes_raw(bytes).map_err(decoding_error)?,
+        ))
     }
 }
 
 /// `RsaPublicKey<RSASSA-PSS-SHA256, RSA-2048> { n: <hex>, e: <hex> }`, `n` as one big-endian hex
 /// string (the limbs are stored least-significant first, so they are printed in reverse).
-/// Required by `SignaturePublicKey`'s `Display` supertrait; public data only, so nothing is
+/// Required by `PublicKey`'s `Display` supertrait; public data only, so nothing is
 /// redacted.
 impl<A: RsaSignatureAlgorithm> Display for RsaPublicKey<A> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -422,7 +424,7 @@ impl<A: RsaSignatureAlgorithm> PartialEq for RsaPrivateKey<A> {
 
 impl<A: RsaSignatureAlgorithm> Eq for RsaPrivateKey<A> {}
 
-impl<A, const SK_LEN: usize> SignaturePrivateKey<SK_LEN> for RsaPrivateKey<A>
+impl<A, const SK_LEN: usize> PrivateKey<SK_LEN> for RsaPrivateKey<A>
 where
     A: RsaSignatureAlgorithm,
     A::Size: RsaSigningSize + RsaSize<PrivateKeyEncoded = [u8; SK_LEN]>,
@@ -436,13 +438,13 @@ where
         SK_LEN
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         let bytes: &[u8; SK_LEN] = bytes.try_into().map_err(|_| {
-            SignatureError::DecodingError(
-                "an RSA private key is five components of half the modulus length",
-            )
+            KeyDecodingError("an RSA private key is five components of half the modulus length")
         })?;
-        Ok(Self::from_components(RsaPrivateComponents::from_bytes_raw(bytes)?))
+        Ok(Self::from_components(
+            RsaPrivateComponents::from_bytes_raw(bytes).map_err(decoding_error)?,
+        ))
     }
 }
 
@@ -459,5 +461,14 @@ pub const fn modulus_strength(limbs: usize) -> SecurityStrength {
         SecurityStrength::_112bit
     } else {
         SecurityStrength::None
+    }
+}
+
+/// A key layer failure as the error a key's `from_bytes` returns, keeping the message of a
+/// decoding failure, which is the only kind the raw decoders produce.
+pub(crate) fn decoding_error(e: SignatureError) -> KeyDecodingError {
+    match e {
+        SignatureError::DecodingError(msg) => KeyDecodingError(msg),
+        _ => KeyDecodingError("invalid RSA key encoding"),
     }
 }

@@ -21,11 +21,11 @@
 //!   These are the only third-party vectors at 8192 bits, and they are what the trait-conformance
 //!   suites below use as their fixed keys.
 
-use bouncycastle_core::errors::{KEMError, RNGError};
+use bouncycastle_core::errors::{KEMError, KeyDecodingError, RNGError};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKeys};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
@@ -310,10 +310,10 @@ macro_rules! rsasve_suite {
                 let (pk, _) = openssl_keypair().unwrap();
                 let mut bytes = pk.encode();
                 bytes[0] &= 0x7F;
-                assert!(matches!(PK::from_bytes(&bytes), Err(KEMError::DecodingError(_))));
+                assert!(matches!(PK::from_bytes(&bytes), Err(KeyDecodingError(_))));
                 let mut bytes = pk.encode();
                 bytes[PK_LEN - 4..].copy_from_slice(&3u32.to_be_bytes());
-                assert!(matches!(PK::from_bytes(&bytes), Err(KEMError::DecodingError(_))));
+                assert!(matches!(PK::from_bytes(&bytes), Err(KeyDecodingError(_))));
             }
 
             #[test]
@@ -345,7 +345,7 @@ macro_rules! rsasve_suite {
                 let (_, sk) = openssl_keypair().unwrap();
                 let mut bytes = sk.encode();
                 bytes[..$bits / 16].fill(0); // p = 0, which is even
-                assert!(matches!(SK::from_bytes(&bytes), Err(KEMError::DecodingError(_))));
+                assert!(matches!(SK::from_bytes(&bytes), Err(KeyDecodingError(_))));
             }
         }
     };

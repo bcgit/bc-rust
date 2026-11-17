@@ -9,9 +9,9 @@
 //! reason (see [`crate::extra_bits`]'s docs for the bias-bound derivation specific to SM2's `n`).
 
 use crate::extra_bits::{N_MINUS_1_LIMBS, reduce_wide_bits_mod_n_minus_2};
-use bouncycastle_core::errors::{RNGError, SignatureError};
+use bouncycastle_core::errors::{KeyDecodingError, RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_ec::hazmat::sm2::Sm2FieldElement;
 use bouncycastle_ec::hazmat::sm2_comb::comb_multiply_base_point;
 use bouncycastle_ec::hazmat::sm2_scalar::{Sm2Scalar, Sm2ScalarField};
@@ -49,7 +49,7 @@ pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
 /// any signature scheme.
 ///
 /// So `PA` is computed once, when the key is created ([`keygen`], which has it for free)
-/// or loaded ([`SignaturePrivateKey::from_bytes`], which pays one multiplication once instead of
+/// or loaded ([`PrivateKey::from_bytes`], which pays one multiplication once instead of
 /// one per signature), and kept here. The cost is [`core::mem::size_of`] for this struct rising
 /// from 32 bytes to 96 -- `PA` is two field elements -- which the crate docs' Memory Footprint
 /// table records. `PA` is public data and is deliberately *not* wrapped in
@@ -121,7 +121,7 @@ impl SM2PrivateKey {
     }
 }
 
-impl SignaturePrivateKey<SK_LEN> for SM2PrivateKey {
+impl PrivateKey<SK_LEN> for SM2PrivateKey {
     fn encode(&self) -> [u8; SK_LEN] {
         self.d.to_be_bytes()
     }
@@ -132,10 +132,9 @@ impl SignaturePrivateKey<SK_LEN> for SM2PrivateKey {
         SK_LEN
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let array: [u8; SK_LEN] = bytes
-            .try_into()
-            .map_err(|_| SignatureError::DecodingError("SM2 private key must be 32 bytes"))?;
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
+        let array: [u8; SK_LEN] =
+            bytes.try_into().map_err(|_| KeyDecodingError("SM2 private key must be 32 bytes"))?;
         // GB/T 32918.1-2016 S6.1 a): dA is in [1, n-2], checked on the raw big-endian value
         // *before* any reduction. `Sm2Scalar::from_be_bytes` reduces mod n, so checking afterwards
         // would accept an out-of-range encoding as a different, perfectly valid key: `dA = n + 1`
@@ -148,7 +147,7 @@ impl SignaturePrivateKey<SK_LEN> for SM2PrivateKey {
         // borrow == 1 iff limbs < n - 1, i.e. limbs <= n - 2.
         let (_, borrow) = nat::sub(&limbs, &N_MINUS_1_LIMBS);
         if limbs == [0; 4] || borrow != 1 {
-            return Err(SignatureError::DecodingError("SM2 private key must be in [1, n-2]"));
+            return Err(KeyDecodingError("SM2 private key must be in [1, n-2]"));
         }
         Ok(Self::from_validated_scalar(Sm2Scalar::from_limbs(limbs)))
     }
@@ -161,7 +160,7 @@ pub struct SM2PublicKey {
     pub(crate) y: Sm2FieldElement,
 }
 
-impl SignaturePublicKey<PK_LEN> for SM2PublicKey {
+impl PublicKey<PK_LEN> for SM2PublicKey {
     fn encode(&self) -> [u8; PK_LEN] {
         sm2_sec1::encode_uncompressed(&self.x, &self.y)
     }
@@ -175,10 +174,9 @@ impl SignaturePublicKey<PK_LEN> for SM2PublicKey {
     /// Accepts both SEC 1 §2.3.3 encodings (33-byte compressed, 65-byte uncompressed), fully
     /// validated per [`sm2_sec1::decode`]'s docs (partial validation is full validation here: SM2's
     /// cofactor is `h = 1`, per that module's docs).
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let (x, y) = sm2_sec1::decode(bytes).ok_or(SignatureError::DecodingError(
-            "invalid or out-of-range SEC 1 SM2 point encoding",
-        ))?;
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
+        let (x, y) = sm2_sec1::decode(bytes)
+            .ok_or(KeyDecodingError("invalid or out-of-range SEC 1 SM2 point encoding"))?;
         Ok(Self { x, y })
     }
 }

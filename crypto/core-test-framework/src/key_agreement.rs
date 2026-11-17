@@ -2,11 +2,9 @@
 //! `bouncycastle_core::agreement_key` and the workers it produces.
 
 use bouncycastle_core::agreement_key::AgreementKey;
-use bouncycastle_core::errors::KeyAgreementError;
+use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{
-    Algorithm, AlgorithmInfo, KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey,
-};
+use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, KeyAgreement, PrivateKey, PublicKey};
 
 /// Instance of the test framework.
 pub struct TestFrameworkKeyAgreement {}
@@ -106,8 +104,8 @@ impl TestFrameworkKeyAgreementKeys {
 
     /// Tests the correct behaviour of the key encodings on buffers too large / too small.
     pub fn test_keys<
-        PK: KeyAgreementPublicKey<PK_LEN>,
-        SK: KeyAgreementPrivateKey<SK_LEN>,
+        PK: PublicKey<PK_LEN>,
+        SK: PrivateKey<SK_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
     >(
@@ -124,14 +122,14 @@ impl TestFrameworkKeyAgreementKeys {
         assert_eq!(out, pk_bytes);
         // too short
         match PK::from_bytes(&pk_bytes[..PK_LEN - 1]) {
-            Err(KeyAgreementError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
         // too long
         let mut bytes_too_long: Vec<u8> = Vec::from(&pk_bytes[..]);
         bytes_too_long.push(0xFF);
         match PK::from_bytes(&bytes_too_long) {
-            Err(KeyAgreementError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
 
@@ -143,14 +141,14 @@ impl TestFrameworkKeyAgreementKeys {
         assert_eq!(out, sk_bytes);
         // too short
         match SK::from_bytes(&sk_bytes[..SK_LEN - 1]) {
-            Err(KeyAgreementError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
         // too long
         let mut bytes_too_long: Vec<u8> = Vec::from(&sk_bytes[..]);
         bytes_too_long.push(0xFF);
         match SK::from_bytes(&bytes_too_long) {
-            Err(KeyAgreementError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
     }
@@ -215,7 +213,7 @@ mod tests {
         }
     }
 
-    impl KeyAgreementPublicKey<8> for MockPublicKey {
+    impl PublicKey<8> for MockPublicKey {
         fn encode(&self) -> [u8; 8] {
             self.0.to_be_bytes()
         }
@@ -224,20 +222,19 @@ mod tests {
             *out = self.0.to_be_bytes();
             8
         }
-        fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError> {
-            let bytes: [u8; 8] = bytes
-                .try_into()
-                .map_err(|_| KeyAgreementError::DecodingError("a public key is 8 bytes"))?;
+        fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
+            let bytes: [u8; 8] =
+                bytes.try_into().map_err(|_| KeyDecodingError("a public key is 8 bytes"))?;
             let value = u64::from_be_bytes(bytes);
             // the analogue of public-key validation: in the group, and not the identity
             if value as u128 >= P || value <= 1 {
-                return Err(KeyAgreementError::DecodingError("not a group element"));
+                return Err(KeyDecodingError("not a group element"));
             }
             Ok(Self(value))
         }
     }
 
-    impl KeyAgreementPrivateKey<8> for MockPrivateKey {
+    impl PrivateKey<8> for MockPrivateKey {
         fn encode(&self) -> [u8; 8] {
             self.0.to_be_bytes()
         }
@@ -246,10 +243,9 @@ mod tests {
             *out = self.0.to_be_bytes();
             8
         }
-        fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError> {
-            let bytes: [u8; 8] = bytes
-                .try_into()
-                .map_err(|_| KeyAgreementError::DecodingError("a private key is 8 bytes"))?;
+        fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
+            let bytes: [u8; 8] =
+                bytes.try_into().map_err(|_| KeyDecodingError("a private key is 8 bytes"))?;
             Ok(Self(u64::from_be_bytes(bytes)))
         }
     }

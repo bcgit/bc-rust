@@ -25,7 +25,7 @@ use crate::helpers::{
 use bouncycastle::core::errors::KEMError;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{KEMPrivateKey, KEMPublicKey, RNG};
+use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle::rsa::{rsa_2048, rsa_3072, rsa_4096, rsa_8192};
 use clap::ValueEnum;
@@ -58,8 +58,8 @@ fn require_secret(file: &Option<String>, flag_name: &str) -> crate::helpers::Sec
 
 /// One modulus size's RSASVE, per `action`.
 fn rsasve_cmd<
-    PK: KEMPublicKey<PK_LEN> + EncapsulatingKey<(), CT_LEN, SS_LEN>,
-    SK: KEMPrivateKey<SK_LEN> + DecapsulatingKey<(), CT_LEN, SS_LEN>,
+    PK: PublicKey<PK_LEN> + EncapsulatingKey<(), CT_LEN, SS_LEN>,
+    SK: PrivateKey<SK_LEN> + DecapsulatingKey<(), CT_LEN, SS_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const CT_LEN: usize,

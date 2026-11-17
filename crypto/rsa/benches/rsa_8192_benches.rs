@@ -5,9 +5,7 @@
 
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
-use bouncycastle_core::traits::{
-    KEMPrivateKey, KEMPublicKey, SignaturePrivateKey, SignaturePublicKey,
-};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_rsa::RSA8192;
 use bouncycastle_rsa::rsa_8192::{RSA8192KEMPrivateKey, RSA8192KEMPublicKey};
 use criterion::{Criterion, criterion_group, criterion_main};

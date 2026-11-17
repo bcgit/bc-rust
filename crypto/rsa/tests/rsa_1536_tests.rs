@@ -4,9 +4,9 @@
 //! vectors, since a sig-gen file's private key fields are simultaneously valid public key
 //! material and this crate never constructs an RSA-1536 private key at all.
 
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::signature_key::VerifyingKey;
-use bouncycastle_core::traits::SignaturePublicKey;
+use bouncycastle_core::traits::PublicKey;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::RSA1536;
 use bouncycastle_rsa::keys::{RsaPublicComponents, RsaPublicKey};
@@ -171,13 +171,13 @@ fn public_key_trait_encoding_round_trips_and_rejects_wrong_lengths() {
     assert_eq!(RsaPublicKey::<RSASSA_PKCS1_v1_5_SHA256>::from_bytes(&bytes).unwrap(), pk);
     assert!(matches!(
         RsaPublicKey::<RSASSA_PKCS1_v1_5_SHA256>::from_bytes(&bytes[..PK_LEN - 1]),
-        Err(SignatureError::DecodingError(_))
+        Err(KeyDecodingError(_))
     ));
     let mut too_long = bytes.to_vec();
     too_long.push(0);
     assert!(matches!(
         RsaPublicKey::<RSASSA_PKCS1_v1_5_SHA256>::from_bytes(&too_long),
-        Err(SignatureError::DecodingError(_))
+        Err(KeyDecodingError(_))
     ));
 }
 

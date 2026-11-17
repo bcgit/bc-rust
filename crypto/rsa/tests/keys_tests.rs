@@ -1,11 +1,11 @@
 //! Validation tests for [`bouncycastle_rsa::keys`]'s public API, including the
-//! `SignaturePrivateKey`/`SignaturePublicKey` impls `rsa_2048` gives its aliases of these types
+//! `PrivateKey`/`PublicKey` impls `rsa_2048` gives its aliases of these types
 //! (`RsaPrivateComponents<32, 16>` *is* `RsaPrivateComponents<RSA2048>`, so the traits' methods resolve here once
 //! imported). The generic boundary conditions every size shares are covered by
 //! `core-test-framework`'s `test_keys` in each size's own test file; these pin the layout itself.
 
-use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_rsa::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,
 };
@@ -151,7 +151,7 @@ fn public_key_encode_round_trips() {
     assert_eq!(decoded, pk);
 }
 
-/// `SignaturePublicKey`'s `n || e` layout, checked field by field rather than only by round
+/// `PublicKey`'s `n || e` layout, checked field by field rather than only by round
 /// trip: `n` big-endian (its most significant limb's top byte first), then `e` big-endian.
 #[test]
 fn public_key_encode_layout_is_n_then_e_big_endian() {
@@ -171,29 +171,20 @@ fn public_key_from_bytes_rejects_even_modulus() {
     let pk = RsaPublicComponents::<RSA2048>::new(&N, 0x10001).unwrap().into_key::<Pss256>();
     let mut bytes: [u8; 260] = pk.encode();
     bytes[255] &= !1; // clear n's low bit (last byte, big-endian)
-    assert!(matches!(
-        RsaPublicKey::<Pss256>::from_bytes(&bytes),
-        Err(SignatureError::DecodingError(_))
-    ));
+    assert!(matches!(RsaPublicKey::<Pss256>::from_bytes(&bytes), Err(KeyDecodingError(_))));
 }
 
 #[test]
 fn public_key_from_bytes_rejects_wrong_lengths() {
     let pk = RsaPublicComponents::<RSA2048>::new(&N, 0x10001).unwrap().into_key::<Pss256>();
     let bytes = pk.encode();
-    assert!(matches!(
-        RsaPublicKey::<Pss256>::from_bytes(&bytes[..259]),
-        Err(SignatureError::DecodingError(_))
-    ));
+    assert!(matches!(RsaPublicKey::<Pss256>::from_bytes(&bytes[..259]), Err(KeyDecodingError(_))));
     let mut too_long = bytes.to_vec();
     too_long.push(0);
-    assert!(matches!(
-        RsaPublicKey::<Pss256>::from_bytes(&too_long),
-        Err(SignatureError::DecodingError(_))
-    ));
+    assert!(matches!(RsaPublicKey::<Pss256>::from_bytes(&too_long), Err(KeyDecodingError(_))));
 }
 
-/// `Display` (a `SignaturePublicKey` supertrait) prints `n` as one big-endian hex string and `e`
+/// `Display` (a `PublicKey` supertrait) prints `n` as one big-endian hex string and `e`
 /// in hex, so a printed key can be matched by eye against a hex dump of its encoding.
 #[test]
 fn public_key_display_prints_big_endian_hex() {
@@ -216,7 +207,7 @@ fn private_key_encode_round_trips() {
     assert_eq!(decoded, sk);
 }
 
-/// `SignaturePrivateKey`'s `p || q || dP || dQ || qInv` layout, each field 128 bytes big-endian.
+/// `PrivateKey`'s `p || q || dP || dQ || qInv` layout, each field 128 bytes big-endian.
 #[test]
 fn private_key_encode_layout_is_five_big_endian_fields() {
     let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV)
@@ -243,10 +234,7 @@ fn private_key_from_bytes_rejects_equal_primes() {
     // Overwrite q (the second 128-byte field) with p, making the two primes equal.
     let p_field = bytes[..128].to_vec();
     bytes[128..256].copy_from_slice(&p_field);
-    assert!(matches!(
-        RsaPrivateKey::<Pss256>::from_bytes(&bytes),
-        Err(SignatureError::DecodingError(_))
-    ));
+    assert!(matches!(RsaPrivateKey::<Pss256>::from_bytes(&bytes), Err(KeyDecodingError(_))));
 }
 
 #[test]
@@ -255,16 +243,10 @@ fn private_key_from_bytes_rejects_wrong_lengths() {
         .unwrap()
         .into_key::<Pss256>();
     let bytes = sk.encode();
-    assert!(matches!(
-        RsaPrivateKey::<Pss256>::from_bytes(&bytes[..639]),
-        Err(SignatureError::DecodingError(_))
-    ));
+    assert!(matches!(RsaPrivateKey::<Pss256>::from_bytes(&bytes[..639]), Err(KeyDecodingError(_))));
     let mut too_long = bytes.to_vec();
     too_long.push(0);
-    assert!(matches!(
-        RsaPrivateKey::<Pss256>::from_bytes(&too_long),
-        Err(SignatureError::DecodingError(_))
-    ));
+    assert!(matches!(RsaPrivateKey::<Pss256>::from_bytes(&too_long), Err(KeyDecodingError(_))));
 }
 
 /// The CRT range checks run through the size's own forwarders: at every signing size a `dP`

@@ -5,7 +5,7 @@
 //! value that gives this `r`, so the signature pins it.
 
 use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
-use bouncycastle_core::traits::{Algorithm, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
 use bouncycastle_ec::P256;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;

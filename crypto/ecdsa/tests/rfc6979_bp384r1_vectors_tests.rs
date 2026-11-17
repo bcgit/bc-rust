@@ -14,7 +14,7 @@
 //! 50.0.1 bindings), which also anchors the curve constants a second way.
 
 use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ec::Bp384r1;
 use bouncycastle_ec::hazmat::bp384r1_comb::comb_multiply_base_point;
 use bouncycastle_ec::hazmat::bp384r1_scalar::Bp384r1Scalar;

@@ -6,9 +6,9 @@
 //! framework covers treats `ctx` as optional. This file instead covers the same ground by hand,
 //! always passing `ctx = Some(id)`, plus a dedicated test that `ctx = None` is rejected.
 
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
-use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_core_test_framework::signature::TestFrameworkSignatureKeys;
@@ -273,7 +273,7 @@ fn public_key_display_differs_for_different_keys() {
 #[test]
 fn private_key_rejects_zero() {
     match SM2PrivateKey::from_bytes(&[0u8; 32]) {
-        Err(SignatureError::DecodingError(_)) => {}
+        Err(KeyDecodingError(_)) => {}
         other => panic!("expected DecodingError, got {other:?}"),
     }
 }
@@ -296,7 +296,7 @@ fn private_key_rejects_values_outside_1_to_n_minus_2() {
         [("n - 1", n_minus_1), ("n", n), ("n + 1", n_plus_1), ("2^256 - 1", [0xffu8; 32])]
     {
         match SM2PrivateKey::from_bytes(&bytes) {
-            Err(SignatureError::DecodingError(_)) => {}
+            Err(KeyDecodingError(_)) => {}
             other => panic!("dA = {name} should have been rejected, got {other:?}"),
         }
     }

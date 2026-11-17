@@ -260,7 +260,7 @@ cipher and MAC traits had (`local/signer_verifier_init_removal_plan.md`). Mechan
   parameter set (`P: SignatureLen<SIG_LEN>`); the solver then infers `N` from `P`, and
   `sk.sign(..)` needs no annotation. One trait per length, not one trait for all of them: an
   impl's const parameter must appear in the trait reference or the self type, and
-  `SignaturePublicKey<PK_LEN>` names only one. Where a whole encoding is needed with no const in
+  `PublicKey<PK_LEN>` names only one. Where a whole encoding is needed with no const in
   scope (`compute_tr`, `PartialEq`), the parameter set supplies the buffer type
   (`P::PkEncoded`). The alternative, one concrete impl per parameter set, is a macro's worth of
   copies.
@@ -310,7 +310,7 @@ agreement next:
 - **Lengths come off the key types the ML-DSA way, with slice helpers where no const is in
   scope.** `MLKEMPublicKey<P>` encodes into a slice (`encode_into`), hashes itself a polynomial
   at a time and compares field by field, so nothing inside a generic `impl<P>` needs a
-  `[u8; PK_LEN]`; the array forms are the `KEMPublicKey<N>` impls, bound `P: PublicKeyLen<N>`.
+  `[u8; PK_LEN]`; the array forms are the `PublicKey<N>` impls, bound `P: PublicKeyLen<N>`.
 - **A `--jobs N` mutants run owns N scratch trees.** Every `/tmp/cargo-mutants-bc-rust-*.tmp`
   with a fresh mtime belongs to the live run; deleting any of them kills it.
 

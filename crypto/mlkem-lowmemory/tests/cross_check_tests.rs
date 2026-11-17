@@ -6,7 +6,7 @@
 
 use bouncycastle_core::kem_key::DecapsulatingKey;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_mlkem as full;
 use bouncycastle_mlkem_lowmemory as low;
@@ -26,7 +26,7 @@ macro_rules! cross_check {
 
             assert_eq!(pk_full.encode().as_slice(), pk_low.encode().as_slice(), "ek");
             assert_eq!(
-                KEMPrivateKey::encode(&sk_full).as_slice(),
+                PrivateKey::encode(&sk_full).as_slice(),
                 sk_low.encode_full_sk().as_slice(),
                 "dk (Algorithm 16 encoding)"
             );

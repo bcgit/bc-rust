@@ -92,7 +92,7 @@
 //!
 //! ```
 //! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
-//! use bouncycastle_core::traits::{Algorithm, SignaturePublicKey};
+//! use bouncycastle_core::traits::{Algorithm, PublicKey};
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_ecdsa::ecdsa::ECDSA;
 //! use bouncycastle_ecdsa::keys::ECDSAPublicKey;
@@ -120,7 +120,7 @@
 //! ```
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_sha2::SHA256;
-//! use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+//! use bouncycastle_core::traits::{PrivateKey, PublicKey};
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 //! use bouncycastle_ecdsa::keys_common::SignatureKeyPair;

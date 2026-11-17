@@ -33,9 +33,7 @@
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
-use bouncycastle::core::traits::{
-    KEMPrivateKey, KEMPublicKey, SignaturePrivateKey, SignaturePublicKey,
-};
+use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::rng::DefaultRNG;
 use bouncycastle::rsa::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,

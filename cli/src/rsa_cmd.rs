@@ -25,7 +25,7 @@
 //! to receive the public key: an RSA private key file (RFC 8017's CRT quintuple) does not carry
 //! the public exponent `e`, so there is no `PkFromSk`/`CheckConsistency` here, the public key has
 //! to be kept from generation time. Private and public key files use the raw fixed-width layout
-//! `RsaPrivateKey`/`RsaPublicKey`'s `SignaturePrivateKey`/`SignaturePublicKey` impls encode
+//! `RsaPrivateKey`/`RsaPublicKey`'s `PrivateKey`/`PublicKey` impls encode
 //! (documented under `# Encoding` on those types): not PEM, not ASN.1 DER -- this crate has no
 //! encoder for either -- so a key produced by another RSA implementation cannot be fed to this
 //! CLI directly.
@@ -42,9 +42,7 @@ use crate::helpers::{
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
-use bouncycastle::core::traits::{
-    RNG, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
-};
+use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier};
 use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle::rsa::keys::{RsaPrivateKey, RsaPublicKey};
 use bouncycastle::rsa::rsassa::{
@@ -121,11 +119,8 @@ fn unsupported(scheme: &RSAScheme, hash: &RSAHash, alg_name: &str) -> ! {
 }
 
 /// See `RsaPrivateKey`'s `# Encoding` docs for the expected layout; a wrong-length file is one of
-/// the `DecodingError`s `SignaturePrivateKey::from_bytes` reports.
-fn parse_sk<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize>(
-    bytes: &[u8],
-    alg_name: &str,
-) -> SK {
+/// the `DecodingError`s `PrivateKey::from_bytes` reports.
+fn parse_sk<SK: PrivateKey<SK_LEN>, const SK_LEN: usize>(bytes: &[u8], alg_name: &str) -> SK {
     match SK::from_bytes(bytes) {
         Ok(sk) => sk,
         Err(_) => {
@@ -139,11 +134,8 @@ fn parse_sk<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize>(
 }
 
 /// See `RsaPublicKey`'s `# Encoding` docs for the expected layout; a wrong-length file is one of
-/// the `DecodingError`s `SignaturePublicKey::from_bytes` reports.
-fn parse_pk<PK: SignaturePublicKey<PK_LEN>, const PK_LEN: usize>(
-    bytes: &[u8],
-    alg_name: &str,
-) -> PK {
+/// the `DecodingError`s `PublicKey::from_bytes` reports.
+fn parse_pk<PK: PublicKey<PK_LEN>, const PK_LEN: usize>(bytes: &[u8], alg_name: &str) -> PK {
     match PK::from_bytes(bytes) {
         Ok(pk) => pk,
         Err(_) => {
@@ -166,7 +158,7 @@ fn do_verify<A: RsaSignatureAlgorithm, const PK_LEN: usize, const SIG_LEN: usize
     sigfile: &Option<String>,
     alg_name: &str,
 ) where
-    RsaPublicKey<A>: SignaturePublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN>,
+    RsaPublicKey<A>: PublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN>,
 {
     let pk = parse_pk::<RsaPublicKey<A>, PK_LEN>(&require_file(pkfile, "pkfile"), alg_name);
     let sig = require_file(sigfile, "sigfile");
@@ -196,8 +188,8 @@ fn rsa_keygen_cmd<A: RsaSignatureAlgorithm, const PK_LEN: usize, const SK_LEN: u
     output_hex: bool,
     alg_name: &str,
 ) where
-    RsaPublicKey<A>: SignaturePublicKey<PK_LEN>,
-    RsaPrivateKey<A>: SignaturePrivateKey<SK_LEN>,
+    RsaPublicKey<A>: PublicKey<PK_LEN>,
+    RsaPrivateKey<A>: PrivateKey<SK_LEN>,
 {
     let Some(pkfile) = pkfile else {
         eprintln!(
@@ -231,8 +223,8 @@ fn rsa_pss_cmd<
     output_hex: bool,
     alg_name: &str,
 ) where
-    RsaPublicKey<A>: SignaturePublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN>,
-    RsaPrivateKey<A>: SignaturePrivateKey<SK_LEN> + SigningKey<A, SIG_LEN>,
+    RsaPublicKey<A>: PublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN>,
+    RsaPrivateKey<A>: PrivateKey<SK_LEN> + SigningKey<A, SIG_LEN>,
 {
     match action {
         RSAAction::Keygen => {
@@ -277,8 +269,8 @@ fn rsa_pkcs1_cmd<
     output_hex: bool,
     alg_name: &str,
 ) where
-    RsaPublicKey<A>: SignaturePublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN>,
-    RsaPrivateKey<A>: SignaturePrivateKey<SK_LEN> + DeterministicSigningKey<A, SIG_LEN>,
+    RsaPublicKey<A>: PublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN>,
+    RsaPrivateKey<A>: PrivateKey<SK_LEN> + DeterministicSigningKey<A, SIG_LEN>,
 {
     match action {
         RSAAction::Keygen => {

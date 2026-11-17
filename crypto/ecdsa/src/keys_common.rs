@@ -11,7 +11,7 @@
 //! private key alone, with no additional state).
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{RNG, SignaturePublicKey};
+use bouncycastle_core::traits::{PublicKey, RNG};
 
 use crate::ecdsa::EcdsaHash;
 use crate::keys::{ECDSAPrivateKey, ECDSAPublicKey};
@@ -19,7 +19,7 @@ use bouncycastle_ec::curve::Curve;
 
 /// Implemented by the private key: recomputes the matching public key `Q = [d]G` directly from
 /// the wrapped private scalar `d`, using the same fixed-base multiplier `keys::keygen` uses.
-pub trait DerivePublicKey<PK: SignaturePublicKey<PK_LEN>, const PK_LEN: usize> {
+pub trait DerivePublicKey<PK: PublicKey<PK_LEN>, const PK_LEN: usize> {
     /// Recomputes `Q = [d]G`.
     fn derive_pk(&self) -> PK;
 }

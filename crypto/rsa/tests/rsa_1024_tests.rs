@@ -6,9 +6,9 @@
 //! what `rsa_signature_*_test.json` files provide at every other size, just recovered from a
 //! differently-shaped file because Wycheproof has no dedicated `rsa_signature_1024_*.json`.
 
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::signature_key::VerifyingKey;
-use bouncycastle_core::traits::SignaturePublicKey;
+use bouncycastle_core::traits::PublicKey;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::RSA1024;
 use bouncycastle_rsa::keys::{RsaPublicComponents, RsaPublicKey};
@@ -135,7 +135,7 @@ fn pkcs1_v1_5_sha384_rejects_wrong_message() {
 //
 // No signing role exists at this size (see `rsa_1024.rs`'s docs and its `compile_fail` doctest), so
 // `core-test-framework`'s signature suite -- which needs one -- cannot run here; the
-// `VerifyingKey` and `SignaturePublicKey` impls are checked directly against the same
+// `VerifyingKey` and `PublicKey` impls are checked directly against the same
 // genuine Wycheproof material as the tests above.
 
 /// RFC 8017 §8.2.2 step 1 through the trait's `&[u8]` signature: a truncated genuine signature
@@ -166,13 +166,13 @@ fn public_key_trait_encoding_round_trips_and_rejects_wrong_lengths() {
     assert_eq!(RsaPublicKey::<RSASSA_PKCS1_v1_5_SHA256>::from_bytes(&bytes).unwrap(), pk);
     assert!(matches!(
         RsaPublicKey::<RSASSA_PKCS1_v1_5_SHA256>::from_bytes(&bytes[..PK_LEN - 1]),
-        Err(SignatureError::DecodingError(_))
+        Err(KeyDecodingError(_))
     ));
     let mut too_long = bytes.to_vec();
     too_long.push(0);
     assert!(matches!(
         RsaPublicKey::<RSASSA_PKCS1_v1_5_SHA256>::from_bytes(&too_long),
-        Err(SignatureError::DecodingError(_))
+        Err(KeyDecodingError(_))
     ));
 }
 

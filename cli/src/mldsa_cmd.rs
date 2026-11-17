@@ -17,9 +17,7 @@ use bouncycastle::core::signature_key::{
     DeterministicPreHashSigningKey, DeterministicSigningKey, PreHashSigningKey,
     PreHashVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
-use bouncycastle::core::traits::{
-    RNG, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
-};
+use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier};
 use bouncycastle::mldsa::{
     MLDSA_MU_LEN, MLDSA_SEED_LEN, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN,
     MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN,
@@ -172,8 +170,8 @@ pub(crate) const MLDSA87_SET: ParameterSet<
 /// `deterministic` the variant with `rnd` all zero (Section 3.4) over the hedged one.
 pub(crate) fn mldsa_cmd<
     A: SignatureAlgorithm,
-    PK: SignaturePublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN> + PreHashVerifyingKey<A, SIG_LEN>,
-    SK: SignaturePrivateKey<SK_LEN>
+    PK: PublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN> + PreHashVerifyingKey<A, SIG_LEN>,
+    SK: PrivateKey<SK_LEN>
         + SigningKey<A, SIG_LEN>
         + DeterministicSigningKey<A, SIG_LEN>
         + PreHashSigningKey<A, SIG_LEN>
@@ -421,7 +419,7 @@ fn read_required_secret(file: &Option<String>, flag: &str) -> crate::helpers::Se
 fn parse_sk<
     A,
     PK,
-    SK: SignaturePrivateKey<SK_LEN>,
+    SK: PrivateKey<SK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
@@ -449,7 +447,7 @@ fn parse_sk<
 /// A public key from its bytes.
 fn parse_pk<
     A,
-    PK: SignaturePublicKey<PK_LEN>,
+    PK: PublicKey<PK_LEN>,
     SK,
     const PK_LEN: usize,
     const SK_LEN: usize,

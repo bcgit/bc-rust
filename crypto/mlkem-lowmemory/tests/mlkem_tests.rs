@@ -6,7 +6,7 @@ mod mlkem_tests {
     use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, XOF, XOFSqueezer};
+    use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, XOF, XOFSqueezer};
     use bouncycastle_hex as hex;
     use bouncycastle_mlkem_lowmemory::hazmat::EncapsWithRandomness;
     use bouncycastle_mlkem_lowmemory::mlkem::{

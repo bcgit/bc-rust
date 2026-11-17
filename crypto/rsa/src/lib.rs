@@ -37,7 +37,7 @@
 //! RSASSA-PKCS1-v1_5, and [`VerifyingKey`](bouncycastle_core::signature_key::VerifyingKey) for
 //! all; one-shot or streaming, the same API shape as this workspace's ECDSA, SM2 and ML-DSA
 //! crates. The key types implement
-//! [`SignaturePrivateKey`](bouncycastle_core::traits::SignaturePrivateKey)/[`SignaturePublicKey`](bouncycastle_core::traits::SignaturePublicKey),
+//! [`PrivateKey`](bouncycastle_core::traits::PrivateKey)/[`PublicKey`](bouncycastle_core::traits::PublicKey),
 //! the bytes carrying no scheme, so a key file is decoded under the key type it is for. A
 //! signing size generates a pair for one algorithm through [`size::SignatureKeyPair`]
 //! (`RSA2048::generate_pss_signature_key_pair::<SHA256>(&mut rng)`, FIPS 186-5 Appendix A.1.3,
@@ -74,7 +74,7 @@
 //!
 //! ```
 //! use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
-//! use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier};
+//! use bouncycastle_core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_rsa::keys::{RsaPrivateKey, RsaPublicKey};
 //! use bouncycastle_rsa::rsa_2048::{RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256};
@@ -278,7 +278,7 @@
 //! | RSASVE encaps              | 10696    | 35464    |
 //! | RSASVE decaps              | 10744    | 40776    |
 //!
-//! All values are in bytes. "On disk" is the `SignaturePublicKey`/`SignaturePrivateKey` raw
+//! All values are in bytes. "On disk" is the `PublicKey`/`PrivateKey` raw
 //! layout ([`keys::RsaPublicKey`]'s and [`keys::RsaPrivateKey`]'s `# Encoding`: `n || e`, and
 //! `p || q || dP || dQ || qInv` respectively); "in memory" is `core::mem::size_of`. A signature
 //! is the same size as the modulus itself (`K::K_LEN`: 128/192/256/384/512/1024 for

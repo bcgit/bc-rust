@@ -5,10 +5,10 @@
 
 #![allow(dead_code)] // each test file calls the functions it needs
 
-use bouncycastle_core::errors::{RNGError, SignatureError};
+use bouncycastle_core::errors::{KeyDecodingError, RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
-use bouncycastle_core::traits::{Algorithm, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::signature::{
     TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
@@ -127,7 +127,7 @@ where
     let mut off_curve = uncompressed;
     off_curve[PK_LEN - 1] ^= 1;
     match ECDSAPublicKey::<C, H>::from_bytes(&off_curve) {
-        Err(SignatureError::DecodingError(_)) => {}
+        Err(KeyDecodingError(_)) => {}
         other => panic!("expected DecodingError, got {other:?}"),
     }
 
@@ -140,7 +140,7 @@ where
     assert_eq!(out, bytes);
 
     match ECDSAPrivateKey::<C, H>::from_bytes(&[0u8; SK_LEN]) {
-        Err(SignatureError::DecodingError(_)) => {}
+        Err(KeyDecodingError(_)) => {}
         other => panic!("expected DecodingError, got {other:?}"),
     }
     let n = C::be_bytes_from_limbs(&C::N);
@@ -148,12 +148,12 @@ where
     n_plus_1[SK_LEN - 1] += 1; // n is odd, so no carry
     for (name, bad) in [("n", n), ("n + 1", n_plus_1), ("all ones", [0xffu8; SK_LEN])] {
         match ECDSAPrivateKey::<C, H>::from_bytes(&bad) {
-            Err(SignatureError::DecodingError(_)) => {}
+            Err(KeyDecodingError(_)) => {}
             other => panic!("d = {name} should have been rejected, got {other:?}"),
         }
     }
     match ECDSAPrivateKey::<C, H>::from_bytes(&n[..SK_LEN - 1]) {
-        Err(SignatureError::DecodingError(_)) => {}
+        Err(KeyDecodingError(_)) => {}
         other => panic!("a short encoding should have been rejected, got {other:?}"),
     }
     let mut n_minus_1 = n;

@@ -75,7 +75,7 @@
 //!
 //! ```
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+//! use bouncycastle_core::traits::{PrivateKey, PublicKey};
 //! use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey, keygen};
 //!
 //! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;

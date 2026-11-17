@@ -2,6 +2,7 @@
 //! description of the KDF, the fixed info of the derivation, and the length of what it derives.
 
 use crate::errors::KDFError;
+use crate::key_material::{KeyMaterial, KeyMaterialTrait};
 use crate::traits::{AlgorithmInfo, KDF};
 
 /// The length of the key a derivation produces, in bytes, as a value: the third argument of
@@ -76,6 +77,31 @@ impl<'p, D: KdfDescription + ?Sized, const LEN: usize> KdfParams<'p, D, LEN> {
     /// The fixed info.
     pub fn info(&self) -> &'p [u8] {
         self.info
+    }
+
+    /// KDF(ikm, info) into `out`, zeroized first: a key of `LEN` bytes, derived by an engine
+    /// built from the description for this one derivation. What a software pairing does with
+    /// its shared secret; the caller's buffer is where the key lives.
+    ///
+    /// # Errors
+    /// What the KDF refuses, building the engine ([`KdfDescription::engine`]) or deriving
+    /// ([`KDF::derive_key_out`]), and [`KDFError::GenericError`] if it writes anything but `LEN`
+    /// bytes; `out` is left zeroized.
+    pub fn derive_out<const IKM_LEN: usize>(
+        &self,
+        ikm: &KeyMaterial<IKM_LEN>,
+        out: &mut KeyMaterial<LEN>,
+    ) -> Result<(), KDFError> {
+        out.zeroize();
+        // `derive_key_out` zeroizes `out` first and leaves it so on its errors.
+        let kdf = self.kdf.engine()?;
+        let written = kdf.derive_key_out(ikm, self.info, LEN, out)?;
+        // The trait says `len` bytes come back; the key handed out is LEN bytes.
+        if written != LEN || out.key_len() != LEN {
+            out.zeroize();
+            return Err(KDFError::GenericError("the KDF derived a key of the wrong length"));
+        }
+        Ok(())
     }
 }
 

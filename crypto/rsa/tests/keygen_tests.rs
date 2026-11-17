@@ -22,8 +22,8 @@
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+use bouncycastle_core::traits::PrivateKey;
 use bouncycastle_core::traits::RNG;
-use bouncycastle_core::traits::SignaturePrivateKey;
 use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_ec::montgomery::widening_mul;
 use bouncycastle_rng::DefaultRNG;

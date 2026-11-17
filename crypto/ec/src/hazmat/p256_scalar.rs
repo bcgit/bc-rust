@@ -402,7 +402,7 @@ fn reduce_once_into(limbs: &[u64; 4], out: &mut [u64; 4]) {
 /// caller cannot pass a secret scalar to the variable-time multiplier by accident -- the type
 /// system forbids it, rather than relying on a reviewer to notice. `Clone`/`Debug`/`PartialEq`/`Eq`
 /// forward to [`Secret`]'s own impls (`Debug` redacting,
-/// `PartialEq` constant-time), which is what `core::traits::SignaturePrivateKey`'s bound needs.
+/// `PartialEq` constant-time), which is what `core::traits::PrivateKey`'s bound needs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct P256Scalar(Secret<[u64; 4]>);
 
@@ -431,7 +431,7 @@ impl P256Scalar {
 
     /// Encodes to SEC 1 §2.3.7 big-endian octets -- the wire form of an ECDSA private key.
     /// Momentarily holds the plain value in the returned array, same as any other `encode()` on a
-    /// `SignaturePrivateKey`: the caller asked for the bytes.
+    /// `PrivateKey`: the caller asked for the bytes.
     pub fn to_be_bytes(&self) -> [u8; 32] {
         crate::hazmat::p256_sec1::be_bytes_from_limbs(&self.0)
     }

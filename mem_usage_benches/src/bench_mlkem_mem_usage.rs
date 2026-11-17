@@ -31,7 +31,7 @@
 
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial512, KeyType};
-use bouncycastle::core::traits::KEMPublicKey;
+use bouncycastle::core::traits::PublicKey;
 use bouncycastle::mlkem::mlkem::MLKEMTrait;
 use bouncycastle::mlkem::{
     MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM1024_CT_LEN,

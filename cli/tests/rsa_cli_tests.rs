@@ -9,7 +9,7 @@
 //! current profile, so there is nothing to build or locate by hand.
 
 use bouncycastle::core::signature_key::{DeterministicSigningKey, VerifyingKey};
-use bouncycastle::core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::rsa::RSA2048;
 use bouncycastle::rsa::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,

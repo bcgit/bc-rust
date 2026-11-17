@@ -6,9 +6,7 @@
 
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
-use bouncycastle_core::traits::{
-    KEMPrivateKey, KEMPublicKey, SignaturePrivateKey, SignaturePublicKey,
-};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::rsa_2048::{RSA2048KEMPrivateKey, RSA2048KEMPublicKey};
 use bouncycastle_rsa::size::RsaSigningSize;

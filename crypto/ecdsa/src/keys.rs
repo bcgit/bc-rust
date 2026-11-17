@@ -7,8 +7,8 @@
 
 use crate::ecdsa::EcdsaHash;
 use crate::keys_common::{DerivePublicKey, SignatureKeyPair};
-use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
+use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_ec::curve::{Curve, SecretScalar, private_scalar_from_be_bytes};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -46,7 +46,7 @@ where
     }
 }
 
-impl<C, H: EcdsaHash, const SK_LEN: usize> SignaturePrivateKey<SK_LEN> for ECDSAPrivateKey<C, H>
+impl<C, H: EcdsaHash, const SK_LEN: usize> PrivateKey<SK_LEN> for ECDSAPrivateKey<C, H>
 where
     C: Curve<ScalarBytes = [u8; SK_LEN]>,
 {
@@ -65,13 +65,13 @@ where
     /// otherwise have unboundedly many encodings); the check and the load are
     /// [`private_scalar_from_be_bytes`], which stages the candidate in a `Secret` and reveals only
     /// whether the key loaded.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let bytes: &[u8; SK_LEN] = bytes.try_into().map_err(|_| {
-            SignatureError::DecodingError("an ECDSA private key is the curve's scalar length")
-        })?;
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
+        let bytes: &[u8; SK_LEN] = bytes
+            .try_into()
+            .map_err(|_| KeyDecodingError("an ECDSA private key is the curve's scalar length"))?;
         private_scalar_from_be_bytes::<C>(bytes)
             .map(|d| Self { d, _hash: PhantomData })
-            .ok_or(SignatureError::DecodingError("ECDSA private key must be in [1, n-1]"))
+            .ok_or(KeyDecodingError("ECDSA private key must be in [1, n-1]"))
     }
 }
 
@@ -92,7 +92,7 @@ impl<C: Curve, H: EcdsaHash> ECDSAPublicKey<C, H> {
     }
 }
 
-impl<C, H: EcdsaHash, const PK_LEN: usize> SignaturePublicKey<PK_LEN> for ECDSAPublicKey<C, H>
+impl<C, H: EcdsaHash, const PK_LEN: usize> PublicKey<PK_LEN> for ECDSAPublicKey<C, H>
 where
     C: Curve<PkUncompressed = [u8; PK_LEN]>,
 {
@@ -109,8 +109,8 @@ where
     /// Accepts both SEC 1 Section 2.3.3 encodings (compressed and uncompressed), validated by the
     /// curve's decoder as SP 800-186 Appendix D.1.1.1 asks: coordinates in `[0, p-1]` and on the
     /// curve. A point off the curve is refused here, so it never reaches a verification.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let (x, y) = C::decode(bytes).ok_or(SignatureError::DecodingError(
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
+        let (x, y) = C::decode(bytes).ok_or(KeyDecodingError(
             "invalid or out-of-range SEC 1 point encoding for the curve",
         ))?;
         Ok(Self { x, y, _hash: PhantomData })
