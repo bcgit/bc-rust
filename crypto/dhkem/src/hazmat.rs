@@ -90,7 +90,7 @@ pub fn labeled_extract_prk_into<H: HMACParams>(
 
 /// `LabeledExpand(prk, label, info, L)` (RFC 9180 Section 4), where `Expand` is HKDF-Expand (RFC
 /// 5869 Section 2.3) over `H`, `L` is `out.len()`, and `info` is given as the parts it is the
-/// concatenation of.
+/// concatenation of. Returns the number of bytes written, `L`.
 ///
 /// # Panics
 /// If `L` is more than 255*Nh or more than 0xFFFF.
@@ -100,7 +100,7 @@ pub fn labeled_expand<H: HMACParams>(
     label: &[u8],
     info: &[&[u8]],
     out: &mut [u8],
-) {
+) -> usize {
     let nh = <H as HashAlgParams>::OUTPUT_LEN;
     // Past these, I2OSP(L, 2) and the one-byte block counter would wrap and the output would be
     // silently wrong. Every caller in the workspace is bounded at compile time.
@@ -136,4 +136,5 @@ pub fn labeled_expand<H: HMACParams>(
         t_len = hmac_hazmat::finish_out(&key, &mut hmac, &mut t[..nh]);
         okm_chunk.copy_from_slice(&t[..okm_chunk.len()]);
     }
+    out.len()
 }

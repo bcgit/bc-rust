@@ -220,8 +220,9 @@ impl<
 
     /// `Encap(pkR)` (RFC 9180 Section 4.1), with the ephemeral key pair generated from `rng`:
     /// the shared secret, a [`KeyType::CryptographicRandom`] key at the group's security
-    /// strength, into `shared_secret` and `enc`, the ephemeral public key, into `enc`, each
-    /// zeroized first and left so on the error path.
+    /// strength, into `shared_secret`, and the ephemeral public key into `enc`, each zeroized
+    /// first and left so on the error path. Returns the number of bytes written to
+    /// `enc`, always Nenc.
     ///
     /// # Errors
     /// * [`KEMError::RNGError`] if `rng`'s security strength is below the group's.
@@ -232,7 +233,7 @@ impl<
         rng: &mut dyn RNG,
         enc: &mut [u8; N_PK],
         shared_secret: &mut KeyMaterial<N_SECRET>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         let () = Self::PARAMS_CHECK;
         enc.fill(0);
         shared_secret.zeroize();
@@ -255,7 +256,7 @@ impl<
         let pk_rm = G::serialize_public_key(pk_r);
         // shared_secret = ExtractAndExpand(dh, kem_context)
         Self::extract_and_expand_into(&[&*dh], &[&*enc, &pk_rm], shared_secret);
-        Ok(())
+        Ok(N_PK)
     }
 
     /// [`Self::encap_rng_out`] returning the pair by value: the shared secret is moved out of
@@ -272,7 +273,8 @@ impl<
 
     /// `Decap(enc, skR)` (RFC 9180 Section 4.1): the shared secret, a
     /// [`KeyType::CryptographicRandom`] key at the group's security strength, into
-    /// `shared_secret`, zeroized first and left so on the error path.
+    /// `shared_secret`, zeroized first and left so on the error path. Returns the number of
+    /// bytes written to it, always Nsecret.
     ///
     /// # Errors
     /// [`KEMError::DecapsulationFailed`] if `enc` does not deserialize or the DH output fails the
@@ -281,14 +283,14 @@ impl<
         enc: &[u8; N_PK],
         sk_r: &G::PrivateKey,
         shared_secret: &mut KeyMaterial<N_SECRET>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         Self::decap_with_pk_out(enc, sk_r, &G::pk(sk_r), shared_secret)
     }
 
     /// [`Self::decap_out`] with the recipient's public key supplied, for a group whose private
     /// key does not hold it: a worker computes `pk(skR)` once and decapsulates many times.
     /// `pk_r` must be `pk(sk_r)`; it is bound into the shared secret, so a different key gives
-    /// a secret the sender does not share.
+    /// a secret the sender does not share. Returns Nsecret, as [`Self::decap_out`].
     ///
     /// # Errors
     /// As [`Self::decap_out`].
@@ -297,7 +299,7 @@ impl<
         sk_r: &G::PrivateKey,
         pk_r: &G::PublicKey,
         shared_secret: &mut KeyMaterial<N_SECRET>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         let () = Self::PARAMS_CHECK;
         shared_secret.zeroize();
         // pkE = DeserializePublicKey(enc)
@@ -309,7 +311,7 @@ impl<
         let pk_rm = G::serialize_public_key(pk_r);
         // shared_secret = ExtractAndExpand(dh, kem_context)
         Self::extract_and_expand_into(&[&*dh], &[enc, &pk_rm], shared_secret);
-        Ok(())
+        Ok(N_SECRET)
     }
 
     /// [`Self::decap_out`] returning the shared secret by value: it is moved out of this frame,
@@ -325,7 +327,8 @@ impl<
 
     /// `AuthEncap(pkR, skS)` (RFC 9180 Section 4.1), with the ephemeral key pair generated from
     /// `rng`: as [`Self::encap_rng_out`], with the sender's private key `sk_s` bound into the
-    /// shared secret, so that only [`Self::auth_decap_out`] with `pk(sk_s)` recovers it.
+    /// shared secret, so that only [`Self::auth_decap_out`] with `pk(sk_s)` recovers it. Returns
+    /// the number of bytes written to `enc`, always Nenc.
     ///
     /// # Errors
     /// * [`KEMError::RNGError`] if `rng`'s security strength is below the group's.
@@ -337,7 +340,7 @@ impl<
         rng: &mut dyn RNG,
         enc: &mut [u8; N_PK],
         shared_secret: &mut KeyMaterial<N_SECRET>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         let () = Self::PARAMS_CHECK;
         enc.fill(0);
         shared_secret.zeroize();
@@ -370,12 +373,13 @@ impl<
         let pk_sm = G::serialize_public_key(&G::pk(sk_s));
         // shared_secret = ExtractAndExpand(dh, kem_context)
         Self::extract_and_expand_into(&[&*dh_e, &*dh_s], &[&*enc, &pk_rm, &pk_sm], shared_secret);
-        Ok(())
+        Ok(N_PK)
     }
 
     /// `AuthDecap(enc, skR, pkS)` (RFC 9180 Section 4.1): as [`Self::decap_out`], with the
     /// sender's public key `pk_s` bound into the shared secret, which is the sender's only if
-    /// `enc` came from [`Self::auth_encap_rng_out`] under the private key of `pk_s`.
+    /// `enc` came from [`Self::auth_encap_rng_out`] under the private key of `pk_s`. Returns the
+    /// number of bytes written to `shared_secret`, always Nsecret.
     ///
     /// # Errors
     /// * [`KEMError::DecapsulationFailed`] if `enc` does not deserialize or its DH output fails
@@ -388,12 +392,13 @@ impl<
         sk_r: &G::PrivateKey,
         pk_s: &G::PublicKey,
         shared_secret: &mut KeyMaterial<N_SECRET>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         Self::auth_decap_with_pk_out(enc, sk_r, &G::pk(sk_r), pk_s, shared_secret)
     }
 
     /// [`Self::auth_decap_out`] with the recipient's public key supplied, as
     /// [`Self::decap_with_pk_out`] is to [`Self::decap_out`]. `pk_r` must be `pk(sk_r)`.
+    /// Returns Nsecret.
     ///
     /// # Errors
     /// As [`Self::auth_decap_out`].
@@ -403,7 +408,7 @@ impl<
         pk_r: &G::PublicKey,
         pk_s: &G::PublicKey,
         shared_secret: &mut KeyMaterial<N_SECRET>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         let () = Self::PARAMS_CHECK;
         shared_secret.zeroize();
         // pkE = DeserializePublicKey(enc)
@@ -420,7 +425,7 @@ impl<
         let pk_sm = G::serialize_public_key(pk_s);
         // shared_secret = ExtractAndExpand(dh, kem_context)
         Self::extract_and_expand_into(&[&*dh_e, &*dh_s], &[enc, &pk_rm, &pk_sm], shared_secret);
-        Ok(())
+        Ok(N_SECRET)
     }
 
     /// `DeriveKeyPair(ikm)` (RFC 9180 Section 7.1.3), in the group's form
@@ -528,6 +533,8 @@ impl<
     }
 
     /// `LabeledExpand(prk, label, info, L)` under the KEM's suite id, with `L` as `out.len()`.
+    /// It fills `out` and returns nothing: its callers size `out` themselves, and a count
+    /// nobody reads would be a value no test could pin.
     fn labeled_expand(prk: &KeyMaterial<MAX_NH>, label: &[u8], info: &[&[u8]], out: &mut [u8]) {
         // L is Nsecret or Nsk, which PARAMS_CHECK bounds by 255*HashLen and by 0xFFFF.
         labeled::labeled_expand::<G::KDFHash>(&Self::SUITE_ID, prk, label, info, out);

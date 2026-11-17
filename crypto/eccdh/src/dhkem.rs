@@ -90,7 +90,7 @@ pub trait DhkemCurve: Curve + sealed::Sealed {
         rng: &mut dyn RNG,
         enc: &mut Self::PkUncompressed,
         shared_secret: &mut Self::SharedSecret,
-    ) -> Result<(), KEMError>;
+    ) -> Result<usize, KEMError>;
 
     /// `Decap(enc, skR)` into `shared_secret`, with `pk_r = pk(skR)` supplied;
     /// [`DHKEM::decap_with_pk_out`].
@@ -100,7 +100,7 @@ pub trait DhkemCurve: Curve + sealed::Sealed {
         sk_r: &ECCDHPrivateKey<Self>,
         pk_r: &ECCDHPublicKey<Self>,
         shared_secret: &mut Self::SharedSecret,
-    ) -> Result<(), KEMError>;
+    ) -> Result<usize, KEMError>;
 
     /// `AuthEncap(pkR, skS)` into `enc` and `shared_secret`; [`DHKEM::auth_encap_rng_out`].
     #[doc(hidden)]
@@ -110,7 +110,7 @@ pub trait DhkemCurve: Curve + sealed::Sealed {
         rng: &mut dyn RNG,
         enc: &mut Self::PkUncompressed,
         shared_secret: &mut Self::SharedSecret,
-    ) -> Result<(), KEMError>;
+    ) -> Result<usize, KEMError>;
 
     /// `AuthDecap(enc, skR, pkS)` into `shared_secret`, with `pk_r = pk(skR)` supplied;
     /// [`DHKEM::auth_decap_with_pk_out`].
@@ -121,7 +121,7 @@ pub trait DhkemCurve: Curve + sealed::Sealed {
         pk_r: &ECCDHPublicKey<Self>,
         pk_s: &ECCDHPublicKey<Self>,
         shared_secret: &mut Self::SharedSecret,
-    ) -> Result<(), KEMError>;
+    ) -> Result<usize, KEMError>;
 
     /// `DeriveKeyPair(ikm)`; [`DHKEM::derive_key_pair`].
     #[doc(hidden)]
@@ -142,7 +142,7 @@ impl DhkemCurve for P256 {
         rng: &mut dyn RNG,
         enc: &mut [u8; 65],
         shared_secret: &mut KeyMaterial<32>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         DHKEM::<ECCDH<P256>, 65, 32, 32, 32>::encap_rng_out(pk_r, rng, enc, shared_secret)
     }
 
@@ -151,7 +151,7 @@ impl DhkemCurve for P256 {
         sk_r: &ECCDHPrivateKey<Self>,
         pk_r: &ECCDHPublicKey<Self>,
         shared_secret: &mut KeyMaterial<32>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         DHKEM::<ECCDH<P256>, 65, 32, 32, 32>::decap_with_pk_out(enc, sk_r, pk_r, shared_secret)
     }
 
@@ -161,7 +161,7 @@ impl DhkemCurve for P256 {
         rng: &mut dyn RNG,
         enc: &mut [u8; 65],
         shared_secret: &mut KeyMaterial<32>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         DHKEM::<ECCDH<P256>, 65, 32, 32, 32>::auth_encap_rng_out(
             pk_r, sk_s, rng, enc, shared_secret,
         )
@@ -173,7 +173,7 @@ impl DhkemCurve for P256 {
         pk_r: &ECCDHPublicKey<Self>,
         pk_s: &ECCDHPublicKey<Self>,
         shared_secret: &mut KeyMaterial<32>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         DHKEM::<ECCDH<P256>, 65, 32, 32, 32>::auth_decap_with_pk_out(
             enc, sk_r, pk_r, pk_s, shared_secret,
         )
@@ -198,7 +198,7 @@ impl DhkemCurve for P384 {
         rng: &mut dyn RNG,
         enc: &mut [u8; 97],
         shared_secret: &mut KeyMaterial<48>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         DHKEM::<ECCDH<P384>, 97, 48, 48, 48>::encap_rng_out(pk_r, rng, enc, shared_secret)
     }
 
@@ -207,7 +207,7 @@ impl DhkemCurve for P384 {
         sk_r: &ECCDHPrivateKey<Self>,
         pk_r: &ECCDHPublicKey<Self>,
         shared_secret: &mut KeyMaterial<48>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         DHKEM::<ECCDH<P384>, 97, 48, 48, 48>::decap_with_pk_out(enc, sk_r, pk_r, shared_secret)
     }
 
@@ -217,7 +217,7 @@ impl DhkemCurve for P384 {
         rng: &mut dyn RNG,
         enc: &mut [u8; 97],
         shared_secret: &mut KeyMaterial<48>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         DHKEM::<ECCDH<P384>, 97, 48, 48, 48>::auth_encap_rng_out(
             pk_r, sk_s, rng, enc, shared_secret,
         )
@@ -229,7 +229,7 @@ impl DhkemCurve for P384 {
         pk_r: &ECCDHPublicKey<Self>,
         pk_s: &ECCDHPublicKey<Self>,
         shared_secret: &mut KeyMaterial<48>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         DHKEM::<ECCDH<P384>, 97, 48, 48, 48>::auth_decap_with_pk_out(
             enc, sk_r, pk_r, pk_s, shared_secret,
         )
@@ -254,7 +254,7 @@ impl DhkemCurve for P521 {
         rng: &mut dyn RNG,
         enc: &mut [u8; 133],
         shared_secret: &mut KeyMaterial<64>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         DHKEM::<ECCDH<P521>, 133, 66, 66, 64>::encap_rng_out(pk_r, rng, enc, shared_secret)
     }
 
@@ -263,7 +263,7 @@ impl DhkemCurve for P521 {
         sk_r: &ECCDHPrivateKey<Self>,
         pk_r: &ECCDHPublicKey<Self>,
         shared_secret: &mut KeyMaterial<64>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         DHKEM::<ECCDH<P521>, 133, 66, 66, 64>::decap_with_pk_out(enc, sk_r, pk_r, shared_secret)
     }
 
@@ -273,7 +273,7 @@ impl DhkemCurve for P521 {
         rng: &mut dyn RNG,
         enc: &mut [u8; 133],
         shared_secret: &mut KeyMaterial<64>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         DHKEM::<ECCDH<P521>, 133, 66, 66, 64>::auth_encap_rng_out(
             pk_r, sk_s, rng, enc, shared_secret,
         )
@@ -285,7 +285,7 @@ impl DhkemCurve for P521 {
         pk_r: &ECCDHPublicKey<Self>,
         pk_s: &ECCDHPublicKey<Self>,
         shared_secret: &mut KeyMaterial<64>,
-    ) -> Result<(), KEMError> {
+    ) -> Result<usize, KEMError> {
         DHKEM::<ECCDH<P521>, 133, 66, 66, 64>::auth_decap_with_pk_out(
             enc, sk_r, pk_r, pk_s, shared_secret,
         )
@@ -434,8 +434,7 @@ where
     ) -> Result<usize, KEMError> {
         ct.fill(0);
         ss.zeroize();
-        C::encap_out(self.pk, rng, ct, ss)?;
-        Ok(N_ENC)
+        C::encap_out(self.pk, rng, ct, ss)
     }
 }
 
@@ -485,8 +484,7 @@ where
         ss: &mut KeyMaterial<N_SECRET>,
     ) -> Result<usize, KEMError> {
         ss.zeroize();
-        C::decap_out(ct, self.sk, &self.pk, ss)?;
-        Ok(N_SECRET)
+        C::decap_out(ct, self.sk, &self.pk, ss)
     }
 }
 
@@ -529,8 +527,7 @@ where
     ) -> Result<usize, KEMError> {
         enc.fill(0);
         ss.zeroize();
-        C::auth_encap_out(self, sk_s, rng, enc, ss)?;
-        Ok(N_ENC)
+        C::auth_encap_out(self, sk_s, rng, enc, ss)
     }
 }
 
@@ -554,7 +551,6 @@ where
         ss.zeroize();
         // pk(skR), which AuthDecap binds into the secret.
         let (x, y) = C::public_point(self.scalar());
-        C::auth_decap_out(enc, self, &ECCDHPublicKey { x, y }, pk_s, ss)?;
-        Ok(N_SECRET)
+        C::auth_decap_out(enc, self, &ECCDHPublicKey { x, y }, pk_s, ss)
     }
 }

@@ -54,7 +54,8 @@
   (Auth, AuthPSK) give contexts with `seal_out` / `open_out` and `export_out`; HKDF over SHA-256, SHA-384 or
   SHA-512 with AES-128-GCM, AES-256-GCM, ChaCha20Poly1305 or export-only. No CLI command yet.
 * `bouncycastle-dhkem` -- the generic DHKEM leaves `bouncycastle-hpke` for a crate of its own
-  (`bouncycastle_hpke::dhkem::*` is now `bouncycastle_dhkem::*`), and gains `AuthEncap` and `AuthDecap`.
+  (`bouncycastle_hpke::dhkem::*` is now `bouncycastle_dhkem::*`), and gains `AuthEncap` and `AuthDecap`. Its
+  `_out` functions return the number of bytes written.
 
 ## Minor features / bug fixes
 

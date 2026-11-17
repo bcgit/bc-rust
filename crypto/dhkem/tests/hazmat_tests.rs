@@ -39,8 +39,12 @@ fn prk() -> KeyMaterial<MAX_NH> {
 #[test]
 fn labeled_expand_takes_255_blocks() {
     let mut out = vec![0u8; 255 * 32];
-    labeled_expand::<SHA256>(b"KEM\x00\x20", &prk(), b"label", &[], &mut out);
+    let written = labeled_expand::<SHA256>(b"KEM\x00\x20", &prk(), b"label", &[], &mut out);
+    assert_eq!(written, 255 * 32);
     assert_ne!(out[..32], out[32..64]);
+    // A partial last block is counted as what was written.
+    let mut short = [0u8; 33];
+    assert_eq!(labeled_expand::<SHA256>(b"KEM\x00\x20", &prk(), b"label", &[], &mut short), 33);
     assert_ne!(out[254 * 32..], [0u8; 32]);
 }
 

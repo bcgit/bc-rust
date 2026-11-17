@@ -1046,8 +1046,7 @@ impl KEMEncapsulator<POINT_LEN, DHKEM_SS_LEN> for X25519Encapsulator<'_> {
     ) -> Result<usize, KEMError> {
         ct.fill(0);
         ss.zeroize();
-        X25519DHKEM::encap_rng_out(self.pk, rng, ct, ss)?;
-        Ok(POINT_LEN)
+        X25519DHKEM::encap_rng_out(self.pk, rng, ct, ss)
     }
 }
 
@@ -1083,8 +1082,7 @@ impl AuthEncapsulatingKey<POINT_LEN, DHKEM_SS_LEN> for X25519PublicKey {
         if !sk_s.is_filled() {
             return Err(KeyMaterialError::ActingOnZeroizedKey.into());
         }
-        X25519DHKEM::auth_encap_rng_out(self, sk_s, rng, enc, ss)?;
-        Ok(POINT_LEN)
+        X25519DHKEM::auth_encap_rng_out(self, sk_s, rng, enc, ss)
     }
 }
 
@@ -1108,8 +1106,7 @@ impl AuthDecapsulatingKey<POINT_LEN, DHKEM_SS_LEN> for X25519PrivateKey {
         if !self.is_filled() {
             return Err(KeyMaterialError::ActingOnZeroizedKey.into());
         }
-        X25519DHKEM::auth_decap_out(enc, self, pk_s, ss)?;
-        Ok(DHKEM_SS_LEN)
+        X25519DHKEM::auth_decap_out(enc, self, pk_s, ss)
     }
 }
 
@@ -1136,8 +1133,7 @@ impl KEMDecapsulator<POINT_LEN, DHKEM_SS_LEN> for X25519Decapsulator<'_> {
         ss: &mut KeyMaterial<DHKEM_SS_LEN>,
     ) -> Result<usize, KEMError> {
         ss.zeroize();
-        X25519DHKEM::decap_out(ct, self.sk, ss)?;
-        Ok(DHKEM_SS_LEN)
+        X25519DHKEM::decap_out(ct, self.sk, ss)
     }
 }
 

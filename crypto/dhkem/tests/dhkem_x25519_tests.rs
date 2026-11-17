@@ -57,13 +57,14 @@ fn encap_and_decap_match_the_vectors_by_value_and_through_the_out_forms() {
         let mut enc_out = [0xFFu8; POINT_LEN];
         let mut ss_out =
             KeyMaterial::<DHKEM_SS_LEN>::from_bytes_as_type(&[0xFF; 32], KeyType::Seed).unwrap();
-        X25519DHKEM::encap_rng_out(
+        // The out forms report what they wrote: Nenc for an encapsulation.
+        let written = X25519DHKEM::encap_rng_out(
             &pk_r,
             &mut FixedSeedRNG::new(decode_32(sk_em)),
             &mut enc_out,
             &mut ss_out,
-        )
-        .unwrap();
+        );
+        assert_eq!(written, Ok(POINT_LEN));
         assert_eq!(enc_out, decode_32(enc), "vector {i}: enc (out form)");
         assert!(ss_out.equals(&ss), "vector {i}: shared_secret (out form)");
 
@@ -71,8 +72,19 @@ fn encap_and_decap_match_the_vectors_by_value_and_through_the_out_forms() {
         assert!(ss_dec.equals(&ss), "vector {i}: decap");
         let mut ss_dec_out =
             KeyMaterial::<DHKEM_SS_LEN>::from_bytes_as_type(&[0xFF; 32], KeyType::Seed).unwrap();
-        X25519DHKEM::decap_out(&decode_32(enc), &sk_r, &mut ss_dec_out).unwrap();
+        // And Nsecret for a decapsulation.
+        assert_eq!(
+            X25519DHKEM::decap_out(&decode_32(enc), &sk_r, &mut ss_dec_out),
+            Ok(DHKEM_SS_LEN)
+        );
         assert!(ss_dec_out.equals(&ss), "vector {i}: decap (out form)");
+        let mut with_pk =
+            KeyMaterial::<DHKEM_SS_LEN>::from_bytes_as_type(&[0xFF; 32], KeyType::Seed).unwrap();
+        assert_eq!(
+            X25519DHKEM::decap_with_pk_out(&decode_32(enc), &sk_r, &pk_r, &mut with_pk),
+            Ok(DHKEM_SS_LEN)
+        );
+        assert!(with_pk.equals(&ss), "vector {i}: decap with pk(skR) supplied");
 
         let ikm = KeyMaterial256::from_bytes_as_type(&decode_32(ikm_r), KeyType::Seed).unwrap();
         let (pk, sk) = X25519DHKEM::derive_key_pair(&ikm).unwrap();
@@ -154,14 +166,14 @@ fn auth_encap_and_auth_decap_match_the_vectors_and_bind_the_senders_key() {
         // AuthEncap(pkR, skS), with the vector's ephemeral key.
         let mut enc_out = [0xFFu8; POINT_LEN];
         let mut ss = stale_secret();
-        X25519DHKEM::auth_encap_rng_out(
+        let written = X25519DHKEM::auth_encap_rng_out(
             &pk_r,
             &sk_s,
             &mut FixedSeedRNG::new(decode_32(sk_em)),
             &mut enc_out,
             &mut ss,
-        )
-        .unwrap();
+        );
+        assert_eq!(written, Ok(POINT_LEN));
         assert_eq!(enc_out, decode_32(enc), "vector {i}: enc");
         assert_eq!(ss.ref_to_bytes(), decode_32(shared_secret), "vector {i}: shared_secret");
         assert_eq!(ss.key_type(), KeyType::CryptographicRandom);
@@ -169,11 +181,16 @@ fn auth_encap_and_auth_decap_match_the_vectors_and_bind_the_senders_key() {
 
         // AuthDecap(enc, skR, pkS), and with pk(skR) supplied.
         let mut ss_dec = stale_secret();
-        X25519DHKEM::auth_decap_out(&decode_32(enc), &sk_r, &pk_s, &mut ss_dec).unwrap();
+        assert_eq!(
+            X25519DHKEM::auth_decap_out(&decode_32(enc), &sk_r, &pk_s, &mut ss_dec),
+            Ok(DHKEM_SS_LEN)
+        );
         assert!(ss_dec.equals(&ss), "vector {i}: auth_decap");
         let mut ss_dec = stale_secret();
-        X25519DHKEM::auth_decap_with_pk_out(&decode_32(enc), &sk_r, &pk_r, &pk_s, &mut ss_dec)
-            .unwrap();
+        assert_eq!(
+            X25519DHKEM::auth_decap_with_pk_out(&decode_32(enc), &sk_r, &pk_r, &pk_s, &mut ss_dec),
+            Ok(DHKEM_SS_LEN)
+        );
         assert!(ss_dec.equals(&ss), "vector {i}: auth_decap_with_pk");
 
         // Another sender's public key, and the unauthenticated Decap, each give another secret.
