@@ -25,6 +25,7 @@ mod mlkem_cmd;
 mod ofb_cmd;
 mod rng_cmd;
 mod rsa_cmd;
+mod rsa_oaep_cmd;
 mod rsasve_cmd;
 mod sha1_cmd;
 mod sha2_cmd;
@@ -54,6 +55,7 @@ use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::{MLDSAAction, PreHashAlg};
 use crate::rng_cmd::DrbgHash;
 use crate::rsa_cmd::{RSAAction, RSAHash, RSAScheme};
+use crate::rsa_oaep_cmd::{OaepArgs, RSAOAEPAction, RSAOAEPHash};
 use crate::rsasve_cmd::RSASVEAction;
 use crate::sha2_cmd::SHA2Variant;
 use crate::sha3_cmd::{SHA3Variant, Strength};
@@ -4135,6 +4137,150 @@ enum Subcommands {
         x: bool,
     },
 
+    /// RSAES-OAEP key transport over RSA-2048 (RFC 8017 SS7.1, SP 800-56B Rev. 2 SS7.2.2), on
+    /// rsasve-2048's keys and key files. `encaps` / `decaps` draw and recover a 32-byte key
+    /// (KTS-OAEP-basic); `transport` / `recover` carry a key supplied on stdin. The label hash
+    /// is `--hash`, MGF1's is `--mgf-hash` (the same unless given), and both sides give the same
+    /// `--label`.
+    RSA_OAEP_2048 {
+        action: RSAOAEPAction,
+
+        #[arg(long, value_enum, default_value = "sha256")]
+        /// The hash of the label.
+        hash: RSAOAEPHash,
+
+        #[arg(long, value_enum)]
+        /// The hash under MGF1; the label's hash if not given.
+        mgf_hash: Option<RSAOAEPHash>,
+
+        #[arg(long)]
+        /// The label, in hex; empty if not given.
+        label: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps and recover
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps and transport, or to write the
+        /// generated public key to for keygen
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (in hex or binary), for encaps and transport to write and for
+        /// decaps and recover to read.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// RSAES-OAEP key transport over RSA-3072. See rsa-oaep-2048.
+    RSA_OAEP_3072 {
+        action: RSAOAEPAction,
+
+        #[arg(long, value_enum, default_value = "sha256")]
+        /// The hash of the label.
+        hash: RSAOAEPHash,
+
+        #[arg(long, value_enum)]
+        /// The hash under MGF1; the label's hash if not given.
+        mgf_hash: Option<RSAOAEPHash>,
+
+        #[arg(long)]
+        /// The label, in hex; empty if not given.
+        label: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps and recover
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps and transport, or to write the
+        /// generated public key to for keygen
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (in hex or binary), for encaps and transport to write and for
+        /// decaps and recover to read.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// RSAES-OAEP key transport over RSA-4096. See rsa-oaep-2048.
+    RSA_OAEP_4096 {
+        action: RSAOAEPAction,
+
+        #[arg(long, value_enum, default_value = "sha256")]
+        /// The hash of the label.
+        hash: RSAOAEPHash,
+
+        #[arg(long, value_enum)]
+        /// The hash under MGF1; the label's hash if not given.
+        mgf_hash: Option<RSAOAEPHash>,
+
+        #[arg(long)]
+        /// The label, in hex; empty if not given.
+        label: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps and recover
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps and transport, or to write the
+        /// generated public key to for keygen
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (in hex or binary), for encaps and transport to write and for
+        /// decaps and recover to read.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// RSAES-OAEP key transport over RSA-8192. See rsa-oaep-2048.
+    RSA_OAEP_8192 {
+        action: RSAOAEPAction,
+
+        #[arg(long, value_enum, default_value = "sha256")]
+        /// The hash of the label.
+        hash: RSAOAEPHash,
+
+        #[arg(long, value_enum)]
+        /// The hash under MGF1; the label's hash if not given.
+        mgf_hash: Option<RSAOAEPHash>,
+
+        #[arg(long)]
+        /// The label, in hex; empty if not given.
+        label: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps and recover
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps and transport, or to write the
+        /// generated public key to for keygen
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (in hex or binary), for encaps and transport to write and for
+        /// decaps and recover to read.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// RSA-1024 signature verification (RFC 8017 SS8.2), PKCS#1 v1.5 only. Verification-only: this
     /// crate has no RSA-1024 private key type at all. See rsa-2048 for --scheme/--hash.
     RSA_1024 {
@@ -7896,6 +8042,90 @@ fn run() {
         }
         Some(Subcommands::RSASVE_8192 { action, skfile, pkfile, ctfile, x }) => {
             rsasve_cmd::rsasve_8192_cmd(action, skfile, pkfile, ctfile, *x);
+        }
+        Some(Subcommands::RSA_OAEP_2048 {
+            action,
+            hash,
+            mgf_hash,
+            label,
+            skfile,
+            pkfile,
+            ctfile,
+            x,
+        }) => {
+            rsa_oaep_cmd::rsa_oaep_2048_cmd(&OaepArgs {
+                action,
+                hash: *hash,
+                mgf_hash: *mgf_hash,
+                label,
+                skfile,
+                pkfile,
+                ctfile,
+                output_hex: *x,
+            });
+        }
+        Some(Subcommands::RSA_OAEP_3072 {
+            action,
+            hash,
+            mgf_hash,
+            label,
+            skfile,
+            pkfile,
+            ctfile,
+            x,
+        }) => {
+            rsa_oaep_cmd::rsa_oaep_3072_cmd(&OaepArgs {
+                action,
+                hash: *hash,
+                mgf_hash: *mgf_hash,
+                label,
+                skfile,
+                pkfile,
+                ctfile,
+                output_hex: *x,
+            });
+        }
+        Some(Subcommands::RSA_OAEP_4096 {
+            action,
+            hash,
+            mgf_hash,
+            label,
+            skfile,
+            pkfile,
+            ctfile,
+            x,
+        }) => {
+            rsa_oaep_cmd::rsa_oaep_4096_cmd(&OaepArgs {
+                action,
+                hash: *hash,
+                mgf_hash: *mgf_hash,
+                label,
+                skfile,
+                pkfile,
+                ctfile,
+                output_hex: *x,
+            });
+        }
+        Some(Subcommands::RSA_OAEP_8192 {
+            action,
+            hash,
+            mgf_hash,
+            label,
+            skfile,
+            pkfile,
+            ctfile,
+            x,
+        }) => {
+            rsa_oaep_cmd::rsa_oaep_8192_cmd(&OaepArgs {
+                action,
+                hash: *hash,
+                mgf_hash: *mgf_hash,
+                label,
+                skfile,
+                pkfile,
+                ctfile,
+                output_hex: *x,
+            });
         }
         Some(Subcommands::RSA_1024 { scheme, hash, pkfile, sigfile }) => {
             rsa_cmd::rsa_1024_cmd(scheme, hash, pkfile, sigfile);
