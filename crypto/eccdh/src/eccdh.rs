@@ -76,19 +76,17 @@ where
     z_from_product::<C, SS_LEN>(&mut p, ss)
 }
 
-/// Steps 2 to 5 of Section 5.7.1.2 from `P = [d]Q`, which is destroyed here, into `ss`,
-/// zeroized first and left so on the error path. Apart from the multiplication so that step 2's
-/// identity path, which no validated key reaches, has a test.
-#[allow(non_snake_case)] // `z` and `Z` are Section 5.7.1.2's names for x_P and its byte string
-fn z_from_product<C, const SS_LEN: usize>(
+/// Steps 2 to 4 of SP 800-56A Rev. 3 Section 5.7.1.2 over the product `P`: `Z`, the
+/// x-coordinate of `P` as a byte string, into `out`, with `P` and the intermediates destroyed.
+/// `P = O` is refused, with `out` left zeroized. Shared by the agreement, which types `Z` as a
+/// shared secret, and by the DHKEM, whose KDF takes the bytes.
+pub(crate) fn z_bytes_from_product<C, const SS_LEN: usize>(
     p: &mut C::Point,
-    ss: &mut KeyMaterial<SS_LEN>,
+    out: &mut Secret<[u8; SS_LEN]>,
 ) -> Result<(), KeyAgreementError>
 where
     C: Curve<FeBytes = [u8; SS_LEN]>,
 {
-    ss.zeroize();
-
     // 2. If P = O, destroy all intermediate values ... and output an error indicator. [d]Q is
     //    the identity only for a Q of order dividing d, which a validated point of prime order n
     //    never is; the test is kept, on a condition no valid input reaches, and acted on after
@@ -102,16 +100,33 @@ where
     let mut z = p.affine_x_of_nonidentity();
     let mut z_limbs = Secret::<C::Limbs>::new();
     z.to_limbs_into(&mut z_limbs);
-    let mut Z = Secret::<[u8; SS_LEN]>::new();
-    C::fe_be_bytes_from_limbs_into(&z_limbs, &mut Z);
+    C::fe_be_bytes_from_limbs_into(&z_limbs, out);
 
     // 4. Destroy the results of all intermediate calculations (including P and z): those this
     //    function holds; the arithmetic's own intermediates are `bouncycastle_ec`'s.
     p.zeroize();
     z.zeroize();
     if p_is_infinity.to_bool() {
+        out.zeroize();
         return Err(KeyAgreementError::AgreementFailed);
     }
+    Ok(())
+}
+
+/// Steps 2 to 5 of Section 5.7.1.2 from `P = [d]Q`, which is destroyed here, into `ss`,
+/// zeroized first and left so on the error path. Apart from the multiplication so that step 2's
+/// identity path, which no validated key reaches, has a test.
+#[allow(non_snake_case)] // `z` and `Z` are Section 5.7.1.2's names for x_P and its byte string
+fn z_from_product<C, const SS_LEN: usize>(
+    p: &mut C::Point,
+    ss: &mut KeyMaterial<SS_LEN>,
+) -> Result<(), KeyAgreementError>
+where
+    C: Curve<FeBytes = [u8; SS_LEN]>,
+{
+    ss.zeroize();
+    let mut Z = Secret::<[u8; SS_LEN]>::new();
+    z_bytes_from_product::<C, SS_LEN>(p, &mut Z)?;
 
     // 5. Output Z into the caller's buffer, typed so that a KDF credits it and nothing else
     //    accepts it as a key, at the curve's strength rather than the length-derived default. An
@@ -373,6 +388,20 @@ mod tests {
 
     /// Step 5's typing on a real product (G, so Z is G's x), and step 4's destruction of P, which
     /// no integration test can see.
+    /// The DHKEM's half of the same: `z_bytes_from_product` leaves its buffer zeroized when the
+    /// product is the identity, as `DHKEMParams::dh_into` promises.
+    #[test]
+    fn the_identity_product_leaves_the_dh_buffer_zeroized() {
+        let mut o = Point::INFINITY;
+        let mut out = Secret::<[u8; SS_LEN]>::new();
+        *out = [0xA5; SS_LEN];
+        assert_eq!(
+            z_bytes_from_product::<P256, SS_LEN>(&mut o, &mut out),
+            Err(KeyAgreementError::AgreementFailed)
+        );
+        assert_eq!(*out, [0u8; SS_LEN]);
+    }
+
     #[test]
     fn a_real_product_types_z_at_the_curve_strength_and_zeroizes_the_point() {
         let mut p = Point::from_affine(Fe::from_limbs(G_X_LIMBS), Fe::from_limbs(G_Y_LIMBS));

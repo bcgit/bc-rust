@@ -12,7 +12,14 @@
 //!
 //! | KEM                        | kem_id | Exposed as                                                     |
 //! |----------------------------|--------|----------------------------------------------------------------|
+//! | DHKEM(P-256, HKDF-SHA256)  | 0x0010 | `bouncycastle_eccdh`'s keys over `P256`                        |
+//! | DHKEM(P-384, HKDF-SHA384)  | 0x0011 | `bouncycastle_eccdh`'s keys over `P384`                        |
+//! | DHKEM(P-521, HKDF-SHA512)  | 0x0012 | `bouncycastle_eccdh`'s keys over `P521`                        |
 //! | DHKEM(X25519, HKDF-SHA256) | 0x0020 | `bouncycastle_ed::x25519::{X25519PublicKey, X25519PrivateKey}` |
+//!
+//! Both forms of RFC 9180 Section 7.1.3's `DeriveKeyPair` are implemented
+//! ([`dhkem::DeriveKeyPairForm`]): the expand form of X25519 and X448, and the rejection
+//! sampling of the NIST curves.
 //!
 //! The KDF is HKDF over the hash named by [`dhkem::DHKEMParams::KDFHash`], computed on
 //! [`HMAC`](bouncycastle_hmac::HMAC) as RFC 5869 defines it, so any hash that

@@ -194,7 +194,7 @@ use bouncycastle_core::traits::{
     Algorithm, KEMDecapsulator, KEMEncapsulator, KeyAgreement, PrivateKey, PublicKey, RNG,
 };
 use bouncycastle_hkdf::HkdfDescription;
-use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams};
+use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams, DeriveKeyPairForm};
 use bouncycastle_sha2::SHA256;
 use bouncycastle_utils::ct::{Condition, ct_eq_bytes, ct_eq_zero_bytes};
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
@@ -952,13 +952,14 @@ impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X25519 {
         Ok(f(&pk, &sk))
     }
 
-    const DERIVE_KEY_PAIR_BY_EXPAND: bool = true;
+    const DERIVE_KEY_PAIR: DeriveKeyPairForm = DeriveKeyPairForm::Expand;
 
-    fn private_key_from_bytes(sk: &[u8; SCALAR_LEN]) -> X25519PrivateKey {
+    // Every 32 bytes are an X25519 private key (RFC 7748 Section 5), so this is never `None`.
+    fn private_key_from_bytes(sk: &[u8; SCALAR_LEN]) -> Option<X25519PrivateKey> {
         let mut key = X25519PrivateKey { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) };
         *key.k = *sk;
         key.pk = scalar_mult_base(&key.k);
-        key
+        Some(key)
     }
 
     fn pk(sk: &X25519PrivateKey) -> X25519PublicKey {

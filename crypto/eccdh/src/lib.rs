@@ -104,6 +104,9 @@
 //! [`ECCDHPrivateKey<C>`](keys::ECCDHPrivateKey), and code written once over `C: Curve` serves
 //! all seven.
 //!
+//! The keys over `P256`, `P384` and `P521` also carry the KEM roles, as the DHKEM of RFC 9180
+//! Section 4.1 over that curve; see [`dhkem`].
+//!
 //! # Status
 //!
 //! Seven curves: P-256, P-384, P-521, secp256k1, brainpoolP256r1, brainpoolP384r1 and
@@ -197,6 +200,7 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+pub mod dhkem;
 pub mod eccdh;
 pub mod kdf;
 pub mod keys;

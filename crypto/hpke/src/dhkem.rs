@@ -23,6 +23,7 @@ const LABEL_EAE_PRK: &[u8] = b"eae_prk";
 const LABEL_SHARED_SECRET: &[u8] = b"shared_secret";
 const LABEL_DKP_PRK: &[u8] = b"dkp_prk";
 const LABEL_SK: &[u8] = b"sk";
+const LABEL_CANDIDATE: &[u8] = b"candidate";
 
 /// The largest Nh among the KDFs of RFC 9180 Section 7.2 (HKDF-SHA512). The PRK and HKDF-Expand
 /// block buffers are sized to it.
@@ -41,6 +42,23 @@ const fn strength_bits(strength: SecurityStrength) -> usize {
     }
 }
 
+/// How a group derives a key pair from keying material: the two forms of `DeriveKeyPair` in RFC
+/// 9180 Section 7.1.3.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeriveKeyPairForm {
+    /// X25519 and X448: "the DeriveKeyPair() function applies a KDF to the input",
+    /// `sk = LabeledExpand(dkp_prk, "sk", "", Nsk)`.
+    Expand,
+    /// P-256, P-384 and P-521: "the DeriveKeyPair() function of the KEM performs rejection
+    /// sampling over field elements", each candidate
+    /// `LabeledExpand(dkp_prk, "candidate", I2OSP(counter, 1), Nsk)` with its first byte ANDed
+    /// with `bitmask` ("0xFF for P-256 and P-384, and 0x01 for P-521").
+    Candidate {
+        /// The mask on the candidate's first byte.
+        bitmask: u8,
+    },
+}
+
 /// The Diffie-Hellman group of a DHKEM, and the KDF it is paired with: DHKEM(Group, KDF) in RFC 9180
 /// Section 4.1.
 ///
@@ -57,27 +75,26 @@ pub trait DHKEMParams<const N_PK: usize, const N_SK: usize, const N_DH: usize>: 
     const KEM_ID: u16;
 
     /// `GenerateKeyPair()` (RFC 9180 Section 4), drawing its randomness from `rng`, with the pair
-    /// lent to `f` rather than returned: the implementation generates the private key in a slot
-    /// of its own frame and drops it there, so the ephemeral key of an encapsulation is never
-    /// moved.
+    /// lent to `f` rather than returned, so that the DHKEM never moves the ephemeral key of an
+    /// encapsulation: it lives in the implementation's frame and is dropped there. Whether it
+    /// is moved before that is the group's own key generation's matter; a group that can
+    /// generates the key in place, and one that cannot says so in its Security Considerations.
     fn with_generated_key_pair<R>(
         rng: &mut dyn RNG,
         f: impl FnOnce(&Self::PublicKey, &Self::PrivateKey) -> R,
     ) -> Result<R, KEMError>;
 
     /// The private key with the byte string `sk` as its value, as `DeriveKeyPair` (RFC 9180
-    /// Section 7.1.3) requires.
-    fn private_key_from_bytes(sk: &[u8; N_SK]) -> Self::PrivateKey;
+    /// Section 7.1.3) requires, or `None` if `sk` is not a private key of the group: for the
+    /// candidate form, the loop's test `sk == 0 or sk >= order`.
+    fn private_key_from_bytes(sk: &[u8; N_SK]) -> Option<Self::PrivateKey>;
 
     /// `pk(skX)` (RFC 9180 Section 4): the public key of `sk`.
     fn pk(sk: &Self::PrivateKey) -> Self::PublicKey;
 
-    /// Whether `DeriveKeyPair` (RFC 9180 Section 7.1.3) is the X25519 and X448 form, `sk =
-    /// LabeledExpand(dkp_prk, "sk", "", Nsk)` with no rejection loop, which is the only form
-    /// [`DHKEM::derive_key_pair`] implements: a group whose form is the NIST curves' candidate
-    /// loop sets this `false` and gets a compile error from `derive_key_pair` instead of a wrong
-    /// key.
-    const DERIVE_KEY_PAIR_BY_EXPAND: bool;
+    /// Which form of `DeriveKeyPair` (RFC 9180 Section 7.1.3) the group has.
+    const DERIVE_KEY_PAIR: DeriveKeyPairForm;
+
     /// `DH(skX, pkY)` (RFC 9180 Section 4.1) into `out`, including the validation of its output
     /// that RFC 9180 Section 7.1.4 requires for the group. A validation failure is an `Err`, with
     /// `out` left zeroized.
@@ -179,7 +196,7 @@ impl<
         if rng.security_strength() < G::MAX_SECURITY_STRENGTH {
             return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
         }
-        // skE, pkE = GenerateKeyPair(); skE stays in the group's frame and is wiped there.
+        // skE, pkE = GenerateKeyPair(); skE stays in the group's frame and is dropped there.
         let mut dh = Secret::<[u8; N_DH]>::new();
         G::with_generated_key_pair(rng, |pk_e, sk_e| {
             // dh = DH(skE, pkR)
@@ -222,6 +239,22 @@ impl<
         sk_r: &G::PrivateKey,
         shared_secret: &mut KeyMaterial<N_SECRET>,
     ) -> Result<(), KEMError> {
+        Self::decap_with_pk_out(enc, sk_r, &G::pk(sk_r), shared_secret)
+    }
+
+    /// [`Self::decap_out`] with the recipient's public key supplied, for a group whose private
+    /// key does not hold it: a worker computes `pk(skR)` once and decapsulates many times.
+    /// `pk_r` must be `pk(sk_r)`; it is bound into the shared secret, so a different key gives
+    /// a secret the sender does not share.
+    ///
+    /// # Errors
+    /// As [`Self::decap_out`].
+    pub fn decap_with_pk_out(
+        enc: &[u8; N_PK],
+        sk_r: &G::PrivateKey,
+        pk_r: &G::PublicKey,
+        shared_secret: &mut KeyMaterial<N_SECRET>,
+    ) -> Result<(), KEMError> {
         let () = Self::PARAMS_CHECK;
         shared_secret.zeroize();
         // pkE = DeserializePublicKey(enc)
@@ -230,7 +263,7 @@ impl<
         let mut dh = Secret::<[u8; N_DH]>::new();
         G::dh_into(sk_r, &pk_e, &mut dh).map_err(|_| KEMError::DecapsulationFailed)?;
         // pkRm = SerializePublicKey(pk(skR)); kem_context = concat(enc, pkRm)
-        let pk_rm = G::serialize_public_key(&G::pk(sk_r));
+        let pk_rm = G::serialize_public_key(pk_r);
         // shared_secret = ExtractAndExpand(dh, kem_context)
         Self::extract_and_expand_into(&*dh, &[enc, &pk_rm], shared_secret);
         Ok(())
@@ -247,142 +280,28 @@ impl<
         Ok(shared_secret)
     }
 
-    /// `DeriveKeyPair(ikm)` (RFC 9180 Section 7.1.3), for groups whose private key is the byte string
-    /// itself, such as X25519 and X448.
+    /// `DeriveKeyPair(ikm)` (RFC 9180 Section 7.1.3), in the group's form
+    /// ([`DHKEMParams::DERIVE_KEY_PAIR`]).
     ///
     /// Section 7.1.3: "the ikm parameter given to DeriveKeyPair() SHOULD have length at least Nsk,
-    /// and SHOULD have at least Nsk bytes of entropy". This requires `ikm` to be at least Nsk bytes,
-    /// of [`KeyType::Seed`] or [`KeyType::CryptographicRandom`], and at least the group's security
-    /// strength.
+    /// and SHOULD have at least Nsk bytes of entropy". This requires `ikm` to be of
+    /// [`KeyType::Seed`] or [`KeyType::CryptographicRandom`] and of at least the group's security
+    /// strength, which is what a key pair of the group can use; it does not insist on Nsk bytes,
+    /// so that a 64-byte seed at 256 bits serves P-521, whose Nsk is 66.
     ///
     /// # Errors
     ///
-    /// [`KEMError::KeyGenError`] if `ikm` does not meet those requirements.
-    ///
-    /// A group that declares the expand form ([`DHKEMParams::DERIVE_KEY_PAIR_BY_EXPAND`])
-    /// compiles:
-    ///
-    /// ```
-    /// # use bouncycastle_core::errors::{KEMError, KeyAgreementError};
-    /// # use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-    /// # use bouncycastle_core::security_strength::SecurityStrength;
-    /// # use bouncycastle_core::traits::{Algorithm, RNG};
-    /// # use bouncycastle_ed::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
-    /// # use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams};
-    /// # use bouncycastle_utils::secret::Secret;
-    /// # type Sk = X25519PrivateKey;
-    /// # type Pk = X25519PublicKey;
-    /// # // X25519 with its DeriveKeyPair form as a parameter.
-    /// # struct Group<const BY_EXPAND: bool>;
-    /// # impl<const B: bool> Algorithm for Group<B> {
-    /// #     const ALG_NAME: &'static str = "test group";
-    /// #     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-    /// # }
-    /// # impl<const B: bool> DHKEMParams<32, 32, 32> for Group<B> {
-    /// #     type PublicKey = Pk;
-    /// #     type PrivateKey = Sk;
-    /// #     type KDFHash = <X25519 as DHKEMParams<32, 32, 32>>::KDFHash;
-    /// #     const KEM_ID: u16 = 0x0020;
-    /// #     const DERIVE_KEY_PAIR_BY_EXPAND: bool = B;
-    /// #     fn with_generated_key_pair<R>(
-    /// #         rng: &mut dyn RNG,
-    /// #         f: impl FnOnce(&Pk, &Sk) -> R,
-    /// #     ) -> Result<R, KEMError> {
-    /// #         <X25519 as DHKEMParams<32, 32, 32>>::with_generated_key_pair(rng, f)
-    /// #     }
-    /// #     fn private_key_from_bytes(sk: &[u8; 32]) -> Sk {
-    /// #         <X25519 as DHKEMParams<32, 32, 32>>::private_key_from_bytes(sk)
-    /// #     }
-    /// #     fn pk(sk: &Sk) -> Pk {
-    /// #         <X25519 as DHKEMParams<32, 32, 32>>::pk(sk)
-    /// #     }
-    /// #     fn dh_into(
-    /// #         sk: &Sk,
-    /// #         pk: &Pk,
-    /// #         out: &mut Secret<[u8; 32]>,
-    /// #     ) -> Result<(), KeyAgreementError> {
-    /// #         <X25519 as DHKEMParams<32, 32, 32>>::dh_into(sk, pk, out)
-    /// #     }
-    /// #     fn serialize_public_key(pk: &Pk) -> [u8; 32] {
-    /// #         <X25519 as DHKEMParams<32, 32, 32>>::serialize_public_key(pk)
-    /// #     }
-    /// #     fn deserialize_public_key(pkm: &[u8; 32]) -> Result<Pk, KEMError> {
-    /// #         <X25519 as DHKEMParams<32, 32, 32>>::deserialize_public_key(pkm)
-    /// #     }
-    /// # }
-    /// let ikm = KeyMaterial256::from_bytes_as_type(&[7u8; 32], KeyType::Seed).unwrap();
-    /// let _ = DHKEM::<Group<true>, 32, 32, 32, 32>::derive_key_pair(&ikm);
-    /// ```
-    ///
-    /// and one that does not is refused at compile time:
-    ///
-    /// ```compile_fail
-    /// # use bouncycastle_core::errors::{KEMError, KeyAgreementError};
-    /// # use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-    /// # use bouncycastle_core::security_strength::SecurityStrength;
-    /// # use bouncycastle_core::traits::{Algorithm, RNG};
-    /// # use bouncycastle_ed::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
-    /// # use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams};
-    /// # use bouncycastle_utils::secret::Secret;
-    /// # type Sk = X25519PrivateKey;
-    /// # type Pk = X25519PublicKey;
-    /// # // X25519 with its DeriveKeyPair form as a parameter.
-    /// # struct Group<const BY_EXPAND: bool>;
-    /// # impl<const B: bool> Algorithm for Group<B> {
-    /// #     const ALG_NAME: &'static str = "test group";
-    /// #     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-    /// # }
-    /// # impl<const B: bool> DHKEMParams<32, 32, 32> for Group<B> {
-    /// #     type PublicKey = Pk;
-    /// #     type PrivateKey = Sk;
-    /// #     type KDFHash = <X25519 as DHKEMParams<32, 32, 32>>::KDFHash;
-    /// #     const KEM_ID: u16 = 0x0020;
-    /// #     const DERIVE_KEY_PAIR_BY_EXPAND: bool = B;
-    /// #     fn with_generated_key_pair<R>(
-    /// #         rng: &mut dyn RNG,
-    /// #         f: impl FnOnce(&Pk, &Sk) -> R,
-    /// #     ) -> Result<R, KEMError> {
-    /// #         <X25519 as DHKEMParams<32, 32, 32>>::with_generated_key_pair(rng, f)
-    /// #     }
-    /// #     fn private_key_from_bytes(sk: &[u8; 32]) -> Sk {
-    /// #         <X25519 as DHKEMParams<32, 32, 32>>::private_key_from_bytes(sk)
-    /// #     }
-    /// #     fn pk(sk: &Sk) -> Pk {
-    /// #         <X25519 as DHKEMParams<32, 32, 32>>::pk(sk)
-    /// #     }
-    /// #     fn dh_into(
-    /// #         sk: &Sk,
-    /// #         pk: &Pk,
-    /// #         out: &mut Secret<[u8; 32]>,
-    /// #     ) -> Result<(), KeyAgreementError> {
-    /// #         <X25519 as DHKEMParams<32, 32, 32>>::dh_into(sk, pk, out)
-    /// #     }
-    /// #     fn serialize_public_key(pk: &Pk) -> [u8; 32] {
-    /// #         <X25519 as DHKEMParams<32, 32, 32>>::serialize_public_key(pk)
-    /// #     }
-    /// #     fn deserialize_public_key(pkm: &[u8; 32]) -> Result<Pk, KEMError> {
-    /// #         <X25519 as DHKEMParams<32, 32, 32>>::deserialize_public_key(pkm)
-    /// #     }
-    /// # }
-    /// let ikm = KeyMaterial256::from_bytes_as_type(&[7u8; 32], KeyType::Seed).unwrap();
-    /// let _ = DHKEM::<Group<false>, 32, 32, 32, 32>::derive_key_pair(&ikm);
-    /// ```
+    /// [`KEMError::KeyGenError`] if `ikm` does not meet those requirements, or, in the candidate
+    /// form, if 256 candidates are all refused (the RFC's `DeriveKeyPairError`, whose likelihood
+    /// "is negligibly small in all cases").
     pub fn derive_key_pair(
         ikm: &impl KeyMaterialTrait,
     ) -> Result<(G::PublicKey, G::PrivateKey), KEMError> {
         let () = Self::PARAMS_CHECK;
-        const {
-            assert!(
-                G::DERIVE_KEY_PAIR_BY_EXPAND,
-                "derive_key_pair implements only the X25519 / X448 form of RFC 9180 Section 7.1.3"
-            )
-        };
 
-        if !(ikm.key_type() == KeyType::Seed || ikm.key_type() == KeyType::CryptographicRandom)
-            || ikm.key_len() < N_SK
-        {
+        if !(ikm.key_type() == KeyType::Seed || ikm.key_type() == KeyType::CryptographicRandom) {
             return Err(KEMError::KeyGenError(
-                "ikm must be at least Nsk bytes and KeyType::Seed or KeyType::CryptographicRandom.",
+                "ikm must be KeyType::Seed or KeyType::CryptographicRandom.",
             ));
         }
         if ikm.security_strength() < G::MAX_SECURITY_STRENGTH {
@@ -394,12 +313,33 @@ impl<
         // dkp_prk = LabeledExtract("", "dkp_prk", ikm)
         let mut dkp_prk = KeyMaterial::<MAX_NH>::new();
         Self::labeled_extract_into(LABEL_DKP_PRK, ikm.ref_to_bytes(), &mut dkp_prk);
-        // sk = LabeledExpand(dkp_prk, "sk", "", Nsk)
-        let mut sk = Secret::<[u8; N_SK]>::new();
-        Self::labeled_expand(&dkp_prk, LABEL_SK, &[], &mut *sk);
-        let sk = G::private_key_from_bytes(&sk);
-        // return (sk, pk(sk))
-        Ok((G::pk(&sk), sk))
+        let mut bytes = Secret::<[u8; N_SK]>::new();
+        match G::DERIVE_KEY_PAIR {
+            DeriveKeyPairForm::Expand => {
+                // sk = LabeledExpand(dkp_prk, "sk", "", Nsk)
+                Self::labeled_expand(&dkp_prk, LABEL_SK, &[], &mut *bytes);
+                // return (sk, pk(sk)); every byte string is a key of such a group.
+                let sk = G::private_key_from_bytes(&bytes)
+                    .ok_or(KEMError::KeyGenError("the derived bytes are not a private key"))?;
+                Ok((G::pk(&sk), sk))
+            }
+            DeriveKeyPairForm::Candidate { bitmask } => {
+                // while sk == 0 or sk >= order: ... counter = counter + 1; "if counter > 255:
+                // raise DeriveKeyPairError". A u8 counter takes the values 0 to 255.
+                for counter in 0..=u8::MAX {
+                    // bytes = LabeledExpand(dkp_prk, "candidate", I2OSP(counter, 1), Nsk)
+                    Self::labeled_expand(&dkp_prk, LABEL_CANDIDATE, &[&[counter]], &mut *bytes);
+                    // bytes[0] = bytes[0] & bitmask
+                    bytes[0] &= bitmask;
+                    // sk = OS2IP(bytes), tested by the group
+                    if let Some(sk) = G::private_key_from_bytes(&bytes) {
+                        // return (sk, pk(sk))
+                        return Ok((G::pk(&sk), sk));
+                    }
+                }
+                Err(KEMError::KeyGenError("DeriveKeyPair: 256 candidates were all refused"))
+            }
+        }
     }
 
     /// `ExtractAndExpand(dh, kem_context)` (RFC 9180 Section 4.1) into `out`, zeroized first,

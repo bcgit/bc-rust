@@ -174,11 +174,11 @@ fn derive_key_pair_rejects_bad_ikm() {
         _ => panic!("expected KeyGenError for the wrong key type"),
     }
 
+    // RFC 9180 Section 7.1.3's "SHOULD have length at least Nsk" is not enforced; the strength
+    // is. A 31-byte seed still carries X25519's 128 bits.
     let short = KeyMaterial256::from_bytes_as_type(&decode_32(ikm)[..31], KeyType::Seed).unwrap();
-    match X25519DHKEM::derive_key_pair(&short) {
-        Err(KEMError::KeyGenError(_)) => { /* good */ }
-        _ => panic!("expected KeyGenError for a 31-byte ikm"),
-    }
+    assert!(short.security_strength() >= SecurityStrength::_128bit);
+    X25519DHKEM::derive_key_pair(&short).unwrap();
 
     let mut weak = seed(ikm);
     weak.set_security_strength(SecurityStrength::_112bit).unwrap();

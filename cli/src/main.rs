@@ -1360,51 +1360,68 @@ enum Subcommands {
     /// to a file and give that to `hkdf-sha256 --ikm-file`, `x963kdf-sha256 --ikm-file` or
     /// `concatkdf-sha256 --ikm-file`, not the inline `--ikm`, which leaves Z in the command
     /// history. Keys are for key agreement
-    /// only, never also for signing.
+    /// only, never also for signing. `encaps` and `decaps` are DHKEM(P-256, HKDF-SHA256)
+    /// (RFC 9180) on the same key pair: `encaps` writes the ciphertext to --ctfile and the shared
+    /// secret to stdout, or with no --ctfile both to stdout in hex, the ciphertext first, one per
+    /// line.
     ECCDH_P256 {
         action: ECCDHAction,
 
         #[arg(long)]
-        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent, except for decaps, which requires it
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree, the recipient's for encaps (stdin if absent)
         pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (raw bytes; hex with --hex-input): written by encaps, read by decaps (stdin if absent).
+        ctfile: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 
-    /// ECC CDH key agreement over NIST P-384 (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    /// ECC CDH key agreement over NIST P-384 (SP 800-56A Rev. 3 Section 5.7.1.2), and
+    /// DHKEM(P-384, HKDF-SHA384) (RFC 9180). See eccdh-p256.
     ECCDH_P384 {
         action: ECCDHAction,
 
         #[arg(long)]
-        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent, except for decaps, which requires it
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree, the recipient's for encaps (stdin if absent)
         pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (raw bytes; hex with --hex-input): written by encaps, read by decaps (stdin if absent).
+        ctfile: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 
-    /// ECC CDH key agreement over NIST P-521 (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    /// ECC CDH key agreement over NIST P-521 (SP 800-56A Rev. 3 Section 5.7.1.2), and
+    /// DHKEM(P-521, HKDF-SHA512) (RFC 9180). See eccdh-p256.
     ECCDH_P521 {
         action: ECCDHAction,
 
         #[arg(long)]
-        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent, except for decaps, which requires it
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree, the recipient's for encaps (stdin if absent)
         pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (raw bytes; hex with --hex-input): written by encaps, read by decaps (stdin if absent).
+        ctfile: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -6912,14 +6929,14 @@ fn run() {
         Some(Subcommands::ECDSA_BP512R1 { action, skfile, pkfile, sigfile, x, deterministic }) => {
             ecdsa_cmd::ecdsa_bp512r1_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
         }
-        Some(Subcommands::ECCDH_P256 { action, skfile, pkfile, x }) => {
-            eccdh_cmd::eccdh_p256_cmd(action, skfile, pkfile, *x);
+        Some(Subcommands::ECCDH_P256 { action, skfile, pkfile, ctfile, x }) => {
+            eccdh_cmd::eccdh_p256_cmd(action, skfile, pkfile, ctfile, *x);
         }
-        Some(Subcommands::ECCDH_P384 { action, skfile, pkfile, x }) => {
-            eccdh_cmd::eccdh_p384_cmd(action, skfile, pkfile, *x);
+        Some(Subcommands::ECCDH_P384 { action, skfile, pkfile, ctfile, x }) => {
+            eccdh_cmd::eccdh_p384_cmd(action, skfile, pkfile, ctfile, *x);
         }
-        Some(Subcommands::ECCDH_P521 { action, skfile, pkfile, x }) => {
-            eccdh_cmd::eccdh_p521_cmd(action, skfile, pkfile, *x);
+        Some(Subcommands::ECCDH_P521 { action, skfile, pkfile, ctfile, x }) => {
+            eccdh_cmd::eccdh_p521_cmd(action, skfile, pkfile, ctfile, *x);
         }
         Some(Subcommands::ECCDH_SECP256K1 { action, skfile, pkfile, x }) => {
             eccdh_cmd::eccdh_secp256k1_cmd(action, skfile, pkfile, *x);
