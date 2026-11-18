@@ -24,6 +24,7 @@ mod mac_cmd;
 mod mldsa_cmd;
 mod mlkem_cmd;
 mod ofb_cmd;
+mod ripemd_cmd;
 mod rng_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
@@ -53,6 +54,7 @@ use crate::kbkdf_cmd::{
 };
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::{MLDSAAction, PreHashAlg};
+use crate::ripemd_cmd::RIPEMDVariant;
 use crate::rng_cmd::DrbgHash;
 use crate::sha2_cmd::SHA2Variant;
 use crate::sha3_cmd::{SHA3Variant, Strength};
@@ -3143,6 +3145,32 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Perform HMAC-RIPEMD160 (RFC 2104) of the content provided on stdin. Legacy construction;
+    /// see the `ripemd160` command.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_RIPEMD160 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
     /// Compute or verify a KMAC128 (NIST SP 800-185 Sec 4) over the content provided on stdin.
     /// The tag length and customization string are bound into the computation, so the verifier
     /// must use the same values.
@@ -4311,6 +4339,38 @@ enum Subcommands {
 
         #[arg(short)]
         /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform RIPEMD-128 of the content provided on stdin. Legacy: 64-bit collision resistance.
+    /// Supports streaming update for low memory footprint.
+    RIPEMD128 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform RIPEMD-160 of the content provided on stdin. Legacy: 80-bit collision resistance.
+    /// Supports streaming update for low memory footprint.
+    RIPEMD160 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform RIPEMD-256 of the content provided on stdin (the 256-bit extension of RIPEMD-128,
+    /// with RIPEMD-128's security level). Supports streaming update for low memory footprint.
+    RIPEMD256 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform RIPEMD-320 of the content provided on stdin (the 320-bit extension of RIPEMD-160,
+    /// with RIPEMD-160's security level). Supports streaming update for low memory footprint.
+    RIPEMD320 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
         x: bool,
     },
 
@@ -7697,6 +7757,9 @@ fn run() {
         Some(Subcommands::HMAC_SM3 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SM3, key, key_file, verify, *x)
         }
+        Some(Subcommands::HMAC_RIPEMD160 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::RIPEMD160, key, key_file, verify, *x)
+        }
         Some(Subcommands::KMAC128 {
             length,
             customization,
@@ -7983,6 +8046,18 @@ fn run() {
         }
         Some(Subcommands::SM2 { action, idfile, skfile, pkfile, sigfile, x }) => {
             sm2_cmd::sm2_cmd(action, idfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::RIPEMD128 { x }) => {
+            ripemd_cmd::ripemd_cmd(RIPEMDVariant::RIPEMD128, *x);
+        }
+        Some(Subcommands::RIPEMD160 { x }) => {
+            ripemd_cmd::ripemd_cmd(RIPEMDVariant::RIPEMD160, *x);
+        }
+        Some(Subcommands::RIPEMD256 { x }) => {
+            ripemd_cmd::ripemd_cmd(RIPEMDVariant::RIPEMD256, *x);
+        }
+        Some(Subcommands::RIPEMD320 { x }) => {
+            ripemd_cmd::ripemd_cmd(RIPEMDVariant::RIPEMD320, *x);
         }
         Some(Subcommands::SM3 { x }) => {
             sm3_cmd::sm3_cmd(*x);

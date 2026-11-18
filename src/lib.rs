@@ -26,6 +26,7 @@ pub use bouncycastle_mldsa_lowmemory as mldsa_lowmemory;
 pub use bouncycastle_mlkem as mlkem;
 pub use bouncycastle_mlkem_lowmemory as mlkem_lowmemory;
 pub use bouncycastle_poly1305 as poly1305;
+pub use bouncycastle_ripemd as ripemd;
 pub use bouncycastle_rng as rng;
 pub use bouncycastle_sha2 as sha2;
 pub use bouncycastle_sha3 as sha3;

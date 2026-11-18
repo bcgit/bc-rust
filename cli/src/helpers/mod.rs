@@ -512,7 +512,7 @@ pub(crate) fn seed_error<const SEED_LEN: usize>(e: SeedError) -> ! {
 // ---- streaming loops -------------------------------------------------------------------------
 
 /// Streams stdin through a [`Hash`] and writes the digest to stdout (hex or binary), followed by
-/// a newline. Used by the SHA-2, SHA-3, SM3 and Ascon-Hash256 subcommands.
+/// a newline. Used by the SHA-2, SHA-3, SM3, RIPEMD and Ascon-Hash256 subcommands.
 pub(crate) fn stream_hash(mut hasher: impl Hash, output_hex: bool) {
     stream_stdin(|chunk| hasher.do_update(chunk));
     let out = hasher.do_final();
