@@ -171,6 +171,13 @@
 //! buffer or key you own where that matters. What HKDF's own frames keep is in
 //! `bouncycastle_dhkem`'s Security Considerations.
 //!
+//! These wipes are made in the source, and a copy the compiler makes on its own is beyond them.
+//! A stack probe of this module found four of the five limbs of one intermediate of the field
+//! inversion, `z^((p-5)/8)` for the ladder's final `z`, left below the frame after every
+//! operation that multiplies by a scalar (agreement, key generation, key decoding and
+//! `DeriveKeyPair`), most likely a register spill. The value depends on the private key, and
+//! nothing in this crate removes it.
+//!
 //! The pairing's derived key carries the least of X25519's 128 bits, the KDF's and the length's
 //! strength, so a `LEN` below 16 bytes is typed `CryptographicRandom` at less than 128 bits.
 //!
