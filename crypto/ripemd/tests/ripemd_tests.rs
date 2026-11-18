@@ -203,70 +203,64 @@ mod ripemd_tests {
         use bouncycastle_core::traits::Suspendable;
         use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
 
-        let msg = b"Colorless green ideas sleep furiously";
-
-        macro_rules! check {
-            ($t:ty, $len:expr, $expected_len:literal) => {{
-                assert_eq!($len, $expected_len);
-                let mut h = <$t>::new();
-                h.do_update(msg);
-                TestFrameworkSuspendableState::new().test(&h);
-                let state = h.clone().suspend();
-                assert_eq!(state.len(), $len);
-                let output = h.do_final();
-                let resumed = <$t>::from_suspended(state).unwrap();
-                assert_eq!(resumed.do_final(), output);
-                // A buffer fill at or past the block length is rejected.
-                let mut busted = state;
-                busted[$len - 1] = 64;
-                assert!(matches!(<$t>::from_suspended(busted), Err(SuspendableError::InvalidData)));
-                // The byte count must agree with the buffer fill modulo the block length; the
-                // count itself is not limited (RFC 1320 Sec 3.2 takes it modulo 2^64).
-                let with_count = |byte_count: u64| {
-                    let mut state = state;
-                    state[$len - 73..$len - 65].copy_from_slice(&byte_count.to_le_bytes());
-                    <$t>::from_suspended(state)
-                };
-                let fill = msg.len() as u64;
-                assert!(with_count(fill + 64).is_ok());
-                assert!(with_count(u64::MAX - 63 + fill).is_ok());
-                assert!(matches!(with_count(fill + 1), Err(SuspendableError::InvalidData)));
-                assert!(matches!(with_count(0), Err(SuspendableError::InvalidData)));
-                // The same message prefix reached two ways has one encoding, and it carries no
-                // byte of the block already compressed: the buffer field is zero past its fill.
-                let block: Vec<u8> = (1..=64u8).collect();
-                let mut one = <$t>::new();
-                one.do_update(&block);
-                let mut two = <$t>::new();
-                two.do_update(&block[..10]);
-                two.do_update(&block[10..]);
-                let (one, two) = (one.suspend(), two.suspend());
-                assert_eq!(one, two);
-                assert_eq!(one[$len - 65..$len - 1], [0u8; 64]);
-                assert_eq!(one[$len - 1], 0);
-                // and a partial block: the 37 buffered bytes, then zeros
-                assert_eq!(state[$len - 65..$len - 65 + 37], msg[..]);
-                assert_eq!(state[$len - 65 + 37..$len - 1], [0u8; 27]);
-                // which `from_suspended` requires: a byte past the fill is refused
-                for at in [$len - 65 + 37, $len - 2] {
-                    let mut dirty = state;
-                    dirty[at] = 1;
-                    assert!(matches!(
-                        <$t>::from_suspended(dirty),
-                        Err(SuspendableError::InvalidData)
-                    ));
-                }
-                // Suspending after exactly one block (fill 0) round-trips too.
-                let mut h = <$t>::new();
-                h.do_update(&[0x5A; 64]);
-                let state = h.clone().suspend();
-                assert_eq!(<$t>::from_suspended(state).unwrap().do_final(), h.do_final());
-            }};
+        fn check<const N: usize, H: Hash + Suspendable<N> + Default + Clone>(expected_len: usize) {
+            let msg = b"Colorless green ideas sleep furiously";
+            assert_eq!(N, expected_len);
+            let mut h = H::default();
+            h.do_update(msg);
+            TestFrameworkSuspendableState::new().test(&h);
+            let state = h.clone().suspend();
+            assert_eq!(state.len(), N);
+            let output = h.do_final();
+            let resumed = H::from_suspended(state).unwrap();
+            assert_eq!(resumed.do_final(), output);
+            // A buffer fill at or past the block length is rejected.
+            let mut busted = state;
+            busted[N - 1] = 64;
+            assert!(matches!(H::from_suspended(busted), Err(SuspendableError::InvalidData)));
+            // The byte count must agree with the buffer fill modulo the block length; the
+            // count itself is not limited (RFC 1320 Sec 3.2 takes it modulo 2^64).
+            let with_count = |byte_count: u64| {
+                let mut state = state;
+                state[N - 73..N - 65].copy_from_slice(&byte_count.to_le_bytes());
+                H::from_suspended(state)
+            };
+            let fill = msg.len() as u64;
+            assert!(with_count(fill + 64).is_ok());
+            assert!(with_count(u64::MAX - 63 + fill).is_ok());
+            assert!(matches!(with_count(fill + 1), Err(SuspendableError::InvalidData)));
+            assert!(matches!(with_count(0), Err(SuspendableError::InvalidData)));
+            // The same message prefix reached two ways has one encoding, and it carries no
+            // byte of the block already compressed: the buffer field is zero past its fill.
+            let block: Vec<u8> = (1..=64u8).collect();
+            let mut one = H::default();
+            one.do_update(&block);
+            let mut two = H::default();
+            two.do_update(&block[..10]);
+            two.do_update(&block[10..]);
+            let (one, two) = (one.suspend(), two.suspend());
+            assert_eq!(one, two);
+            assert_eq!(one[N - 65..N - 1], [0u8; 64]);
+            assert_eq!(one[N - 1], 0);
+            // and a partial block: the 37 buffered bytes, then zeros
+            assert_eq!(state[N - 65..N - 65 + 37], msg[..]);
+            assert_eq!(state[N - 65 + 37..N - 1], [0u8; 27]);
+            // which `from_suspended` requires: a byte past the fill is refused
+            for at in [N - 65 + 37, N - 2] {
+                let mut dirty = state;
+                dirty[at] = 1;
+                assert!(matches!(H::from_suspended(dirty), Err(SuspendableError::InvalidData)));
+            }
+            // Suspending after exactly one block (fill 0) round-trips too.
+            let mut h = H::default();
+            h.do_update(&[0x5A; 64]);
+            let state = h.clone().suspend();
+            assert_eq!(H::from_suspended(state).unwrap().do_final(), h.do_final());
         }
-        check!(RIPEMD128, SUSPENDED_RIPEMD128_STATE_LEN, 92);
-        check!(RIPEMD160, SUSPENDED_RIPEMD160_STATE_LEN, 96);
-        check!(RIPEMD256, SUSPENDED_RIPEMD256_STATE_LEN, 108);
-        check!(RIPEMD320, SUSPENDED_RIPEMD320_STATE_LEN, 116);
+        check::<SUSPENDED_RIPEMD128_STATE_LEN, RIPEMD128>(92);
+        check::<SUSPENDED_RIPEMD160_STATE_LEN, RIPEMD160>(96);
+        check::<SUSPENDED_RIPEMD256_STATE_LEN, RIPEMD256>(108);
+        check::<SUSPENDED_RIPEMD320_STATE_LEN, RIPEMD320>(116);
     }
 
     /// RFC 1320 s. 3.1: bit-oriented messages. Zero partial bits must equal the byte-oriented

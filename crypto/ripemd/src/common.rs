@@ -1,6 +1,8 @@
 //! What the four RIPEMD functions share: the non-linear functions, the added constants, the
 //! message-word selection and rotation tables of the designers' pseudo-code, the MD4-style
-//! message buffering and padding, and the state every one of them keeps ([`Core`]).
+//! message buffering and padding, the state every one of them keeps ([`Core`]), and the hash type
+//! itself ([`RIPEMDInternal`]), which takes its initial value and compression function from its
+//! parameter set.
 //!
 //! The tables are transcribed from the designers' pseudo-code files (`rmd128.txt`, `rmd160.txt`,
 //! `rmd256.txt`, `rmd320.txt`; see the crate docs). The four files agree on every entry they
@@ -8,9 +10,13 @@
 //! `r`, `r'`, `s`, `s'`, the same `K(j)` for the first four rounds and the same `K'(j)` for the
 //! first three.
 
-use bouncycastle_core::errors::SuspendableError;
+use crate::sealed::RIPEMDFamily;
+use bouncycastle_core::errors::{HashError, SuspendableError};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, HashOneShot};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
+use core::marker::PhantomData;
 
 /// `f(j, x, y, z) = x XOR y XOR z` (`0 <= j <= 15`).
 #[inline(always)]
@@ -332,6 +338,99 @@ impl<S: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>> Core<S> {
         Ok(Self { h, buffer })
     }
 }
+
+/// The four RIPEMD functions, by parameter set: use it through the aliases
+/// [`RIPEMD128`](crate::RIPEMD128), [`RIPEMD160`](crate::RIPEMD160),
+/// [`RIPEMD256`](crate::RIPEMD256) and [`RIPEMD320`](crate::RIPEMD320).
+///
+/// See the [crate-level documentation](crate) for usage.
+#[derive(Clone)]
+pub struct RIPEMDInternal<PARAMS: RIPEMDFamily> {
+    _params: PhantomData<PARAMS>,
+    core: Core<PARAMS::State>,
+}
+
+impl<PARAMS: RIPEMDFamily> RIPEMDInternal<PARAMS> {
+    /// Creates a new instance, ready for use.
+    pub fn new() -> Self {
+        Self { _params: PhantomData, core: Core::new(PARAMS::H0) }
+    }
+
+    /// The `suspend` of the four concrete types, whose state lengths `N` differ.
+    pub(crate) fn suspend_state<const N: usize>(&self) -> [u8; N] {
+        self.core.suspend()
+    }
+
+    /// The `from_suspended` of the four concrete types.
+    pub(crate) fn resume_state<const N: usize>(
+        serialized_state: &[u8; N],
+    ) -> Result<Self, SuspendableError> {
+        Ok(Self { _params: PhantomData, core: Core::resume(serialized_state)? })
+    }
+}
+
+impl<PARAMS: RIPEMDFamily> Default for RIPEMDInternal<PARAMS> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<PARAMS: RIPEMDFamily> Algorithm for RIPEMDInternal<PARAMS> {
+    const ALG_NAME: &'static str = PARAMS::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = PARAMS::MAX_SECURITY_STRENGTH;
+}
+
+impl<PARAMS: RIPEMDFamily> Hash for RIPEMDInternal<PARAMS> {
+    /// A 16-word block of 32-bit words: 512 bits.
+    fn block_bitlen(&self) -> usize {
+        BLOCK_LEN * 8
+    }
+
+    fn output_len(&self) -> usize {
+        PARAMS::OUTPUT_LEN
+    }
+
+    // `Core::update` and `Core::finish` are handed a closure at each call site below rather than
+    // `PARAMS::compress` itself: each closure is a type of its own, so each call has its own copy
+    // of the callee, which the compiler then inlines. Sharing one copy between the two finals
+    // costs up to 64 bytes of stack in the crate docs' table.
+    fn do_update(&mut self, data: &[u8]) {
+        self.core.update(data, |h, block| PARAMS::compress(h, block));
+    }
+
+    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
+        // A whole-byte message is the zero-partial-bits case of the general padding.
+        self.core.finish(0, 0, PARAMS::OUTPUT_LEN, output, |h, block| PARAMS::compress(h, block))
+    }
+
+    /// Bit-oriented messages: the pseudo-code defers the padding to MD4, and RFC 1320 Sec 3.1
+    /// defines it for any bit length. The `num_partial_bits` most significant bits of
+    /// `partial_byte` (ASN.1 BIT STRING order, leading bit first) are appended to the message
+    /// before padding; the low bits are ignored.
+    fn finish_partial_bits_into(
+        &mut self,
+        _token: &FinishToken,
+        partial_byte: u8,
+        num_partial_bits: usize,
+        output: &mut [u8],
+    ) -> Result<usize, HashError> {
+        // Cleared before the check, so that a refused call leaves nothing stale in the buffer.
+        output.fill(0);
+        if num_partial_bits > 7 {
+            return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
+        }
+        Ok(self.core.finish(
+            partial_byte,
+            num_partial_bits,
+            PARAMS::OUTPUT_LEN,
+            output,
+            |h, block| PARAMS::compress(h, block),
+        ))
+    }
+}
+
+// The one-shot form: `Default` is the function itself.
+impl<PARAMS: RIPEMDFamily> HashOneShot for RIPEMDInternal<PARAMS> {}
 
 #[cfg(test)]
 mod tests {

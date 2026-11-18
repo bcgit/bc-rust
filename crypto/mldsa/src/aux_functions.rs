@@ -9,7 +9,6 @@ use bouncycastle_mldsa_common::aux_functions::{
     bit_unpack_gamma1, bitpack_gamma1, expand_mask_poly, power_2_round, rej_bounded_poly,
     rej_ntt_poly,
 };
-use bouncycastle_utils::secret::Secret;
 
 /// Algorithm 26 sigEncode(̃𝑐_tilde, 𝐳, 𝐡)
 /// Encodes a signature into a byte string.
@@ -161,11 +160,8 @@ pub(crate) fn expandA<P: MLDSAParams>(rho: &[u8; 32], A_hat: &mut P::MatrixA) {
 /// in the interval \[−𝜂, 𝜂].
 /// Input: A seed 𝜌 ∈ 𝔹64 .
 /// Output: Vectors 𝐬1, 𝐬2 of secret polynomials in 𝑅
-/// Note that this returns Secret<Vector<k>> because s1, s2 are always part of a private key.
-pub(crate) fn expandS<P: MLDSAParams>(rho: &[u8; 64]) -> (Secret<P::VecL>, Secret<P::VecK>) {
-    let mut s1: Secret<P::VecL> = Secret::new();
-    let mut s2: Secret<P::VecK> = Secret::new();
-
+/// Into `s1` and `s2`, which the caller holds in the private key's `Secret`s.
+pub(crate) fn expandS<P: MLDSAParams>(rho: &[u8; 64], s1: &mut P::VecL, s2: &mut P::VecK) {
     for r in 0..P::l {
         s1.elems_mut()[r] = rej_bounded_poly::<P>(rho, &(r as u16).to_le_bytes());
     }
@@ -173,23 +169,17 @@ pub(crate) fn expandS<P: MLDSAParams>(rho: &[u8; 64]) -> (Secret<P::VecL>, Secre
     for r in 0..P::k {
         s2.elems_mut()[r] = rej_bounded_poly::<P>(rho, &(r as u16 + P::l as u16).to_le_bytes());
     }
-
-    (s1, s2)
 }
 
 /// Implements the meta-function described in FIPS 204 section 7.4 for applying power_2_round to a vector.
 /// ((𝐫1\[𝑖])𝑗, (𝐫0\[𝑖])𝑗) = Power2Round((𝐫\[𝑖])𝑗).
-pub(crate) fn power_2_round_vec<V: VectorTrait>(v: &V) -> (V, V) {
-    let mut r1 = V::new();
-    let mut r0 = V::new();
-
+/// `r` holds 𝐫 going in and 𝐫0 coming out; 𝐫1 is written to `r1`.
+pub(crate) fn power_2_round_vec<V: VectorTrait>(r: &mut V, r1: &mut V) {
     for i in 0..V::LEN {
         for j in 0..N {
-            (r1.elems_mut()[i][j], r0.elems_mut()[i][j]) = power_2_round(v.elems()[i][j]);
+            (r1.elems_mut()[i][j], r.elems_mut()[i][j]) = power_2_round(r.elems()[i][j]);
         }
     }
-
-    (r1, r0)
 }
 
 /// Algorithm 34 ExpandMask(𝜌, 𝜇)

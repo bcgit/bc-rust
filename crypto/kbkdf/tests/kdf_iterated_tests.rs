@@ -3,6 +3,8 @@
 //! feedback mode, the limits and the guard against key control; and what is particular to
 //! CMAC as the PRF, in all three modes.
 
+mod common;
+
 use bouncycastle_aes::AES128Key;
 use bouncycastle_cipher::modes::CMAC;
 use bouncycastle_core::errors::KDFError;
@@ -10,32 +12,23 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, FromKeyMaterial, MacGenerationKey};
+use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{Algorithm, KDF};
 use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
 use bouncycastle_hkdf::HKDF;
-use bouncycastle_hmac::HmacKey;
 use bouncycastle_kbkdf::{
     CounterPosition, CounterSize, IterationCounterPosition as Position, KDF_Counter_CMAC_AES128,
     KDF_Counter_CMAC_AES192, KDF_Counter_CMAC_AES256, KDF_Counter_HMAC_SHA256,
     KDF_DoublePipeline_CMAC_AES128, KDF_DoublePipeline_HMAC_SHA256, KDF_DoublePipeline_HMAC_SHA512,
     KDF_Feedback_CMAC_AES128, KDF_Feedback_CMAC_AES256, KDF_Feedback_HMAC_SHA3_512,
-    KDF_Feedback_HMAC_SHA256, KDF_Feedback_HMAC_SHA512, PRF_CMAC, Prf,
+    KDF_Feedback_HMAC_SHA256, KDF_Feedback_HMAC_SHA512, PRF_CMAC_AES128, PRF_CMAC_AES192,
+    PRF_CMAC_AES256, Prf,
 };
 use bouncycastle_sha2::SHA256;
+use common::{hmac_sha256, random};
 
 const KEY: [u8; 32] = [0x5A; 32];
 const FIXED: &[u8] = b"label\0context: sixteen bytes+";
-
-fn random(bytes: &[u8]) -> KeyMaterial<128> {
-    KeyMaterial::<128>::from_bytes_as_type(bytes, KeyType::CryptographicRandom).unwrap()
-}
-
-/// HMAC-SHA256 under `key` over `parts`, through the key object.
-fn hmac(key: &[u8], parts: &[&[u8]]) -> Vec<u8> {
-    let key = KeyMaterial::<144>::from_bytes_as_type(key, KeyType::MACKey).unwrap();
-    HmacKey::<SHA256>::from_key_material_allow_weak(&key).unwrap().mac(&parts.concat()).to_vec()
-}
 
 /// AES-128 CMAC under `key` over `parts`, through the key object.
 fn cmac(key: &[u8; 16], parts: &[&[u8]]) -> Vec<u8> {
@@ -75,7 +68,7 @@ fn feedback_matches_the_prf_of_the_previous_block() {
             let mut expected = Vec::new();
             let mut previous = iv.to_vec();
             for i in 1..=3u32 {
-                previous = hmac(&KEY, &[&input(counter, i, &previous, FIXED)]);
+                previous = hmac_sha256(&KEY, &[&input(counter, i, &previous, FIXED)]);
                 expected.extend_from_slice(&previous);
             }
             let kdf = match counter {
@@ -101,8 +94,8 @@ fn double_pipeline_matches_the_two_pipelines() {
         let mut expected = Vec::new();
         let mut a = FIXED.to_vec();
         for i in 1..=3u32 {
-            a = hmac(&KEY, &[&a]);
-            expected.extend_from_slice(&hmac(&KEY, &[&input(counter, i, &a, FIXED)]));
+            a = hmac_sha256(&KEY, &[&a]);
+            expected.extend_from_slice(&hmac_sha256(&KEY, &[&input(counter, i, &a, FIXED)]));
         }
         let kdf = match counter {
             None => KDF_DoublePipeline_HMAC_SHA256::new(),
@@ -165,7 +158,7 @@ fn feedback_key_control_guard_derives_the_iv() {
     assert_eq!(guarded.iv(), None);
     assert_eq!(guarded.counter(), Some((CounterSize::_16bit, Position::AfterIterationVariable)));
 
-    let iv = hmac(&KEY, &[FIXED]);
+    let iv = hmac_sha256(&KEY, &[FIXED]);
     let given = KDF_Feedback_HMAC_SHA256::with_counter(
         &iv,
         CounterSize::_16bit,
@@ -257,18 +250,18 @@ fn kdf_trait_suite_over_hmac() {
     let keys: [&dyn KeyMaterialTrait; 2] = [&a, &b];
 
     let feedback = KDF_Feedback_HMAC_SHA256::new(b"iv");
-    let mut expected = hmac(&KEY, &[b"iv", FIXED]);
-    let second = hmac(&KEY, &[&expected, FIXED]);
+    let mut expected = hmac_sha256(&KEY, &[b"iv", FIXED]);
+    let second = hmac_sha256(&KEY, &[&expected, FIXED]);
     expected.extend_from_slice(&second[..8]);
     let expected = random(&expected);
     tf.test_kdf_single_key(&feedback, &key, FIXED, &expected);
     tf.test_kdf_multiple_key(&feedback, &keys, FIXED, &expected);
 
     let pipeline = KDF_DoublePipeline_HMAC_SHA256::new();
-    let a1 = hmac(&KEY, &[FIXED]);
-    let a2 = hmac(&KEY, &[&a1]);
-    let mut expected = hmac(&KEY, &[&a1, FIXED]);
-    expected.extend_from_slice(&hmac(&KEY, &[&a2, FIXED])[..8]);
+    let a1 = hmac_sha256(&KEY, &[FIXED]);
+    let a2 = hmac_sha256(&KEY, &[&a1]);
+    let mut expected = hmac_sha256(&KEY, &[&a1, FIXED]);
+    expected.extend_from_slice(&hmac_sha256(&KEY, &[&a2, FIXED])[..8]);
     let expected = random(&expected);
     tf.test_kdf_single_key(&pipeline, &key, FIXED, &expected);
     tf.test_kdf_multiple_key(&pipeline, &keys, FIXED, &expected);
@@ -393,27 +386,43 @@ fn cmac_output_is_typed_from_the_key() {
     // A key that is not full-entropy material, or carries no strength, credits nothing.
     let k = typed(16, KeyType::Unknown, SecurityStrength::None);
     assert_eq!(label(&aes128, &[&k], 32), unknown);
-    // Half the key full-entropy and half not: one byte short of the whole key is not enough.
+    // Half the key full-entropy and half not is not enough.
     let good = typed(16, KeyType::SharedSecret, SecurityStrength::_128bit);
     let bad = typed(16, KeyType::Unknown, SecurityStrength::None);
     assert_eq!(label(&aes256, &[&good, &bad], 32), unknown);
     assert_eq!(label(&aes256, &[&good, &good], 32), (random, SecurityStrength::_128bit));
+
+    // The whole key, to the byte, for each key length: all of it full-entropy material is
+    // credited, and all but its last byte is not.
+    let aes192 = KDF_Counter_CMAC_AES192::new();
+    let aes256 = KDF_Counter_CMAC_AES256::new();
+    // The shorter key carries the most strength its length allows.
+    let cases: [(&dyn KDF, usize, SecurityStrength, SecurityStrength); 3] = [
+        (&aes128, 16, SecurityStrength::_128bit, SecurityStrength::_112bit),
+        (&aes192, 24, SecurityStrength::_192bit, SecurityStrength::_128bit),
+        (&aes256, 32, SecurityStrength::_256bit, SecurityStrength::_192bit),
+    ];
+    for (kdf, key_len, strength, short_strength) in cases {
+        let whole = typed(key_len, KeyType::SharedSecret, strength);
+        assert_eq!(label(kdf, &[&whole], 32), (random, strength), "{key_len}-byte key");
+        let most = typed(key_len - 1, KeyType::SharedSecret, short_strength);
+        let last = typed(1, KeyType::Unknown, SecurityStrength::None);
+        assert_eq!(label(kdf, &[&most, &last], 32), unknown, "{key_len}-byte key, one byte short");
+    }
 }
 
 #[test]
 fn names_and_strengths() {
-    // The name constants are the instantiations' names.
     use bouncycastle_kbkdf::{
         KDF_COUNTER_CMAC_AES256_NAME, KDF_COUNTER_HMAC_SHA256_NAME, KDF_COUNTER_HMAC_SHA384_NAME,
-        KDF_COUNTER_HMAC_SHA512_NAME, KDF_Counter_HMAC_SHA384, KDF_Counter_HMAC_SHA512,
-        KDF_KMAC128, KDF_KMAC128_NAME, KDF_KMAC256, KDF_KMAC256_NAME,
+        KDF_COUNTER_HMAC_SHA512_NAME, KDF_KMAC128_NAME, KDF_KMAC256_NAME,
     };
-    assert_eq!(KDF_Counter_HMAC_SHA256::ALG_NAME, KDF_COUNTER_HMAC_SHA256_NAME);
-    assert_eq!(KDF_Counter_HMAC_SHA384::ALG_NAME, KDF_COUNTER_HMAC_SHA384_NAME);
-    assert_eq!(KDF_Counter_HMAC_SHA512::ALG_NAME, KDF_COUNTER_HMAC_SHA512_NAME);
+    assert_eq!(KDF_COUNTER_HMAC_SHA256_NAME, "KDF-Counter-HMAC-SHA256");
+    assert_eq!(KDF_COUNTER_HMAC_SHA384_NAME, "KDF-Counter-HMAC-SHA384");
+    assert_eq!(KDF_COUNTER_HMAC_SHA512_NAME, "KDF-Counter-HMAC-SHA512");
+    assert_eq!(KDF_COUNTER_CMAC_AES256_NAME, "KDF-Counter-CMAC-AES256");
+    assert_eq!((KDF_KMAC128_NAME, KDF_KMAC256_NAME), ("KDF-KMAC128", "KDF-KMAC256"));
     assert_eq!(KDF_Counter_CMAC_AES256::ALG_NAME, KDF_COUNTER_CMAC_AES256_NAME);
-    assert_eq!(KDF_KMAC128::ALG_NAME, KDF_KMAC128_NAME);
-    assert_eq!(KDF_KMAC256::ALG_NAME, KDF_KMAC256_NAME);
     assert_eq!(KDF_Feedback_HMAC_SHA256::ALG_NAME, "KDF-Feedback-HMAC-SHA256");
     assert_eq!(KDF_Feedback_HMAC_SHA3_512::ALG_NAME, "KDF-Feedback-HMAC-SHA3-512");
     assert_eq!(KDF_DoublePipeline_HMAC_SHA512::ALG_NAME, "KDF-DoublePipeline-HMAC-SHA512");
@@ -426,15 +435,9 @@ fn names_and_strengths() {
     assert_eq!(KDF_Counter_CMAC_AES128::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
     assert_eq!(KDF_Counter_CMAC_AES192::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
     assert_eq!(KDF_Feedback_CMAC_AES256::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
-    type Aes<P> = PRF_CMAC<P>;
-    use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
     assert_eq!(
-        [
-            (<Aes<AES128Internal> as Prf>::H_LEN, <Aes<AES128Internal> as Prf>::SEED_LEN),
-            (<Aes<AES192Internal> as Prf>::H_LEN, <Aes<AES192Internal> as Prf>::SEED_LEN),
-            (<Aes<AES256Internal> as Prf>::H_LEN, <Aes<AES256Internal> as Prf>::SEED_LEN),
-        ],
-        [(16, 16), (16, 24), (16, 32)]
+        [PRF_CMAC_AES128::H_LEN, PRF_CMAC_AES192::H_LEN, PRF_CMAC_AES256::H_LEN],
+        [16, 16, 16]
     );
 }
 

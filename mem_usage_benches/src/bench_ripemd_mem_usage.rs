@@ -191,51 +191,40 @@ hash_benches!(ripemd160, RIPEMD160, 20, SUSPENDED_RIPEMD160_STATE_LEN);
 hash_benches!(ripemd256, RIPEMD256, 32, SUSPENDED_RIPEMD256_STATE_LEN);
 hash_benches!(ripemd320, RIPEMD320, 40, SUSPENDED_RIPEMD320_STATE_LEN);
 
-/// The HMAC benches of one hash, as a module named for it.
-macro_rules! hmac_benches {
-    ($module:ident, $hash:ty, $output_len:literal) => {
-        mod $module {
-            use super::*;
-
-            #[inline(never)]
-            fn hmac_key() -> HmacKey<$hash> {
-                HmacKey::<$hash>::from_key_material(&key()).unwrap()
-            }
-
-            #[inline(never)]
-            pub(crate) fn bench_key() {
-                eprintln!("HmacKey::<{}>::from_key_material", stringify!($hash));
-                let key = black_box(key());
-                measure(move || {
-                    let op = black_box(
-                        <HmacKey<$hash> as FromAnyKeyMaterial>::from_key_material
-                            as fn(&dyn KeyMaterialTrait) -> Result<HmacKey<$hash>, MACError>,
-                    );
-                    let k = op(&key).unwrap();
-                    black_box(&k);
-                });
-            }
-
-            #[inline(never)]
-            pub(crate) fn bench_mac_out() {
-                eprintln!("HmacKey::<{}>::mac_out, {MSG_LEN} B", stringify!($hash));
-                let k = black_box(hmac_key());
-                let msg = black_box(message::<MSG_LEN>(0xa5));
-                measure(move || {
-                    let mut out = [0u8; $output_len];
-                    let op = black_box(
-                        <HmacKey<$hash> as MacGenerationKey<$output_len>>::mac_out
-                            as fn(&HmacKey<$hash>, &[u8], &mut [u8; $output_len]) -> usize,
-                    );
-                    let n = op(&k, &msg, &mut out);
-                    print!("{:x?}", &out[..n]);
-                });
-            }
-        }
-    };
+#[inline(never)]
+fn hmac_ripemd160_key() -> HmacKey<RIPEMD160> {
+    HmacKey::<RIPEMD160>::from_key_material(&key()).unwrap()
 }
 
-hmac_benches!(hmac_ripemd160, RIPEMD160, 20);
+#[inline(never)]
+fn bench_hmac_ripemd160_key() {
+    eprintln!("HmacKey::<RIPEMD160>::from_key_material");
+    let key = black_box(key());
+    measure(move || {
+        let op = black_box(
+            <HmacKey<RIPEMD160> as FromAnyKeyMaterial>::from_key_material
+                as fn(&dyn KeyMaterialTrait) -> Result<HmacKey<RIPEMD160>, MACError>,
+        );
+        let k = op(&key).unwrap();
+        black_box(&k);
+    });
+}
+
+#[inline(never)]
+fn bench_hmac_ripemd160_mac_out() {
+    eprintln!("HmacKey::<RIPEMD160>::mac_out, {MSG_LEN} B");
+    let k = black_box(hmac_ripemd160_key());
+    let msg = black_box(message::<MSG_LEN>(0xa5));
+    measure(move || {
+        let mut out = [0u8; 20];
+        let op = black_box(
+            <HmacKey<RIPEMD160> as MacGenerationKey<20>>::mac_out
+                as fn(&HmacKey<RIPEMD160>, &[u8], &mut [u8; 20]) -> usize,
+        );
+        let n = op(&k, &msg, &mut out);
+        print!("{:x?}", &out[..n]);
+    });
+}
 
 fn main() {
     print_struct_sizes()
@@ -247,6 +236,6 @@ fn main() {
     // ripemd160::bench_oneshot()
     // ripemd160::bench_suspend()
     // ripemd160::bench_from_suspended()
-    // hmac_ripemd160::bench_key()
-    // hmac_ripemd160::bench_mac_out()
+    // bench_hmac_ripemd160_key()
+    // bench_hmac_ripemd160_mac_out()
 }

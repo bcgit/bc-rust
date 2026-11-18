@@ -7,15 +7,12 @@
 
 mod common;
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::KDF;
 use bouncycastle_kbkdf::{
-    CounterSize, IterationCounterPosition, KDF_DoublePipeline, KDF_Feedback, PRF_CMAC, PRF_HMAC,
-    Prf,
+    CounterSize, IterationCounterPosition, KDF_DoublePipeline, KDF_Feedback, Prf,
 };
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
-use common::Record;
+use common::{Check, Record};
 
 #[derive(Clone, Copy)]
 enum Mode {
@@ -34,56 +31,42 @@ fn counter(r: &Record) -> Option<(CounterSize, IterationCounterPosition)> {
     Some((r.r.unwrap(), position))
 }
 
-fn check<P: Prf>(mode: Mode, r: &Record) {
-    let ki = KeyMaterial::<64>::from_bytes_as_type(&r.ki, KeyType::CryptographicRandom).unwrap();
-    let mut out = KeyMaterial::<512>::new();
-    let written = match (mode, counter(r)) {
-        (Mode::Feedback, None) => {
-            KDF_Feedback::<P>::new(&r.iv).derive_key_out(&ki, &r.fixed, r.len, &mut out)
+impl Check for Mode {
+    fn check<P: Prf>(&self, r: &Record) {
+        let ki =
+            KeyMaterial::<64>::from_bytes_as_type(&r.ki, KeyType::CryptographicRandom).unwrap();
+        let mut out = KeyMaterial::<512>::new();
+        let written = match (self, counter(r)) {
+            (Mode::Feedback, None) => {
+                KDF_Feedback::<P>::new(&r.iv).derive_key_out(&ki, &r.fixed, r.len, &mut out)
+            }
+            (Mode::Feedback, Some((size, position))) => {
+                KDF_Feedback::<P>::with_counter(&r.iv, size, position)
+                    .derive_key_out(&ki, &r.fixed, r.len, &mut out)
+            }
+            (Mode::DoublePipeline, None) => {
+                KDF_DoublePipeline::<P>::new().derive_key_out(&ki, &r.fixed, r.len, &mut out)
+            }
+            (Mode::DoublePipeline, Some((size, position))) => {
+                KDF_DoublePipeline::<P>::with_counter(size, position)
+                    .derive_key_out(&ki, &r.fixed, r.len, &mut out)
+            }
         }
-        (Mode::Feedback, Some((size, position))) => {
-            KDF_Feedback::<P>::with_counter(&r.iv, size, position)
-                .derive_key_out(&ki, &r.fixed, r.len, &mut out)
-        }
-        (Mode::DoublePipeline, None) => {
-            KDF_DoublePipeline::<P>::new().derive_key_out(&ki, &r.fixed, r.len, &mut out)
-        }
-        (Mode::DoublePipeline, Some((size, position))) => {
-            KDF_DoublePipeline::<P>::with_counter(size, position)
-                .derive_key_out(&ki, &r.fixed, r.len, &mut out)
-        }
+        .unwrap_or_else(|e| panic!("{}: {e:?}", r.name()));
+        assert_eq!(written, r.len, "{}", r.name());
+        assert_eq!(out.ref_to_bytes(), r.ko.as_slice(), "{}", r.name());
     }
-    .unwrap_or_else(|e| panic!("{}: {e:?}", r.name()));
-    assert_eq!(written, r.len, "{}", r.name());
-    assert_eq!(out.ref_to_bytes(), r.ko.as_slice(), "{}", r.name());
 }
 
 /// Runs a file and returns (checked, HMAC-SHA1 records, CMAC-TDEA records, records with an IV).
 fn run(mode: Mode, filename: &str) -> (usize, usize, usize, usize) {
-    let (mut checked, mut sha1, mut tdea, mut with_iv) = (0, 0, 0, 0);
-    for r in &common::load(filename) {
-        assert!(r.fixed_after.is_empty(), "no file here splits the fixed input data");
-        with_iv += usize::from(!r.iv.is_empty());
-        match r.prf.as_str() {
-            "HMAC_SHA224" => check::<PRF_HMAC<SHA224>>(mode, r),
-            "HMAC_SHA256" => check::<PRF_HMAC<SHA256>>(mode, r),
-            "HMAC_SHA384" => check::<PRF_HMAC<SHA384>>(mode, r),
-            "HMAC_SHA512" => check::<PRF_HMAC<SHA512>>(mode, r),
-            "CMAC_AES128" => check::<PRF_CMAC<AES128Internal>>(mode, r),
-            "CMAC_AES192" => check::<PRF_CMAC<AES192Internal>>(mode, r),
-            "CMAC_AES256" => check::<PRF_CMAC<AES256Internal>>(mode, r),
-            "HMAC_SHA1" => {
-                sha1 += 1;
-                continue;
-            }
-            "CMAC_TDES2" | "CMAC_TDES3" => {
-                tdea += 1;
-                continue;
-            }
-            other => panic!("unexpected PRF {other}"),
-        }
-        checked += 1;
-    }
+    let records = common::load(filename);
+    assert!(
+        records.iter().all(|r| r.fixed_after.is_empty()),
+        "no file here splits the fixed input data"
+    );
+    let with_iv = records.iter().filter(|r| !r.iv.is_empty()).count();
+    let (checked, sha1, tdea) = common::check_each(&records, &mode);
     (checked, sha1, tdea, with_iv)
 }
 

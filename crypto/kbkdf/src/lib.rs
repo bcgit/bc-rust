@@ -4,10 +4,11 @@
 //!
 //! [`KDF_Counter<P>`], [`KDF_Feedback<P>`] and [`KDF_DoublePipeline<P>`] are the KDFs in Counter
 //! Mode, Feedback Mode and Double-Pipeline Mode (Sections 4.1 to 4.3) over a PRF `P`, which is
-//! [`PRF_HMAC<H>`] for HMAC over a hash or [`PRF_CMAC<P>`] for CMAC over AES. The aliases
-//! [`KDF_Counter_HMAC_SHA256`], [`KDF_Counter_CMAC_AES256`] and the like name the instantiations
-//! over the SHA-2 and SHA-3 hashes and the three AES key lengths. [`KDF_KMAC128`] and
-//! [`KDF_KMAC256`] are the KDF Using KMAC (Section 4.4), a single KMAC call.
+//! [`PRF_HMAC<H>`] for HMAC over a SHA-2 or SHA-3 hash, or [`PRF_CMAC_AES128`],
+//! [`PRF_CMAC_AES192`] or [`PRF_CMAC_AES256`] for CMAC over AES. Aliases such as
+//! [`KDF_Counter_HMAC_SHA256`] and [`KDF_Counter_CMAC_AES256`] name some instantiations; any
+//! other is spelled out, `KDF_Feedback<PRF_HMAC<SHA384>>`. [`KDF_KMAC128`] and [`KDF_KMAC256`]
+//! are the KDF Using KMAC (Section 4.4), a single KMAC call.
 //!
 //! # Usage Examples
 //!
@@ -63,12 +64,12 @@
 //!
 //! | PRF | Counter | Feedback | Double-Pipeline |
 //! |---|---|---|---|
-//! | HMAC-SHA256 | 2632 | 2824 | 2856 |
-//! | HMAC-SHA512 | 4312 | 4696 | 4728 |
-//! | HMAC-SHA3-256 | 6472 | | |
-//! | CMAC-AES256 | 2848 | | |
+//! | HMAC-SHA256 | 2648 | 2840 | 2888 |
+//! | HMAC-SHA512 | 4312 | 4712 | 4760 |
+//! | HMAC-SHA3-256 | 6632 | | |
+//! | CMAC-AES256 | 2656 | | |
 //!
-//! [`KDF_KMAC128`] and [`KDF_KMAC256`]: 5992, of which [`MAX_KMAC_KDK_LEN`] bytes are the copy
+//! [`KDF_KMAC128`] and [`KDF_KMAC256`]: 5592, of which [`MAX_KMAC_KDK_LEN`] bytes are the copy
 //! of the key-derivation key.
 //!
 //! [`Secret`]: bouncycastle_utils::secret::Secret
@@ -122,15 +123,17 @@ pub use kmac::{
     KDF_KMAC, KDF_KMAC128, KDF_KMAC128_NAME, KDF_KMAC256, KDF_KMAC256_NAME, KmacKdfParams,
     MAX_KMAC_KDK_LEN,
 };
-pub use prf::{MAX_PRF_OUTPUT_LEN, PRF_CMAC, PRF_HMAC, Prf};
+use prf::MAX_PRF_OUTPUT_LEN;
+pub use prf::{PRF_CMAC, PRF_CMAC_AES128, PRF_CMAC_AES192, PRF_CMAC_AES256, PRF_HMAC, Prf};
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::{KDFError, KeyMaterialError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
-use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+use bouncycastle_core::traits::Algorithm;
+use bouncycastle_sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_sha3::{SHA3_256, SHA3_512};
+use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::{max, min};
 
 /// `r`, "the length of the binary representation of the counter i" (SP 800-108r1 Section 4),
@@ -148,6 +151,17 @@ pub enum CounterSize {
 }
 
 impl CounterSize {
+    /// The counter of `bits` bits, or `None` if that is not 8, 16, 24 or 32.
+    pub const fn from_bits(bits: u32) -> Option<Self> {
+        match bits {
+            8 => Some(Self::_8bit),
+            16 => Some(Self::_16bit),
+            24 => Some(Self::_24bit),
+            32 => Some(Self::_32bit),
+            _ => None,
+        }
+    }
+
     /// The counter's length in bytes.
     pub const fn byte_len(&self) -> usize {
         match self {
@@ -159,12 +173,12 @@ impl CounterSize {
     }
 
     /// `r`, the counter's size in bits.
-    pub const fn bits(&self) -> u32 {
+    pub(crate) const fn bits(&self) -> u32 {
         self.byte_len() as u32 * 8
     }
 
     /// `2^r - 1`, the largest value the counter takes.
-    pub const fn max_count(&self) -> u32 {
+    pub(crate) const fn max_count(&self) -> u32 {
         u32::MAX >> (32 - self.bits())
     }
 }
@@ -210,14 +224,104 @@ pub(crate) fn iteration_input<'a>(
     }
 }
 
-/// The most bytes a feedback or double-pipeline derivation produces over `P`: `2^32 - 1` PRF
-/// outputs, or `2^r - 1` with a counter of `r` bits; `usize::MAX` where that does not fit.
-pub(crate) fn max_len<P: Prf>(config: Option<(CounterSize, IterationCounterPosition)>) -> usize {
-    let n = match config {
+/// The most bytes a derivation produces over `P`: `2^r - 1` PRF outputs with a counter of `r`
+/// bits, `2^32 - 1` without one; `usize::MAX` where that does not fit.
+pub(crate) fn max_len<P: Prf>(r: Option<CounterSize>) -> usize {
+    let n = match r {
         None => u32::MAX,
-        Some((r, _)) => r.max_count(),
+        Some(r) => r.max_count(),
     };
     usize::try_from(P::H_LEN as u128 * n as u128).unwrap_or(usize::MAX)
+}
+
+/// The checks the three iterated modes make of a request before any PRF call, in this order,
+/// with `dkm` zeroized first: `len` is not zero, there is a key, `len` is at most `max_len`
+/// (step 2 of Sections 4.1 to 4.3, refused with `too_long`), and `dkm` can hold `len` bytes.
+pub(crate) fn check_request<P: Prf, K: KeyMaterialTrait + ?Sized>(
+    keys: &[&K],
+    len: usize,
+    max_len: usize,
+    too_long: &'static str,
+    dkm: &mut (impl KeyMaterialTrait + ?Sized),
+) -> Result<(), KDFError> {
+    const { assert!(P::H_LEN <= MAX_PRF_OUTPUT_LEN) };
+    const { assert!(P::H_LEN > 0) };
+
+    // The `_out` rule: nothing stale survives, whichever way this returns.
+    dkm.zeroize();
+
+    if len == 0 {
+        return Err(KDFError::InvalidLength("a zero-length derivation is refused"));
+    }
+    if keys.is_empty() {
+        return Err(KDFError::InvalidLength("a derivation from no keys is refused"));
+    }
+    if len > max_len {
+        return Err(KDFError::InvalidLength(too_long));
+    }
+    if len > dkm.capacity() {
+        return Err(KDFError::InvalidLength("the output buffer cannot hold L bits"));
+    }
+    Ok(())
+}
+
+/// The loop the three iterated modes share, for a request [`check_request`] has passed: "For
+/// i = 1 to n", `result := result || K(i)`, and `K_OUT` the leftmost `L` bits of `result`,
+/// written to the front of `dkm` and typed from `keys`. `next_block` is the mode's own step,
+/// `K(i)` for the counter `i` into the buffer it is handed, of `P::H_LEN` bytes; it returns the
+/// block's length. Returns `len`.
+// Inlined into each mode, so that the loop and the mode's blocks share one frame: out of line,
+// the deepest frame chain of a derivation is up to 944 bytes longer (the crate's Memory Usage).
+#[inline(always)]
+pub(crate) fn derive_blocks_out<P: Prf, K: KeyMaterialTrait + ?Sized>(
+    keys: &[&K],
+    len: usize,
+    dkm: &mut (impl KeyMaterialTrait + ?Sized),
+    mut next_block: impl FnMut(u32, &mut [u8]) -> usize,
+) -> Result<usize, KDFError> {
+    // K(i) is keying material, so its block zeroizes on drop. Each block is written to `dkm` as
+    // it is made; nothing after `check_request` fails.
+    let mut block = Secret::<[u8; MAX_PRF_OUTPUT_LEN]>::new();
+    // n := ceil(L / h), which fits a u32: `check_request` held it to 2^32 - 1 at most.
+    let n = len.div_ceil(P::H_LEN);
+    let filled = do_hazardous_operations(dkm, |dkm| {
+        let out = dkm.ref_to_bytes_mut()?;
+        let mut written = 0usize;
+        for i in 1..=n as u32 {
+            let block_len = next_block(i, &mut block[..P::H_LEN]);
+            // result := result || K(i), and K_OUT its leftmost L bits.
+            let take = *min(&block_len, &(len - written));
+            out[written..written + take].copy_from_slice(&block[..take]);
+            written += take;
+        }
+        Ok(())
+    });
+    let labelled =
+        filled.and_then(|()| label_output(keys, len, P::SEED_LEN, P::MAX_SECURITY_STRENGTH, dkm));
+    if labelled.is_err() {
+        dkm.zeroize();
+    }
+    labelled?;
+    Ok(len)
+}
+
+/// The length of `K_IN`, the concatenation of `keys`; saturating.
+pub(crate) fn k_in_len<K: KeyMaterialTrait + ?Sized>(keys: &[&K]) -> usize {
+    keys.iter().fold(0usize, |n, k| n.saturating_add(k.key_len()))
+}
+
+/// `K_IN`, the concatenation of `keys`, into the front of `k_in`, which must hold
+/// [`k_in_len`] bytes; returns that length.
+// Inlined for the same reason as `derive_blocks_out`.
+#[inline(always)]
+pub(crate) fn k_in_into<K: KeyMaterialTrait + ?Sized>(keys: &[&K], k_in: &mut [u8]) -> usize {
+    let mut at = 0;
+    for key in keys {
+        let bytes = key.ref_to_bytes();
+        k_in[at..at + bytes.len()].copy_from_slice(bytes);
+        at += bytes.len();
+    }
+    at
 }
 
 /// The fixed input data as SP 800-108r1 Section 4 writes it, `Label || 0x00 || Context ||
@@ -299,17 +403,14 @@ pub(crate) fn label_output<K: KeyMaterialTrait + ?Sized>(
 // Names exist for the instantiations `bouncycastle-factory` registers, which are these six; the
 // other aliases are reached by type.
 /// The name of the KDF in Counter Mode over HMAC-SHA256.
-pub const KDF_COUNTER_HMAC_SHA256_NAME: &str = "KDF-Counter-HMAC-SHA256";
+pub const KDF_COUNTER_HMAC_SHA256_NAME: &str = KDF_Counter_HMAC_SHA256::ALG_NAME;
 /// The name of the KDF in Counter Mode over HMAC-SHA384.
-pub const KDF_COUNTER_HMAC_SHA384_NAME: &str = "KDF-Counter-HMAC-SHA384";
+pub const KDF_COUNTER_HMAC_SHA384_NAME: &str = KDF_Counter_HMAC_SHA384::ALG_NAME;
 /// The name of the KDF in Counter Mode over HMAC-SHA512.
-pub const KDF_COUNTER_HMAC_SHA512_NAME: &str = "KDF-Counter-HMAC-SHA512";
+pub const KDF_COUNTER_HMAC_SHA512_NAME: &str = KDF_Counter_HMAC_SHA512::ALG_NAME;
 /// The name of the KDF in Counter Mode over CMAC-AES256.
-pub const KDF_COUNTER_CMAC_AES256_NAME: &str = "KDF-Counter-CMAC-AES256";
+pub const KDF_COUNTER_CMAC_AES256_NAME: &str = KDF_Counter_CMAC_AES256::ALG_NAME;
 
-/// The KDF in Counter Mode over HMAC-SHA224.
-#[allow(non_camel_case_types)]
-pub type KDF_Counter_HMAC_SHA224 = KDF_Counter<PRF_HMAC<SHA224>>;
 /// The KDF in Counter Mode over HMAC-SHA256.
 #[allow(non_camel_case_types)]
 pub type KDF_Counter_HMAC_SHA256 = KDF_Counter<PRF_HMAC<SHA256>>;
@@ -319,92 +420,41 @@ pub type KDF_Counter_HMAC_SHA384 = KDF_Counter<PRF_HMAC<SHA384>>;
 /// The KDF in Counter Mode over HMAC-SHA512.
 #[allow(non_camel_case_types)]
 pub type KDF_Counter_HMAC_SHA512 = KDF_Counter<PRF_HMAC<SHA512>>;
-/// The KDF in Counter Mode over HMAC-SHA3-224.
-#[allow(non_camel_case_types)]
-pub type KDF_Counter_HMAC_SHA3_224 = KDF_Counter<PRF_HMAC<SHA3_224>>;
 /// The KDF in Counter Mode over HMAC-SHA3-256.
 #[allow(non_camel_case_types)]
 pub type KDF_Counter_HMAC_SHA3_256 = KDF_Counter<PRF_HMAC<SHA3_256>>;
-/// The KDF in Counter Mode over HMAC-SHA3-384.
-#[allow(non_camel_case_types)]
-pub type KDF_Counter_HMAC_SHA3_384 = KDF_Counter<PRF_HMAC<SHA3_384>>;
-/// The KDF in Counter Mode over HMAC-SHA3-512.
-#[allow(non_camel_case_types)]
-pub type KDF_Counter_HMAC_SHA3_512 = KDF_Counter<PRF_HMAC<SHA3_512>>;
 /// The KDF in Counter Mode over CMAC-AES128.
 #[allow(non_camel_case_types)]
-pub type KDF_Counter_CMAC_AES128 = KDF_Counter<PRF_CMAC<AES128Internal>>;
+pub type KDF_Counter_CMAC_AES128 = KDF_Counter<PRF_CMAC_AES128>;
 /// The KDF in Counter Mode over CMAC-AES192.
 #[allow(non_camel_case_types)]
-pub type KDF_Counter_CMAC_AES192 = KDF_Counter<PRF_CMAC<AES192Internal>>;
+pub type KDF_Counter_CMAC_AES192 = KDF_Counter<PRF_CMAC_AES192>;
 /// The KDF in Counter Mode over CMAC-AES256.
 #[allow(non_camel_case_types)]
-pub type KDF_Counter_CMAC_AES256 = KDF_Counter<PRF_CMAC<AES256Internal>>;
+pub type KDF_Counter_CMAC_AES256 = KDF_Counter<PRF_CMAC_AES256>;
 
-/// The KDF in Feedback Mode over HMAC-SHA224.
-#[allow(non_camel_case_types)]
-pub type KDF_Feedback_HMAC_SHA224<'iv> = KDF_Feedback<'iv, PRF_HMAC<SHA224>>;
 /// The KDF in Feedback Mode over HMAC-SHA256.
 #[allow(non_camel_case_types)]
 pub type KDF_Feedback_HMAC_SHA256<'iv> = KDF_Feedback<'iv, PRF_HMAC<SHA256>>;
-/// The KDF in Feedback Mode over HMAC-SHA384.
-#[allow(non_camel_case_types)]
-pub type KDF_Feedback_HMAC_SHA384<'iv> = KDF_Feedback<'iv, PRF_HMAC<SHA384>>;
 /// The KDF in Feedback Mode over HMAC-SHA512.
 #[allow(non_camel_case_types)]
 pub type KDF_Feedback_HMAC_SHA512<'iv> = KDF_Feedback<'iv, PRF_HMAC<SHA512>>;
-/// The KDF in Feedback Mode over HMAC-SHA3-224.
-#[allow(non_camel_case_types)]
-pub type KDF_Feedback_HMAC_SHA3_224<'iv> = KDF_Feedback<'iv, PRF_HMAC<SHA3_224>>;
-/// The KDF in Feedback Mode over HMAC-SHA3-256.
-#[allow(non_camel_case_types)]
-pub type KDF_Feedback_HMAC_SHA3_256<'iv> = KDF_Feedback<'iv, PRF_HMAC<SHA3_256>>;
-/// The KDF in Feedback Mode over HMAC-SHA3-384.
-#[allow(non_camel_case_types)]
-pub type KDF_Feedback_HMAC_SHA3_384<'iv> = KDF_Feedback<'iv, PRF_HMAC<SHA3_384>>;
 /// The KDF in Feedback Mode over HMAC-SHA3-512.
 #[allow(non_camel_case_types)]
 pub type KDF_Feedback_HMAC_SHA3_512<'iv> = KDF_Feedback<'iv, PRF_HMAC<SHA3_512>>;
 /// The KDF in Feedback Mode over CMAC-AES128.
 #[allow(non_camel_case_types)]
-pub type KDF_Feedback_CMAC_AES128<'iv> = KDF_Feedback<'iv, PRF_CMAC<AES128Internal>>;
-/// The KDF in Feedback Mode over CMAC-AES192.
-#[allow(non_camel_case_types)]
-pub type KDF_Feedback_CMAC_AES192<'iv> = KDF_Feedback<'iv, PRF_CMAC<AES192Internal>>;
+pub type KDF_Feedback_CMAC_AES128<'iv> = KDF_Feedback<'iv, PRF_CMAC_AES128>;
 /// The KDF in Feedback Mode over CMAC-AES256.
 #[allow(non_camel_case_types)]
-pub type KDF_Feedback_CMAC_AES256<'iv> = KDF_Feedback<'iv, PRF_CMAC<AES256Internal>>;
+pub type KDF_Feedback_CMAC_AES256<'iv> = KDF_Feedback<'iv, PRF_CMAC_AES256>;
 
-/// The KDF in Double-Pipeline Mode over HMAC-SHA224.
-#[allow(non_camel_case_types)]
-pub type KDF_DoublePipeline_HMAC_SHA224 = KDF_DoublePipeline<PRF_HMAC<SHA224>>;
 /// The KDF in Double-Pipeline Mode over HMAC-SHA256.
 #[allow(non_camel_case_types)]
 pub type KDF_DoublePipeline_HMAC_SHA256 = KDF_DoublePipeline<PRF_HMAC<SHA256>>;
-/// The KDF in Double-Pipeline Mode over HMAC-SHA384.
-#[allow(non_camel_case_types)]
-pub type KDF_DoublePipeline_HMAC_SHA384 = KDF_DoublePipeline<PRF_HMAC<SHA384>>;
 /// The KDF in Double-Pipeline Mode over HMAC-SHA512.
 #[allow(non_camel_case_types)]
 pub type KDF_DoublePipeline_HMAC_SHA512 = KDF_DoublePipeline<PRF_HMAC<SHA512>>;
-/// The KDF in Double-Pipeline Mode over HMAC-SHA3-224.
-#[allow(non_camel_case_types)]
-pub type KDF_DoublePipeline_HMAC_SHA3_224 = KDF_DoublePipeline<PRF_HMAC<SHA3_224>>;
-/// The KDF in Double-Pipeline Mode over HMAC-SHA3-256.
-#[allow(non_camel_case_types)]
-pub type KDF_DoublePipeline_HMAC_SHA3_256 = KDF_DoublePipeline<PRF_HMAC<SHA3_256>>;
-/// The KDF in Double-Pipeline Mode over HMAC-SHA3-384.
-#[allow(non_camel_case_types)]
-pub type KDF_DoublePipeline_HMAC_SHA3_384 = KDF_DoublePipeline<PRF_HMAC<SHA3_384>>;
-/// The KDF in Double-Pipeline Mode over HMAC-SHA3-512.
-#[allow(non_camel_case_types)]
-pub type KDF_DoublePipeline_HMAC_SHA3_512 = KDF_DoublePipeline<PRF_HMAC<SHA3_512>>;
 /// The KDF in Double-Pipeline Mode over CMAC-AES128.
 #[allow(non_camel_case_types)]
-pub type KDF_DoublePipeline_CMAC_AES128 = KDF_DoublePipeline<PRF_CMAC<AES128Internal>>;
-/// The KDF in Double-Pipeline Mode over CMAC-AES192.
-#[allow(non_camel_case_types)]
-pub type KDF_DoublePipeline_CMAC_AES192 = KDF_DoublePipeline<PRF_CMAC<AES192Internal>>;
-/// The KDF in Double-Pipeline Mode over CMAC-AES256.
-#[allow(non_camel_case_types)]
-pub type KDF_DoublePipeline_CMAC_AES256 = KDF_DoublePipeline<PRF_CMAC<AES256Internal>>;
+pub type KDF_DoublePipeline_CMAC_AES128 = KDF_DoublePipeline<PRF_CMAC_AES128>;

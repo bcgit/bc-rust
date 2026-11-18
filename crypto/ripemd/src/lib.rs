@@ -74,9 +74,9 @@
 //! | Entry point                                   | RIPEMD-128 | RIPEMD-160 | RIPEMD-256 | RIPEMD-320 |
 //! |-----------------------------------------------|------------|------------|------------|------------|
 //! | `do_update`                                   | 248        | 264        | 248        | 264        |
-//! | `do_final_out`                                | 272        | 272        | 272        | 320        |
-//! | `do_final_partial_bits_out`                   | 320        | 272        | 320        | 320        |
-//! | `hash_out` (one-shot)                         | 576        | 512        | 624        | 608        |
+//! | `do_final_out`                                | 256        | 272        | 256        | 320        |
+//! | `do_final_partial_bits_out`                   | 256        | 272        | 256        | 320        |
+//! | `hash_out` (one-shot)                         | 560        | 512        | 608        | 608        |
 //! | `suspend` / `from_suspended`                  | 8 / 144    | 8 / 8      | 8 / 192    | 8 / 8      |
 //! | `HmacKey::from_key_material` / `mac_out`      |            | 880 / 816  |            |            |
 //!
@@ -128,14 +128,10 @@ mod ripemd160;
 
 pub mod hmac;
 
-pub use self::ripemd128::{
-    RIPEMD128Family, RIPEMD128Internal, SUSPENDED_RIPEMD128_STATE_LEN,
-    SUSPENDED_RIPEMD256_STATE_LEN,
-};
-pub use self::ripemd160::{
-    RIPEMD160Family, RIPEMD160Internal, SUSPENDED_RIPEMD160_STATE_LEN,
-    SUSPENDED_RIPEMD320_STATE_LEN,
-};
+use self::common::BLOCK_LEN;
+pub use self::common::RIPEMDInternal;
+pub use self::ripemd128::{SUSPENDED_RIPEMD128_STATE_LEN, SUSPENDED_RIPEMD256_STATE_LEN};
+pub use self::ripemd160::{SUSPENDED_RIPEMD160_STATE_LEN, SUSPENDED_RIPEMD320_STATE_LEN};
 use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, Suspendable};
@@ -156,32 +152,36 @@ pub const RIPEMD320_NAME: &str = "RIPEMD320";
 
 /*** pub types ***/
 /// Public type for RIPEMD-128.
-pub type RIPEMD128 = RIPEMD128Internal<RIPEMD128Params>;
+pub type RIPEMD128 = RIPEMDInternal<RIPEMD128Params>;
 /// Public type for RIPEMD-160.
-pub type RIPEMD160 = RIPEMD160Internal<RIPEMD160Params>;
+pub type RIPEMD160 = RIPEMDInternal<RIPEMD160Params>;
 /// Public type for RIPEMD-256, the 256-bit extension of RIPEMD-128.
-pub type RIPEMD256 = RIPEMD128Internal<RIPEMD256Params>;
+pub type RIPEMD256 = RIPEMDInternal<RIPEMD256Params>;
 /// Public type for RIPEMD-320, the 320-bit extension of RIPEMD-160.
-pub type RIPEMD320 = RIPEMD160Internal<RIPEMD320Params>;
+pub type RIPEMD320 = RIPEMDInternal<RIPEMD320Params>;
 
 /*** Param traits ***/
 mod sealed {
-    /// Prevents a parameter set from being defined outside this crate: the four marker types in
-    /// `lib.rs` are the only implementations.
-    pub trait Sealed {}
+    use crate::common::BLOCK_LEN;
+    use bouncycastle_core::traits::HashAlgParams;
+    use bouncycastle_utils::secret::ZeroizablePrimitive;
+
+    /// What distinguishes the four parameter sets. The module is private, so the trait cannot be
+    /// named outside this crate: no parameter set can be defined there, the four marker types in
+    /// `lib.rs` being the only implementations, and nothing here is reachable from there.
+    pub trait RIPEMDFamily: HashAlgParams + Clone {
+        /// The chaining variable: four, five, eight or ten 32-bit words.
+        type State: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>;
+        /// The initial value `h0, h1, ...` of the pseudo-code.
+        const H0: Self::State;
+        /// One application of the compression function to the chaining variable and one block.
+        fn compress(h: &mut [u32], block: &[u8; BLOCK_LEN]);
+    }
 }
-impl sealed::Sealed for RIPEMD128Params {}
-impl sealed::Sealed for RIPEMD160Params {}
-impl sealed::Sealed for RIPEMD256Params {}
-impl sealed::Sealed for RIPEMD320Params {}
 
 /// The public hash types expose the same parameters as their `*Params` marker, so the constants
 /// are defined exactly once (on the params struct) and forwarded here.
-impl<PARAMS: RIPEMD128Family> HashAlgParams for RIPEMD128Internal<PARAMS> {
-    const OUTPUT_LEN: usize = PARAMS::OUTPUT_LEN;
-    const BLOCK_LEN: usize = PARAMS::BLOCK_LEN;
-}
-impl<PARAMS: RIPEMD160Family> HashAlgParams for RIPEMD160Internal<PARAMS> {
+impl<PARAMS: sealed::RIPEMDFamily> HashAlgParams for RIPEMDInternal<PARAMS> {
     const OUTPUT_LEN: usize = PARAMS::OUTPUT_LEN;
     const BLOCK_LEN: usize = PARAMS::BLOCK_LEN;
 }
@@ -199,11 +199,14 @@ impl HashAlgParams for RIPEMD128Params {
     const OUTPUT_LEN: usize = 16;
     const BLOCK_LEN: usize = 64;
 }
-impl RIPEMD128Family for RIPEMD128Params {
-    const EXTENDED: bool = false;
+impl sealed::RIPEMDFamily for RIPEMD128Params {
     type State = [u32; 4];
     /// `rmd128.txt`: `h0 = 0x67452301; h1 = 0xEFCDAB89; h2 = 0x98BADCFE; h3 = 0x10325476;`
     const H0: [u32; 4] = [0x6745_2301, 0xEFCD_AB89, 0x98BA_DCFE, 0x1032_5476];
+    #[inline(always)]
+    fn compress(h: &mut [u32], block: &[u8; BLOCK_LEN]) {
+        ripemd128::compress(h, block, false);
+    }
 }
 /// TeleTrusT: `{ 1.3.36.3.2.2 } ripemd128` (designers' page, "Patents, Object Identifiers").
 impl AlgorithmOID for RIPEMD128 {
@@ -224,12 +227,15 @@ impl HashAlgParams for RIPEMD160Params {
     const OUTPUT_LEN: usize = 20;
     const BLOCK_LEN: usize = 64;
 }
-impl RIPEMD160Family for RIPEMD160Params {
-    const EXTENDED: bool = false;
+impl sealed::RIPEMDFamily for RIPEMD160Params {
     type State = [u32; 5];
     /// `rmd160.txt`: `h0 = 0x67452301; h1 = 0xEFCDAB89; h2 = 0x98BADCFE; h3 = 0x10325476;
     /// h4 = 0xC3D2E1F0;`
     const H0: [u32; 5] = [0x6745_2301, 0xEFCD_AB89, 0x98BA_DCFE, 0x1032_5476, 0xC3D2_E1F0];
+    #[inline(always)]
+    fn compress(h: &mut [u32], block: &[u8; BLOCK_LEN]) {
+        ripemd160::compress(h, block, false);
+    }
 }
 /// TeleTrusT: `{ 1.3.36.3.2.1 } ripemd160` (designers' page, "Patents, Object Identifiers").
 impl AlgorithmOID for RIPEMD160 {
@@ -250,8 +256,7 @@ impl HashAlgParams for RIPEMD256Params {
     const OUTPUT_LEN: usize = 32;
     const BLOCK_LEN: usize = 64;
 }
-impl RIPEMD128Family for RIPEMD256Params {
-    const EXTENDED: bool = true;
+impl sealed::RIPEMDFamily for RIPEMD256Params {
     type State = [u32; 8];
     /// `rmd256.txt`: `h0 = 0x67452301; h1 = 0xEFCDAB89; h2 = 0x98BADCFE; h3 = 0x10325476;
     /// h4 = 0x76543210; h5 = 0xFEDCBA98; h6 = 0x89ABCDEF; h7 = 0x01234567;`
@@ -259,6 +264,10 @@ impl RIPEMD128Family for RIPEMD256Params {
         0x6745_2301, 0xEFCD_AB89, 0x98BA_DCFE, 0x1032_5476, 0x7654_3210, 0xFEDC_BA98, 0x89AB_CDEF,
         0x0123_4567,
     ];
+    #[inline(always)]
+    fn compress(h: &mut [u32], block: &[u8; BLOCK_LEN]) {
+        ripemd128::compress(h, block, true);
+    }
 }
 /// TeleTrusT: `{ 1.3.36.3.2.3 } ripemd256` (designers' page, "Patents, Object Identifiers").
 /// RIPEMD-320 has no assigned identifier.
@@ -281,8 +290,7 @@ impl HashAlgParams for RIPEMD320Params {
     const OUTPUT_LEN: usize = 40;
     const BLOCK_LEN: usize = 64;
 }
-impl RIPEMD160Family for RIPEMD320Params {
-    const EXTENDED: bool = true;
+impl sealed::RIPEMDFamily for RIPEMD320Params {
     type State = [u32; 10];
     /// `rmd320.txt`: `h0 = 0x67452301; h1 = 0xEFCDAB89; h2 = 0x98BADCFE; h3 = 0x10325476;
     /// h4 = 0xC3D2E1F0; h5 = 0x76543210; h6 = 0xFEDCBA98; h7 = 0x89ABCDEF; h8 = 0x01234567;
@@ -291,6 +299,10 @@ impl RIPEMD160Family for RIPEMD320Params {
         0x6745_2301, 0xEFCD_AB89, 0x98BA_DCFE, 0x1032_5476, 0xC3D2_E1F0, 0x7654_3210, 0xFEDC_BA98,
         0x89AB_CDEF, 0x0123_4567, 0x3C2D_1E0F,
     ];
+    #[inline(always)]
+    fn compress(h: &mut [u32], block: &[u8; BLOCK_LEN]) {
+        ripemd160::compress(h, block, true);
+    }
 }
 
 /*** Suspendable ***/

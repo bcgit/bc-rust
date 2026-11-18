@@ -6,6 +6,8 @@
 //! labels and outputs of up to 512 bytes. A missing `bc-test-data` checkout fails the test
 //! rather than skipping it.
 
+mod common;
+
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kdf_params::KdfDescription;
@@ -13,33 +15,19 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::MacGenerationKey;
 use bouncycastle_core::traits::{Algorithm, KDF};
-use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json};
 use bouncycastle_kbkdf::{KDF_KMAC128, KDF_KMAC256, MAX_KMAC_KDK_LEN};
 use bouncycastle_sha3::kmac::{KMAC128Key, KMAC256Key};
+use common::{hex_value, random};
 use std::collections::HashMap;
-
-fn get_test_data(filename: &str) -> Value {
-    bc_test_data_json("crypto/acvp/KDF-KMAC-Sp800-108r1", filename).unwrap_or_else(|| {
-        panic!("bc-test-data not found beside this repository; the KMAC KDF ACVP suite requires it rather than skipping")
-    })
-}
-
-fn hex(v: &Value) -> Vec<u8> {
-    bouncycastle_hex::decode(v.as_str().unwrap()).unwrap()
-}
-
-fn random(bytes: &[u8]) -> KeyMaterial<512> {
-    KeyMaterial::<512>::from_bytes_as_type(bytes, KeyType::CryptographicRandom).unwrap()
-}
 
 #[test]
 fn acvp_kdf_kmac() {
-    let prompt = get_test_data("prompt.json");
-    let expected = get_test_data("expectedResults.json");
+    let prompt = common::acvp_json("KDF-KMAC-Sp800-108r1", "prompt.json");
+    let expected = common::acvp_json("KDF-KMAC-Sp800-108r1", "expectedResults.json");
     let mut answers = HashMap::new();
     for group in expected["testGroups"].as_array().unwrap() {
         for test in group["tests"].as_array().unwrap() {
-            answers.insert(test["tcId"].as_u64().unwrap(), hex(&test["derivedKey"]));
+            answers.insert(test["tcId"].as_u64().unwrap(), hex_value(&test["derivedKey"]));
         }
     }
 
@@ -49,8 +37,8 @@ fn acvp_kdf_kmac() {
         let mac_mode = group["macMode"].as_str().unwrap();
         for test in group["tests"].as_array().unwrap() {
             let tc_id = test["tcId"].as_u64().unwrap();
-            let k_in = random(&hex(&test["keyDerivationKey"]));
-            let (context, label) = (hex(&test["context"]), hex(&test["label"]));
+            let k_in = random(&hex_value(&test["keyDerivationKey"]));
+            let (context, label) = (hex_value(&test["context"]), hex_value(&test["label"]));
             let bits = test["derivedKeyLength"].as_u64().unwrap() as usize;
             assert_eq!(bits % 8, 0, "tcId {tc_id}: L is a whole number of bytes in this set");
             let mut out = KeyMaterial::<512>::new();

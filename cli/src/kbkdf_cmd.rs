@@ -5,11 +5,11 @@
 
 use crate::helpers::{SecretBytes, decode_hex_arg, decode_hex_secret, read_secret_file};
 use crate::kdf_cmd::kdf_cmd;
-use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::kbkdf::{
     CounterPosition, CounterSize, IterationCounterPosition, KDF_Counter, KDF_DoublePipeline,
-    KDF_Feedback, KDF_KMAC128, KDF_KMAC256, PRF_CMAC, PRF_HMAC, Prf,
+    KDF_Feedback, KDF_KMAC128, KDF_KMAC256, PRF_CMAC_AES128, PRF_CMAC_AES192, PRF_CMAC_AES256,
+    PRF_HMAC, Prf,
 };
 use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512};
 use bouncycastle::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
@@ -78,13 +78,8 @@ fn usage_error(message: &str) -> ! {
 }
 
 fn counter_size(bits: u32) -> CounterSize {
-    match bits {
-        8 => CounterSize::_8bit,
-        16 => CounterSize::_16bit,
-        24 => CounterSize::_24bit,
-        32 => CounterSize::_32bit,
-        _ => usage_error("`--counter-bits` must be 8, 16, 24 or 32."),
-    }
+    CounterSize::from_bits(bits)
+        .unwrap_or_else(|| usage_error("`--counter-bits` must be 8, 16, 24 or 32."))
 }
 
 /// The optional counter of the feedback and double-pipeline modes: a position needs a counter,
@@ -123,15 +118,66 @@ fn run(kdf: &dyn bouncycastle::core::traits::KDF, inputs: &KdfInputs) {
     );
 }
 
-fn run_counter<P: Prf>(
-    r: CounterSize,
-    position: CounterPosition,
-    key_control_guard: bool,
-    inputs: &KdfInputs,
-) {
-    let kdf = KDF_Counter::<P>::with_counter(r, position);
-    let kdf = if key_control_guard { kdf.with_key_control_guard() } else { kdf };
-    run(&kdf, inputs);
+/// An iterated mode with its parameters, as the flags gave them.
+enum Mode<'a> {
+    Counter {
+        r: CounterSize,
+        position: CounterPosition,
+        key_control_guard: bool,
+    },
+    /// `iv` is `None` for Section 4.2's guard against key control, which derives the IV.
+    Feedback {
+        iv: Option<&'a [u8]>,
+        counter: Option<(CounterSize, IterationCounterPosition)>,
+    },
+    DoublePipeline {
+        counter: Option<(CounterSize, IterationCounterPosition)>,
+    },
+}
+
+fn run_mode<P: Prf>(mode: &Mode, inputs: &KdfInputs) {
+    match *mode {
+        Mode::Counter { r, position, key_control_guard } => {
+            let kdf = KDF_Counter::<P>::with_counter(r, position);
+            let kdf = if key_control_guard { kdf.with_key_control_guard() } else { kdf };
+            run(&kdf, inputs);
+        }
+        Mode::Feedback { iv, counter } => {
+            let kdf = match (iv, counter) {
+                (Some(iv), None) => KDF_Feedback::<P>::new(iv),
+                (Some(iv), Some((r, position))) => KDF_Feedback::<P>::with_counter(iv, r, position),
+                (None, Some((r, position))) => {
+                    KDF_Feedback::<P>::with_key_control_guard(r, position)
+                }
+                (None, None) => usage_error("`--key-control-guard` needs `--counter-bits`."),
+            };
+            run(&kdf, inputs);
+        }
+        Mode::DoublePipeline { counter } => {
+            let kdf = match counter {
+                Some((r, position)) => KDF_DoublePipeline::<P>::with_counter(r, position),
+                None => KDF_DoublePipeline::<P>::new(),
+            };
+            run(&kdf, inputs);
+        }
+    }
+}
+
+/// Runs `mode` over the PRF `prf` names.
+fn run_prf(prf: KbkdfPrf, mode: &Mode, inputs: &KdfInputs) {
+    match prf {
+        KbkdfPrf::HmacSha224 => run_mode::<PRF_HMAC<SHA224>>(mode, inputs),
+        KbkdfPrf::HmacSha256 => run_mode::<PRF_HMAC<SHA256>>(mode, inputs),
+        KbkdfPrf::HmacSha384 => run_mode::<PRF_HMAC<SHA384>>(mode, inputs),
+        KbkdfPrf::HmacSha512 => run_mode::<PRF_HMAC<SHA512>>(mode, inputs),
+        KbkdfPrf::HmacSha3_224 => run_mode::<PRF_HMAC<SHA3_224>>(mode, inputs),
+        KbkdfPrf::HmacSha3_256 => run_mode::<PRF_HMAC<SHA3_256>>(mode, inputs),
+        KbkdfPrf::HmacSha3_384 => run_mode::<PRF_HMAC<SHA3_384>>(mode, inputs),
+        KbkdfPrf::HmacSha3_512 => run_mode::<PRF_HMAC<SHA3_512>>(mode, inputs),
+        KbkdfPrf::CmacAes128 => run_mode::<PRF_CMAC_AES128>(mode, inputs),
+        KbkdfPrf::CmacAes192 => run_mode::<PRF_CMAC_AES192>(mode, inputs),
+        KbkdfPrf::CmacAes256 => run_mode::<PRF_CMAC_AES256>(mode, inputs),
+    }
 }
 
 pub(crate) fn kbkdf_counter_cmd(
@@ -152,35 +198,7 @@ pub(crate) fn kbkdf_counter_cmd(
         }
         (_, Some(_)) => usage_error("`--counter-offset` needs `--counter-position in-fixed`."),
     };
-    let guard = key_control_guard;
-    match prf {
-        KbkdfPrf::HmacSha224 => run_counter::<PRF_HMAC<SHA224>>(r, position, guard, inputs),
-        KbkdfPrf::HmacSha256 => run_counter::<PRF_HMAC<SHA256>>(r, position, guard, inputs),
-        KbkdfPrf::HmacSha384 => run_counter::<PRF_HMAC<SHA384>>(r, position, guard, inputs),
-        KbkdfPrf::HmacSha512 => run_counter::<PRF_HMAC<SHA512>>(r, position, guard, inputs),
-        KbkdfPrf::HmacSha3_224 => run_counter::<PRF_HMAC<SHA3_224>>(r, position, guard, inputs),
-        KbkdfPrf::HmacSha3_256 => run_counter::<PRF_HMAC<SHA3_256>>(r, position, guard, inputs),
-        KbkdfPrf::HmacSha3_384 => run_counter::<PRF_HMAC<SHA3_384>>(r, position, guard, inputs),
-        KbkdfPrf::HmacSha3_512 => run_counter::<PRF_HMAC<SHA3_512>>(r, position, guard, inputs),
-        KbkdfPrf::CmacAes128 => run_counter::<PRF_CMAC<AES128Internal>>(r, position, guard, inputs),
-        KbkdfPrf::CmacAes192 => run_counter::<PRF_CMAC<AES192Internal>>(r, position, guard, inputs),
-        KbkdfPrf::CmacAes256 => run_counter::<PRF_CMAC<AES256Internal>>(r, position, guard, inputs),
-    }
-}
-
-/// `iv` is `None` for Section 4.2's guard against key control, which derives the IV.
-fn run_feedback<P: Prf>(
-    iv: Option<&[u8]>,
-    counter: Option<(CounterSize, IterationCounterPosition)>,
-    inputs: &KdfInputs,
-) {
-    let kdf = match (iv, counter) {
-        (Some(iv), None) => KDF_Feedback::<P>::new(iv),
-        (Some(iv), Some((r, position))) => KDF_Feedback::<P>::with_counter(iv, r, position),
-        (None, Some((r, position))) => KDF_Feedback::<P>::with_key_control_guard(r, position),
-        (None, None) => usage_error("`--key-control-guard` needs `--counter-bits`."),
-    };
-    run(&kdf, inputs);
+    run_prf(prf, &Mode::Counter { r, position, key_control_guard }, inputs);
 }
 
 pub(crate) fn kbkdf_feedback_cmd(
@@ -209,30 +227,7 @@ pub(crate) fn kbkdf_feedback_cmd(
         (None, None) => SecretBytes::new(),
     };
     let iv = if key_control_guard { None } else { Some(iv_bytes.ref_to_bytes()) };
-    match prf {
-        KbkdfPrf::HmacSha224 => run_feedback::<PRF_HMAC<SHA224>>(iv, counter, inputs),
-        KbkdfPrf::HmacSha256 => run_feedback::<PRF_HMAC<SHA256>>(iv, counter, inputs),
-        KbkdfPrf::HmacSha384 => run_feedback::<PRF_HMAC<SHA384>>(iv, counter, inputs),
-        KbkdfPrf::HmacSha512 => run_feedback::<PRF_HMAC<SHA512>>(iv, counter, inputs),
-        KbkdfPrf::HmacSha3_224 => run_feedback::<PRF_HMAC<SHA3_224>>(iv, counter, inputs),
-        KbkdfPrf::HmacSha3_256 => run_feedback::<PRF_HMAC<SHA3_256>>(iv, counter, inputs),
-        KbkdfPrf::HmacSha3_384 => run_feedback::<PRF_HMAC<SHA3_384>>(iv, counter, inputs),
-        KbkdfPrf::HmacSha3_512 => run_feedback::<PRF_HMAC<SHA3_512>>(iv, counter, inputs),
-        KbkdfPrf::CmacAes128 => run_feedback::<PRF_CMAC<AES128Internal>>(iv, counter, inputs),
-        KbkdfPrf::CmacAes192 => run_feedback::<PRF_CMAC<AES192Internal>>(iv, counter, inputs),
-        KbkdfPrf::CmacAes256 => run_feedback::<PRF_CMAC<AES256Internal>>(iv, counter, inputs),
-    }
-}
-
-fn run_double_pipeline<P: Prf>(
-    counter: Option<(CounterSize, IterationCounterPosition)>,
-    inputs: &KdfInputs,
-) {
-    let kdf = match counter {
-        Some((r, position)) => KDF_DoublePipeline::<P>::with_counter(r, position),
-        None => KDF_DoublePipeline::<P>::new(),
-    };
-    run(&kdf, inputs);
+    run_prf(prf, &Mode::Feedback { iv, counter }, inputs);
 }
 
 pub(crate) fn kbkdf_double_pipeline_cmd(
@@ -242,19 +237,7 @@ pub(crate) fn kbkdf_double_pipeline_cmd(
     inputs: &KdfInputs,
 ) {
     let counter = iteration_counter(counter_bits, counter_position);
-    match prf {
-        KbkdfPrf::HmacSha224 => run_double_pipeline::<PRF_HMAC<SHA224>>(counter, inputs),
-        KbkdfPrf::HmacSha256 => run_double_pipeline::<PRF_HMAC<SHA256>>(counter, inputs),
-        KbkdfPrf::HmacSha384 => run_double_pipeline::<PRF_HMAC<SHA384>>(counter, inputs),
-        KbkdfPrf::HmacSha512 => run_double_pipeline::<PRF_HMAC<SHA512>>(counter, inputs),
-        KbkdfPrf::HmacSha3_224 => run_double_pipeline::<PRF_HMAC<SHA3_224>>(counter, inputs),
-        KbkdfPrf::HmacSha3_256 => run_double_pipeline::<PRF_HMAC<SHA3_256>>(counter, inputs),
-        KbkdfPrf::HmacSha3_384 => run_double_pipeline::<PRF_HMAC<SHA3_384>>(counter, inputs),
-        KbkdfPrf::HmacSha3_512 => run_double_pipeline::<PRF_HMAC<SHA3_512>>(counter, inputs),
-        KbkdfPrf::CmacAes128 => run_double_pipeline::<PRF_CMAC<AES128Internal>>(counter, inputs),
-        KbkdfPrf::CmacAes192 => run_double_pipeline::<PRF_CMAC<AES192Internal>>(counter, inputs),
-        KbkdfPrf::CmacAes256 => run_double_pipeline::<PRF_CMAC<AES256Internal>>(counter, inputs),
-    }
+    run_prf(prf, &Mode::DoublePipeline { counter }, inputs);
 }
 
 /// The two KMAC functions of Section 4.4.

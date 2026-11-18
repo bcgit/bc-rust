@@ -2,22 +2,23 @@
 //! Section 4.1's steps by hand, the limits, the guard against key control, and the typing of
 //! the output.
 
+mod common;
+
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{Algorithm, HashOneShot, KDF};
 use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
 use bouncycastle_hex::decode as hex_decode;
-use bouncycastle_hmac::HmacKey;
 use bouncycastle_kbkdf::{
     CounterPosition, CounterSize, KDF_Counter, KDF_Counter_HMAC_SHA3_256, KDF_Counter_HMAC_SHA256,
     KDF_Counter_HMAC_SHA384, KDF_Counter_HMAC_SHA512, PRF_HMAC, Prf, fixed_input_out,
     fixed_input_out_len,
 };
 use bouncycastle_sha2::{SHA256, SHA512};
+use common::{hmac_sha256, random};
 
 // KDFCTR_gen.rsp, [PRF=HMAC_SHA256] [CTRLOCATION=BEFORE_FIXED] [RLEN=32_BITS], COUNT=0.
 const KI: &str = "dd1d91b7d90b2bd3138533ce92b272fbf8a369316aefe242e659cc0ae238afe0";
@@ -27,16 +28,6 @@ const KO: &str = "10621342bfb0fd40046c0e29f2cfdbf0";
 fn ki() -> KeyMaterial<64> {
     KeyMaterial::<64>::from_bytes_as_type(&hex_decode(KI).unwrap(), KeyType::CryptographicRandom)
         .unwrap()
-}
-
-fn random(bytes: &[u8]) -> KeyMaterial<128> {
-    KeyMaterial::<128>::from_bytes_as_type(bytes, KeyType::CryptographicRandom).unwrap()
-}
-
-/// HMAC-SHA256 under `key` over `parts`, through the key object.
-fn hmac_sha256(key: &[u8], parts: &[&[u8]]) -> [u8; 32] {
-    let key = KeyMaterial::<144>::from_bytes_as_type(key, KeyType::MACKey).unwrap();
-    HmacKey::<SHA256>::from_key_material_allow_weak(&key).unwrap().mac(&parts.concat())
 }
 
 #[test]
@@ -140,15 +131,12 @@ fn key_control_guard_appends_k0() {
 /// Section 4.1 step 2: n must not exceed 2^r - 1.
 #[test]
 fn the_counter_bounds_the_length() {
-    assert_eq!(CounterSize::_8bit.max_count(), 255);
-    assert_eq!(CounterSize::_16bit.max_count(), 65_535);
-    assert_eq!(CounterSize::_24bit.max_count(), 16_777_215);
-    assert_eq!(CounterSize::_32bit.max_count(), u32::MAX);
-    assert_eq!(
-        [CounterSize::_8bit, CounterSize::_16bit, CounterSize::_24bit, CounterSize::_32bit]
-            .map(|r| (r.byte_len(), r.bits())),
-        [(1, 8), (2, 16), (3, 24), (4, 32)]
-    );
+    let sizes = [CounterSize::_8bit, CounterSize::_16bit, CounterSize::_24bit, CounterSize::_32bit];
+    assert_eq!([8, 16, 24, 32].map(CounterSize::from_bits), sizes.map(Some));
+    assert_eq!(sizes.map(|r| r.byte_len()), [1, 2, 3, 4]);
+    for bits in [0, 1, 7, 9, 12, 31, 33, 64] {
+        assert_eq!(CounterSize::from_bits(bits), None, "{bits} bits");
+    }
 
     let kdf = KDF_Counter_HMAC_SHA256::with_counter(
         CounterSize::_8bit,
@@ -162,6 +150,14 @@ fn the_counter_bounds_the_length() {
         )
         .max_len(),
         65_535 * 64
+    );
+    assert_eq!(
+        KDF_Counter_HMAC_SHA256::with_counter(
+            CounterSize::_24bit,
+            CounterPosition::AfterFixedInput
+        )
+        .max_len(),
+        16_777_215 * 32
     );
     assert_eq!(KDF_Counter_HMAC_SHA256::new().max_len() as u128, 32 * u32::MAX as u128);
 
@@ -342,8 +338,6 @@ fn names_strengths_and_description() {
     assert_eq!(KDF_Counter_HMAC_SHA384::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
     assert_eq!(KDF_Counter_HMAC_SHA512::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
     assert_eq!(<PRF_HMAC<SHA512> as Prf>::H_LEN, 64);
-    assert_eq!(<PRF_HMAC<SHA512> as Prf>::SEED_LEN, 32);
-    assert_eq!(<PRF_HMAC<SHA256> as Prf>::NAME, "HMAC-SHA256");
 
     // The default is Section 4.1's layout with a 32-bit counter.
     let kdf = KDF_Counter_HMAC_SHA256::default();

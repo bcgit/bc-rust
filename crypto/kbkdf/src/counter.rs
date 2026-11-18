@@ -1,15 +1,14 @@
 //! The KDF in Counter Mode, SP 800-108r1 Section 4.1.
 
+use crate::prf::sealed::Token;
 use crate::prf::{MAX_PRF_OUTPUT_LEN, Prf};
-use crate::{CounterSize, label_output};
+use crate::{CounterSize, check_request, derive_blocks_out, max_len};
 use bouncycastle_core::errors::KDFError;
-use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KDF};
 use bouncycastle_utils::const_str::ConstStr;
-use bouncycastle_utils::min;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 
@@ -112,7 +111,7 @@ impl<P: Prf> KDF_Counter<P> {
     /// The most bytes one derivation produces: `n` PRF outputs with `n` at most `2^r - 1`
     /// (Section 4.1 step 2), or `usize::MAX` where that does not fit.
     pub fn max_len(&self) -> usize {
-        usize::try_from(P::H_LEN as u128 * self.r.max_count() as u128).unwrap_or(usize::MAX)
+        max_len::<P>(Some(self.r))
     }
 
     /// Section 4.1: `L = 8 * len` bits of keying material from `K_IN`, the concatenation of
@@ -125,26 +124,9 @@ impl<P: Prf> KDF_Counter<P> {
         len: usize,
         dkm: &mut (impl KeyMaterialTrait + ?Sized),
     ) -> Result<usize, KDFError> {
-        const { assert!(P::H_LEN <= MAX_PRF_OUTPUT_LEN) };
-        const { assert!(P::H_LEN > 0) };
-
-        // The `_out` rule: nothing stale survives, whichever way this returns.
-        dkm.zeroize();
-
-        if len == 0 {
-            return Err(KDFError::InvalidLength("a zero-length derivation is refused"));
-        }
-        if keys.is_empty() {
-            return Err(KDFError::InvalidLength("a derivation from no keys is refused"));
-        }
         // Step 1: n := ceil(L / h). Step 2: "If n > 2^r - 1, then output an error indicator and
         // stop", which keeps the counter values distinct.
-        if len > self.max_len() {
-            return Err(KDFError::InvalidLength("n must not exceed 2^r - 1"));
-        }
-        if len > dkm.capacity() {
-            return Err(KDFError::InvalidLength("the output buffer cannot hold L bits"));
-        }
+        check_request::<P, K>(keys, len, self.max_len(), "n must not exceed 2^r - 1", dkm)?;
         // The fixed input data either side of the counter.
         let (before, after): (&[u8], &[u8]) = match self.position {
             CounterPosition::BeforeFixedInput => (&[], fixed_input),
@@ -159,50 +141,32 @@ impl<P: Prf> KDF_Counter<P> {
             }
         };
 
-        let key = P::key(keys)?;
+        let key = P::key(keys, &Token::new())?;
 
         // Section 4.1's guard: K(0) = PRF(K_IN, fixed input data), appended to the fixed input
         // data of every iteration. It is keying material, like the K(i).
         let mut k0 = Secret::<[u8; MAX_PRF_OUTPUT_LEN]>::new();
         let k0_len = if self.key_control_guard {
-            P::prf_into(&key, &[before, after], &mut k0[..P::H_LEN])
+            P::prf_into(&key, &[before, after], &mut k0[..P::H_LEN], &Token::new())
         } else {
             0
         };
 
-        // Steps 3 to 5. K(i) is keying material, so its block zeroizes on drop. Each block is
-        // written to `dkm` as it is made; nothing after the checks above fails.
-        let mut block = Secret::<[u8; MAX_PRF_OUTPUT_LEN]>::new();
-        let n = len.div_ceil(P::H_LEN);
+        // Steps 3 to 5, of which step 4.a is here: the loop, steps 4.b and 5 are
+        // `derive_blocks_out`'s.
         let r_len = self.r.byte_len();
-        let filled = do_hazardous_operations(dkm, |dkm| {
-            let out = dkm.ref_to_bytes_mut()?;
-            let mut written = 0usize;
-            // Step 4: "For i = 1 to n". n fits the counter (step 2), and so a u32.
-            for i in 1..=n as u32 {
-                // "[i]2 ... is represented as a string of r bits": the low r bits, big-endian.
-                let counter = i.to_be_bytes();
-                // Step 4.a: K(i) := PRF(K_IN, [i]2 || Label || 0x00 || Context || [L]2), with
-                // the counter where this instance puts it and K(0) last when the guard is on.
-                let block_len = P::prf_into(
-                    &key,
-                    &[before, &counter[4 - r_len..], after, &k0[..k0_len]],
-                    &mut block[..P::H_LEN],
-                );
-                // Steps 4.b and 5: result := result || K(i), and K_OUT its leftmost L bits.
-                let take = *min(&block_len, &(len - written));
-                out[written..written + take].copy_from_slice(&block[..take]);
-                written += take;
-            }
-            Ok(())
-        });
-        let labelled = filled
-            .and_then(|()| label_output(keys, len, P::SEED_LEN, P::MAX_SECURITY_STRENGTH, dkm));
-        if labelled.is_err() {
-            dkm.zeroize();
-        }
-        labelled?;
-        Ok(len)
+        derive_blocks_out::<P, K>(keys, len, dkm, |i, block| {
+            // "[i]2 ... is represented as a string of r bits": the low r bits, big-endian.
+            let counter = i.to_be_bytes();
+            // Step 4.a: K(i) := PRF(K_IN, [i]2 || Label || 0x00 || Context || [L]2), with the
+            // counter where this instance puts it and K(0) last when the guard is on.
+            P::prf_into(
+                &key,
+                &[before, &counter[4 - r_len..], after, &k0[..k0_len]],
+                block,
+                &Token::new(),
+            )
+        })
     }
 }
 

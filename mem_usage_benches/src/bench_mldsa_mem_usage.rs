@@ -4592,6 +4592,69 @@ fn bench_mldsa87_lowmemory_verify() {
     });
 }
 
+fn bench_mldsa44_keygen_out() {
+    use bouncycastle::mldsa::{MLDSA44, MLDSATrait};
+
+    eprintln!("MLDSA44/KeyGenOut");
+
+    let seed = KeyMaterial256::from_bytes_as_type(
+        &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
+            0x1C, 0x1D, 0x1E, 0x1F,
+        ],
+        KeyType::Seed,
+    )
+    .unwrap();
+
+    let mut pk = bouncycastle::mldsa::MLDSA44PublicKey::zeroized();
+    let mut sk = bouncycastle::mldsa::MLDSA44PrivateKey::zeroized();
+    MLDSA44::keygen_from_seed_out(&seed, &mut pk, &mut sk).unwrap();
+    println!("{:x?}", pk.encode());
+}
+
+fn bench_mldsa65_keygen_out() {
+    use bouncycastle::mldsa::{MLDSA65, MLDSATrait};
+
+    eprintln!("MLDSA65/KeyGenOut");
+
+    let seed = KeyMaterial256::from_bytes_as_type(
+        &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
+            0x1C, 0x1D, 0x1E, 0x1F,
+        ],
+        KeyType::Seed,
+    )
+    .unwrap();
+
+    let mut pk = bouncycastle::mldsa::MLDSA65PublicKey::zeroized();
+    let mut sk = bouncycastle::mldsa::MLDSA65PrivateKey::zeroized();
+    MLDSA65::keygen_from_seed_out(&seed, &mut pk, &mut sk).unwrap();
+    println!("{:x?}", pk.encode());
+}
+
+fn bench_mldsa87_keygen_out() {
+    use bouncycastle::mldsa::{MLDSA87, MLDSATrait};
+
+    eprintln!("MLDSA87/KeyGenOut");
+
+    let seed = KeyMaterial256::from_bytes_as_type(
+        &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
+            0x1C, 0x1D, 0x1E, 0x1F,
+        ],
+        KeyType::Seed,
+    )
+    .unwrap();
+
+    let mut pk = bouncycastle::mldsa::MLDSA87PublicKey::zeroized();
+    let mut sk = bouncycastle::mldsa::MLDSA87PrivateKey::zeroized();
+    MLDSA87::keygen_from_seed_out(&seed, &mut pk, &mut sk).unwrap();
+    println!("{:x?}", pk.encode());
+}
+
 fn main() {
     // print_struct_sizes()
     // bench_do_nothing()
@@ -4619,4 +4682,7 @@ fn main() {
     // bench_mldsa87_verify()
     // bench_mldsa87_verify_expanded_pk()
     // bench_mldsa87_lowmemory_verify()
+    // bench_mldsa44_keygen_out()
+    // bench_mldsa65_keygen_out()
+    // bench_mldsa87_keygen_out()
 }
