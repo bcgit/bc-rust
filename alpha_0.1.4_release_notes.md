@@ -15,6 +15,10 @@
   CBC, CFB, CFB8, OFB, CTR, GCM and CCM (RFC 8998's AEAD_SM4_GCM and AEAD_SM4_CCM), KW and KWP; the
   `sm4-{cbc,cfb,cfb8,ofb,ctr,gcm,ccm,kw,kwp}` CLI commands.
 * CHACHA20 -- ChaCha20, Poly1305 and ChaCha20-Poly1305 (RFC 8439).
+* RIPEMD -- `bouncycastle-ripemd`, the RIPEMD-128, RIPEMD-160, RIPEMD-256 and RIPEMD-320 hash functions of Dobbertin,
+  Bosselaers and Preneel, with bit-oriented messages and `Suspendable`; `HMAC_RIPEMD160` (RFC 2104);
+  `HashFactory` and `MACFactory` entries; the `ripemd*` and `hmac-ripemd160` CLI commands. Legacy functions,
+  below the library's smallest modelled strength, so all report `SecurityStrength::None`.
 * TDES -- three-key TDEA (NIST SP 800-67 Rev 2) as a constant-time, table-free bit-sliced engine under `hazmat`,
   with ECB, CBC, CFB64, CFB8, OFB and CTR (SP 800-38A Appendix E) and TDEA Key Wrap (SP 800-38F TKW) through the key
   role traits; two-key TDEA decrypts, unwraps and verifies CMAC tags only, which `BlockPermutation::DECRYPT_ONLY`
@@ -53,6 +57,10 @@
   P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
   (Auth, AuthPSK) give contexts with `seal_out` / `open_out` and `export_out`; HKDF over SHA-256, SHA-384 or
   SHA-512 with AES-128-GCM, AES-256-GCM, ChaCha20Poly1305 or export-only. No CLI command yet.
+* SP 800-108 -- key derivation using pseudorandom functions (NIST SP 800-108r1), as `bouncycastle-kbkdf`: the KDFs in
+  Counter, Feedback and Double-Pipeline Mode over HMAC (SHA-2, SHA-3) or CMAC (AES), and the KDF Using KMAC, on the
+  `KDF` trait; six parameterless instantiations in `KDFFactory`; the `kbkdf-counter`, `kbkdf-feedback`,
+  `kbkdf-double-pipeline`, `kbkdf-kmac128` and `kbkdf-kmac256` CLI commands.
 * `bouncycastle-dhkem` -- the generic DHKEM leaves `bouncycastle-hpke` for a crate of its own
   (`bouncycastle_hpke::dhkem::*` is now `bouncycastle_dhkem::*`), and gains `AuthEncap` and `AuthDecap`. Its
   `_out` functions return the number of bytes written.

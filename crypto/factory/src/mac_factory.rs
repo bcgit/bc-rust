@@ -88,6 +88,8 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{AlgorithmInfo, MACGenerator, MACVerifier};
 use bouncycastle_hmac::{HMAC, HMACParams, HmacKey};
+use bouncycastle_ripemd as ripemd;
+use bouncycastle_ripemd::hmac::HMAC_RIPEMD160_NAME;
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha2::hmac::{
     HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME, HMAC_SHA512_224_NAME,
@@ -150,6 +152,8 @@ pub enum MACFactory {
     HMAC_SHA3_512(HmacKey<sha3::SHA3_512>),
     ///
     HMAC_SM3(HmacKey<sm3::SM3>),
+    /// Legacy; see the `bouncycastle-ripemd` crate docs.
+    HMAC_RIPEMD160(HmacKey<ripemd::RIPEMD160>),
     /// BLAKE2b-512's built-in keyed mode (RFC 7693 s. 3.3), not HMAC-BLAKE2b. The key must be
     /// 1 to 64 bytes.
     BLAKE2b_512_MAC(blake2::BLAKE2b_512_MACKey),
@@ -196,6 +200,8 @@ pub enum MACFactoryWorker<'k, Dir> {
     HMAC_SHA3_512(HMAC<'k, sha3::SHA3_512, Dir>),
     ///
     HMAC_SM3(HMAC<'k, sm3::SM3, Dir>),
+    ///
+    HMAC_RIPEMD160(HMAC<'k, ripemd::RIPEMD160, Dir>),
     /// BLAKE2b-512 keyed-mode worker.
     BLAKE2b_512_MAC(blake2::BLAKE2b_512_MAC<'k, Dir>),
     /// BLAKE2s-256 keyed-mode worker.
@@ -236,6 +242,7 @@ impl MACFactory {
             HMAC_SHA3_384_NAME => Ok(Self::HMAC_SHA3_384(HmacKey::from_key_material(key)?)),
             HMAC_SHA3_512_NAME => Ok(Self::HMAC_SHA3_512(HmacKey::from_key_material(key)?)),
             HMAC_SM3_NAME => Ok(Self::HMAC_SM3(HmacKey::from_key_material(key)?)),
+            HMAC_RIPEMD160_NAME => Ok(Self::HMAC_RIPEMD160(HmacKey::from_key_material(key)?)),
             BLAKE2B_512_MAC_NAME => {
                 Ok(Self::BLAKE2b_512_MAC(blake2::BLAKE2b_512_MACKey::from_key_material(key)?))
             }
@@ -270,6 +277,7 @@ impl MACFactory {
             Self::HMAC_SHA3_384(k) => tag_len(k),
             Self::HMAC_SHA3_512(k) => tag_len(k),
             Self::HMAC_SM3(k) => tag_len(k),
+            Self::HMAC_RIPEMD160(k) => tag_len(k),
             Self::BLAKE2b_512_MAC(k) => tag_len(k),
             Self::BLAKE2s_256_MAC(k) => tag_len(k),
             Self::BLAKE3KeyedHash(k) => tag_len(k),
@@ -293,6 +301,7 @@ impl MACFactory {
             Self::HMAC_SHA3_384(k) => MACFactoryWorker::HMAC_SHA3_384(k.create_generator()),
             Self::HMAC_SHA3_512(k) => MACFactoryWorker::HMAC_SHA3_512(k.create_generator()),
             Self::HMAC_SM3(k) => MACFactoryWorker::HMAC_SM3(k.create_generator()),
+            Self::HMAC_RIPEMD160(k) => MACFactoryWorker::HMAC_RIPEMD160(k.create_generator()),
             Self::BLAKE2b_512_MAC(k) => MACFactoryWorker::BLAKE2b_512_MAC(k.create_generator()),
             Self::BLAKE2s_256_MAC(k) => MACFactoryWorker::BLAKE2s_256_MAC(k.create_generator()),
             Self::BLAKE3KeyedHash(k) => MACFactoryWorker::BLAKE3KeyedHash(k.create_generator()),
@@ -315,6 +324,7 @@ impl MACFactory {
             Self::HMAC_SHA3_384(k) => MACFactoryWorker::HMAC_SHA3_384(k.create_verifier()),
             Self::HMAC_SHA3_512(k) => MACFactoryWorker::HMAC_SHA3_512(k.create_verifier()),
             Self::HMAC_SM3(k) => MACFactoryWorker::HMAC_SM3(k.create_verifier()),
+            Self::HMAC_RIPEMD160(k) => MACFactoryWorker::HMAC_RIPEMD160(k.create_verifier()),
             Self::BLAKE2b_512_MAC(k) => MACFactoryWorker::BLAKE2b_512_MAC(k.create_verifier()),
             Self::BLAKE2s_256_MAC(k) => MACFactoryWorker::BLAKE2s_256_MAC(k.create_verifier()),
             Self::BLAKE3KeyedHash(k) => MACFactoryWorker::BLAKE3KeyedHash(k.create_verifier()),
@@ -444,6 +454,7 @@ impl MACFactoryWorker<'_, Encrypting> {
             Self::HMAC_SHA3_384(h) => h.do_update(data),
             Self::HMAC_SHA3_512(h) => h.do_update(data),
             Self::HMAC_SM3(h) => h.do_update(data),
+            Self::HMAC_RIPEMD160(h) => h.do_update(data),
             Self::BLAKE2b_512_MAC(h) => h.do_update(data),
             Self::BLAKE2s_256_MAC(h) => h.do_update(data),
             Self::BLAKE3KeyedHash(h) => h.do_update(data),
@@ -466,6 +477,7 @@ impl MACFactoryWorker<'_, Encrypting> {
             Self::HMAC_SHA3_384(h) => final_vec(h),
             Self::HMAC_SHA3_512(h) => final_vec(h),
             Self::HMAC_SM3(h) => final_vec(h),
+            Self::HMAC_RIPEMD160(h) => final_vec(h),
             Self::BLAKE2b_512_MAC(h) => final_vec(h),
             Self::BLAKE2s_256_MAC(h) => final_vec(h),
             Self::BLAKE3KeyedHash(h) => final_vec(h),
@@ -493,6 +505,7 @@ impl MACFactoryWorker<'_, Encrypting> {
             Self::HMAC_SHA3_384(h) => final_into(h, out),
             Self::HMAC_SHA3_512(h) => final_into(h, out),
             Self::HMAC_SM3(h) => final_into(h, out),
+            Self::HMAC_RIPEMD160(h) => final_into(h, out),
             Self::BLAKE2b_512_MAC(h) => final_into(h, out),
             Self::BLAKE2s_256_MAC(h) => final_into(h, out),
             Self::BLAKE3KeyedHash(h) => final_into(h, out),
@@ -518,6 +531,7 @@ impl MACFactoryWorker<'_, Decrypting> {
             Self::HMAC_SHA3_384(h) => h.do_update(data),
             Self::HMAC_SHA3_512(h) => h.do_update(data),
             Self::HMAC_SM3(h) => h.do_update(data),
+            Self::HMAC_RIPEMD160(h) => h.do_update(data),
             Self::BLAKE2b_512_MAC(h) => h.do_update(data),
             Self::BLAKE2s_256_MAC(h) => h.do_update(data),
             Self::BLAKE3KeyedHash(h) => h.do_update(data),
@@ -544,6 +558,7 @@ impl MACFactoryWorker<'_, Decrypting> {
             Self::HMAC_SHA3_384(h) => verify_tag(h, mac),
             Self::HMAC_SHA3_512(h) => verify_tag(h, mac),
             Self::HMAC_SM3(h) => verify_tag(h, mac),
+            Self::HMAC_RIPEMD160(h) => verify_tag(h, mac),
             Self::BLAKE2b_512_MAC(h) => verify_tag(h, mac),
             Self::BLAKE2s_256_MAC(h) => verify_tag(h, mac),
             Self::BLAKE3KeyedHash(h) => verify_tag(h, mac),
@@ -568,6 +583,7 @@ impl<Dir> MACFactoryWorker<'_, Dir> {
             Self::HMAC_SHA3_384(h) => tag_len(h),
             Self::HMAC_SHA3_512(h) => tag_len(h),
             Self::HMAC_SM3(h) => tag_len(h),
+            Self::HMAC_RIPEMD160(h) => tag_len(h),
             Self::BLAKE2b_512_MAC(h) => tag_len(h),
             Self::BLAKE2s_256_MAC(h) => tag_len(h),
             Self::BLAKE3KeyedHash(h) => tag_len(h),
@@ -591,6 +607,7 @@ impl<Dir> AlgorithmInfo for MACFactoryWorker<'_, Dir> {
             Self::HMAC_SHA3_384(h) => h.alg_name(),
             Self::HMAC_SHA3_512(h) => h.alg_name(),
             Self::HMAC_SM3(h) => h.alg_name(),
+            Self::HMAC_RIPEMD160(h) => h.alg_name(),
             Self::BLAKE2b_512_MAC(h) => h.alg_name(),
             Self::BLAKE2s_256_MAC(h) => h.alg_name(),
             Self::BLAKE3KeyedHash(h) => h.alg_name(),
@@ -612,6 +629,7 @@ impl<Dir> AlgorithmInfo for MACFactoryWorker<'_, Dir> {
             Self::HMAC_SHA3_384(h) => h.max_security_strength(),
             Self::HMAC_SHA3_512(h) => h.max_security_strength(),
             Self::HMAC_SM3(h) => h.max_security_strength(),
+            Self::HMAC_RIPEMD160(h) => h.max_security_strength(),
             Self::BLAKE2b_512_MAC(h) => h.max_security_strength(),
             Self::BLAKE2s_256_MAC(h) => h.max_security_strength(),
             Self::BLAKE3KeyedHash(h) => h.max_security_strength(),

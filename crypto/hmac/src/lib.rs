@@ -14,6 +14,7 @@
 //! | SHA-2       | `bouncycastle_sha2::hmac` -- `HMAC_SHA224`, `HMAC_SHA256`, `HMAC_SHA384`, `HMAC_SHA512`, `HMAC_SHA512_224`, `HMAC_SHA512_256` |
 //! | SHA-3       | `bouncycastle_sha3::hmac` -- `HMAC_SHA3_224`, `HMAC_SHA3_256`, `HMAC_SHA3_384`, `HMAC_SHA3_512` |
 //! | SM3         | `bouncycastle_sm3::hmac` -- `HMAC_SM3`                                       |
+//! | RIPEMD      | `bouncycastle_ripemd::hmac` -- `HMAC_RIPEMD160`                              |
 //!
 //! Although users are free to implement [`Hash`] and [`HMACParams`] for a a hash function not included with the library,
 //! and will then be able to instantiate [`HMAC`] for it as well.
@@ -274,7 +275,12 @@ impl<HASH: HMACParams> HmacKey<HASH> {
                 "Key type must be a MAC key.",
             )));
         }
-        if !allow_weak_keys && key.security_strength() < HASH::MAX_SECURITY_STRENGTH {
+        // A key of no security strength is refused whatever the HMAC claims: for an HMAC that
+        // itself claims none (a legacy hash), `<` alone would accept every key.
+        if !allow_weak_keys
+            && (key.security_strength() < HASH::MAX_SECURITY_STRENGTH
+                || key.security_strength() == SecurityStrength::None)
+        {
             return Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(
                 "HmacKey: provided key has a lower security strength than the instantiated HMAC",
             )));
@@ -302,7 +308,8 @@ impl<HASH: HMACParams> HmacKey<HASH> {
 
 impl<HASH: HMACParams> FromAnyKeyMaterial for HmacKey<HASH> {
     /// Builds the key from material tagged [`KeyType::MACKey`] (or [`KeyType::Zeroized`], for an
-    /// all-zero key) whose security strength is at least the HMAC's.
+    /// all-zero key) whose security strength is at least the HMAC's and is not
+    /// [`SecurityStrength::None`].
     ///
     /// # Errors
     /// [`MACError::KeyMaterialError`] with [`KeyMaterialError::InvalidKeyType`] or

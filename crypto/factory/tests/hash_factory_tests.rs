@@ -24,6 +24,10 @@ mod hash_factory_tests {
             (bouncycastle_sha3::SHA3_384_NAME, _192bit),
             (bouncycastle_sha3::SHA3_512_NAME, _256bit),
             (bouncycastle_sm3::SM3_NAME, _128bit),
+            (bouncycastle_ripemd::RIPEMD128_NAME, None),
+            (bouncycastle_ripemd::RIPEMD160_NAME, None),
+            (bouncycastle_ripemd::RIPEMD256_NAME, None),
+            (bouncycastle_ripemd::RIPEMD320_NAME, None),
             (bouncycastle_sha1::SHA1_NAME, SecurityStrength::None),
             (bouncycastle_ascon::ASCON_HASH256_NAME, _128bit),
         ];
@@ -123,6 +127,68 @@ mod hash_factory_tests {
                     expected.len()
                 );
                 assert_eq!(&out, expected);
+            }
+        }
+
+        /// The designers' "abc" vectors, by string name and by the crate's name constants, through
+        /// the one-shots and the streaming finals.
+        #[test]
+        fn ripemd_hash_tests() {
+            use bouncycastle_ripemd as ripemd;
+            let cases: [(&str, &str, usize, &str); 4] = [
+                ("RIPEMD128", ripemd::RIPEMD128_NAME, 16, "c14a12199c66e4ba84636b0f69144c77"),
+                (
+                    "RIPEMD160",
+                    ripemd::RIPEMD160_NAME,
+                    20,
+                    "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc",
+                ),
+                (
+                    "RIPEMD256",
+                    ripemd::RIPEMD256_NAME,
+                    32,
+                    "afbd6e228b9d8cbbcef5ca2d03e6dba10ac0bc7dcbe4680e1e42d2e975459b65",
+                ),
+                (
+                    "RIPEMD320",
+                    ripemd::RIPEMD320_NAME,
+                    40,
+                    "de4c01b3054f8930a79d09ae738e92301e5a17085beffdc1b8d116713e74f82fa942d64cdbc4682d",
+                ),
+            ];
+            for (literal, name, len, expected_hex) in cases {
+                assert_eq!(literal, name);
+                let expected = bouncycastle_hex::decode(expected_hex).unwrap();
+                let h = HashFactory::new(literal).unwrap();
+                assert_eq!(h.output_len(), len);
+                assert_eq!(h.block_bitlen(), 512);
+                assert_eq!(h.hash(b"abc"), expected);
+
+                let mut h = HashFactory::new(name).unwrap();
+                h.do_update(b"a");
+                h.do_update(b"bc");
+                assert_eq!(h.do_final(), expected);
+
+                let mut h = HashFactory::new(name).unwrap();
+                h.do_update(b"abc");
+                let mut out = vec![0xffu8; len];
+                assert_eq!(h.do_final_out(&mut out), len);
+                assert_eq!(out, expected);
+
+                let h = HashFactory::new(name).unwrap();
+                let mut out = vec![0xffu8; len];
+                assert_eq!(h.hash_out(b"abc", &mut out), len);
+                assert_eq!(out, expected);
+
+                // zero partial bits is the whole-byte digest; eight is refused
+                let mut h = HashFactory::new(name).unwrap();
+                h.do_update(b"abc");
+                assert_eq!(h.do_final_partial_bits(0xff, 0).unwrap(), expected);
+                let mut out = vec![0xffu8; len];
+                assert_eq!(
+                    HashFactory::new(name).unwrap().do_final_partial_bits_out(0xff, 8, &mut out),
+                    Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"))
+                );
             }
         }
 

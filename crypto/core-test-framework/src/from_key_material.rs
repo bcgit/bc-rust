@@ -190,7 +190,9 @@ impl TestFrameworkFromAnyKeyMaterial {
             }
         })
         .unwrap();
-        assert!(low.security_strength() < strength);
+        // A construction that claims no strength has no step below it: its refused key is the
+        // no-strength one.
+        assert!(low.security_strength() < strength || strength == SecurityStrength::None);
         match K::from_key_material(&low) {
             Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => {}
             _ => panic!("a key below the construction's strength must be refused"),

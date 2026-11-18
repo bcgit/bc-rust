@@ -19,6 +19,7 @@ use bouncycastle::core::traits::{MACGenerator, MACVerifier, XOF, XOFSqueezer};
 use bouncycastle::hmac::{HMACParams, HmacKey};
 use bouncycastle::poly1305;
 use bouncycastle::poly1305::hazmat::key_from_bytes;
+use bouncycastle::ripemd::RIPEMD160;
 use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use bouncycastle::sha3::kmac::{KMAC_MAX_OUTPUT_LEN, KMAC_MIN_OUTPUT_LEN, KMACXOF128, KMACXOF256};
@@ -40,6 +41,7 @@ pub(crate) enum HMACVariant {
     SHA3_384,
     SHA3_512,
     SM3,
+    RIPEMD160,
 }
 
 fn mac_key_error(e: MACError) -> ! {
@@ -79,6 +81,7 @@ pub(crate) fn mac_cmd(
         HMACVariant::SHA3_384 => hmac::<48, SHA3_384>(&key, verify_val, output_hex),
         HMACVariant::SHA3_512 => hmac::<64, SHA3_512>(&key, verify_val, output_hex),
         HMACVariant::SM3 => hmac::<32, SM3>(&key, verify_val, output_hex),
+        HMACVariant::RIPEMD160 => hmac::<20, RIPEMD160>(&key, verify_val, output_hex),
     }
 }
 
