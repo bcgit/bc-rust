@@ -5,6 +5,8 @@
 //! See [`KDF`] for the full key-derivation API, key-material handling rules, and additional-input semantics.
 //! The HKDF variants are `HKDF::new()`, RFC 5869's absent salt; a salted instance is built from
 //! the hash crate's alias, `HKDF_SHA256::new_with_salt`, which the factory does not reach.
+//! The SP 800-108 variants are likewise the parameterless ones: counter mode with a 32-bit counter
+//! before the fixed input data, and the KMAC KDFs with the empty Label.
 //!
 //! Example usage:
 //! ```
@@ -60,6 +62,12 @@ use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{AlgorithmInfo, KDF};
+use bouncycastle_kbkdf::{
+    KDF_COUNTER_CMAC_AES256_NAME, KDF_COUNTER_HMAC_SHA256_NAME, KDF_COUNTER_HMAC_SHA384_NAME,
+    KDF_COUNTER_HMAC_SHA512_NAME, KDF_Counter_CMAC_AES256, KDF_Counter_HMAC_SHA256,
+    KDF_Counter_HMAC_SHA384, KDF_Counter_HMAC_SHA512, KDF_KMAC128, KDF_KMAC128_NAME, KDF_KMAC256,
+    KDF_KMAC256_NAME,
+};
 use bouncycastle_sha2::hkdf::{
     HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA384, HKDF_SHA384_NAME, HKDF_SHA512, HKDF_SHA512_NAME,
 };
@@ -111,6 +119,25 @@ pub enum KDFFactory {
     /// The NIST concatenation KDF over SHA3-512.
     #[allow(non_camel_case_types)]
     ConcatKDF_SHA3_512(ConcatKDF_SHA3_512),
+    /// The KDF in Counter Mode over HMAC-SHA256 (SP 800-108r1 Section 4.1), with a 32-bit counter
+    /// before the fixed input data.
+    #[allow(non_camel_case_types)]
+    KDF_Counter_HMAC_SHA256(KDF_Counter_HMAC_SHA256),
+    /// The KDF in Counter Mode over HMAC-SHA384.
+    #[allow(non_camel_case_types)]
+    KDF_Counter_HMAC_SHA384(KDF_Counter_HMAC_SHA384),
+    /// The KDF in Counter Mode over HMAC-SHA512.
+    #[allow(non_camel_case_types)]
+    KDF_Counter_HMAC_SHA512(KDF_Counter_HMAC_SHA512),
+    /// The KDF in Counter Mode over CMAC-AES256.
+    #[allow(non_camel_case_types)]
+    KDF_Counter_CMAC_AES256(KDF_Counter_CMAC_AES256),
+    /// The KDF Using KMAC128 (SP 800-108r1 Section 4.4), with the empty Label.
+    #[allow(non_camel_case_types)]
+    KDF_KMAC128(KDF_KMAC128<'static>),
+    /// The KDF Using KMAC256, with the empty Label.
+    #[allow(non_camel_case_types)]
+    KDF_KMAC256(KDF_KMAC256<'static>),
 }
 
 impl Default for KDFFactory {
@@ -146,6 +173,20 @@ impl AlgorithmFactory for KDFFactory {
             CONCAT_KDF_SHA3_256_NAME => Ok(Self::ConcatKDF_SHA3_256(ConcatKDF_SHA3_256::new())),
             CONCAT_KDF_SHA3_384_NAME => Ok(Self::ConcatKDF_SHA3_384(ConcatKDF_SHA3_384::new())),
             CONCAT_KDF_SHA3_512_NAME => Ok(Self::ConcatKDF_SHA3_512(ConcatKDF_SHA3_512::new())),
+            KDF_COUNTER_HMAC_SHA256_NAME => {
+                Ok(Self::KDF_Counter_HMAC_SHA256(KDF_Counter_HMAC_SHA256::new()))
+            }
+            KDF_COUNTER_HMAC_SHA384_NAME => {
+                Ok(Self::KDF_Counter_HMAC_SHA384(KDF_Counter_HMAC_SHA384::new()))
+            }
+            KDF_COUNTER_HMAC_SHA512_NAME => {
+                Ok(Self::KDF_Counter_HMAC_SHA512(KDF_Counter_HMAC_SHA512::new()))
+            }
+            KDF_COUNTER_CMAC_AES256_NAME => {
+                Ok(Self::KDF_Counter_CMAC_AES256(KDF_Counter_CMAC_AES256::new()))
+            }
+            KDF_KMAC128_NAME => Ok(Self::KDF_KMAC128(KDF_KMAC128::new(&[]))),
+            KDF_KMAC256_NAME => Ok(Self::KDF_KMAC256(KDF_KMAC256::new(&[]))),
             _ => Err(FactoryError::UnsupportedAlgorithm(format!(
                 "The algorithm: \"{}\" is not a known KDF",
                 alg_name
@@ -176,6 +217,12 @@ impl KDF for KDFFactory {
             Self::ConcatKDF_SHA3_256(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
             Self::ConcatKDF_SHA3_384(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
             Self::ConcatKDF_SHA3_512(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::KDF_Counter_HMAC_SHA256(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::KDF_Counter_HMAC_SHA384(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::KDF_Counter_HMAC_SHA512(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::KDF_Counter_CMAC_AES256(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::KDF_KMAC128(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::KDF_KMAC256(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
         }
     }
 
@@ -224,6 +271,24 @@ impl KDF for KDFFactory {
             Self::ConcatKDF_SHA3_512(h) => {
                 h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
             }
+            Self::KDF_Counter_HMAC_SHA256(h) => {
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
+            }
+            Self::KDF_Counter_HMAC_SHA384(h) => {
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
+            }
+            Self::KDF_Counter_HMAC_SHA512(h) => {
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
+            }
+            Self::KDF_Counter_CMAC_AES256(h) => {
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
+            }
+            Self::KDF_KMAC128(h) => {
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
+            }
+            Self::KDF_KMAC256(h) => {
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
+            }
         }
     }
 }
@@ -244,6 +309,12 @@ impl AlgorithmInfo for KDFFactory {
             Self::ConcatKDF_SHA3_256(h) => h.alg_name(),
             Self::ConcatKDF_SHA3_384(h) => h.alg_name(),
             Self::ConcatKDF_SHA3_512(h) => h.alg_name(),
+            Self::KDF_Counter_HMAC_SHA256(h) => h.alg_name(),
+            Self::KDF_Counter_HMAC_SHA384(h) => h.alg_name(),
+            Self::KDF_Counter_HMAC_SHA512(h) => h.alg_name(),
+            Self::KDF_Counter_CMAC_AES256(h) => h.alg_name(),
+            Self::KDF_KMAC128(h) => h.alg_name(),
+            Self::KDF_KMAC256(h) => h.alg_name(),
         }
     }
 
@@ -262,6 +333,12 @@ impl AlgorithmInfo for KDFFactory {
             Self::ConcatKDF_SHA3_256(h) => h.max_security_strength(),
             Self::ConcatKDF_SHA3_384(h) => h.max_security_strength(),
             Self::ConcatKDF_SHA3_512(h) => h.max_security_strength(),
+            Self::KDF_Counter_HMAC_SHA256(h) => h.max_security_strength(),
+            Self::KDF_Counter_HMAC_SHA384(h) => h.max_security_strength(),
+            Self::KDF_Counter_HMAC_SHA512(h) => h.max_security_strength(),
+            Self::KDF_Counter_CMAC_AES256(h) => h.max_security_strength(),
+            Self::KDF_KMAC128(h) => h.max_security_strength(),
+            Self::KDF_KMAC256(h) => h.max_security_strength(),
         }
     }
 }

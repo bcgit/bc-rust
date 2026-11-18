@@ -22,6 +22,7 @@ bouncycastle-chacha20 = { path = "./crypto/chacha20" }
 bouncycastle-chacha20-poly1305-aead = { path = "./crypto/chacha20-poly1305-aead" }
 bouncycastle-cipher = { path = "./crypto/cipher" }
 bouncycastle-concatkdf = { path = "./crypto/concatkdf" }
+bouncycastle-kbkdf = { path = "./crypto/kbkdf" }
 bouncycastle-core = { path = "crypto/core" }
 bouncycastle-cipher-test-framework = { path = "./crypto/cipher-test-framework" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
@@ -88,6 +89,7 @@ bouncycastle-chacha20.workspace = true
 bouncycastle-chacha20-poly1305-aead.workspace = true
 bouncycastle-cipher.workspace = true
 bouncycastle-concatkdf.workspace = true
+bouncycastle-kbkdf.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-ec.workspace = true
 bouncycastle-eccdh.workspace = true

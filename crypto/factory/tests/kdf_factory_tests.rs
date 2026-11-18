@@ -115,6 +115,105 @@ mod kdf_factory_tests {
         }
     }
 
+    /// Each SP 800-108 counter-mode name selects its own instantiation, with a 32-bit counter
+    /// before the fixed input data, checked against a known answer per arm: NIST CAVP
+    /// `KDFCTR_gen.rsp` (the file `bouncycastle-kbkdf` reads from bc-test-data), COUNT=0 of each
+    /// PRF's `[CTRLOCATION=BEFORE_FIXED]` `[RLEN=32_BITS]` section.
+    #[test]
+    fn sp800_108_counter_variants_route_to_their_instantiation() {
+        use bouncycastle_hex::decode as hex_decode;
+        use bouncycastle_kbkdf::{
+            KDF_COUNTER_CMAC_AES256_NAME, KDF_COUNTER_HMAC_SHA256_NAME,
+            KDF_COUNTER_HMAC_SHA384_NAME, KDF_COUNTER_HMAC_SHA512_NAME,
+        };
+        let table = [
+            (
+                KDF_COUNTER_HMAC_SHA256_NAME,
+                SecurityStrength::_128bit,
+                "dd1d91b7d90b2bd3138533ce92b272fbf8a369316aefe242e659cc0ae238afe0",
+                "01322b96b30acd197979444e468e1c5c6859bf1b1cf951b7e725303e237e46b864a145fab25e517b08f8683d0315bb2911d80a0e8aba17f3b413faac",
+                "10621342bfb0fd40046c0e29f2cfdbf0",
+            ),
+            (
+                KDF_COUNTER_HMAC_SHA384_NAME,
+                SecurityStrength::_192bit,
+                "216ed044769c4c3908188ece61601af8819c30f501d12995df608e06f5e0e607ab54f542ee2da41906dfdb4971f20f9d",
+                "638e9506a2c7be69ea346b84629a010c0e225b7548f508162c89f29c1ddbfd70472c2b58e7dc8aa6a5b06602f1c8ed4948cda79c62708218e26ac0e2",
+                "d4b144bb40c7cabed13963d7d4318e72",
+            ),
+            (
+                KDF_COUNTER_HMAC_SHA512_NAME,
+                SecurityStrength::_256bit,
+                "dd5dbd45593ee2ac139748e7645b450f223d2ff297b73fd71cbcebe71d41653c950b88500de5322d99ef18dfdd30428294c4b3094f4c954334e593bd982ec614",
+                "b50b0c963c6b3034b8cf19cd3f5c4ebe4f4985af0c03e575db62e6fdf1ecfe4f28b95d7ce16df85843246e1557ce95bb26cc9a21974bbd2eb69e8355",
+                "e5993bf9bd2aa1c45746042e12598155",
+            ),
+            (
+                KDF_COUNTER_CMAC_AES256_NAME,
+                SecurityStrength::_256bit,
+                "d0b1b3b70b2393c48ca05159e7e28cbeadea93f28a7cdae964e5136070c45d5c",
+                "dd2f151a3f173492a6fbbb602189d51ddf8ef79fc8e96b8fcbe6dabe73a35b48104f9dff2d63d48786d2b3af177091d646a9efae005bdfacb61a1214",
+                "8c449fb474d1c1d4d2a33827103b656a",
+            ),
+        ];
+        for (name, strength, ki, fixed, ko) in table {
+            let f = KDFFactory::new(name).unwrap();
+            assert_eq!(f.alg_name(), name);
+            assert_eq!(f.max_security_strength(), strength, "{name}");
+
+            let ki = KeyMaterial512::from_bytes_as_type(
+                &hex_decode(ki).unwrap(),
+                KeyType::CryptographicRandom,
+            )
+            .unwrap();
+            let (fixed, expected) = (hex_decode(fixed).unwrap(), hex_decode(ko).unwrap());
+            let len = expected.len();
+            let mut out = KeyMaterial512::new();
+            assert_eq!(f.derive_key_out(&ki, &fixed, len, &mut out).unwrap(), len, "{name}");
+            assert!(ct::ct_eq_bytes(out.ref_to_bytes(), &expected), "{name}");
+            let keys: [&dyn KeyMaterialTrait; 1] = [&ki];
+            assert_eq!(f.derive_key_from_multiple_out(&keys, &fixed, len, &mut out).unwrap(), len);
+            assert!(ct::ct_eq_bytes(out.ref_to_bytes(), &expected), "{name}");
+        }
+    }
+
+    /// The two KMAC KDF names select the KDF with the empty Label, which is the fixed-length
+    /// KMAC of the Context under the key, with the empty customization string, at the length
+    /// asked for (SP 800-108r1 Section 4.4).
+    #[test]
+    fn sp800_108_kmac_variants_route_to_their_instantiation() {
+        use bouncycastle_core::symmetric_key::MacGenerationKey;
+        use bouncycastle_kbkdf::{KDF_KMAC128_NAME, KDF_KMAC256_NAME};
+        use bouncycastle_sha3::kmac::{KMAC128Key, KMAC256Key};
+        let key = [0x5Au8; 32];
+        let mac_key = KeyMaterial256::from_bytes_as_type(&key, KeyType::MACKey).unwrap();
+        let k_in = KeyMaterial256::from_bytes_as_type(&key, KeyType::CryptographicRandom).unwrap();
+        let context = b"the context";
+        let expected: [(&str, SecurityStrength, [u8; 48]); 2] = [
+            (
+                KDF_KMAC128_NAME,
+                SecurityStrength::_128bit,
+                KMAC128Key::<48>::with_params_allow_weak(&mac_key, b"").unwrap().mac(context),
+            ),
+            (
+                KDF_KMAC256_NAME,
+                SecurityStrength::_256bit,
+                KMAC256Key::<48>::with_params(&mac_key, b"").unwrap().mac(context),
+            ),
+        ];
+        for (name, strength, expected) in expected {
+            let f = KDFFactory::new(name).unwrap();
+            assert_eq!(f.alg_name(), name);
+            assert_eq!(f.max_security_strength(), strength, "{name}");
+            let mut out = KeyMaterial512::new();
+            assert_eq!(f.derive_key_out(&k_in, context, 48, &mut out).unwrap(), 48, "{name}");
+            assert!(ct::ct_eq_bytes(out.ref_to_bytes(), &expected), "{name}");
+            let keys: [&dyn KeyMaterialTrait; 1] = [&k_in];
+            assert_eq!(f.derive_key_from_multiple_out(&keys, context, 48, &mut out).unwrap(), 48);
+            assert!(ct::ct_eq_bytes(out.ref_to_bytes(), &expected), "{name}");
+        }
+    }
+
     #[test]
     fn hkdf_tests() {
         /* HKDF-SHA256 */

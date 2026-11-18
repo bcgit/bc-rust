@@ -17,6 +17,7 @@ mod encoders_cmd;
 mod gcm_cmd;
 mod helpers;
 mod hkdf_cmd;
+mod kbkdf_cmd;
 mod kdf_cmd;
 mod kw_cmd;
 mod mac_cmd;
@@ -47,6 +48,9 @@ use crate::blake2_cmd::BLAKE2Variant;
 use crate::eccdh_cmd::ECCDHAction;
 use crate::ecdsa_cmd::ECDSAAction;
 use crate::hkdf_cmd::HKDFVariant;
+use crate::kbkdf_cmd::{
+    CounterPositionArg, IterationCounterPositionArg, KbkdfKmac, KbkdfPrf, KdfInputs,
+};
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::{MLDSAAction, PreHashAlg};
 use crate::rng_cmd::DrbgHash;
@@ -2413,6 +2417,253 @@ enum Subcommands {
         additional_input_file: Option<String>,
 
         /// Length of keying data to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The KDF in Counter Mode (SP 800-108r1 Section 4.1): keying material of len bytes from a
+    /// key-derivation key and the fixed input data, `K(i) = PRF(K_IN, [i]2 || fixed input data)`.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "kbkdf-counter")]
+    KBKDF_Counter {
+        /// The PRF.
+        #[arg(long, value_enum)]
+        prf: KbkdfPrf,
+
+        /// The counter's size in bits: 8, 16, 24 or 32.
+        #[arg(long, default_value_t = 32)]
+        counter_bits: u32,
+
+        /// Where the counter goes; in-fixed takes --counter-offset.
+        #[arg(long, value_enum, default_value_t = CounterPositionArg::Before)]
+        counter_position: CounterPositionArg,
+
+        /// With --counter-position in-fixed, the bytes of fixed input data before the counter.
+        #[arg(long)]
+        counter_offset: Option<usize>,
+
+        /// Apply Section 4.1's guard against key control. Changes the output.
+        #[arg(long)]
+        key_control_guard: bool,
+
+        /// The key-derivation key K_IN in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the key-derivation key K_IN in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The fixed input data in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the fixed input data in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The KDF in Feedback Mode (SP 800-108r1 Section 4.2): keying material of len bytes from a
+    /// key-derivation key and the fixed input data,
+    /// `K(i) = PRF(K_IN, K(i-1) {|| [i]2} || fixed input data)`, `K(0) = IV`.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "kbkdf-feedback")]
+    KBKDF_Feedback {
+        /// The PRF.
+        #[arg(long, value_enum)]
+        prf: KbkdfPrf,
+
+        /// The IV in hex. Optional; defaults to empty.
+        /// A secret IV should come from `iv_file`, which keeps it out of command history.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the IV in binary. Optional.
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// The counter's size in bits: 8, 16, 24 or 32. Optional: absent, no counter is used.
+        #[arg(long)]
+        counter_bits: Option<u32>,
+
+        /// Where the counter goes; after-iteration if absent. Needs --counter-bits.
+        #[arg(long, value_enum)]
+        counter_position: Option<IterationCounterPositionArg>,
+
+        /// Apply Section 4.2's guard against key control, which derives the IV: needs
+        /// --counter-bits, and not with --iv or --iv-file. Changes the output.
+        #[arg(long)]
+        key_control_guard: bool,
+
+        /// The key-derivation key K_IN in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the key-derivation key K_IN in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The fixed input data in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the fixed input data in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The KDF in Double-Pipeline Mode (SP 800-108r1 Section 4.3): keying material of len bytes
+    /// from a key-derivation key and the fixed input data, A(i) = PRF(K_IN, A(i-1)),
+    /// `K(i) = PRF(K_IN, A(i) {|| [i]2} || fixed input data)`.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "kbkdf-double-pipeline")]
+    KBKDF_DoublePipeline {
+        /// The PRF.
+        #[arg(long, value_enum)]
+        prf: KbkdfPrf,
+
+        /// The counter's size in bits: 8, 16, 24 or 32. Optional: absent, no counter is used.
+        #[arg(long)]
+        counter_bits: Option<u32>,
+
+        /// Where the counter goes; after-iteration if absent. Needs --counter-bits.
+        #[arg(long, value_enum)]
+        counter_position: Option<IterationCounterPositionArg>,
+
+        /// The key-derivation key K_IN in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the key-derivation key K_IN in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The fixed input data in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the fixed input data in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The KDF Using KMAC128 (SP 800-108r1 Section 4.4): keying material of len bytes,
+    /// K_OUT = KMAC128(K_IN, Context, L, Label), from a key-derivation key of at most 512 bytes.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "kbkdf-kmac128")]
+    KBKDF_KMAC128 {
+        /// The Label, KMAC's customization string, as text. Optional; defaults to empty.
+        #[arg(long)]
+        label: Option<String>,
+
+        /// The Label in hex, instead of --label.
+        #[arg(long)]
+        label_hex: Option<String>,
+
+        /// The key-derivation key K_IN in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the key-derivation key K_IN in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The Context in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the Context in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The KDF Using KMAC256 (SP 800-108r1 Section 4.4): keying material of len bytes,
+    /// K_OUT = KMAC256(K_IN, Context, L, Label), from a key-derivation key of at most 512 bytes.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "kbkdf-kmac256")]
+    KBKDF_KMAC256 {
+        /// The Label, KMAC's customization string, as text. Optional; defaults to empty.
+        #[arg(long)]
+        label: Option<String>,
+
+        /// The Label in hex, instead of --label.
+        #[arg(long)]
+        label_hex: Option<String>,
+
+        /// The key-derivation key K_IN in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the key-derivation key K_IN in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The Context in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the Context in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
         #[arg(short, long)]
         len: usize,
 
@@ -7220,6 +7471,129 @@ fn run() {
                 *x,
             );
         }
+        Some(Subcommands::KBKDF_Counter {
+            prf,
+            counter_bits,
+            counter_position,
+            counter_offset,
+            key_control_guard,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => kbkdf_cmd::kbkdf_counter_cmd(
+            *prf,
+            *counter_bits,
+            *counter_position,
+            *counter_offset,
+            *key_control_guard,
+            &KdfInputs {
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                len: *len,
+                output_hex: *x,
+            },
+        ),
+        Some(Subcommands::KBKDF_Feedback {
+            prf,
+            iv,
+            iv_file,
+            counter_bits,
+            counter_position,
+            key_control_guard,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => kbkdf_cmd::kbkdf_feedback_cmd(
+            *prf,
+            iv,
+            iv_file,
+            *counter_bits,
+            *counter_position,
+            *key_control_guard,
+            &KdfInputs {
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                len: *len,
+                output_hex: *x,
+            },
+        ),
+        Some(Subcommands::KBKDF_DoublePipeline {
+            prf,
+            counter_bits,
+            counter_position,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => kbkdf_cmd::kbkdf_double_pipeline_cmd(
+            *prf,
+            *counter_bits,
+            *counter_position,
+            &KdfInputs {
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                len: *len,
+                output_hex: *x,
+            },
+        ),
+        Some(Subcommands::KBKDF_KMAC128 {
+            label,
+            label_hex,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => kbkdf_cmd::kbkdf_kmac_cmd(
+            KbkdfKmac::KMAC128,
+            label,
+            label_hex,
+            &KdfInputs {
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                len: *len,
+                output_hex: *x,
+            },
+        ),
+        Some(Subcommands::KBKDF_KMAC256 {
+            label,
+            label_hex,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => kbkdf_cmd::kbkdf_kmac_cmd(
+            KbkdfKmac::KMAC256,
+            label,
+            label_hex,
+            &KdfInputs {
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                len: *len,
+                output_hex: *x,
+            },
+        ),
         Some(Subcommands::HKDF_SHA256 {
             salt,
             salt_file,

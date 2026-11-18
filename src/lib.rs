@@ -20,6 +20,7 @@ pub use bouncycastle_hex as hex;
 pub use bouncycastle_hkdf as hkdf;
 pub use bouncycastle_hmac as hmac;
 pub use bouncycastle_hpke as hpke;
+pub use bouncycastle_kbkdf as kbkdf;
 pub use bouncycastle_mldsa as mldsa;
 pub use bouncycastle_mldsa_lowmemory as mldsa_lowmemory;
 pub use bouncycastle_mlkem as mlkem;

@@ -16,6 +16,7 @@ mod bench_chacha20_poly1305_mem_usage;
 mod bench_eccdh_mem_usage;
 mod bench_ecdsa_mem_usage;
 mod bench_hpke_mem_usage;
+mod bench_kbkdf_mem_usage;
 mod bench_mldsa_mem_usage;
 mod bench_mlkem_mem_usage;
 mod bench_poly1305_mem_usage;
