@@ -130,11 +130,6 @@ impl<P: MLDSAParams> MLDSAPublicKey<P> {
 
         <Self as MLDSAPublicKeyInternalTrait<P>>::new(rho, t1)
     }
-
-    /// The public matrix 𝐀̂ = ExpandA(𝜌), FIPS 204 Algorithm 32; the expanded keys cache it.
-    pub(crate) fn A_hat(&self) -> P::MatrixA {
-        expandA::<P>(&self.rho)
-    }
 }
 
 /// General trait for all ML-DSA public keys types.
@@ -207,7 +202,12 @@ impl<P: MLDSAParams> MLDSAPublicKeyTrait<P> for MLDSAPublicKey<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
-        verify_internal::<P, Self, SIG_LEN>(self, &self.A_hat(), mu, sig)
+        // 𝐀̂ = ExpandA(𝜌), FIPS 204 Algorithm 32, into a local of this frame: a by-value helper
+        // would leave a second copy of the matrix live for the verification (the expanded key
+        // is the way to pay for it once).
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&self.rho, &mut A_hat);
+        verify_internal::<P, Self, SIG_LEN>(self, &A_hat, mu, sig)
     }
 }
 
@@ -240,8 +240,8 @@ impl<P: PublicKeyLen<PK_LEN>, const PK_LEN: usize> PublicKey<PK_LEN> for MLDSAPu
         if bytes.len() != PK_LEN {
             return Err(KeyDecodingError("Provided key bytes are the incorrect length"));
         }
-        let bytes_sized: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
-        Ok(Self::pk_decode(&bytes_sized))
+        let bytes_sized: &[u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
+        Ok(Self::pk_decode(bytes_sized))
     }
 }
 
@@ -333,7 +333,11 @@ impl<P: MLDSAParams> Display for MLDSAPublicKeyExpanded<'_, P> {
 impl<'k, P: MLDSAParams> From<&'k MLDSAPublicKey<P>> for MLDSAPublicKeyExpanded<'k, P> {
     /// Expands the public matrix A once, for repeated verifications under the same public key.
     fn from(pk: &'k MLDSAPublicKey<P>) -> Self {
-        Self { pk, A_hat: pk.A_hat() }
+        // 𝐀̂ is expanded into a local and moved into the struct literal returned, so the matrix
+        // exists twice while this runs, here and in the caller's slot: the move is not elided.
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&pk.rho, &mut A_hat);
+        Self { pk, A_hat }
     }
 }
 
@@ -459,11 +463,6 @@ impl<P: MLDSAParams> MLDSAPrivateKey<P> {
         let mut out = Secret::<P::SkEncoded>::new();
         self.sk_encode_out((*out).as_mut());
         out
-    }
-
-    /// The public matrix 𝐀̂ = ExpandA(𝜌), FIPS 204 Algorithm 32; the expanded key caches it.
-    pub(crate) fn A_hat(&self) -> P::MatrixA {
-        expandA::<P>(&self.rho)
     }
 
     /// Algorithm 25 skDecode(𝑠𝑘)
@@ -708,7 +707,8 @@ impl<P: MLDSAParams> MLDSAPrivateKeyTrait<P> for MLDSAPrivateKey<P> {
             // scope for A_hat
             // 3: 𝐀 ← ExpandA(𝜌)
             //   ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-            let A_hat = expandA::<P>(&self.rho);
+            let mut A_hat = P::MatrixA::new();
+            expandA::<P>(&self.rho, &mut A_hat);
 
             let mut t_ntt = A_hat.matrix_vector_ntt(&self.s1_hat);
             // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
@@ -785,9 +785,9 @@ impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> PrivateKey<SK_LEN> for MLDSA
         if bytes.len() != SK_LEN {
             return Err(KeyDecodingError("Provided key bytes are the incorrect length"));
         }
-        let bytes_sized: [u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
+        let bytes_sized: &[u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
 
-        Self::sk_decode(&bytes_sized)
+        Self::sk_decode(bytes_sized)
     }
 }
 
@@ -885,7 +885,11 @@ impl<P: MLDSAParams> Display for MLDSAPrivateKeyExpanded<'_, P> {
 impl<'k, P: MLDSAParams> From<&'k MLDSAPrivateKey<P>> for MLDSAPrivateKeyExpanded<'k, P> {
     /// Expands the public matrix A once, for repeated signatures under the same private key.
     fn from(sk: &'k MLDSAPrivateKey<P>) -> Self {
-        Self { sk, A_hat: sk.A_hat() }
+        // 𝐀̂ is expanded into a local and moved into the struct literal returned, so the matrix
+        // exists twice while this runs, here and in the caller's slot: the move is not elided.
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&sk.rho, &mut A_hat);
+        Self { sk, A_hat }
     }
 }
 
@@ -913,7 +917,10 @@ impl<P: MLDSAParams> SignMuWithRnd<P> for MLDSAPrivateKey<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
-        sign_internal::<P, Self, SIG_LEN>(self, &self.A_hat(), mu, rnd, output)
+        // 𝐀̂ = ExpandA(𝜌) into a local of this frame, as `verify_mu` does.
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&self.rho, &mut A_hat);
+        sign_internal::<P, Self, SIG_LEN>(self, &A_hat, mu, rnd, output)
     }
 }
 

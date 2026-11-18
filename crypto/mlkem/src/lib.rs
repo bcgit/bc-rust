@@ -157,20 +157,23 @@
 //! |----------------------|-----------------|-------------------|-----------------|-------------------|
 //! | ML-KEM-512_expanded  | 800            | 3104              | 1632            | 4226 |
 //! | ML-KEM-768_expanded  | 1184           | 6176              | 2400            | 7810 |
-//! | ML-KEM-1024_expanded | 1568           | 10272              | 3168            | 12418 |
+//! | ML-KEM-1024_expanded | 1568           | 10272             | 3168            | 12418 |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //!
 //! Peak stack usage of each operation, measured with `mem_usage_benches/bench_mlkem_mem_usage` under
-//! `valgrind --tool=massif --stacks=yes` (release build, one call on a fixed key, unexpanded keys):
+//! `valgrind --tool=massif --stacks=yes` on 2026-11-18 (release build, one call, unexpanded keys; the Decaps benches
+//! derive their key from a seed inside the run, so those rows include a key generation):
 //!
 //! | Operation | ML-KEM-512 | ML-KEM-768 | ML-KEM-1024 |
 //! |-----------|------------|------------|-------------|
-//! | KeyGen    | 13,960 | 20,520 | 30,152 |
-//! | Encaps    | 16,424 | 27,256 | 38,840 |
-//! | Decaps    | 20,920 | 33,560 | 47,240 |
+//! | KeyGen    | 13,640 | 19,688 | 28,808 |
+//! | Encaps    | 18,600 | 29,752 | 41,816 |
+//! | Decaps    | 19,176 | 30,104 | 41,736 |
 //!
-//! Values are in bytes and include the harness's own frames (about 3 KB).
+//! Values are in bytes and include the harness's own frames. A do-nothing run of the same harness
+//! (`bench_do_nothing`) peaks at 7,680 bytes, reached in process start-up before `main` runs, so no
+//! row can read lower.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
