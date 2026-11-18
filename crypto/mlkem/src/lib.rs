@@ -69,6 +69,18 @@
 //! let (pk, sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
 //! ```
 //!
+//! Into a private key the caller holds, so that it is built where it will live and no copy of it
+//! is left behind by a move; the private key holds the public key:
+//!
+//! ```rust
+//! use bouncycastle_mlkem::{MLKEM768, MLKEM768PrivateKey, MLKEMPrivateKeyTrait, MLKEMTrait};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! let mut sk = MLKEM768PrivateKey::zeroized();
+//! MLKEM768::keygen_out(&mut HashDRBG_SHA512::new_from_os(), &mut sk).unwrap();
+//! let pk = sk.pk();
+//! ```
+//!
 //! See [`MLKEM`] and [`MLKEM::decaps_from_seed`] for an API that uses a merged
 //! keygen-and-decaps function that allows the private key to be stored only as a 64-byte seed.
 //!
@@ -167,9 +179,15 @@
 //!
 //! | Operation | ML-KEM-512 | ML-KEM-768 | ML-KEM-1024 |
 //! |-----------|------------|------------|-------------|
-//! | KeyGen    | 13,640 | 19,688 | 28,808 |
-//! | Encaps    | 18,600 | 29,752 | 41,816 |
-//! | Decaps    | 19,176 | 30,104 | 41,736 |
+//! | KeyGen    | 13,208 | 17,816 | 24,376 |
+//! | KeyGen, `keygen_out` | 9,496 | 13,592 | 18,712 |
+//! | Encaps    | 16,776 | 23,944 | 32,040 |
+//! | Decaps    | 18,376 | 24,888 | 31,912 |
+//! | Encaps, expanded key | 16,616 | 23,640 | 32,408 |
+//! | Decaps, expanded key | 22,952 | 32,744 | 50,648 |
+//!
+//! [`MLKEMTrait::keygen_out`] writes into a private key the caller holds, so no copy of it is left
+//! behind by a move. The expanded-key rows include building the expanded key.
 //!
 //! Values are in bytes and include the harness's own frames. A do-nothing run of the same harness
 //! (`bench_do_nothing`) peaks at 7,680 bytes, reached in process start-up before `main` runs, so no
@@ -177,7 +195,9 @@
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! Everything at the crate root is considered secure to use. The one
+//! Everything at the crate root is considered secure to use, with one caution: a private key
+//! made by [`MLKEMPrivateKey::zeroized`] and not yet filled by `keygen_out` holds the all-zero
+//! public key, which must not be published. The one
 //! [hazmat](bouncycastle_core::hazmat) item is [`hazmat::EncapsWithRandomness`], which takes the
 //! encapsulation randomness from the caller, so the ciphertext is only as strong as the randomness
 //! provided. Beyond that, the obvious points about handling your private keys properly apply: if

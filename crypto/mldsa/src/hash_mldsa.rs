@@ -44,7 +44,7 @@
 //! refused when the signer is made. The named pairings of FIPS 204 are the [`HashMLDSA`] marker
 //! types below, which carry the pairing's name and OID.
 
-use crate::mldsa::{MLDSA, MLDSA_RND_LEN, Rnd, draw_rnd};
+use crate::mldsa::{MLDSA, MLDSA_RND_LEN, Rnd, check_filled_tr, draw_rnd};
 use crate::params::{
     HashMLDSA44_with_SHA256Params, HashMLDSA44_with_SHA512Params, HashMLDSA65_with_SHA512Params,
     HashMLDSA87_with_SHA512Params, HashMLDSAParams, MLDSAParams, SignatureLen,
@@ -178,6 +178,7 @@ fn new_ph_signer<'k, P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>, H: PreHash>(
     rnd: &[u8; MLDSA_RND_LEN],
     ctx: Option<&[u8]>,
 ) -> Result<HashMLDSASigner<'k, P, SK, H>, SignatureError> {
+    check_filled_tr(sk.tr())?;
     check_hash_strength::<P, H>()?;
     let (ctx, ctx_len) = parse_ctx(ctx)?;
     let mut signer = HashMLDSASigner {
@@ -463,6 +464,7 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> PreHashVerifyingKey<MLDSA<P
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::PreHashVerifier<'k, H>, SignatureError> {
+        self.check_filled()?;
         new_ph_verifier(self, ctx)
     }
 
@@ -488,6 +490,7 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> PreHashVerifyingKey<MLDSA<P
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::PreHashVerifier<'k, H>, SignatureError> {
+        self.pk.check_filled()?;
         new_ph_verifier(self, ctx)
     }
 

@@ -1,13 +1,13 @@
-use crate::aux_functions::{expandA, power_2_round_vec};
+use crate::aux_functions::{expandA, expandS, power_2_round_vec};
 use crate::matrix::{MatrixTrait, VectorTrait};
 use crate::mldsa::{H, MuBuilder, Rnd, draw_rnd, sign_internal, verify_internal};
-use crate::mldsa::{MLDSA_MU_LEN, MLDSA_RND_LEN};
+use crate::mldsa::{MLDSA_MU_LEN, MLDSA_RND_LEN, check_filled_tr};
 use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
 use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
 use crate::params::{PrivateKeyLen, PublicKeyLen, SignatureLen};
-use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
-use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG, XOF};
+use bouncycastle_core::errors::{KeyDecodingError, KeyMaterialError, SignatureError};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
+use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, RNG, XOF, XOFSqueezer};
 use bouncycastle_mldsa_common::aux_functions::{
     bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, simple_bit_pack_t1,
     simple_bit_unpack_t1,
@@ -62,6 +62,36 @@ pub type MLDSA87PrivateKeyExpanded<'k> = MLDSAPrivateKeyExpanded<'k, MLDSA87Para
 pub struct MLDSAPublicKey<P: MLDSAParams> {
     rho: [u8; 32],
     t1: P::VecK,
+}
+
+impl<P: MLDSAParams> MLDSAPublicKey<P> {
+    /// The all-zero key: the key [`MLDSATrait::keygen_out`] and
+    /// [`MLDSATrait::keygen_from_seed_out`] write into. It is not a generated key, and until one
+    /// of them fills it, it makes no verifier and verifies nothing
+    /// ([`KeyMaterialError::ActingOnZeroizedKey`]): with 𝐭1 zero a signature can be made up by
+    /// anyone. Its encoding is not refused, the encoding methods having no error to give.
+    ///
+    /// The test is on 𝜌, so a decoded key whose 𝜌 is all zero is refused in the same way; no
+    /// generated key has one.
+    pub fn zeroized() -> Self {
+        Self { rho: [0u8; 32], t1: P::VecK::new() }
+    }
+
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] unless the key holds a key. 𝜌 says so: it is 32
+    /// bytes of SHAKE256 output in a generated key, and all zero in the state
+    /// [`zeroized`](Self::zeroized) makes and the `_out` generators leave on an error.
+    pub(crate) fn check_filled(&self) -> Result<(), SignatureError> {
+        if self.rho == [0u8; 32] {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
+        Ok(())
+    }
+
+    /// Back to the all-zero key.
+    pub(crate) fn clear(&mut self) {
+        self.rho = [0u8; 32];
+        self.t1 = P::VecK::new();
+    }
 }
 
 // Written out rather than derived: `#[derive(Clone)]` would demand `P: Clone`, and `P` is a
@@ -202,6 +232,7 @@ impl<P: MLDSAParams> MLDSAPublicKeyTrait<P> for MLDSAPublicKey<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
+        self.check_filled()?;
         // 𝐀̂ = ExpandA(𝜌), FIPS 204 Algorithm 32, into a local of this frame: a by-value helper
         // would leave a second copy of the matrix live for the verification (the expanded key
         // is the way to pay for it once).
@@ -332,12 +363,14 @@ impl<P: MLDSAParams> Display for MLDSAPublicKeyExpanded<'_, P> {
 
 impl<'k, P: MLDSAParams> From<&'k MLDSAPublicKey<P>> for MLDSAPublicKeyExpanded<'k, P> {
     /// Expands the public matrix A once, for repeated verifications under the same public key.
+    // Not inlined, and neither is `verify_internal`: inlined together into one caller, this
+    // function's workspace and the verification's were both kept, a matrix's worth of stack
+    // more (the crate's memory table).
+    #[inline(never)]
     fn from(pk: &'k MLDSAPublicKey<P>) -> Self {
-        // 𝐀̂ is expanded into a local and moved into the struct literal returned, so the matrix
-        // exists twice while this runs, here and in the caller's slot: the move is not elided.
-        let mut A_hat = P::MatrixA::new();
-        expandA::<P>(&pk.rho, &mut A_hat);
-        Self { pk, A_hat }
+        let mut expanded = Self { pk, A_hat: P::MatrixA::new() };
+        expandA::<P>(&pk.rho, &mut expanded.A_hat);
+        expanded
     }
 }
 
@@ -355,6 +388,7 @@ impl<P: MLDSAParams> MLDSAPublicKeyTrait<P> for MLDSAPublicKeyExpanded<'_, P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
+        self.pk.check_filled()?;
         verify_internal::<P, MLDSAPublicKey<P>, SIG_LEN>(self.pk, &self.A_hat, mu, sig)
     }
 }
@@ -395,6 +429,116 @@ impl<P: MLDSAParams> Clone for MLDSAPrivateKey<P> {
 }
 
 impl<P: MLDSAParams> MLDSAPrivateKey<P> {
+    /// The all-zero key: the key [`MLDSATrait::keygen_out`] and
+    /// [`MLDSATrait::keygen_from_seed_out`] write into, so that the secret vectors are computed
+    /// where they will live and never moved. It is not a generated key, and until one of them
+    /// fills it, it makes no signer and signs nothing
+    /// ([`KeyMaterialError::ActingOnZeroizedKey`]).
+    ///
+    /// # 🚨 Security Considerations 🚨
+    ///
+    /// The encoding of this key is not refused, the encoding methods having no error to give:
+    /// it is the all-zero private key, which anyone can compute. Do not store or send the
+    /// encoding of a key whose generation failed.
+    ///
+    /// The test is on `tr`, so a decoded key whose `tr` is all zero is refused in the same way;
+    /// `tr` is a hash of the public key, and no generated key has one.
+    pub fn zeroized() -> Self {
+        Self {
+            rho: [0u8; 32],
+            K: Secret::new(),
+            tr: [0u8; 64],
+            s1_hat: Secret::new(),
+            s2_hat: Secret::new(),
+            t0_hat: P::VecK::new(),
+            seed: None,
+        }
+    }
+
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] unless the key holds a key. `tr` says so: it is
+    /// the 64-byte SHAKE256 hash of the public key, and all zero in the state
+    /// [`zeroized`](Self::zeroized) makes and the `_out` generators leave on an error.
+    pub(crate) fn check_filled(&self) -> Result<(), SignatureError> {
+        check_filled_tr(&self.tr)
+    }
+
+    /// Back to the all-zero key, the secret fields wiped.
+    pub(crate) fn clear(&mut self) {
+        self.rho = [0u8; 32];
+        self.K.zeroize();
+        self.tr = [0u8; 64];
+        self.s1_hat.zeroize();
+        self.s2_hat.zeroize();
+        self.t0_hat = P::VecK::new();
+        self.seed = None;
+    }
+
+    /// FIPS 204 Algorithm 6 (ML-DSA.KeyGen_internal) from `seed`, which the caller has checked:
+    /// every field of this key and of `pk` is computed where it lives.
+    pub(crate) fn fill(&mut self, seed: &KeyMaterial<32>, pk: &mut MLDSAPublicKey<P>) {
+        {
+            // Alg 6 line 1: (rho, rho_prime, K) <- H(𝜉||IntegerToBytes(𝑘, 1)||IntegerToBytes(ℓ, 1), 128)
+            //   ▷ expand seed
+            let mut h = H::default();
+            h.do_update(seed.ref_to_bytes());
+            h.do_update(&(P::k as u8).to_le_bytes());
+            h.do_update(&(P::l as u8).to_le_bytes());
+            let mut h = h.into_squeezer();
+            // 𝜌 is what marks the public key as filled; nothing below this line can fail, and a
+            // step that could would have to clear `pk` before returning.
+            let bytes_written = h.do_output_out(&mut pk.rho);
+            debug_assert_eq!(bytes_written, 32);
+            let mut rho_prime: Secret<[u8; 64]> = Secret::new();
+            let bytes_written = h.do_output_out(&mut *rho_prime);
+            debug_assert_eq!(bytes_written, 64);
+            let bytes_written = h.do_output_out(&mut *self.K);
+            debug_assert_eq!(bytes_written, 32);
+
+            // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
+            expandS::<P>(&rho_prime, &mut self.s1_hat, &mut self.s2_hat);
+        }
+        self.s1_hat.ntt();
+
+        {
+            // 3: 𝐀_hat ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
+            let mut A_hat = P::MatrixA::new();
+            expandA::<P>(&pk.rho, &mut A_hat);
+
+            // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
+            //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
+            // 𝐭 is built in the key's 𝐭0, which step 6 leaves holding 𝐭0.
+            A_hat.matrix_vector_ntt_out(&self.s1_hat, &mut self.t0_hat);
+        }
+        // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+        self.t0_hat.reduce32();
+        self.t0_hat.inv_ntt();
+        self.t0_hat.add_vector_ntt(&self.s2_hat);
+        self.t0_hat.conditional_add_q();
+
+        // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
+        //   ▷ compress 𝐭
+        //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
+        // 8: 𝑝𝑘 ← pkEncode(𝜌, 𝐭1)
+        power_2_round_vec(&mut self.t0_hat, &mut pk.t1);
+
+        // 9: 𝑡𝑟 ← H(𝑝𝑘, 64)
+        self.rho = pk.rho;
+        self.tr = pk.compute_tr();
+
+        // 10: 𝑠𝑘 ← skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
+        //   ▷ 𝐾 and 𝑡𝑟 are for use in signing
+        // Deviation from the FIPS:
+        //   Hold on to s1, s2, t0 in ntt form
+        //   Note: the result here is not necessarily in reduced form, but since .reduce() is expensive,
+        //   it is saved for the encode() operation since that is the only place where it matters
+        //   to have them in normalized form.
+        self.s2_hat.ntt();
+        self.t0_hat.ntt();
+        self.seed = Some(seed.clone());
+
+        // 11: return (𝑝𝑘, 𝑠𝑘)
+    }
+
     /// Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
     /// Encodes a secret key for ML-DSA into a byte string.
     /// Input: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 , 𝐬1 ∈ 𝑅ℓ with coefficients in [−𝜂, 𝜂], 𝐬2 ∈ 𝑅𝑘 with
@@ -670,17 +814,6 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
 }
 
 pub(crate) trait MLDSAPrivateKeyInternalTrait<P: MLDSAParams>: Sized {
-    /// Not exposing a constructor publicly because you should have to get an instance either by
-    /// running a keygen, or by decoding an existing key.
-    fn new(
-        rho: [u8; 32],
-        K: Secret<[u8; 32]>,
-        tr: [u8; 64],
-        s1_hat: Secret<P::VecL>,
-        s2_hat: Secret<P::VecK>,
-        t0_hat: P::VecK,
-        seed: Option<KeyMaterial<32>>,
-    ) -> Self;
     /// Get a ref to K
     fn K(&self) -> &Secret<[u8; 32]>;
     /// Get a ref to s1
@@ -730,25 +863,14 @@ impl<P: MLDSAParams> MLDSAPrivateKeyTrait<P> for MLDSAPrivateKey<P> {
         // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
         //   ▷ compress 𝐭
         //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
-        let (t1, _) = power_2_round_vec(&t);
+        let mut t1 = P::VecK::new();
+        power_2_round_vec(&mut t, &mut t1);
 
         <MLDSAPublicKey<P> as MLDSAPublicKeyInternalTrait<P>>::new(self.rho, t1)
     }
 }
 
 impl<P: MLDSAParams> MLDSAPrivateKeyInternalTrait<P> for MLDSAPrivateKey<P> {
-    fn new(
-        rho: [u8; 32],
-        K: Secret<[u8; 32]>,
-        tr: [u8; 64],
-        s1_hat: Secret<P::VecL>,
-        s2_hat: Secret<P::VecK>,
-        t0_hat: P::VecK,
-        seed: Option<KeyMaterial<32>>,
-    ) -> Self {
-        Self { rho, K, tr, s1_hat, s2_hat, t0_hat, seed }
-    }
-
     fn K(&self) -> &Secret<[u8; 32]> {
         &self.K
     }
@@ -884,12 +1006,12 @@ impl<P: MLDSAParams> Display for MLDSAPrivateKeyExpanded<'_, P> {
 
 impl<'k, P: MLDSAParams> From<&'k MLDSAPrivateKey<P>> for MLDSAPrivateKeyExpanded<'k, P> {
     /// Expands the public matrix A once, for repeated signatures under the same private key.
+    // Not inlined, and neither is `sign_internal`; see the public key's `from`.
+    #[inline(never)]
     fn from(sk: &'k MLDSAPrivateKey<P>) -> Self {
-        // 𝐀̂ is expanded into a local and moved into the struct literal returned, so the matrix
-        // exists twice while this runs, here and in the caller's slot: the move is not elided.
-        let mut A_hat = P::MatrixA::new();
-        expandA::<P>(&sk.rho, &mut A_hat);
-        Self { sk, A_hat }
+        let mut expanded = Self { sk, A_hat: P::MatrixA::new() };
+        expandA::<P>(&sk.rho, &mut expanded.A_hat);
+        expanded
     }
 }
 
@@ -917,6 +1039,8 @@ impl<P: MLDSAParams> SignMuWithRnd<P> for MLDSAPrivateKey<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
+        output.fill(0);
+        self.check_filled()?;
         // 𝐀̂ = ExpandA(𝜌) into a local of this frame, as `verify_mu` does.
         let mut A_hat = P::MatrixA::new();
         expandA::<P>(&self.rho, &mut A_hat);
@@ -935,6 +1059,8 @@ impl<P: MLDSAParams> SignMuWithRnd<P> for MLDSAPrivateKeyExpanded<'_, P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
+        output.fill(0);
+        self.sk.check_filled()?;
         sign_internal::<P, MLDSAPrivateKey<P>, SIG_LEN>(self.sk, &self.A_hat, mu, rnd, output)
     }
 }

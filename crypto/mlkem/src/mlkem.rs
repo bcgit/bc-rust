@@ -123,7 +123,8 @@
 //! ```
 
 use crate::aux_functions::{
-    expandA, pack_ciphertext, sample_vector_CBD, unpack_ciphertext_u, unpack_ciphertext_v,
+    expandA, pack_ciphertext, sample_vector_CBD, sample_vector_CBD_out, unpack_ciphertext_u,
+    unpack_ciphertext_v,
 };
 use crate::matrix::{MatrixTrait, VectorTrait};
 use crate::mlkem_keys::{
@@ -229,6 +230,32 @@ impl<P: MLKEMParams> MLKEM<P> {
     pub(crate) fn keygen_internal(
         seed: &KeyMaterial<64>,
     ) -> Result<(MLKEMPublicKey<P>, MLKEMPrivateKey<P>), KEMError> {
+        Self::check_seed(seed)?;
+        let (d, z_bytes) = seed.ref_to_bytes().split_at(32);
+        let d: &[u8; 32] = d.try_into().expect("the seed is 64 bytes");
+
+        // 1: (ekPKE, dkPKE) ← K-PKE.KeyGen(𝑑)
+        let mut pk = MLKEMPublicKey::<P>::zeroized();
+        let mut s_hat = Secret::<P::VecK>::new();
+        Self::pke_keygen_out(d, &mut pk, &mut s_hat);
+
+        // 2: ek ← ekPKE ▷ KEM encaps key is just the PKE encryption key
+        // 3: dk ← (dkPKE‖ek‖H(ek)‖𝑧) ▷ KEM decaps key includes PKE decryption key
+        // 4: return (ek, dk)
+        let pk_hash = pk.compute_hash();
+
+        let mut z = Secret::<[u8; 32]>::new();
+        z.copy_from_slice(z_bytes);
+
+        let mut seed_d = Secret::<[u8; 32]>::new();
+        seed_d.copy_from_slice(d);
+        // The keys are assembled in the value returned, which the compiler builds in the
+        // caller's slot; filling a pair made beforehand costs the caller a second private key.
+        Ok((pk.clone(), MLKEMPrivateKey { s_hat, ek: pk, pk_hash, z, seed_d: Some(seed_d) }))
+    }
+
+    /// The seed checks of [`keygen_internal`](Self::keygen_internal).
+    fn check_seed(seed: &KeyMaterial<64>) -> Result<(), KEMError> {
         if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
             || seed.key_len() != 64
         {
@@ -242,23 +269,33 @@ impl<P: MLKEMParams> MLKEM<P> {
                 "Seed SecurityStrength must match algorithm security strength",
             ));
         }
+        Ok(())
+    }
+
+    /// [`keygen_internal`](Self::keygen_internal) into a key the caller holds: every field is
+    /// computed where it will live. The key is cleared first and left so on an error.
+    pub(crate) fn keygen_internal_out(
+        seed: &KeyMaterial<64>,
+        sk: &mut MLKEMPrivateKey<P>,
+    ) -> Result<(), KEMError> {
+        sk.clear();
+        Self::check_seed(seed)?;
+
+        // 𝑑 and 𝑧 are read where the seed holds them.
+        let (d, z) = seed.ref_to_bytes().split_at(32);
+        let d: &[u8; 32] = d.try_into().expect("the seed is 64 bytes");
 
         // 1: (ekPKE, dkPKE) ← K-PKE.KeyGen(𝑑)
-        let mut d = Secret::<[u8; 32]>::new();
-        d.copy_from_slice(&seed.ref_to_bytes()[..32]);
-        let (pk, s_hat) = Self::pke_keygen(&d);
-
         // 2: ek ← ekPKE ▷ KEM encaps key is just the PKE encryption key
+        Self::pke_keygen_out(d, &mut sk.ek, &mut sk.s_hat);
+
         // 3: dk ← (dkPKE‖ek‖H(ek)‖𝑧) ▷ KEM decaps key includes PKE decryption key
-        // 4: return (ek, dk)
-        let pk_hash = pk.compute_hash();
+        sk.pk_hash = sk.ek.compute_hash();
+        sk.z.copy_from_slice(z);
+        sk.seed_d.insert(Secret::new()).copy_from_slice(d);
 
-        let mut z = Secret::<[u8; 32]>::new();
-        z.copy_from_slice(&seed.ref_to_bytes()[32..]);
-
-        let mut seed_d = Secret::<[u8; 32]>::new();
-        seed_d.copy_from_slice(&seed.ref_to_bytes()[..32]);
-        Ok((pk.clone(), MLKEMPrivateKey::new(s_hat, pk, pk_hash, z, Some(seed_d))))
+        // 4: return (ek, dk) ▷ ek is the copy dk holds
+        Ok(())
     }
 
     /// Algorithm 13 K-PKE.KeyGen(𝑑)
@@ -266,14 +303,17 @@ impl<P: MLKEMParams> MLKEM<P> {
     /// Input: randomness 𝑑 ∈ 𝔹32 .
     /// Output: encryption key ek_PKE ∈ 𝔹384𝑘+32.
     /// Output: decryption key dk_PKE ∈ 𝔹384𝑘.
-    fn pke_keygen(d: &[u8; 32]) -> (MLKEMPublicKey<P>, Secret<P::VecK>) {
+    ///
+    /// Into `ek` and `s_hat`, which the caller holds: ekPKE's 𝐭̂ and 𝜌 and dkPKE's 𝐬̂ are
+    /// computed where they will live.
+    fn pke_keygen_out(d: &[u8; 32], ek: &mut MLKEMPublicKey<P>, s_hat: &mut P::VecK) {
         // 1: (𝜌, 𝜎) ← G(𝑑‖𝑘)
         //  ▷ expand 32+1 bytes to two pseudorandom 32-byte seeds1
         // rho: public seed
         // sigma: noise seed
         // sigma is the noise seed: secret, and scrubbed when it drops, with the G output it
         // came from. rho is public (it is part of ek).
-        let (rho, sigma): ([u8; 32], Secret<[u8; 32]>) = {
+        let sigma: Secret<[u8; 32]> = {
             let mut g = G::new();
             g.do_update(d);
             g.do_update(&[P::k as u8]);
@@ -283,7 +323,8 @@ impl<P: MLKEMParams> MLKEM<P> {
 
             let mut sigma = Secret::<[u8; 32]>::new();
             sigma.copy_from_slice(&buf[32..64]);
-            (buf[..32].try_into().unwrap(), sigma)
+            ek.rho.copy_from_slice(&buf[..32]);
+            sigma
         };
 
         // 2: 𝑁 ← 0
@@ -297,25 +338,22 @@ impl<P: MLKEMParams> MLKEM<P> {
         //   ▷ 𝐬[𝑖] ∈ ℤ256 sampled from CBD
         // 10: 𝑁 ← 𝑁 + 1
         // Note: here n = 0
-        let s_hat: Secret<P::VecK> = {
-            let mut s: Secret<P::VecK> = Secret::new();
-            *s = sample_vector_CBD::<P>(&sigma, 0, P::eta1);
+        sample_vector_CBD_out::<P>(&sigma, 0, P::eta1, s_hat);
 
-            // 16: 𝐬_hat ← NTT(𝐬)̂
-            s.ntt();
-            s.reduce();
-            s
-        };
+        // 16: 𝐬_hat ← NTT(𝐬)̂
+        s_hat.ntt();
+        s_hat.reduce();
 
         // first half of
         // 18: 𝐭_hat ← 𝐀_hat ∘ 𝐬_hat + 𝐞_hat
-        let mut t_hat = {
+        {
             // 3: for (𝑖 ← 0; 𝑖 < 𝑘; 𝑖++)
             //  ▷ generate matrix A_hat ∈ (ℤ256)^k x k
-            let A_hat = expandA::<P>(&rho);
+            let mut A_hat = P::MatrixA::new();
+            expandA::<P>(&ek.rho, &mut A_hat);
 
-            A_hat.matrix_vector_ntt::<false>(&s_hat)
-        };
+            A_hat.matrix_vector_ntt_out::<false>(s_hat, &mut ek.t_hat);
+        }
 
         // second half of
         // 18: 𝐭_hat ← 𝐀_hat ∘ 𝐬_hat + 𝐞_hat
@@ -330,14 +368,13 @@ impl<P: MLKEMParams> MLKEM<P> {
 
             e.ntt(); // technically now e_hat
             e.reduce();
-            t_hat.add_vector_ntt(&e);
+            ek.t_hat.add_vector_ntt(&e);
         }
 
         // 19: ekPKE ← ByteEncode12(𝐭)‖𝜌 ▷ run ByteEncode12 𝑘 times, then append 𝐀-seed
         // 20: dkPKE ← ByteEncode12(𝐬)̂ ▷ run ByteEncode12 𝑘 times
         // Note: The encoding is skipped at this stage and left expanded for future efficiency when it's used.
         // 21: return (ekPKE, dkPKE)
-        (MLKEMPublicKey::new(t_hat, rho), s_hat)
     }
 
     /// Algorithm 14 K-PKE.Encrypt(ekPKE, 𝑚, 𝑟)
@@ -456,7 +493,11 @@ impl<P: MLKEMParams> MLKEM<P> {
         // the A_hat the key holds, or computes it fresh.
         let ct = match ek.A_hat_cached() {
             Some(A_hat) => Self::pke_encrypt::<EK, CT_LEN>(ek, A_hat, m, &r),
-            None => Self::pke_encrypt::<EK, CT_LEN>(ek, &ek.A_hat(), m, &r),
+            None => {
+                let mut A_hat = P::MatrixA::new();
+                expandA::<P>(ek.rho(), &mut A_hat);
+                Self::pke_encrypt::<EK, CT_LEN>(ek, &A_hat, m, &r)
+            }
         };
 
         (K, ct)
@@ -572,7 +613,11 @@ impl<P: MLKEMParams> MLKEM<P> {
         // the A_hat the key holds, or compute it fresh.
         let c_prime = match dk.A_hat_cached() {
             Some(A_hat) => Self::pke_encrypt::<_, CT_LEN>(dk.pk(), A_hat, &m_prime, &r_prime),
-            None => Self::pke_encrypt::<_, CT_LEN>(dk.pk(), &dk.pk().A_hat(), &m_prime, &r_prime),
+            None => {
+                let mut A_hat = P::MatrixA::new();
+                expandA::<P>(&dk.pk().rho, &mut A_hat);
+                Self::pke_encrypt::<_, CT_LEN>(dk.pk(), &A_hat, &m_prime, &r_prime)
+            }
         };
 
         // 9: if 𝑐 ≠ 𝑐′ then
@@ -630,6 +675,7 @@ impl<P: MLKEMParams> MLKEM<P> {
         dk: &DK,
         ct: &[u8; CT_LEN],
     ) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError> {
+        dk.check_filled()?;
         // 1: 𝐾′ ← ML-KEM.Decaps_internal(dk, 𝑐)
         let K = Self::decaps_internal(dk, ct);
 
@@ -664,10 +710,32 @@ pub trait MLKEMTrait<P: MLKEMParams>: Sized {
         rng.fill_keymaterial_out(&mut seed)?;
         Self::keygen_from_seed(&seed)
     }
+    /// [`keygen`](Self::keygen) into a private key the caller holds: each field is computed in
+    /// `sk` itself, so no copy of it is staged on the way and none is left behind by a move,
+    /// which wipes nothing. Start from [`MLKEMPrivateKey::zeroized`]; the public key is
+    /// [`sk.pk()`](MLKEMPrivateKeyTrait::pk). `sk` is cleared first and left so on every error.
+    ///
+    /// After an error `sk.pk()` is the all-zero public key, which is not refused by
+    /// encapsulation: do not publish it (see [`MLKEMPrivateKey::zeroized`]).
+    fn keygen_out(rng: &mut dyn RNG, sk: &mut MLKEMPrivateKey<P>) -> Result<(), KEMError> {
+        sk.clear();
+        if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
+            Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+        }
+        let mut seed = KeyMaterial::<64>::new();
+        rng.fill_keymaterial_out(&mut seed)?;
+        Self::keygen_from_seed_out(&seed, sk)
+    }
     /// Imports a secret key from a seed.
     fn keygen_from_seed(
         seed: &KeyMaterial<64>,
     ) -> Result<(MLKEMPublicKey<P>, MLKEMPrivateKey<P>), KEMError>;
+    /// [`keygen_from_seed`](Self::keygen_from_seed) into a private key the caller holds; see
+    /// [`keygen_out`](Self::keygen_out).
+    fn keygen_from_seed_out(
+        seed: &KeyMaterial<64>,
+        sk: &mut MLKEMPrivateKey<P>,
+    ) -> Result<(), KEMError>;
     /// Imports a secret key from both a seed and an encoded_sk.
     ///
     /// This is a convenience function to expand the key from seed and compare it against
@@ -687,7 +755,8 @@ pub trait MLKEMTrait<P: MLKEMParams>: Sized {
     /// the two pk's are encoded and compared for byte equality), or if `sk` contains a seed
     /// (in which case a keygen_from_seed is run and then the pk's compared).
     ///
-    /// Returns either `()` or [`KEMError::ConsistencyCheckFailed`].
+    /// Returns either `()` or [`KEMError::ConsistencyCheckFailed`]; a private key that was never
+    /// filled ([`MLKEMPrivateKey::zeroized`]) is refused.
     fn keypair_consistency_check(
         pk: &MLKEMPublicKey<P>,
         sk: &MLKEMPrivateKey<P>,
@@ -700,6 +769,13 @@ impl<P: MLKEMParams> MLKEMTrait<P> for MLKEM<P> {
         seed: &KeyMaterial<64>,
     ) -> Result<(MLKEMPublicKey<P>, MLKEMPrivateKey<P>), KEMError> {
         Self::keygen_internal(seed)
+    }
+
+    fn keygen_from_seed_out(
+        seed: &KeyMaterial<64>,
+        sk: &mut MLKEMPrivateKey<P>,
+    ) -> Result<(), KEMError> {
+        Self::keygen_internal_out(seed, sk)
     }
 
     fn keygen_from_seed_and_encoded<const SK_LEN: usize>(
@@ -725,6 +801,9 @@ impl<P: MLKEMParams> MLKEMTrait<P> for MLKEM<P> {
         pk: &MLKEMPublicKey<P>,
         sk: &MLKEMPrivateKey<P>,
     ) -> Result<(), KEMError> {
+        // A private key that was never filled agrees with the all-zero public key, and the two
+        // are not a key pair.
+        sk.check_filled()?;
         let derived_pk = sk.pk();
         if derived_pk.compute_hash() == pk.compute_hash() {
             Ok(())
