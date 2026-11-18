@@ -495,20 +495,12 @@ impl<P: MLDSAParams> MLDSASeedPrivateKey<P> {
     ) -> Polynomial {
         debug_assert!(idx < P::k);
 
-        // [Optimization Note]:
-        // This is one of the places that a row of s1 can be re-computed instead of expanded from the compressed form.
-        // let mut s1 = self.compute_s1_row(0);
-        let mut s1_hat_i = s_unpack::<P, _>(s1_packed, 0);
-        s1_hat_i.ntt();
-
         let mut t_i = {
-            let mut t_hat_i = expandA_elem(&self.rho, idx, 0);
-            t_hat_i.multiply_ntt(&s1_hat_i);
-
-            for col in 1..P::l {
-                // [Optimization Note]:
-                // This is one of the places that a row of s1 can be re-computed instead of expanded from the compressed form.
-                // s1 = self.compute_s1_row(col);
+            // One loop body for every column, the first added to a zero accumulator; see
+            // `compute_wp_approx_row`.
+            let mut t_hat_i = Polynomial::new();
+            for col in 0..P::l {
+                // s1 is unpacked from its compressed form a row at a time.
                 let mut s1_hat = s_unpack::<P, _>(s1_packed, col);
                 s1_hat.ntt();
                 let mut A_elem = expandA_elem(&self.rho, idx, col);
@@ -522,9 +514,6 @@ impl<P: MLDSAParams> MLDSASeedPrivateKey<P> {
             t_hat_i
         };
 
-        // [Optimization Note]:
-        // This is one of the places that a row of s2 can be re-computed instead of unpacked from the compressed form.
-        // let s2 = self.compute_s2_row(idx);
         let s2 = s_unpack::<P, _>(s2_packed, idx);
         t_i.add_ntt(&s2);
         t_i.conditional_add_q();

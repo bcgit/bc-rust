@@ -89,6 +89,20 @@
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //!
+//! Peak stack usage of each operation, measured with `mem_usage_benches/bench_mldsa_mem_usage` under
+//! `valgrind --tool=massif --heap=no --stacks=yes` on 2026-11-18 (release build, one call):
+//!
+//! | Operation             | ML-DSA-44 | ML-DSA-65 | ML-DSA-87 |
+//! |-----------------------|-----------|-----------|-----------|
+//! | KeyGen                | 58,712    | 88,264    | 133,320   |
+//! | Sign                  | 74,904    | 110,824   | 163,448   |
+//! | Verify                | 57,944    | 94,064    | 140,072   |
+//! | Sign, expanded key    | 87,192    | 135,400   | 212,600   |
+//! | Verify, expanded key  | 70,248    | 118,248   | 189,240   |
+//!
+//! Values are in bytes and include the harness's own frames; the expanded-key rows include building the
+//! expanded key from the key it borrows.
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! This crate intends to expose only APIs that are secure to use.

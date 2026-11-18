@@ -240,3 +240,6 @@
   as X25519 in key agreement and as a KEM, implements it once, so `encode` and `from_bytes` are no longer ambiguous
   on it.
 
+* Hidden stack copies removed from the `mldsa` and `mldsa-lowmemory` crates; `mldsa-lowmemory`'s memory table is re-measured.
+* `SampleNTT` and `RejBoundedPoly` squeeze whole SHAKE blocks (504 and 272 bytes); the ML-KEM memory tables are re-measured.
+* `bouncycastle-utils`: `ct_eq_bytes_mask` is renamed `ct_eq_bytes_condition`.

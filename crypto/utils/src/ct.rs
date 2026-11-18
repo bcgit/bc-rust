@@ -655,17 +655,17 @@ fn acc_is_zero(acc: AccWord) -> Condition<u32> {
     Condition((not_zero as u32).wrapping_sub(1))
 }
 
-/// Constant-time equality of two byte slices, as a mask: [`Condition::TRUE`] iff `a == b`.
+/// Constant-time equality of two byte slices, as a [`Condition`]: [`Condition::TRUE`] iff `a == b`.
 ///
 /// The runtime depends on the *lengths* of the inputs, which are treated as public, but not on
 /// their contents or on the position of any difference. Slices of different lengths compare
 /// unequal immediately.
 ///
 /// Use this form where the result selects data, as in [`conditional_copy_bytes`], so that the
-/// comparison and the selection are joined by a mask rather than a `bool`. Rust does not
+/// comparison and the selection are joined by a [`Condition`] rather than a `bool`. Rust does not
 /// guarantee constant-time execution on every target and optimisation level; the "Optimisation
 /// barrier" section comment in this file says what is done about that.
-pub fn ct_eq_bytes_mask(a: &[u8], b: &[u8]) -> Condition<u32> {
+pub fn ct_eq_bytes_condition(a: &[u8], b: &[u8]) -> Condition<u32> {
     if a.len() != b.len() {
         return Condition::<u32>::FALSE;
     }
@@ -684,18 +684,18 @@ pub fn ct_eq_bytes_mask(a: &[u8], b: &[u8]) -> Condition<u32> {
     acc_is_zero(acc)
 }
 
-/// Constant-time equality of two byte slices: [`ct_eq_bytes_mask`] as a `bool`, for callers that
-/// go on to branch on the result at a public decision point.
+/// Constant-time equality of two byte slices: [`ct_eq_bytes_condition`] as a `bool`, for callers
+/// that go on to branch on the result at a public decision point.
 pub fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
-    ct_eq_bytes_mask(a, b).to_bool()
+    ct_eq_bytes_condition(a, b).to_bool()
 }
 
 /// Constant-time check that every byte of `a` is zero, as a `bool`, for callers that go on to
 /// branch on the result at a public decision point.
 ///
 /// The runtime depends on the length of `a`, which is treated as public, but not on its contents
-/// or on the position of the first non-zero byte. Same construction as [`ct_eq_bytes_mask`] with
-/// the XOR against the second operand omitted.
+/// or on the position of the first non-zero byte. Same construction as [`ct_eq_bytes_condition`]
+/// with the XOR against the second operand omitted.
 pub fn ct_eq_zero_bytes(a: &[u8]) -> bool {
     let (words, tail) = a.as_chunks::<ACC_BYTES>();
 
@@ -711,7 +711,7 @@ pub fn ct_eq_zero_bytes(a: &[u8]) -> bool {
 
 /// Copies `a` into `out` if `take_a` is TRUE, otherwise `b`, without branching on `take_a`.
 ///
-/// Take `take_a` from [`ct_eq_bytes_mask`] or a [`Condition`] constructor. Converting a secret
+/// Take `take_a` from [`ct_eq_bytes_condition`] or a [`Condition`] constructor. Converting a secret
 /// `bool` with [`Condition::from_bool`] puts a value the compiler may branch on between the
 /// comparison and the copy.
 pub fn conditional_copy_bytes<const LEN: usize>(
