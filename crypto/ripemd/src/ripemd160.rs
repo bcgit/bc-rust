@@ -1,31 +1,7 @@
 //! RIPEMD-160 and its 320-bit extension RIPEMD-320: two parallel lines of five 32-bit words and
 //! 80 steps per block, following the designers' pseudo-code (`rmd160.txt`, `rmd320.txt`).
 
-use crate::common::{
-    BLOCK_LEN, Core, K_LEFT, K_RIGHT_160, R_LEFT, R_RIGHT, S_LEFT, S_RIGHT, f, words,
-};
-use crate::sealed::Sealed;
-use bouncycastle_core::errors::{HashError, SuspendableError};
-use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, HashAlgParams, HashOneShot};
-use bouncycastle_utils::secret::ZeroizablePrimitive;
-use core::marker::PhantomData;
-
-/// The parameters distinguishing RIPEMD-160 from RIPEMD-320.
-///
-/// Sealed: it cannot be implemented outside this crate, so the only parameter sets that exist are
-/// the designers' two.
-pub trait RIPEMD160Family: HashAlgParams + Clone + Sealed {
-    /// `true` for RIPEMD-320: the right line starts from its own initial value, the two lines
-    /// exchange a word after every round, and each line is added into its own half of the
-    /// chaining variable (`rmd320.txt`). `false` for RIPEMD-160: both lines start from the same
-    /// five words and are combined at the end of every block (`rmd160.txt`).
-    const EXTENDED: bool;
-    /// The chaining variable: `[u32; 5]` for RIPEMD-160, `[u32; 10]` for RIPEMD-320.
-    type State: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>;
-    /// The initial value `h0, h1, ...` of the pseudo-code.
-    const H0: Self::State;
-}
+use crate::common::{BLOCK_LEN, K_LEFT, K_RIGHT_160, R_LEFT, R_RIGHT, S_LEFT, S_RIGHT, f, words};
 
 /// One application of the compression function (the body of the pseudo-code's `for i` loop) to
 /// the chaining variable `h` -- five words for RIPEMD-160, ten (left line, then right line) for
@@ -46,7 +22,9 @@ pub trait RIPEMD160Family: HashAlgParams + Clone + Sealed {
 ///
 /// The step is written once as a loop over the tables rather than unrolled; the tables are
 /// public constants indexed by the step counter, so no index or branch depends on the data.
-fn compress(h: &mut [u32], block: &[u8; BLOCK_LEN], extended: bool) {
+///
+/// `extended` is `true` for RIPEMD-320 and `false` for RIPEMD-160.
+pub(crate) fn compress(h: &mut [u32], block: &[u8; BLOCK_LEN], extended: bool) {
     let x = words(block);
 
     let (mut a, mut b, mut c, mut d, mut e) = (h[0], h[1], h[2], h[3], h[4]);
@@ -108,96 +86,6 @@ fn compress(h: &mut [u32], block: &[u8; BLOCK_LEN], extended: bool) {
         h[0] = t;
     }
 }
-
-/// RIPEMD-160 and RIPEMD-320, by parameter set: use it through the aliases
-/// [`RIPEMD160`](crate::RIPEMD160) and [`RIPEMD320`](crate::RIPEMD320).
-///
-/// See the [crate-level documentation](crate) for usage.
-#[derive(Clone)]
-pub struct RIPEMD160Internal<PARAMS: RIPEMD160Family> {
-    _params: PhantomData<PARAMS>,
-    core: Core<PARAMS::State>,
-}
-
-impl<PARAMS: RIPEMD160Family> RIPEMD160Internal<PARAMS> {
-    /// Creates a new instance, ready for use.
-    pub fn new() -> Self {
-        Self { _params: PhantomData, core: Core::new(PARAMS::H0) }
-    }
-
-    /// The `suspend` of the two concrete types, whose state lengths `N` differ.
-    pub(crate) fn suspend_state<const N: usize>(&self) -> [u8; N] {
-        self.core.suspend()
-    }
-
-    /// The `from_suspended` of the two concrete types.
-    pub(crate) fn resume_state<const N: usize>(
-        serialized_state: &[u8; N],
-    ) -> Result<Self, SuspendableError> {
-        Ok(Self { _params: PhantomData, core: Core::resume(serialized_state)? })
-    }
-}
-
-impl<PARAMS: RIPEMD160Family> Default for RIPEMD160Internal<PARAMS> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<PARAMS: RIPEMD160Family> Algorithm for RIPEMD160Internal<PARAMS> {
-    const ALG_NAME: &'static str = PARAMS::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = PARAMS::MAX_SECURITY_STRENGTH;
-}
-
-impl<PARAMS: RIPEMD160Family> Hash for RIPEMD160Internal<PARAMS> {
-    /// A 16-word block of 32-bit words: 512 bits.
-    fn block_bitlen(&self) -> usize {
-        BLOCK_LEN * 8
-    }
-
-    fn output_len(&self) -> usize {
-        PARAMS::OUTPUT_LEN
-    }
-
-    fn do_update(&mut self, data: &[u8]) {
-        self.core.update(data, |h, block| compress(h, block, PARAMS::EXTENDED));
-    }
-
-    fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
-        // A whole-byte message is the zero-partial-bits case of the general padding.
-        self.core.finish(0, 0, PARAMS::OUTPUT_LEN, output, |h, block| {
-            compress(h, block, PARAMS::EXTENDED)
-        })
-    }
-
-    /// Bit-oriented messages: the pseudo-code defers the padding to MD4, and RFC 1320 Sec 3.1
-    /// defines it for any bit length. The `num_partial_bits` most significant bits of
-    /// `partial_byte` (ASN.1 BIT STRING order, leading bit first) are appended to the message
-    /// before padding; the low bits are ignored.
-    fn finish_partial_bits_into(
-        &mut self,
-        _token: &FinishToken,
-        partial_byte: u8,
-        num_partial_bits: usize,
-        output: &mut [u8],
-    ) -> Result<usize, HashError> {
-        // Cleared before the check, so that a refused call leaves nothing stale in the buffer.
-        output.fill(0);
-        if num_partial_bits > 7 {
-            return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
-        }
-        Ok(self.core.finish(
-            partial_byte,
-            num_partial_bits,
-            PARAMS::OUTPUT_LEN,
-            output,
-            |h, block| compress(h, block, PARAMS::EXTENDED),
-        ))
-    }
-}
-
-// The one-shot form: `Default` is the function itself.
-impl<PARAMS: RIPEMD160Family> HashOneShot for RIPEMD160Internal<PARAMS> {}
 
 /// Length in bytes of the serialized state of RIPEMD-160.
 ///

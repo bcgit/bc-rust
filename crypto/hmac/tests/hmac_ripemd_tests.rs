@@ -5,6 +5,8 @@
 //! <https://homes.esat.kuleuven.be/~bosselae/ripemd160.html> ("HMAC-RIPEMD-160: test vectors"):
 //! the nine standard RIPEMD messages under two keys.
 
+mod common;
+
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -14,13 +16,12 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, AlgorithmOID, HashAlgParams, MACGenerator,
 };
 use bouncycastle_core_test_framework::DUMMY_SEED;
-use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
-use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_hex as hex;
 use bouncycastle_hmac::{HMACParams, HmacKey};
 use bouncycastle_ripemd::RIPEMD160;
 use bouncycastle_ripemd::hmac::*;
 use bouncycastle_rng::HashDRBG_SHA256;
+use common::{arr, test_hmac};
 
 fn key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::MACKey).expect("a MAC key")
@@ -34,75 +35,64 @@ struct Case {
 }
 
 /// RFC 2286 Sec 2 (HMAC-RIPEMD160); the keys of cases 1, 3 and 5 are 20 bytes.
-fn rfc2286_cases(digests: [&'static str; 7]) -> Vec<Case> {
-    let key_len_135 = 20;
+fn rfc2286_cases() -> Vec<Case> {
     vec![
-        Case { key: vec![0x0b; key_len_135], data: b"Hi There".to_vec(), digest: digests[0] },
+        Case {
+            key: vec![0x0b; 20],
+            data: b"Hi There".to_vec(),
+            digest: "24cb4bd67d20fc1a5d2ed7732dcc39377f0a5668",
+        },
         Case {
             key: b"Jefe".to_vec(),
             data: b"what do ya want for nothing?".to_vec(),
-            digest: digests[1],
+            digest: "dda6c0213a485a9e24f4742064a7f033b43c4069",
         },
-        Case { key: vec![0xaa; key_len_135], data: vec![0xdd; 50], digest: digests[2] },
+        Case {
+            key: vec![0xaa; 20],
+            data: vec![0xdd; 50],
+            digest: "b0b105360de759960ab4f35298e116e295d8e7c1",
+        },
         Case {
             key: hex::decode("0102030405060708090a0b0c0d0e0f10111213141516171819").unwrap(),
             data: vec![0xcd; 50],
-            digest: digests[3],
+            digest: "d5ca862f4d21d5e610e18b4cf1beb97a4365ecf4",
         },
         Case {
-            key: vec![0x0c; key_len_135],
+            key: vec![0x0c; 20],
             data: b"Test With Truncation".to_vec(),
-            digest: digests[4],
+            digest: "7619693978f91d90539ae786500ff3d8e0518e39",
         },
         Case {
             key: vec![0xaa; 80],
             data: b"Test Using Larger Than Block-Size Key - Hash Key First".to_vec(),
-            digest: digests[5],
+            digest: "6466ca07ac5eac29e1bd523e5ada7605b791fd8b",
         },
         Case {
             key: vec![0xaa; 80],
             data: b"Test Using Larger Than Block-Size Key and Larger Than One Block-Size Data"
                 .to_vec(),
-            digest: digests[6],
+            digest: "69ea60798d71616cce5fd0871e23754cd75d5a0a",
         },
     ]
-}
-
-/// A tag from hex, as the array the roles take.
-fn arr<const N: usize>(hex: &str) -> [u8; N] {
-    hex::decode(hex).unwrap().try_into().expect("the expected length")
 }
 
 /// Each case through the MAC framework's key suite (one-shots, workers, every bit flip refused)
 /// and the construction suite, and streamed in pieces. The key is built with the weak form, since
 /// RFC 2286's short keys carry no security strength.
-fn run_cases<const N: usize, H: HMACParams<MACKey = KeyMaterial<N>>>(cases: &[Case], name: &str) {
+#[test]
+fn rfc2286_hmac_ripemd160() {
+    let cases = rfc2286_cases();
     for (i, c) in cases.iter().enumerate() {
         let material = key::<80>(&c.key);
-        let hmac_key = HmacKey::<H>::from_key_material_allow_weak(&material).unwrap();
-        let expected = arr::<N>(c.digest);
-        TestFrameworkMAC::new().test_mac_key(&hmac_key, &c.data, &expected);
-        TestFrameworkFromAnyKeyMaterial::new().test::<N, HmacKey<H>>(&material);
+        let expected = arr::<20>(c.digest);
+        test_hmac::<20, RIPEMD160>(&material, &c.data, &expected);
+        let hmac_key = HmacKey::<RIPEMD160>::from_key_material_allow_weak(&material).unwrap();
         let mut m = hmac_key.create_generator();
         for chunk in c.data.chunks(5) {
             m.do_update(chunk);
         }
-        assert_eq!(m.do_final(), expected, "{name} test_case {} streamed", i + 1);
+        assert_eq!(m.do_final(), expected, "test_case {} streamed", i + 1);
     }
-}
-
-#[test]
-fn rfc2286_hmac_ripemd160() {
-    let cases = rfc2286_cases([
-        "24cb4bd67d20fc1a5d2ed7732dcc39377f0a5668",
-        "dda6c0213a485a9e24f4742064a7f033b43c4069",
-        "b0b105360de759960ab4f35298e116e295d8e7c1",
-        "d5ca862f4d21d5e610e18b4cf1beb97a4365ecf4",
-        "7619693978f91d90539ae786500ff3d8e0518e39",
-        "6466ca07ac5eac29e1bd523e5ada7605b791fd8b",
-        "69ea60798d71616cce5fd0871e23754cd75d5a0a",
-    ]);
-    run_cases::<20, RIPEMD160>(&cases, "HMAC-RIPEMD160");
     // test_case 5's digest-96: the first 12 bytes of the tag.
     let k = HmacKey::<RIPEMD160>::from_key_material(&key::<80>(&cases[4].key)).unwrap();
     assert_eq!(k.mac(&cases[4].data)[..12], arr::<12>("7619693978f91d90539ae786"));
@@ -120,28 +110,25 @@ const MESSAGES: [&[u8]; 8] = [
     b"12345678901234567890123456789012345678901234567890123456789012345678901234567890",
 ];
 
-fn check_designers_table<const N: usize, H: HMACParams<MACKey = KeyMaterial<N>>>(
-    key_hex: &str,
-    digests: [&str; 8],
-    million_a: &str,
-) {
-    let k = HmacKey::<H>::from_key_material(&key::<32>(&hex::decode(key_hex).unwrap())).unwrap();
+fn check_designers_table(key_hex: &str, digests: [&str; 8], million_a: &str) {
+    let k = HmacKey::<RIPEMD160>::from_key_material(&key::<32>(&hex::decode(key_hex).unwrap()))
+        .unwrap();
     for (msg, digest) in MESSAGES.iter().zip(digests.iter()) {
-        assert_eq!(k.mac(msg), arr::<N>(digest), "key {key_hex}");
-        assert_eq!(k.verify(msg, &arr::<N>(digest)), Ok(()), "key {key_hex}");
+        assert_eq!(k.mac(msg), arr::<20>(digest), "key {key_hex}");
+        assert_eq!(k.verify(msg, &arr::<20>(digest)), Ok(()), "key {key_hex}");
     }
     let mut m = k.create_generator();
     for _ in 0..1000 {
         m.do_update(&[b'a'; 1000]);
     }
-    assert_eq!(m.do_final(), arr::<N>(million_a), "million a, key {key_hex}");
+    assert_eq!(m.do_final(), arr::<20>(million_a), "million a, key {key_hex}");
 }
 
 /// "HMAC-RIPEMD-160: test vectors", keys `00112233445566778899aabbccddeeff01234567` and
 /// `0123456789abcdeffedcba987654321000112233`.
 #[test]
 fn designers_hmac_ripemd160() {
-    check_designers_table::<20, RIPEMD160>(
+    check_designers_table(
         "00112233445566778899aabbccddeeff01234567",
         [
             "cf387677bfda8483e63b57e06c3b5ecd8b7fc055",
@@ -155,7 +142,7 @@ fn designers_hmac_ripemd160() {
         ],
         "c2aa88c6405658dc225e485488371fb2433fa735",
     );
-    check_designers_table::<20, RIPEMD160>(
+    check_designers_table(
         "0123456789abcdeffedcba987654321000112233",
         [
             "fe69a66c7423eea9c8fa2eff8d9dafb4f17a62f5",
