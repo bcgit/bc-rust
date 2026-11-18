@@ -1,6 +1,7 @@
 //! The KDF Using KMAC, SP 800-108r1 Section 4.4.
 
-use crate::label_output;
+use crate::prf::sealed;
+use crate::{k_in_into, k_in_len, label_output};
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kdf_params::KdfDescription;
@@ -21,35 +22,21 @@ pub const KDF_KMAC128_NAME: &str = "KDF-KMAC128";
 /// The name of the KDF Using KMAC256.
 pub const KDF_KMAC256_NAME: &str = "KDF-KMAC256";
 
-mod sealed {
-    pub trait Sealed {}
-}
-
 /// The two KMAC functions of SP 800-185 as the KDF uses them: "KMAC# indicates the use of
 /// either KMAC128 or KMAC256" (SP 800-108r1 Section 4.4). Sealed.
 pub trait KmacKdfParams: SHAKEParams + sealed::Sealed {
     /// The KDF's name.
     const KDF_ALG_NAME: &'static str;
-    /// Section 6.2: "KMAC128 and KMAC256 provide security strengths of no more than 128 and 256
-    /// bits, respectively".
-    const KDF_MAX_SECURITY_STRENGTH: SecurityStrength;
-    /// The bytes of full-entropy keying material a key-derivation key must carry for the output
-    /// to be typed `CryptographicRandom`: the strength, in bytes.
-    const SEED_LEN: usize;
 }
 
 impl sealed::Sealed for SHAKE128Params {}
 impl KmacKdfParams for SHAKE128Params {
     const KDF_ALG_NAME: &'static str = KDF_KMAC128_NAME;
-    const KDF_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-    const SEED_LEN: usize = 16;
 }
 
 impl sealed::Sealed for SHAKE256Params {}
 impl KmacKdfParams for SHAKE256Params {
     const KDF_ALG_NAME: &'static str = KDF_KMAC256_NAME;
-    const KDF_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
-    const SEED_LEN: usize = 32;
 }
 
 /// The KDF Using KMAC (SP 800-108r1 Section 4.4): `K_OUT = KMAC#(K_IN, Context, L, Label)`, one
@@ -87,9 +74,11 @@ impl<PARAMS: KmacKdfParams> Default for KDF_KMAC<'_, PARAMS> {
     }
 }
 
+/// Section 6.2: "KMAC128 and KMAC256 provide security strengths of no more than 128 and 256
+/// bits, respectively", which are the strengths of SHAKE128 and SHAKE256.
 impl<PARAMS: KmacKdfParams> Algorithm for KDF_KMAC<'_, PARAMS> {
     const ALG_NAME: &'static str = PARAMS::KDF_ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = PARAMS::KDF_MAX_SECURITY_STRENGTH;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = PARAMS::MAX_SECURITY_STRENGTH;
 }
 
 /// The one parameter is a readable field ([`KDF_KMAC::label`]), so the KDF describes itself:
@@ -137,8 +126,7 @@ impl<'l, PARAMS: KmacKdfParams> KDF_KMAC<'l, PARAMS> {
         if len > dkm.capacity() {
             return Err(KDFError::InvalidLength("the output buffer cannot hold L bits"));
         }
-        let total = keys.iter().fold(0usize, |n, k| n.saturating_add(k.key_len()));
-        if total > MAX_KMAC_KDK_LEN {
+        if k_in_len(keys) > MAX_KMAC_KDK_LEN {
             return Err(KDFError::InvalidLength(
                 "the key-derivation key is longer than this KDF takes",
             ));
@@ -148,12 +136,7 @@ impl<'l, PARAMS: KmacKdfParams> KDF_KMAC<'l, PARAMS> {
         // key of any strength derives, and what the output may claim is settled from the keys'
         // own types.
         let mut k_in = Secret::<[u8; MAX_KMAC_KDK_LEN]>::new();
-        let mut at = 0;
-        for key in keys {
-            let bytes = key.ref_to_bytes();
-            k_in[at..at + bytes.len()].copy_from_slice(bytes);
-            at += bytes.len();
-        }
+        let at = k_in_into(keys, &mut k_in[..]);
         let mac_key =
             KeyMaterial::<MAX_KMAC_KDK_LEN>::from_bytes_as_type(&k_in[..at], KeyType::MACKey)?;
 
@@ -168,9 +151,11 @@ impl<'l, PARAMS: KmacKdfParams> KDF_KMAC<'l, PARAMS> {
             kmac.into_squeezer().do_output_final_out(&mut out[..len]);
             Ok(())
         });
-        let labelled = filled.and_then(|()| {
-            label_output(keys, len, PARAMS::SEED_LEN, PARAMS::KDF_MAX_SECURITY_STRENGTH, dkm)
-        });
+        // The key-derivation key seeds the output when it carries the strength in full-entropy
+        // bytes.
+        let max_strength = PARAMS::MAX_SECURITY_STRENGTH;
+        let seed_len = max_strength.as_int() as usize / 8;
+        let labelled = filled.and_then(|()| label_output(keys, len, seed_len, max_strength, dkm));
         if labelled.is_err() {
             dkm.zeroize();
         }

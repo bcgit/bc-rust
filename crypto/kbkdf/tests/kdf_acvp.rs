@@ -11,28 +11,19 @@
 //! at a bit offset inside the fixed input data. A missing `bc-test-data` checkout fails the test
 //! rather than skipping it.
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+mod common;
+
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::KDF;
-use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json};
+use bouncycastle_core_test_framework::test_data_loaders::Value;
 use bouncycastle_kbkdf::{
     CounterPosition, CounterSize, IterationCounterPosition, KDF_Counter, KDF_DoublePipeline,
-    KDF_Feedback, PRF_CMAC, PRF_HMAC, Prf,
+    KDF_Feedback, PRF_CMAC_AES128, PRF_CMAC_AES192, PRF_CMAC_AES256, PRF_HMAC, Prf,
 };
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+use common::hex_value;
 use std::collections::HashMap;
-
-fn get_test_data(filename: &str) -> Value {
-    bc_test_data_json("crypto/acvp/KDF-1.0", filename).unwrap_or_else(|| {
-        panic!("bc-test-data not found beside this repository; the SP 800-108 ACVP suite requires it rather than skipping")
-    })
-}
-
-fn hex(v: &Value) -> Vec<u8> {
-    let s = v.as_str().unwrap();
-    if s.is_empty() { Vec::new() } else { bouncycastle_hex::decode(s).unwrap() }
-}
 
 struct Case<'a> {
     mode: &'a str,
@@ -98,8 +89,8 @@ fn run<P: Prf>(c: &Case) -> Vec<u8> {
 
 #[test]
 fn acvp_kdf_1_0() {
-    let prompt = get_test_data("prompt.json");
-    let expected = get_test_data("expectedResults.json");
+    let prompt = common::acvp_json("KDF-1.0", "prompt.json");
+    let expected = common::acvp_json("KDF-1.0", "expectedResults.json");
     let mut answers = HashMap::new();
     for group in expected["testGroups"].as_array().unwrap() {
         for test in group["tests"].as_array().unwrap() {
@@ -124,14 +115,12 @@ fn acvp_kdf_1_0() {
         }
         let mode = group["kdfMode"].as_str().unwrap();
         let location = group["counterLocation"].as_str().unwrap();
-        let r = match group["counterLength"].as_u64() {
-            None => None,
-            Some(8) => Some(CounterSize::_8bit),
-            Some(16) => Some(CounterSize::_16bit),
-            Some(24) => Some(CounterSize::_24bit),
-            Some(32) => Some(CounterSize::_32bit),
-            Some(other) => panic!("unexpected counter length {other}"),
-        };
+        let r = group["counterLength"].as_u64().map(|bits| {
+            u32::try_from(bits)
+                .ok()
+                .and_then(CounterSize::from_bits)
+                .unwrap_or_else(|| panic!("unexpected counter length {bits}"))
+        });
         assert_eq!(r.is_none(), location == "none");
         for test in tests {
             let tc_id = test["tcId"].as_u64().unwrap();
@@ -146,11 +135,11 @@ fn acvp_kdf_1_0() {
                 mode,
                 location,
                 r,
-                key_in: hex(&test["keyIn"]),
-                iv: test.get("iv").map(hex).unwrap_or_default(),
-                fixed: hex(&answer["fixedData"]),
+                key_in: hex_value(&test["keyIn"]),
+                iv: test.get("iv").map(hex_value).unwrap_or_default(),
+                fixed: hex_value(&answer["fixedData"]),
                 break_at: break_bits / 8,
-                key_out: hex(&answer["keyOut"]),
+                key_out: hex_value(&answer["keyOut"]),
             };
             assert_eq!(case.key_out.len(), bits / 8, "tcId {tc_id}");
             let got = match mac {
@@ -162,9 +151,9 @@ fn acvp_kdf_1_0() {
                 "HMAC-SHA3-256" => run::<PRF_HMAC<SHA3_256>>(&case),
                 "HMAC-SHA3-384" => run::<PRF_HMAC<SHA3_384>>(&case),
                 "HMAC-SHA3-512" => run::<PRF_HMAC<SHA3_512>>(&case),
-                "CMAC-AES128" => run::<PRF_CMAC<AES128Internal>>(&case),
-                "CMAC-AES192" => run::<PRF_CMAC<AES192Internal>>(&case),
-                "CMAC-AES256" => run::<PRF_CMAC<AES256Internal>>(&case),
+                "CMAC-AES128" => run::<PRF_CMAC_AES128>(&case),
+                "CMAC-AES192" => run::<PRF_CMAC_AES192>(&case),
+                "CMAC-AES256" => run::<PRF_CMAC_AES256>(&case),
                 other => panic!("unexpected macMode {other}"),
             };
             assert_eq!(got, case.key_out, "tcId {tc_id}: {mode}, {mac}, counter {location}");
