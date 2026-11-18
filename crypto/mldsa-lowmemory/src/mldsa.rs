@@ -368,7 +368,9 @@
 //! }
 //! ```
 
-use crate::aux_functions::{unpack_c_tilde, unpack_h_row};
+use crate::aux_functions::{
+    ZEROED_HINT_ROW, hint_get, make_hint_row, unpack_c_tilde, unpack_h_row, use_hint_row,
+};
 use crate::low_memory_helpers::{
     compute_ct0_component, compute_w_row, compute_w0cs2_component, compute_wp_approx_row,
     compute_z_component, s_unpack,
@@ -391,6 +393,7 @@ use bouncycastle_core::traits::{
     XOFSqueezer,
 };
 use bouncycastle_mldsa_common::aux_functions::{bitpack_gamma1_out, sample_in_ball};
+use bouncycastle_mldsa_common::polynomial::Polynomial;
 use core::marker::PhantomData;
 
 // imports needed just for docs
@@ -572,14 +575,8 @@ pub(crate) fn sign_internal<
     // to avoid having all of it in memory at the same time,
     // components are derived as they are needed.
 
-    // [Optimization Note]:
-    // s1 and s2 are normally part of the stored private key.
-    // They are used many times through this function,
-    // so they are being computed here and kept in the compressed encoding specified in
-    // FIPS 204 Alg 17.
-    // They are uncompresso as-needed, and only one polynomial at a time.
-    // Storing these in memory can be avoided, but then all the sites where they are used
-    // will require calls to sk.compute_s1_row() and sk.compute_s2_row(), which are fairly expensive.
+    // s1 and s2 are computed once here and kept in the compressed encoding specified in FIPS 204
+    // Alg 17, one polynomial unpacked at a time where it is used.
     let s1_packed: Secret<P::S1Packed> = sk.compute_s1_packed();
     let s2_packed: Secret<P::S2Packed> = sk.compute_s2_packed();
 
@@ -649,24 +646,18 @@ pub(crate) fn sign_internal<
         // 18-23 (z path): compute and encode each z polynomial directly into the caller buffer.
         let mut rejected = false;
         for col in 0..P::l {
-            let z = match compute_z_component::<P>(
-                // [Optimization Note]:
-                // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
-                // weirdly, in perf testing, this actually caused memory usage to go by a small amount;
-                // maybe because re-computing the intermediates adds more to the widest point of the alg?
-                // &sk.compute_s1_row(col),
-                &s_unpack::<P, _>(&s1_packed, col),
+            let mut z = Polynomial::new();
+            if !compute_z_component::<P>(
+                s_unpack::<P, _>(&s1_packed, col),
                 &rho_p_p,
                 &c_hat,
                 kappa,
                 col,
+                &mut z,
             ) {
-                Some(z) => z,
-                None => {
-                    rejected = true;
-                    break;
-                }
-            };
+                rejected = true;
+                break;
+            }
 
             let start = z_offset + col * P::POLY_Z_PACKED_LEN;
             bitpack_gamma1_out::<P>(&z, &mut output[start..start + P::POLY_Z_PACKED_LEN]);
@@ -682,40 +673,35 @@ pub(crate) fn sign_internal<
         let mut hint_count = 0usize;
         for row in 0..P::k {
             let mut w = compute_w_row::<P>(sk.rho(), &rho_p_p, kappa, row);
-            let mut tmp = match compute_w0cs2_component::<P>(
-                // [Optimization Note]:
-                // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
-                // &sk.compute_s2_row(row),
-                &s_unpack::<P, _>(&s2_packed, row),
+            let mut tmp = Polynomial::new();
+            if !compute_w0cs2_component::<P>(
+                s_unpack::<P, _>(&s2_packed, row),
                 &w,
                 &c_hat,
+                &mut tmp,
             ) {
-                Some(tmp) => tmp,
-                None => {
-                    rejected = true;
-                    break;
-                }
-            };
+                rejected = true;
+                break;
+            }
 
-            let ct0 = match compute_ct0_component::<P>(
-                // [Optimization Note]:
-                // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
-                // &sk.compute_t0_row(row), &c_hat) {
-                &sk.compute_t0_row(row, &s1_packed, &s2_packed),
+            let mut ct0 = Polynomial::new();
+            if !compute_ct0_component::<P>(
+                // t0 is not kept in any form: `compute_t0_row` re-derives this row from the packed
+                // s1 and s2 each time.
+                sk.compute_t0_row(row, &s1_packed, &s2_packed),
                 &c_hat,
+                &mut ct0,
             ) {
-                Some(ct0) => ct0,
-                None => {
-                    rejected = true;
-                    break;
-                }
-            };
+                rejected = true;
+                break;
+            }
 
             tmp.add_ntt(&ct0);
             tmp.conditional_add_q();
 
             w.high_bits_inplace::<P>();
-            let (hint_row, weight) = tmp.make_hint::<P>(&w);
+            let mut hint_row = ZEROED_HINT_ROW;
+            let weight = make_hint_row::<P>(&tmp, &w, &mut hint_row);
             let next_hint_count = hint_count + weight as usize;
 
             // mutants note: don't have a test vector that exercises this condition,
@@ -726,7 +712,7 @@ pub(crate) fn sign_internal<
             }
 
             for idx in 0..N {
-                if hint_row[idx] != 0 {
+                if hint_get(&hint_row, idx) != 0 {
                     output[hint_offset + hint_count] = idx as u8;
                     hint_count += 1;
                 }
@@ -788,7 +774,7 @@ pub(crate) fn verify_internal<
         let mut wp_approx = match compute_wp_approx_row::<P, SIG_LEN>(
             pk.rho(),
             sig,
-            &pk.unpack_t1_row(row),
+            pk.unpack_t1_row(row),
             &c_hat,
             row,
         ) {
@@ -797,15 +783,15 @@ pub(crate) fn verify_internal<
             None => return Err(SignatureError::SignatureVerificationFailed),
         };
 
-        let h_i = match unpack_h_row::<P, SIG_LEN>(row, sig) {
-            Some(h_i) => h_i,
-            // means there were more than OMEGA bits set in the hint
-            None => return Err(SignatureError::SignatureVerificationFailed),
+        // `None` means the encoded hint is malformed: out-of-order indices, more than OMEGA
+        // bits set, or nonzero padding
+        let Some(h_i) = unpack_h_row::<P, SIG_LEN>(row, sig) else {
+            return Err(SignatureError::SignatureVerificationFailed);
         };
 
         // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
         // ▷ reconstruction of signer’s commitment
-        wp_approx.use_hint::<P>(&h_i);
+        use_hint_row::<P>(&mut wp_approx, &h_i);
         hash.do_update(wp_approx.w1_encode::<P>().as_ref());
     }
 
