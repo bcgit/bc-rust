@@ -155,7 +155,10 @@
 //! not wipe its source: that holds for the key pair of [`keygen`], for the trait's `from_bytes`,
 //! for `clone` and for the array `encode` returns. Use [`keygen_out`],
 //! [`Ed25519PrivateKey::from_bytes_out`], `clone_from` and `encode_out` into a key or buffer you
-//! own where that matters.
+//! own where that matters. Signing also overwrites the stack its last step used, where the
+//! compiler otherwise leaves limbs of the scalar it held in registers; a scan of the dead stack
+//! after each signing call finds none of the key in a release build for x86-64, the one build
+//! scanned.
 //!
 //! Each fixed-base multiplication checks that its result is a point of the curve before
 //! anything is released, and a failure is reported as an error; no input causes one.

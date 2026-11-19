@@ -140,8 +140,35 @@ pub(super) fn reduce_512(n: &[u8; 64], r: &mut [u8; 32]) {
 ///
 /// Constant time: [`nat::mul_add_to`] and [`reduce_512`]. `r`, `s` and the 512-bit sum are
 /// held in [`Secret`]s; `k` and `S` are public.
+///
+/// A `Secret` wipes the memory it names, and the compiler also keeps limbs of `s` and of the
+/// sum in registers, which it spills to the frames of the computation: seen in a release
+/// build, three limbs of `s` were left on the dead stack by every signature. So the
+/// computation runs in a frame of its own and the stack it used is overwritten afterwards.
 #[allow(non_snake_case)]
 pub(super) fn calculate_S(r: &[u8; 32], k: &[u8; 32], s: &[u8; 32], S: &mut [u8; 32]) {
+    calculate_S_in_own_frame(r, k, s, S);
+    wipe_stack_below();
+}
+
+/// How much stack [`wipe_stack_below`] overwrites, in 64-bit words: more than
+/// [`calculate_S_in_own_frame`] and everything it calls use, with room for a compiler that
+/// lays the frames out less tightly.
+const WIPED_STACK_WORDS: usize = 128;
+
+/// Overwrites the stack that the previous call made from the caller's frame used, by taking a
+/// frame of its own over the same memory and wiping it. Never inlined: the frame is the point.
+#[inline(never)]
+fn wipe_stack_below() {
+    let mut scratch = Secret::<[u64; WIPED_STACK_WORDS]>::new();
+    core::hint::black_box(&mut *scratch);
+}
+
+/// The computation of [`calculate_S`]. Never inlined, so that what it spills lies below its
+/// caller's frame, where [`wipe_stack_below`] reaches it.
+#[allow(non_snake_case)]
+#[inline(never)]
+fn calculate_S_in_own_frame(r: &[u8; 32], k: &[u8; 32], s: &[u8; 32], S: &mut [u8; 32]) {
     // t = r, widened to hold the sum
     let mut t = Secret::<[u64; SIZE * 2]>::new();
     decode_into(r, &mut *t);
