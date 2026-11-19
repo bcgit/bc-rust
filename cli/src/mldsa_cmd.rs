@@ -9,17 +9,16 @@
 
 use crate::helpers::{
     parse_seed, read_input_file, read_input_file_or_stdin, read_secret_file,
-    read_secret_file_or_stdin, seed_error, stream_stdin, write_bytes_or_hex,
+    read_secret_file_or_stdin, seed_error, stream_stdin, write_bytes_or_hex, write_private_key,
 };
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::signature_key::{
-    DeterministicPreHashSigningKey, DeterministicSigningKey, PreHashSigningKey,
+    DeterministicPreHashSigningKey, DeterministicSigningKey, PreHash, PreHashSigningKey,
     PreHashVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
-use bouncycastle::core::traits::{
-    RNG, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
-};
+use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier};
+use bouncycastle::mldsa::hazmat::AnyStrength;
 use bouncycastle::mldsa::{
     MLDSA_MU_LEN, MLDSA_SEED_LEN, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN,
     MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN,
@@ -169,11 +168,12 @@ pub(crate) const MLDSA87_SET: ParameterSet<
 };
 
 /// `prehash` selects HashML-DSA with that hash (FIPS 204 Section 5.4) over pure ML-DSA;
+/// `allow_weak_hash` lets that hash be weaker than the parameter set, which is otherwise refused;
 /// `deterministic` the variant with `rnd` all zero (Section 3.4) over the hedged one.
 pub(crate) fn mldsa_cmd<
     A: SignatureAlgorithm,
-    PK: SignaturePublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN> + PreHashVerifyingKey<A, SIG_LEN>,
-    SK: SignaturePrivateKey<SK_LEN>
+    PK: PublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN> + PreHashVerifyingKey<A, SIG_LEN>,
+    SK: PrivateKey<SK_LEN>
         + SigningKey<A, SIG_LEN>
         + DeterministicSigningKey<A, SIG_LEN>
         + PreHashSigningKey<A, SIG_LEN>
@@ -186,6 +186,7 @@ pub(crate) fn mldsa_cmd<
     action: &MLDSAAction,
     files: &Files,
     prehash: Option<PreHashAlg>,
+    allow_weak_hash: bool,
     deterministic: bool,
     output_hex: bool,
 ) {
@@ -193,14 +194,14 @@ pub(crate) fn mldsa_cmd<
         MLDSAAction::Keygen => {
             let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os())
                 .unwrap_or_else(|e| keygen_error(e));
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
             let input = read_secret_file_or_stdin(files.sk);
             let seed = parse_seed::<MLDSA_SEED_LEN>(input.ref_to_bytes())
                 .unwrap_or_else(|e| seed_error::<MLDSA_SEED_LEN>(e));
             let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap_or_else(|e| keygen_error(e));
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         MLDSAAction::PkFromSk => {
             let sk = parse_sk(set, read_secret_file_or_stdin(files.sk).ref_to_bytes());
@@ -231,6 +232,20 @@ pub(crate) fn mldsa_cmd<
                     let s = sk.create_signer_deterministic(ctx).unwrap_or_else(|e| signer_error(e));
                     sign_stream(s, output_hex)
                 }
+                (Some(hash), det) if allow_weak_hash => match hash {
+                    PreHashAlg::Sha256 => sign_ph::<A, SK, AnyStrength<SHA256>, SIG_LEN>(
+                        &sk, &mut rng, ctx, det, output_hex,
+                    ),
+                    PreHashAlg::Sha512 => sign_ph::<A, SK, AnyStrength<SHA512>, SIG_LEN>(
+                        &sk, &mut rng, ctx, det, output_hex,
+                    ),
+                    PreHashAlg::Shake128 => sign_ph::<A, SK, AnyStrength<SHAKE128>, SIG_LEN>(
+                        &sk, &mut rng, ctx, det, output_hex,
+                    ),
+                    PreHashAlg::Shake256 => sign_ph::<A, SK, AnyStrength<SHAKE256>, SIG_LEN>(
+                        &sk, &mut rng, ctx, det, output_hex,
+                    ),
+                },
                 (Some(PreHashAlg::Sha256), false) => {
                     let s = sk.create_ph_signer::<SHA256>(&mut rng, ctx);
                     sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
@@ -275,6 +290,20 @@ pub(crate) fn mldsa_cmd<
                     let v = pk.create_verifier(ctx).unwrap_or_else(|e| signer_error(e));
                     verify_stream(v, &sig)
                 }
+                Some(hash) if allow_weak_hash => match hash {
+                    PreHashAlg::Sha256 => {
+                        verify_ph::<A, PK, AnyStrength<SHA256>, SIG_LEN>(&pk, ctx, &sig)
+                    }
+                    PreHashAlg::Sha512 => {
+                        verify_ph::<A, PK, AnyStrength<SHA512>, SIG_LEN>(&pk, ctx, &sig)
+                    }
+                    PreHashAlg::Shake128 => {
+                        verify_ph::<A, PK, AnyStrength<SHAKE128>, SIG_LEN>(&pk, ctx, &sig)
+                    }
+                    PreHashAlg::Shake256 => {
+                        verify_ph::<A, PK, AnyStrength<SHAKE256>, SIG_LEN>(&pk, ctx, &sig)
+                    }
+                },
                 Some(PreHashAlg::Sha256) => {
                     let v = pk.create_ph_verifier::<SHA256>(ctx);
                     verify_stream(v.unwrap_or_else(|e| signer_error(e)), &sig)
@@ -369,6 +398,38 @@ fn signer_error(e: SignatureError) -> ! {
     exit(-1);
 }
 
+/// Signs stdin with the pre-hash `H`: hedged, or deterministic.
+fn sign_ph<A, SK, H, const SIG_LEN: usize>(
+    sk: &SK,
+    rng: &mut dyn RNG,
+    ctx: Option<&[u8]>,
+    deterministic: bool,
+    output_hex: bool,
+) where
+    A: SignatureAlgorithm,
+    SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
+    H: PreHash,
+{
+    if deterministic {
+        let s = sk.create_ph_signer_deterministic::<H>(ctx);
+        sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
+    } else {
+        let s = sk.create_ph_signer::<H>(rng, ctx);
+        sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
+    }
+}
+
+/// Verifies stdin against `sig` with the pre-hash `H`.
+fn verify_ph<A, PK, H, const SIG_LEN: usize>(pk: &PK, ctx: Option<&[u8]>, sig: &[u8])
+where
+    A: SignatureAlgorithm,
+    PK: PreHashVerifyingKey<A, SIG_LEN>,
+    H: PreHash,
+{
+    let v = pk.create_ph_verifier::<H>(ctx);
+    verify_stream(v.unwrap_or_else(|e| signer_error(e)), sig)
+}
+
 /// Streams stdin into `signer` and writes the signature.
 fn sign_stream<const SIG_LEN: usize>(mut signer: impl SignatureSigner<SIG_LEN>, output_hex: bool) {
     stream_stdin(|chunk| signer.do_update(chunk));
@@ -421,7 +482,7 @@ fn read_required_secret(file: &Option<String>, flag: &str) -> crate::helpers::Se
 fn parse_sk<
     A,
     PK,
-    SK: SignaturePrivateKey<SK_LEN>,
+    SK: PrivateKey<SK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
@@ -449,7 +510,7 @@ fn parse_sk<
 /// A public key from its bytes.
 fn parse_pk<
     A,
-    PK: SignaturePublicKey<PK_LEN>,
+    PK: PublicKey<PK_LEN>,
     SK,
     const PK_LEN: usize,
     const SK_LEN: usize,

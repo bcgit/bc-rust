@@ -26,6 +26,9 @@ pub(crate) trait MatrixTrait: Sized + Clone {
     /// Algorithm 48 MatrixVectorNTT(𝐌, 𝐯)
     /// Computes the product 𝐌 ∘̂ 𝐯_hat of a matrix 𝐌_hat and a vector 𝐯_hat over 𝑇𝑞.
     fn matrix_vector_ntt(&self, v: &Self::VecL) -> Self::VecK;
+
+    /// [`matrix_vector_ntt`](Self::matrix_vector_ntt) into `w`, a vector the caller holds.
+    fn matrix_vector_ntt_out(&self, v: &Self::VecL, w: &mut Self::VecK);
 }
 
 /// A matrix over the ML-DSA ring.
@@ -36,8 +39,11 @@ pub struct Matrix<const k: usize, const l: usize> {
 }
 
 impl<const k: usize, const l: usize> Matrix<k, l> {
-    pub(crate) fn new() -> Self {
-        Self { elems: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
+    /// A repeat expression, not `array::map`: `map` builds the whole matrix in a temporary and
+    /// copies it into place, which for ML-DSA-87 is a 57 kB copy that the optimizer does not
+    /// always elide.
+    pub(crate) const fn new() -> Self {
+        Self { elems: [[Polynomial::new(); l]; k] }
     }
 
     /// Algorithm 48 MatrixVectorNTT(𝐌, 𝐯)
@@ -49,6 +55,12 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
     /// Output: vector of length k
     pub(crate) fn matrix_vector_ntt(&self, v: &Vector<l>) -> Vector<k> {
         let mut w = Vector::<k>::new();
+        self.matrix_vector_ntt_out(v, &mut w);
+        w
+    }
+
+    /// [`matrix_vector_ntt`](Self::matrix_vector_ntt) into `w`, a vector the caller holds.
+    pub(crate) fn matrix_vector_ntt_out(&self, v: &Vector<l>, w: &mut Vector<k>) {
         for i in 0..k {
             // split out the 0 case to skip a no-op add_ntt()
             w[i].coeffs.copy_from_slice(&multiply_ntt(&self.elems[i][0], &v[0]).coeffs);
@@ -62,8 +74,6 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
                 w[i].add_ntt(&w1);
             }
         }
-
-        w
     }
 }
 
@@ -81,6 +91,10 @@ impl<const k: usize, const l: usize> MatrixTrait for Matrix<k, l> {
 
     fn matrix_vector_ntt(&self, v: &Vector<l>) -> Vector<k> {
         Matrix::matrix_vector_ntt(self, v)
+    }
+
+    fn matrix_vector_ntt_out(&self, v: &Vector<l>, w: &mut Vector<k>) {
+        Matrix::matrix_vector_ntt_out(self, v, w)
     }
 }
 
@@ -106,8 +120,8 @@ pub trait VectorTrait:
     /// Computes the sum 𝐯_hat + 𝐰_hat of two vectors 𝐯_hat, 𝐰_hat over 𝑇𝑞.
     fn add_vector_ntt(&mut self, s: &Self);
 
-    /// Subtracts another vector from this one, coordinatewise.
-    fn sub_vector(&self, s: &Self) -> Self;
+    /// Subtracts another vector from this one, coordinatewise, in place.
+    fn sub_vector(&mut self, s: &Self);
 
     /// Algorithm 47 ScalarVectorNTT(𝑐,̂ 𝐯)̂
     /// Computes the product 𝑐_hat * 𝐯_hat of a scalar 𝑐_hat and a vector 𝐯_hat over 𝑇𝑞.
@@ -131,8 +145,8 @@ pub trait VectorTrait:
     /// Applies Algorithm 37 HighBits(𝑟) coefficientwise.
     fn high_bits<P: MLDSAParams>(&self) -> Self;
 
-    /// Applies Algorithm 38 LowBits(𝑟) coefficientwise.
-    fn low_bits<P: MLDSAParams>(&self) -> Self;
+    /// Applies Algorithm 38 LowBits(𝑟) coefficientwise, in place.
+    fn low_bits<P: MLDSAParams>(&mut self);
 
     /// Multiplies every coefficient by 2^𝑑.
     fn shift_left_d(&self) -> Self;
@@ -207,12 +221,10 @@ impl<const LEN: usize> VectorTrait for Vector<LEN> {
         }
     }
 
-    fn sub_vector(&self, s: &Self) -> Self {
-        let mut out = *self;
+    fn sub_vector(&mut self, s: &Self) {
         for i in 0..LEN {
-            out[i].sub(&s[i]);
+            self[i].sub(&s[i]);
         }
-        out
     }
 
     /// Algorithm 47 ScalarVectorNTT(𝑐,̂ 𝐯)̂
@@ -268,14 +280,10 @@ impl<const LEN: usize> VectorTrait for Vector<LEN> {
         s
     }
 
-    fn low_bits<P: MLDSAParams>(&self) -> Self {
-        let mut s = Vector::<LEN>::new();
-
+    fn low_bits<P: MLDSAParams>(&mut self) {
         for i in 0..LEN {
-            s[i] = self[i].low_bits::<P>();
+            self[i] = self[i].low_bits::<P>();
         }
-
-        s
     }
 
     fn shift_left_d(&self) -> Self {

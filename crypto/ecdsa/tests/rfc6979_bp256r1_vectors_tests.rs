@@ -14,8 +14,8 @@
 //! RFC 6979) and by OpenSSL 4.0.2's deterministic ECDSA (through the cryptography 50.0.1
 //! bindings), which also anchors the curve constants a second way.
 
-use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ec::Bp256r1;
 use bouncycastle_ec::hazmat::bp256r1_comb::comb_multiply_base_point;
 use bouncycastle_ec::hazmat::bp256r1_scalar::Bp256r1Scalar;

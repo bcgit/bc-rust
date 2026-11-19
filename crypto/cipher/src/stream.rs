@@ -14,7 +14,7 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    Algorithm, FinishToken, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
@@ -40,7 +40,6 @@ use core::marker::PhantomData;
 /// returns [`SymmetricCipherError::DataLimitExceeded`] and consumes nothing: the check is made up front,
 /// against the whole call, so a message is never half-processed before the cipher notices. Past
 /// that point the keystream would repeat, which is the two-time-pad failure within one message.
-#[derive(Clone)]
 pub struct StreamCipher<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
 where
     KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
@@ -217,7 +216,10 @@ where
     }
 
     /// Nothing is held back, so there is nothing to finish.
-    fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn finish_encrypt(
+        &mut self,
+        _token: &FinishToken,
+    ) -> Result<([u8; 0], usize), SymmetricCipherError> {
         Ok(([], 0))
     }
 
@@ -275,7 +277,10 @@ where
     }
 
     /// Nothing is held back, so there is nothing to finish.
-    fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn finish_decrypt(
+        &mut self,
+        _token: &FinishToken,
+    ) -> Result<([u8; 0], usize), SymmetricCipherError> {
         Ok(([], 0))
     }
 

@@ -32,7 +32,7 @@ use bouncycastle_cipher::modes::{
     KW, KWP, OFB, Ofb,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::{AeadDeclaredEncryptMode, EcbEncryptionKey, KeyExpansion};
+use bouncycastle_core::hazmat::{AeadInPlaceEncryptMode, EcbEncryptionKey, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadEncryptionKey, BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey,
@@ -406,7 +406,7 @@ fn bench_ccm_aes128(c: &mut Criterion) {
             || data,
             |buf| {
                 black_box(
-                    Aes128CcmMode::encrypt_detached_in_place_nonce(
+                    Aes128CcmMode::encrypt_detached_inplace_nonce(
                         black_box(&perm),
                         &nonce,
                         &no_aad,
@@ -425,7 +425,7 @@ fn bench_ccm_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut out: [u8; 0] = [];
             black_box(
-                Aes128CcmMode::encrypt_detached_in_place_nonce(
+                Aes128CcmMode::encrypt_detached_inplace_nonce(
                     black_box(&perm),
                     &nonce,
                     black_box(&data),
@@ -472,12 +472,12 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     });
 
     // The same 4 KiB and nonce through the mode's in-place one-shot, for the ratio.
-    group.bench_function("CCM::encrypt_detached_in_place_nonce 4KiB", |b| {
+    group.bench_function("CCM::encrypt_detached_inplace_nonce 4KiB", |b| {
         b.iter_batched_ref(
             || data,
             |buf| {
                 black_box(
-                    Aes128CcmMode::encrypt_detached_in_place_nonce(
+                    Aes128CcmMode::encrypt_detached_inplace_nonce(
                         black_box(&perm),
                         &nonce,
                         &no_aad,

@@ -46,6 +46,10 @@ test_hmac_sm3_round_trip() {
     hmac_round_trip hmac-sm3 32
 }
 
+test_hmac_ripemd160_round_trip() {
+    hmac_round_trip hmac-ripemd160 20
+}
+
 # When both `--key` and `--key-file` are given, the file is used, as the help text says.
 test_hmac_sha256_key_file_wins_over_key() {
     local from_file with_both from_hex other

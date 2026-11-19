@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod hash_factory_tests {
-    use bouncycastle_core::errors::MACError;
+    use bouncycastle_core::errors::{KeyMaterialError, MACError};
     use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::AlgorithmInfo;
@@ -41,6 +41,7 @@ mod hash_factory_tests {
     #[test]
     fn alg_name_strength_and_length_follow_the_variant() {
         use SecurityStrength::*;
+        use bouncycastle_ripemd::hmac::HMAC_RIPEMD160_NAME;
         use bouncycastle_sha2::hmac::*;
         use bouncycastle_sha3::hmac::*;
         use bouncycastle_sha3::kmac::{KMAC128_NAME, KMAC256_NAME};
@@ -60,6 +61,7 @@ mod hash_factory_tests {
             (HMAC_SHA3_384_NAME, _192bit, 48),
             (HMAC_SHA3_512_NAME, _256bit, 64),
             (HMAC_SM3_NAME, _128bit, 32),
+            (HMAC_RIPEMD160_NAME, None, 20),
         ];
         for (name, strength, len) in table {
             let key = MACFactory::new(name, &key).unwrap();
@@ -80,6 +82,7 @@ mod hash_factory_tests {
     /// and the run-time-length forms check their lengths.
     #[test]
     fn every_variant_round_trips() {
+        use bouncycastle_ripemd::hmac::HMAC_RIPEMD160_NAME;
         use bouncycastle_sha2::hmac::*;
         use bouncycastle_sha3::hmac::*;
         use bouncycastle_sha3::kmac::{KMAC128_NAME, KMAC256_NAME};
@@ -89,6 +92,7 @@ mod hash_factory_tests {
             KMAC128_NAME, KMAC256_NAME, HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME,
             HMAC_SHA512_NAME, HMAC_SHA512_224_NAME, HMAC_SHA512_256_NAME, HMAC_SHA3_224_NAME,
             HMAC_SHA3_256_NAME, HMAC_SHA3_384_NAME, HMAC_SHA3_512_NAME, HMAC_SM3_NAME,
+            HMAC_RIPEMD160_NAME,
         ] {
             let key = MACFactory::new(name, &material).unwrap();
             let n = key.output_len();
@@ -357,6 +361,38 @@ mod hash_factory_tests {
                     "{name:?} must not construct a MAC"
                 );
             }
+        }
+
+        /// RFC 2286 Sec 2 test_case 1 (twenty 0x0b bytes / "Hi There") for HMAC-RIPEMD160, by
+        /// string name and by the crate's name constant. The factory builds keys with
+        /// `from_key_material`, so the 4-byte key of test_case 2 is refused, as it is for every
+        /// other HMAC here.
+        #[test]
+        fn hmac_ripemd_tests() {
+            use bouncycastle_ripemd::hmac::HMAC_RIPEMD160_NAME;
+            let key = KeyMaterial::<32>::from_bytes_as_type(&[0x0b; 20], KeyType::MACKey).unwrap();
+            let msg = b"Hi There";
+            let expected = hex::decode("24cb4bd67d20fc1a5d2ed7732dcc39377f0a5668").unwrap();
+            for name in ["HMAC-RIPEMD160", HMAC_RIPEMD160_NAME] {
+                let hmac = MACFactory::new(name, &key).unwrap();
+                assert_eq!(hmac.output_len(), 20);
+                assert_eq!(hmac.mac(msg), expected);
+                assert_eq!(hmac.verify(msg, &expected), Ok(()));
+            }
+            let short = KeyMaterial::<32>::from_bytes_as_type(b"Jefe", KeyType::MACKey).unwrap();
+            for name in [HMAC_RIPEMD160_NAME, bouncycastle_sha2::hmac::HMAC_SHA256_NAME] {
+                assert!(matches!(
+                    MACFactory::new(name, &short),
+                    Err(FactoryError::MACError(MACError::KeyMaterialError(
+                        KeyMaterialError::SecurityStrength(_)
+                    )))
+                ));
+            }
+            // HMAC-RIPEMD128 is not offered.
+            assert!(matches!(
+                MACFactory::new("HMAC-RIPEMD128", &key),
+                Err(FactoryError::UnsupportedAlgorithm(_))
+            ));
         }
 
         #[test]

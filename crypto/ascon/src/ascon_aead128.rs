@@ -4,8 +4,8 @@
 //! `Ascon-p[12]`; associated-data and plaintext/ciphertext blocks use `Ascon-p[8]`.
 //!
 //! Every byte of plaintext/ciphertext is transformed and emitted as soon as it is seen (no
-//! held-back buffering across update calls); this is what lets the cipher's finalizers be plain
-//! `self -> tag` / `self -> Result<(), _>` calls with nothing left to flush.
+//! held-back buffering across update calls); this is what lets the cipher's finalizers produce
+//! only the tag, or only check it, with nothing left to flush.
 //! Ascon-AEAD128 permits this because within a 128-bit rate block each plaintext/ciphertext byte
 //! is transformed independently of the others in that block; the permutation only runs once a
 //! full 16-byte block has been absorbed, or at finalization.
@@ -22,10 +22,14 @@ use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core::symmetric_key::{
+    AeadDecryptionKey, AeadEncryptionKey, AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey,
+    FromKeyMaterial,
+};
+use bouncycastle_core::symmetric_key::{decrypt_detached_inplace, encrypt_detached_inplace};
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, RNG,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
@@ -133,21 +137,6 @@ pub struct Ascon_AEAD128<Dir> {
     held: [u8; ASCON_AEAD128_TAG_LEN],
     held_len: usize,
     _dir: PhantomData<Dir>,
-}
-
-// Written out rather than derived so that `Dir`, a marker type, need not be `Clone`.
-impl<Dir> Clone for Ascon_AEAD128<Dir> {
-    fn clone(&self) -> Self {
-        Self {
-            key: self.key.clone(),
-            state: self.state.clone(),
-            pos: self.pos,
-            phase: self.phase,
-            held: self.held,
-            held_len: self.held_len,
-            _dir: PhantomData,
-        }
-    }
 }
 
 impl<Dir> Ascon_AEAD128<Dir> {
@@ -292,7 +281,7 @@ impl<Dir> Ascon_AEAD128<Dir> {
 
     // Finalization (SP 800-232 §4.1.1 step 4 / §4.1.2 step 4, Eq. 30-32 / 49-51): re-add the key,
     // permute with Ascon-p[12], and add the key again; the tag is the resulting last 128 bits.
-    fn finish_data(&mut self) -> [u8; ASCON_AEAD128_TAG_LEN] {
+    fn finish_data(&mut self, _token: &FinishToken) -> [u8; ASCON_AEAD128_TAG_LEN] {
         self.state[2] ^= self.key[0];
         self.state[3] ^= self.key[1];
         p12(&mut self.state);
@@ -365,11 +354,11 @@ impl Ascon_AEAD128<Encrypting> {
     /// Finish encryption; returns the 128-bit tag (SP 800-232 §4.1.1 steps 3-4). Pads the final
     /// (possibly empty) plaintext block; no further bytes are emitted here since every
     /// plaintext/ciphertext byte was already written by `encrypt_bytes`.
-    fn finish_tag(mut self) -> [u8; ASCON_AEAD128_TAG_LEN] {
+    fn finish_tag(&mut self, token: &FinishToken) -> [u8; ASCON_AEAD128_TAG_LEN] {
         self.check_data();
         // Padding of the final (possibly empty) plaintext block (Eq. 27).
         self.xor_state_byte(self.pos, 0x01);
-        self.finish_data()
+        self.finish_data(token)
     }
 }
 
@@ -403,11 +392,15 @@ impl Ascon_AEAD128<Decrypting> {
     }
 
     /// Finish decryption, checking `tag` in constant time (SP 800-232 §4.1.2 steps 3-4).
-    fn verify_tag(mut self, tag: &[u8; ASCON_AEAD128_TAG_LEN]) -> Result<(), SymmetricCipherError> {
+    fn verify_tag(
+        &mut self,
+        token: &FinishToken,
+        tag: &[u8; ASCON_AEAD128_TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
         self.check_data();
         // Padding of the final (possibly empty) ciphertext block (Eq. 47).
         self.xor_state_byte(self.pos, 0x01);
-        let computed = self.finish_data();
+        let computed = self.finish_data(token);
 
         if !ct_eq_bytes(&computed, tag) {
             return Err(SymmetricCipherError::AEADTagCheckFailed);
@@ -445,10 +438,11 @@ impl SymmetricCipherEncryptor<ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN>
     }
 
     /// The inline layout: nothing is held back, so the final buffer is exactly the tag.
-    fn do_encrypt_final(
-        self,
+    fn finish_encrypt(
+        &mut self,
+        token: &FinishToken,
     ) -> Result<([u8; ASCON_AEAD128_TAG_LEN], usize), SymmetricCipherError> {
-        Ok((self.finish_tag(), ASCON_AEAD128_TAG_LEN))
+        Ok((self.finish_tag(token), ASCON_AEAD128_TAG_LEN))
     }
 
     /// The ciphertext, which is as long as the plaintext, followed by the tag.
@@ -465,12 +459,13 @@ impl AEADCipherEncryptor<ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN, ASCON_A
     }
 
     /// Nothing is ever held back to flush, so `ciphertext` is left zeroed.
-    fn do_encrypt_final_detached_out(
-        self,
+    fn finish_encrypt_detached_into(
+        &mut self,
+        token: &FinishToken,
         ciphertext: &mut [u8; ASCON_AEAD128_TAG_LEN],
     ) -> Result<(usize, [u8; ASCON_AEAD128_TAG_LEN]), SymmetricCipherError> {
         ciphertext.fill(0);
-        Ok((0, self.finish_tag()))
+        Ok((0, self.finish_tag(token)))
     }
 }
 
@@ -521,14 +516,15 @@ impl SymmetricCipherDecryptor<ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN>
     /// # Errors
     /// [`SymmetricCipherError::DecryptionFailed`] if fewer than `ASCON_AEAD128_TAG_LEN` bytes were
     /// seen in all; [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify.
-    fn do_decrypt_final(
-        self,
+    fn finish_decrypt(
+        &mut self,
+        token: &FinishToken,
     ) -> Result<([u8; ASCON_AEAD128_TAG_LEN], usize), SymmetricCipherError> {
         if self.held_len < ASCON_AEAD128_TAG_LEN {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
         let tag = self.held;
-        self.verify_tag(&tag)?;
+        self.verify_tag(token, &tag)?;
         Ok(([0u8; ASCON_AEAD128_TAG_LEN], 0))
     }
 
@@ -551,8 +547,9 @@ impl AEADCipherDecryptor<ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN, ASCON_A
     /// The held-back bytes are ciphertext: decrypts them into `plaintext`, then checks `tag`. On a
     /// failed check `plaintext` is zeroized, so the error leaves nothing unauthenticated behind in
     /// it (what earlier `do_update_out` calls released is the caller's to scrub).
-    fn do_decrypt_final_detached_out(
-        mut self,
+    fn finish_decrypt_detached_into(
+        &mut self,
+        token: &FinishToken,
         tag: &[u8; ASCON_AEAD128_TAG_LEN],
         plaintext: &mut [u8; ASCON_AEAD128_TAG_LEN],
     ) -> Result<usize, SymmetricCipherError> {
@@ -560,7 +557,7 @@ impl AEADCipherDecryptor<ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN, ASCON_A
         let n = self.held_len;
         plaintext[..n].copy_from_slice(&self.held[..n]);
         self.decrypt_bytes(&mut plaintext[..n]);
-        if let Err(e) = self.verify_tag(tag) {
+        if let Err(e) = self.verify_tag(token, tag) {
             plaintext.fill(0);
             return Err(e);
         }
@@ -723,6 +720,45 @@ impl
         nonce: &[u8; ASCON_AEAD128_NONCE_LEN],
     ) -> Self::Decryptor<'k> {
         Ascon_AEAD128::from_key_words(&self.key, nonce)
+    }
+}
+
+impl AeadInPlaceEncryptionKey<ASCON_AEAD128_KEY_LEN, ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN>
+    for AsconAEAD128Key
+{
+    fn encrypt_detached_inplace(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; ASCON_AEAD128_NONCE_LEN], [u8; ASCON_AEAD128_TAG_LEN]), SymmetricCipherError>
+    {
+        let (enc, nonce) = self.create_encryptor(rng)?;
+        let tag = encrypt_detached_inplace(enc, aad, buf)?;
+        Ok((nonce, tag))
+    }
+
+    fn encrypt_detached_inplace_nonce(
+        &self,
+        nonce: &[u8; ASCON_AEAD128_NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; ASCON_AEAD128_TAG_LEN], SymmetricCipherError> {
+        encrypt_detached_inplace(self.create_encryptor_nonce(nonce), aad, buf)
+    }
+}
+
+impl AeadInPlaceDecryptionKey<ASCON_AEAD128_KEY_LEN, ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN>
+    for AsconAEAD128Key
+{
+    fn decrypt_detached_inplace(
+        &self,
+        nonce: &[u8; ASCON_AEAD128_NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; ASCON_AEAD128_TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        decrypt_detached_inplace(self.create_decryptor(nonce), aad, buf, tag)
     }
 }
 

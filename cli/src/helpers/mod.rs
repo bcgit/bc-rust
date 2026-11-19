@@ -20,8 +20,9 @@
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
-use bouncycastle::core::traits::{Hash, XOF, XOFSqueezer};
+use bouncycastle::core::traits::{Hash, PrivateKey, XOF, XOFSqueezer};
 use bouncycastle::hex;
+use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
@@ -31,6 +32,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub mod aead_cipher_helpers;
 pub mod block_mode_helpers;
+pub mod kem_helpers;
 pub mod stream_mode_helpers;
 
 /// Bytes read from stdin per call, and squeezed per call for an XOF.
@@ -368,6 +370,78 @@ pub(crate) fn write_bytes_or_hex(bytes: &[u8], output_hex: bool) {
     }
 }
 
+/// [`write_bytes_or_hex`] for a secret (a private key, a shared secret): the hex form is built
+/// in a stack buffer that is wiped, a chunk at a time, rather than in a heap `String` that is
+/// freed as it stands, and each digit is computed, not looked up by the secret nibble.
+pub(crate) fn write_secret_bytes_or_hex(bytes: &[u8], output_hex: bool) {
+    if !output_hex {
+        write_stdout(bytes);
+        return;
+    }
+    let mut hex = Secret::<[u8; 2 * CHUNK_LEN]>::new();
+    for chunk in bytes.chunks(CHUNK_LEN) {
+        for (i, b) in chunk.iter().enumerate() {
+            hex[2 * i] = hex_digit(b >> 4);
+            hex[2 * i + 1] = hex_digit(b & 0x0f);
+        }
+        write_stdout(&hex[..2 * chunk.len()]);
+    }
+}
+
+/// A private key's encoding to stdout, raw or as hex: it is encoded into a wiped buffer, not
+/// returned by value, and written by [`write_secret_bytes_or_hex`].
+pub(crate) fn write_private_key<SK: PrivateKey<SK_LEN>, const SK_LEN: usize>(
+    sk: &SK,
+    output_hex: bool,
+) {
+    let mut bytes = Secret::<[u8; SK_LEN]>::new();
+    let len = sk.encode_out(&mut bytes);
+    write_secret_bytes_or_hex(&bytes[..len], output_hex);
+}
+
+/// Overwrites `bytes` with zeros through volatile writes, for a secret held in a `Vec`, which
+/// is not wiped when it is freed. `exit` runs no destructors, so call this before one.
+pub(crate) fn wipe(bytes: &mut [u8]) {
+    for b in bytes {
+        zeroize_in_place(b);
+    }
+}
+
+/// All of stdin, as raw bytes, for a secret of any length: each buffer the input outgrows is
+/// wiped before it is freed, which a `Vec`'s own growth does not do. The caller wipes the
+/// result.
+pub(crate) fn read_secret_stdin_all() -> Vec<u8> {
+    let mut stdin = io::stdin().lock();
+    let mut buf = vec![0u8; 4 * CHUNK_LEN];
+    let mut len = 0;
+    loop {
+        if len == buf.len() {
+            let mut bigger = vec![0u8; 2 * len];
+            bigger[..len].copy_from_slice(&buf);
+            wipe(&mut buf);
+            buf = bigger;
+        }
+        match stdin.read(&mut buf[len..]) {
+            Ok(0) => break,
+            Ok(n) => len += n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => {
+                wipe(&mut buf);
+                eprintln!("Error: couldn't read stdin: {e}");
+                exit(-1);
+            }
+        }
+    }
+    buf.truncate(len);
+    buf
+}
+
+/// The lower-case hex digit of the nibble `n`, with no branch or table on its value: '0'..'9'
+/// is `48 + n` and 'a'..'f' is `48 + n + 39`, and the mask is all ones exactly when `n > 9`.
+fn hex_digit(n: u8) -> u8 {
+    b'0' + n + ((((9i16 - n as i16) >> 8) as u8) & 39)
+}
+
 /// Writes `bytes`, raw or as hex, to a new file `filename`; a failure names the path.
 pub(crate) fn write_bytes_or_hex_to_file(bytes: &[u8], filename: &str, output_hex: bool) {
     let result = File::create(filename).and_then(|mut file| {
@@ -438,7 +512,7 @@ pub(crate) fn seed_error<const SEED_LEN: usize>(e: SeedError) -> ! {
 // ---- streaming loops -------------------------------------------------------------------------
 
 /// Streams stdin through a [`Hash`] and writes the digest to stdout (hex or binary), followed by
-/// a newline. Used by the SHA-2, SHA-3, SM3 and Ascon-Hash256 subcommands.
+/// a newline. Used by the SHA-2, SHA-3, SM3, RIPEMD and Ascon-Hash256 subcommands.
 pub(crate) fn stream_hash(mut hasher: impl Hash, output_hex: bool) {
     stream_stdin(|chunk| hasher.do_update(chunk));
     let out = hasher.do_final();
@@ -471,4 +545,16 @@ pub(crate) fn squeeze_to_stdout(
         left -= n;
     }
     write_stdout(b"\n");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hex_digit;
+
+    #[test]
+    fn hex_digit_is_the_lower_case_digit_of_every_nibble() {
+        for (n, expected) in b"0123456789abcdef".iter().enumerate() {
+            assert_eq!(hex_digit(n as u8), *expected, "nibble {n}");
+        }
+    }
 }

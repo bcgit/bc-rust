@@ -24,8 +24,10 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
-use bouncycastle::core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle::core::signature_key::{
+    DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
+};
+use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::ec::curve::Curve;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle::ecdsa::ecdsa::EcdsaHash;

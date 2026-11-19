@@ -55,6 +55,9 @@ pub trait MatrixTrait: Sized + Clone {
     fn set_elem(&mut self, row: usize, col: usize, p: Polynomial);
     /// Computes 𝐀̂ ∘ 𝐯̂, transposing 𝐀̂ first when `transpose` is set.
     fn matrix_vector_ntt<const transpose: bool>(&self, v: &Self::Vec) -> Self::Vec;
+
+    /// [`matrix_vector_ntt`](Self::matrix_vector_ntt) into `w`, a vector the caller holds.
+    fn matrix_vector_ntt_out<const transpose: bool>(&self, v: &Self::Vec, w: &mut Self::Vec);
 }
 
 #[derive(Clone)]
@@ -76,6 +79,16 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
     /// Output: vector of length k
     pub(crate) fn matrix_vector_ntt<const transpose: bool>(&self, v: &Vector<l>) -> Vector<k> {
         let mut w = Vector::<k>::new();
+        self.matrix_vector_ntt_out::<transpose>(v, &mut w);
+        w
+    }
+
+    /// [`matrix_vector_ntt`](Self::matrix_vector_ntt) into `w`, a vector the caller holds.
+    pub(crate) fn matrix_vector_ntt_out<const transpose: bool>(
+        &self,
+        v: &Vector<l>,
+        w: &mut Vector<k>,
+    ) {
         for i in 0..k {
             // split out the 0 case to skip a no-op add_ntt()
             w[i] = if transpose {
@@ -105,8 +118,6 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
         } else {
             w.convert_to_mont();
         }
-
-        w
     }
 }
 
@@ -125,6 +136,10 @@ impl<const k: usize> MatrixTrait for Matrix<k, k> {
 
     fn matrix_vector_ntt<const transpose: bool>(&self, v: &Vector<k>) -> Vector<k> {
         Matrix::matrix_vector_ntt::<transpose>(self, v)
+    }
+
+    fn matrix_vector_ntt_out<const transpose: bool>(&self, v: &Vector<k>, w: &mut Vector<k>) {
+        Matrix::matrix_vector_ntt_out::<transpose>(self, v, w)
     }
 }
 

@@ -186,12 +186,14 @@ use crate::modes::hazmat::ctr_key_stream::CtrKeyStream;
 use crate::{Decrypting, Direction, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
-    AeadDecryptMode, AeadEncryptMode, BlockPermutation, ElectronicCodeBook, Mode,
+    AeadDecryptMode, AeadEncryptMode, AeadInPlaceDecryptMode, AeadInPlaceEncryptMode,
+    BlockPermutation, ElectronicCodeBook, Mode,
 };
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{decrypt_detached_inplace, encrypt_detached_inplace};
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, RNG, StreamCipherDecryptor,
     StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::ct::ct_eq_bytes;
@@ -271,6 +273,50 @@ where
     }
 }
 
+impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
+    AeadInPlaceEncryptMode<P, KEY_LEN, GCM_NONCE_LEN, TAG_LEN> for GCM<TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    fn encrypt_detached_inplace(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; GCM_NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        let (enc, nonce) = Gcm::<P, Encrypting, TAG_LEN>::from_key_state(state, rng)?;
+        let tag = encrypt_detached_inplace(enc, aad, buf)?;
+        Ok((nonce, tag))
+    }
+
+    fn encrypt_detached_inplace_nonce(
+        state: &Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        let enc = Gcm::<P, Encrypting, TAG_LEN>::from_key_state_nonce(state, nonce);
+        encrypt_detached_inplace(enc, aad, buf)
+    }
+}
+
+impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
+    AeadInPlaceDecryptMode<P, KEY_LEN, GCM_NONCE_LEN, TAG_LEN> for GCM<TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    fn decrypt_detached_inplace(
+        state: &Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        let dec = Gcm::<P, Decrypting, TAG_LEN>::from_key_state(state, nonce);
+        decrypt_detached_inplace(dec, aad, buf, tag)
+    }
+}
+
 /// What a GCM key keeps per key: the keyed permutation and the hash subkey `H = CIPH_K(0^128)`
 /// (SP 800-38D Algorithm 4 step 1), derived once here rather than once per message. It is the
 /// `KeyState` of [`GCM`] over any permutation, built and consumed through the mode impls; a
@@ -319,7 +365,6 @@ enum Phase {
 /// [`Encrypting`] / [`Decrypting`]. See the module docs for the two APIs this type exposes and
 /// [`GCM_NONCE_LEN`] / `TAG_LEN` for what is fixed and what is chosen. A worker borrows the key
 /// state it was made from for `'k`: the schedule and `H` stay in the key.
-#[derive(Clone)]
 pub struct Gcm<'k, P, Dir, const TAG_LEN: usize>
 where
     P: BlockPermutation<16> + ModeNames,
@@ -477,11 +522,11 @@ where
     ///
     /// The byte-to-bit multiplication (`* 8`) cannot overflow: `aad_len` and `data_len` are held
     /// under [`MAX_AAD_LEN`] and [`MAX_DATA_LEN`] at every absorption.
-    fn tag_block(&mut self, out: &mut Secret<[u8; 16]>) {
+    fn tag_block(&mut self, token: &FinishToken, out: &mut Secret<[u8; 16]>) {
         self.ghash.pad_to_block();
         let aad_bits = self.aad_len * 8;
         let data_bits = self.data_len * 8;
-        self.ghash.finish(aad_bits, data_bits, out);
+        self.ghash.finish(token, aad_bits, data_bits, out);
         for (o, m) in out.iter_mut().zip(self.ek_j0.iter()) {
             *o ^= m;
         }
@@ -532,19 +577,19 @@ where
     /// [`SymmetricCipherError::DataLimitExceeded`] if `data` would take the message past the
     /// SP 800-38D Sec 5.2.1.1 bound `len(P) <= 2^39 - 256` bits, which is where the `Ctr`
     /// counter would be exhausted. Nothing is consumed in that case.
-    fn encrypt_in_place(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    fn encrypt_inplace(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.accepts_data(data.len())?;
         self.ctr.do_encrypt_inplace(data)?;
         self.absorb_data(data)
     }
 
     /// Algorithm 4 steps 4-6: finishes the message and returns the detached authentication tag,
-    /// truncated to `TAG_LEN` bytes (`MSB_t`, step 6). Consumes the encryptor.
-    pub(crate) fn finish(mut self) -> [u8; TAG_LEN] {
+    /// truncated to `TAG_LEN` bytes (`MSB_t`, step 6). Ends the encryptor's message.
+    pub(crate) fn finish(&mut self, token: &FinishToken) -> [u8; TAG_LEN] {
         // Covers an AAD-only or entirely empty message, where no data was ever encrypted.
         self.begin_data_if_needed();
         let mut full: Secret<[u8; 16]> = Secret::new();
-        self.tag_block(&mut full);
+        self.tag_block(token, &mut full);
         let mut tag = [0u8; TAG_LEN];
         tag.copy_from_slice(&full[..TAG_LEN]);
         tag
@@ -572,12 +617,15 @@ where
         }
         self.accepts_data(plaintext.len())?;
         ciphertext[..plaintext.len()].copy_from_slice(plaintext);
-        self.encrypt_in_place(&mut ciphertext[..plaintext.len()])?;
+        self.encrypt_inplace(&mut ciphertext[..plaintext.len()])?;
         Ok(plaintext.len())
     }
 
-    fn do_encrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
-        let tag = self.finish();
+    fn finish_encrypt(
+        &mut self,
+        token: &FinishToken,
+    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        let tag = self.finish(token);
         Ok((tag, TAG_LEN))
     }
 
@@ -599,12 +647,13 @@ where
     }
 
     /// Algorithm 4 steps 4-6; nothing is held back, so `ciphertext` is left zeroed.
-    fn do_encrypt_final_detached_out(
-        self,
+    fn finish_encrypt_detached_into(
+        &mut self,
+        token: &FinishToken,
         ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
         ciphertext.fill(0);
-        Ok((0, self.finish()))
+        Ok((0, self.finish(token)))
     }
 }
 
@@ -627,8 +676,8 @@ where
     /// Considerations section.
     ///
     /// # Errors
-    /// As `encrypt_in_place`.
-    fn decrypt_in_place(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    /// As `encrypt_inplace`.
+    fn decrypt_inplace(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.accepts_data(data.len())?;
         self.absorb_data(data)?;
         self.ctr.do_decrypt_inplace(data)?;
@@ -636,15 +685,19 @@ where
     }
 
     /// Algorithm 5 steps 5-8: recomputes `T'` and compares it against `tag` in constant time.
-    /// Consumes the decryptor; `Ok(())` is the only thing that makes the plaintext released so far
+    /// Ends the decryptor's message; `Ok(())` is the only thing that makes the plaintext released so far
     /// trustworthy.
     ///
     /// # Errors
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not match.
-    pub(crate) fn finish(mut self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
+    pub(crate) fn finish(
+        &mut self,
+        token: &FinishToken,
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
         self.begin_data_if_needed();
         let mut full: Secret<[u8; 16]> = Secret::new();
-        self.tag_block(&mut full);
+        self.tag_block(token, &mut full);
         if ct_eq_bytes(&full[..TAG_LEN], tag) {
             Ok(())
         } else {
@@ -664,7 +717,7 @@ where
     }
 
     /// Releases every byte of `tail ++ ciphertext` except the last (up to) `TAG_LEN`, which become
-    /// the new tail. Decrypts (via `decrypt_in_place`) exactly the bytes released this call, so
+    /// the new tail. Decrypts (via `decrypt_inplace`) exactly the bytes released this call, so
     /// GHASH absorbs each ciphertext byte exactly once across the whole stream.
     fn do_decrypt_out(
         &mut self,
@@ -697,7 +750,7 @@ where
             plaintext[tail_release..release].copy_from_slice(&ciphertext[..input_release]);
         }
         if release > 0 {
-            self.decrypt_in_place(&mut plaintext[..release])?;
+            self.decrypt_inplace(&mut plaintext[..release])?;
         }
 
         // The new tail is whatever of (old tail ++ ciphertext) survives past `release` bytes --
@@ -718,12 +771,15 @@ where
     /// all (Algorithm 5 step 1's "lengths not supported"). Otherwise checks the tag held in `tail`
     /// against the GHASH state built up by every prior `do_update_out` call. Releases nothing: an
     /// authenticated cipher's final output may be empty once the tag has been checked.
-    fn do_decrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+    fn finish_decrypt(
+        &mut self,
+        token: &FinishToken,
+    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
         if self.tail_len < TAG_LEN {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
         let tag = *self.tail;
-        self.finish(&tag)?;
+        self.finish(token, &tag)?;
         Ok(([0u8; TAG_LEN], 0))
     }
 
@@ -747,8 +803,9 @@ where
     /// The detached layout: the up to `TAG_LEN` bytes held back as a possible tag are ciphertext
     /// after all, so they are decrypted into `plaintext` before the tag is checked against `tag`
     /// (Algorithm 5 steps 5-8). On failure `plaintext` is zeroized before the error is returned.
-    fn do_decrypt_final_detached_out(
-        mut self,
+    fn finish_decrypt_detached_into(
+        &mut self,
+        token: &FinishToken,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; TAG_LEN],
     ) -> Result<usize, SymmetricCipherError> {
@@ -756,8 +813,8 @@ where
         let n = self.tail_len;
         self.accepts_data(n)?;
         plaintext[..n].copy_from_slice(&self.tail[..n]);
-        self.decrypt_in_place(&mut plaintext[..n])?;
-        if let Err(e) = self.finish(tag) {
+        self.decrypt_inplace(&mut plaintext[..n])?;
+        if let Err(e) = self.finish(token, tag) {
             plaintext.fill(0);
             return Err(e);
         }
@@ -788,6 +845,7 @@ mod ghash {
     //! (`11100001 || 0^120`, Sec 6.3) is the block whose first byte is `0xE1` and the rest zero, i.e.
     //! `[0xE1 << 56, 0]` in this representation.
 
+    use bouncycastle_core::traits::FinishToken;
     use bouncycastle_utils::secret::Secret;
 
     /// A block of `GF(2^128)`, in the two-`u64` form described in the module docs.
@@ -948,7 +1006,6 @@ mod ghash {
     /// intermediate values in the execution of the GCM functions shall be secret"), so both live in a
     /// [`Secret`] and are zeroized on drop; the pending partial block is live plaintext-or-ciphertext
     /// bytes still waiting to be absorbed and is wrapped for the same reason.
-    #[derive(Clone)]
     pub(crate) struct Ghash {
         /// The hash subkey `H = CIPH_K(0^128)`.
         h: Secret<Block>,
@@ -1027,7 +1084,13 @@ mod ghash {
         /// phase already (the `0^v` and `0^u` of step 5), so by the time `finish` runs there is nothing
         /// pending except this one final length block, and no caller should call `update` or
         /// `pad_to_block` again afterward.
-        pub(crate) fn finish(&mut self, aad_bits: u64, data_bits: u64, out: &mut Secret<[u8; 16]>) {
+        pub(crate) fn finish(
+            &mut self,
+            _token: &FinishToken,
+            aad_bits: u64,
+            data_bits: u64,
+            out: &mut Secret<[u8; 16]>,
+        ) {
             debug_assert_eq!(
                 self.pending_len, 0,
                 "caller must pad_to_block before finish: nothing but the length block may be pending"
@@ -1044,6 +1107,7 @@ mod ghash {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use bouncycastle_core::hazmat::finish_token;
 
         /// A minimal xorshift64* generator, so the >= 10000 pseudo-random test pairs below do not need
         /// the `rand` crate (CLAUDE.md: no new runtime dependency, and this is test-only anyway).
@@ -1167,7 +1231,7 @@ mod ghash {
                 expected = mul_reference(&expected, &h);
 
                 let mut s: Secret<[u8; 16]> = Secret::new();
-                g.finish(0, 0, &mut s);
+                g.finish(&finish_token(), 0, 0, &mut s);
                 assert_eq!(block_to_bytes(&expected), *s, "n={n}");
             }
             // Silence the unused full-message `y` computed above; it documents the general recurrence.
@@ -1185,7 +1249,7 @@ mod ghash {
             whole.update(&data);
             whole.pad_to_block();
             let mut expected: Secret<[u8; 16]> = Secret::new();
-            whole.finish(0, data.len() as u64 * 8, &mut expected);
+            whole.finish(&finish_token(), 0, data.len() as u64 * 8, &mut expected);
 
             for split in 0..=data.len() {
                 let mut g = Ghash::new(&h_bytes);
@@ -1193,7 +1257,7 @@ mod ghash {
                 g.update(&data[split..]);
                 g.pad_to_block();
                 let mut s: Secret<[u8; 16]> = Secret::new();
-                g.finish(0, data.len() as u64 * 8, &mut s);
+                g.finish(&finish_token(), 0, data.len() as u64 * 8, &mut s);
                 assert_eq!(*s, *expected, "split at {split}");
             }
         }

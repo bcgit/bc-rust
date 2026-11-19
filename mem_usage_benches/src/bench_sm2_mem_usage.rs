@@ -24,8 +24,8 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
-use bouncycastle::core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle::core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
+use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::core::traits::{SignatureSigner, SignatureVerifier};
 use bouncycastle::rng::DefaultRNG;
 use bouncycastle::sm2::keys::{PK_LEN, SK_LEN, SM2PrivateKey, SM2PublicKey, keygen};

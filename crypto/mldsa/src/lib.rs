@@ -37,6 +37,18 @@
 //! let (pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
 //! ```
 //!
+//! Into keys the caller holds, so that the private key is built where it will live and no copy
+//! of it is left behind by a move:
+//!
+//! ```rust
+//! use bouncycastle_mldsa::{MLDSA65, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSATrait};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! let mut pk = MLDSA65PublicKey::zeroized();
+//! let mut sk = MLDSA65PrivateKey::zeroized();
+//! MLDSA65::keygen_out(&mut HashDRBG_SHA512::new_from_os(), &mut pk, &mut sk).unwrap();
+//! ```
+//!
 //! A key stored as its seed is expanded with [`MLDSATrait::keygen_from_seed`] each time it is
 //! needed, so a caller that signs more than once should keep the expanded private key.
 //!
@@ -44,7 +56,7 @@
 //!
 //! ```rust
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::errors::SignatureError;
 //!
@@ -88,6 +100,22 @@
 //! | ML-DSA-87_expanded  | 57352             | 57352             |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
+//!
+//! Peak stack usage of each operation, measured with `mem_usage_benches/bench_mldsa_mem_usage` under
+//! `valgrind --tool=massif --heap=no --stacks=yes` on 2026-11-18 (release build, one call):
+//!
+//! | Operation             | ML-DSA-44 | ML-DSA-65 | ML-DSA-87 |
+//! |-----------------------|-----------|-----------|-----------|
+//! | KeyGen                | 40,776    | 63,032    | 99,128    |
+//! | KeyGen, `keygen_out`  | 40,328    | 62,104    | 97,544    |
+//! | Sign                  | 75,400    | 111,976   | 165,912   |
+//! | Verify                | 57,832    | 88,056    | 133,144   |
+//! | Sign, expanded key    | 77,800    | 115,256   | 170,504   |
+//! | Verify, expanded key  | 59,144    | 89,992    | 139,192   |
+//!
+//! Values are in bytes and include the harness's own frames; the expanded-key rows include building the
+//! expanded key from the key it borrows. [`MLDSATrait::keygen_out`] writes into keys the caller holds,
+//! so no copy of the private key is left behind by a move.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -163,6 +191,7 @@ use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
 
 mod aux_functions;
 pub mod hash_mldsa;
+pub mod hazmat;
 mod matrix;
 pub mod mldsa;
 mod mldsa_keys;

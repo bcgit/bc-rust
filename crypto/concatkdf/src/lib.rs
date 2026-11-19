@@ -73,7 +73,7 @@
 #![forbid(missing_docs)]
 
 use bouncycastle_core::errors::KDFError;
-use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token};
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -314,7 +314,7 @@ impl<H: ConcatKDFParams> ConcatKDF<H> {
                     hash.do_update(key.ref_to_bytes());
                 }
                 hash.do_update(fixed_info);
-                let block_len = hash.do_final_out(&mut block[..H::OUTPUT_LEN]);
+                let block_len = hash.finish_into(&finish_token(), &mut block[..H::OUTPUT_LEN]);
                 // Steps 6.3 and 7: Result(i) = Result(i - 1) || K(i), and DerivedKeyingMaterial
                 // its leftmost L bits.
                 let take = *min(&block_len, &(len - written));

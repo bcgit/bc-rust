@@ -15,6 +15,10 @@
   CBC, CFB, CFB8, OFB, CTR, GCM and CCM (RFC 8998's AEAD_SM4_GCM and AEAD_SM4_CCM), KW and KWP; the
   `sm4-{cbc,cfb,cfb8,ofb,ctr,gcm,ccm,kw,kwp}` CLI commands.
 * CHACHA20 -- ChaCha20, Poly1305 and ChaCha20-Poly1305 (RFC 8439).
+* RIPEMD -- `bouncycastle-ripemd`, the RIPEMD-128, RIPEMD-160, RIPEMD-256 and RIPEMD-320 hash functions of Dobbertin,
+  Bosselaers and Preneel, with bit-oriented messages and `Suspendable`; `HMAC_RIPEMD160` (RFC 2104);
+  `HashFactory` and `MACFactory` entries; the `ripemd*` and `hmac-ripemd160` CLI commands. Legacy functions,
+  below the library's smallest modelled strength, so all report `SecurityStrength::None`.
 * TDES -- three-key TDEA (NIST SP 800-67 Rev 2) as a constant-time, table-free bit-sliced engine under `hazmat`,
   with ECB, CBC, CFB64, CFB8, OFB and CTR (SP 800-38A Appendix E) and TDEA Key Wrap (SP 800-38F TKW) through the key
   role traits; two-key TDEA decrypts, unwraps and verifies CMAC tags only, which `BlockPermutation::DECRYPT_ONLY`
@@ -34,6 +38,41 @@
 * `bouncycastle-ec` -- the constant-time, fixed-width curve arithmetic under both: per-curve field, scalar and
   Jacobian-point arithmetic, SEC 1 codec and comb, wNAF and variable-base multipliers, all under `hazmat`, with the
   generic limb arithmetic (`nat`, `montgomery`, `barrett`, `inverse_vartime`) at the crate root.
+* X25519 -- `bouncycastle-ed`, the Diffie-Hellman function of RFC 7748 over Curve25519, on the key agreement
+  roles: `X25519PrivateKey` implements `AgreementKey` over `()` for the raw shared secret and over
+  `KdfParams<HkdfDescription<SHA256>, LEN>` for a derived key (`X25519_HKDF_SHA256`), and with `X25519PublicKey` the KEM roles
+  as DHKEM(X25519, HKDF-SHA256) of RFC 9180 Section 4.1 (`DHKEM_X25519_HKDF_SHA256`), through the new
+  `bouncycastle-hpke` crate's generic DHKEM;
+  `keygen` draws the key from the caller's RNG; checked against RFC 7748's vectors, RFC 9180 Appendix A.1.1, A.1.2, A.2.1, A.2.2, A.7.1 and A.7.2, and
+  Wycheproof's X25519 set; the `x25519` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree, encaps
+  and decaps.
+* DHKEM over P-256, P-384 and P-521 -- RFC 9180 Section 4.1's DHKEM(P-256, HKDF-SHA256), DHKEM(P-384, HKDF-SHA384)
+  and DHKEM(P-521, HKDF-SHA512) (`kem_id` 0x0010 to 0x0012) on the ECC CDH keys: `ECCDHPublicKey<C>` and
+  `ECCDHPrivateKey<C>` over `P256`, `P384` and `P521` carry the KEM roles with `()` as the parameters, under the
+  markers `DHKEM_P256_HKDF_SHA256`, `DHKEM_P384_HKDF_SHA384` and `DHKEM_P521_HKDF_SHA512` (`ECDHKEM<C>`), with
+  `dhkem::derive_key_pair` for Section 7.1.3's `DeriveKeyPair`. `bouncycastle-hpke` gains the rejection-sampling
+  form of `DeriveKeyPair` beside the expand form: `DHKEMParams::DERIVE_KEY_PAIR_BY_EXPAND` is replaced by
+  `DERIVE_KEY_PAIR`, a `DeriveKeyPairForm`, and `DHKEMParams::private_key_from_bytes` returns an `Option`, a change
+  for implementors of a DHKEM group. Checked against the RFC's machine-readable vectors for P-256 and P-521 (32
+  sets each; P-521's key derivation is the first two-block `LabeledExpand`), and, for P-384, which the RFC defines
+  but publishes no vectors for, against BC Java 1.84 in both directions.
+* PBKDF2 -- RFC 8018 Section 5.2 over HMAC (SHA-2, SHA-3), as `bouncycastle-pbkdf2`, on the `KDF` trait with the salt
+  and the iteration count on the instance; a key derived from a password is typed `Unknown`. The `pbkdf2` CLI command
+  reads the password from a file or stdin.
+* scrypt -- RFC 7914, as `bouncycastle-scrypt`: `SCrypt` over working memory the caller supplies
+  (`derive_with_memory_out`, `ScryptParams::work_len`), and on the `KDF` trait with the `std` feature, allocating up to
+  a limit. The `scrypt` CLI command takes `--log2-n`, `-r`, `-p` and `--max-memory`.
+* HPKE -- RFC 9180 Sections 5 and 6 in all four modes, as `bouncycastle-hpke`, on the X25519, P-256, P-384 and
+  P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
+  (Auth, AuthPSK) give contexts with `seal_out` / `open_out` and `export_out`; HKDF over SHA-256, SHA-384 or
+  SHA-512 with AES-128-GCM, AES-256-GCM, ChaCha20Poly1305 or export-only. No CLI command yet.
+* SP 800-108 -- key derivation using pseudorandom functions (NIST SP 800-108r1), as `bouncycastle-kbkdf`: the KDFs in
+  Counter, Feedback and Double-Pipeline Mode over HMAC (SHA-2, SHA-3) or CMAC (AES), and the KDF Using KMAC, on the
+  `KDF` trait; six parameterless instantiations in `KDFFactory`; the `kbkdf-counter`, `kbkdf-feedback`,
+  `kbkdf-double-pipeline`, `kbkdf-kmac128` and `kbkdf-kmac256` CLI commands.
+* `bouncycastle-dhkem` -- the generic DHKEM leaves `bouncycastle-hpke` for a crate of its own
+  (`bouncycastle_hpke::dhkem::*` is now `bouncycastle_dhkem::*`), and gains `AuthEncap` and `AuthDecap`. Its
+  `_out` functions return the number of bytes written.
 
 ## Minor features / bug fixes
 
@@ -63,14 +102,46 @@
   so an instantiation is `HKDF<SHA256>`. The SHA-3 family's suspended states are 10 bytes shorter than before
   (SHA-3 and SHAKE 405, cSHAKE 406, KMAC and TupleHash 414, ParallelHashXOF 832, ParallelHash 840), the KDF
   bookkeeping having left the sponge; a state suspended by an earlier build does not resume.
-* A worker held as `Box<dyn ..>` can finish its message (#173): each required consuming final has a `_boxed` twin
-  taking `self: Box<Self>` (`do_encrypt_final_boxed`, `do_decrypt_final_boxed`, `do_encrypt_final_detached_out_boxed`,
-  `do_decrypt_final_detached_out_boxed`, `do_final_out_boxed` on hashes, MAC generators and signers,
-  `do_verify_final_boxed` on MAC and signature verifiers), on a `*Boxed` supertrait of the worker trait that is
-  implemented for every implementor, so no worker type changes and a second final still does not compile. Not
-  covered: a hash's `Vec` and partial-bits finals and `XOF::into_squeezer`, which stay with the concrete value. The
-  twin moves the worker out of its box, so the freed heap block is not wiped, as the vacated stack slot of a
-  by-value final is not.
+* Cipher workers are no longer `Clone` (#173), for the same reason: two copies of an encryptor go on from one nonce,
+  counter or keystream position. The CBC, CFB, CFB8, CTR, OFB, ECB, GCM and CCM packet workers, the padded encryptor
+  and decryptor and `Ascon_AEAD128` lose it, both directions; a second worker is made from the key. The declared-length
+  CCM workers, the MAC workers other than KMAC's, the key-wrap workers and the ChaCha20 family were already not
+  `Clone`. Nothing else changes: the keys, key states, hashes, XOFs and KMAC workers that were `Clone` still are.
+* The AEAD keys' one-shots that work in the caller's buffer are spelled `_inplace`, as QUALITY_AND_STYLE.md's suffix
+  rule and every other in-place method already were: `encrypt_detached_inplace`, `encrypt_detached_inplace_nonce`
+  and `decrypt_detached_inplace` on the AEAD key and mode traits (formerly `_in_place`).
+* The in-place AEAD one-shots move to a role pair of their own, `AeadInPlaceEncryptionKey` /
+  `AeadInPlaceDecryptionKey` (mode traits `AeadInPlaceEncryptMode` / `AeadInPlaceDecryptMode`), which names no worker
+  type and which every AEAD key implements; `AeadEncryptionKey`, `AeadDeclaredEncryptionKey` and their decrypting
+  halves no longer carry them. Callers import the new traits; behaviour is unchanged. The bodies over a streaming
+  worker are public as `core::symmetric_key::encrypt_detached_inplace` / `decrypt_detached_inplace`, for an AEAD key
+  outside `core` to implement the role with.
+* The signature one-shots over a whole message move to roles of their own, `OneShotSigningKey`,
+  `DeterministicOneShotSigningKey` and `OneShotVerifyingKey`, which name no worker type, so a scheme that cannot take
+  its message in pieces can implement them alone. Each is a supertrait of its streaming role (`SigningKey`,
+  `DeterministicSigningKey`, `VerifyingKey`), which keeps only its `create_*` constructor; every key implements the
+  one-shot role over its own worker with `core::signature_key::sign_out_with_signer` / `verify_with_verifier`, which
+  are public for a key outside `core` to do the same. Callers of `sign`, `sign_out`, `sign_deterministic`,
+  `sign_deterministic_out` and `verify` import the new traits; behaviour is unchanged.
+* Workers are finished where they sit, and a worker held as `Box<dyn ..>` can finish its message (#173). Each worker
+  trait (`Hash`, the symmetric and AEAD encryptors and decryptors, `MACGenerator` / `MACVerifier`, `SignatureSigner` /
+  `SignatureVerifier`) now has one required finishing method on `&mut self` (`finish_into`,
+  `finish_partial_bits_into`, `finish_encrypt`, `finish_decrypt`,
+  `finish_encrypt_detached_into`, `finish_decrypt_detached_into`, `finish_mac_into`, `finish_mac_verify`,
+  `finish_signature_into`, `finish_signature_verify`), and the consuming finals are provided over it, each with a
+  `_boxed` twin taking `self: Box<Self>` (`do_final_out_boxed`, `do_final_partial_bits_out_boxed`,
+  `do_encrypt_final_boxed`, `do_decrypt_final_boxed`, `do_encrypt_final_detached_out_boxed`,
+  `do_decrypt_final_detached_out_boxed`, `do_verify_final_boxed`). A boxed worker's `Secret` state is wiped inside its
+  box, which the final never moves it out of. The finishing methods take a `&core::traits::FinishToken`, whose
+  constructor is private to `core`, so that they are called by the provided consuming finals and not a second time by
+  accident; a worker type that deliberately hands its token to a worker it only borrows can still defeat this. Callers
+  are unaffected; an implementor of a worker trait outside this workspace writes the in-place method instead of the
+  consuming final. Code that owns a worker without implementing a worker trait takes a token from
+  `core::hazmat::finish_token()` and with it the duty to finish the worker once and not use it again: the X9.63 and
+  concatenation KDFs' block loops, `MuBuilder::do_final`, `MACFactoryWorker`'s finals, CCM's in-place one-shots, and
+  HMAC's hazmat half `finish_out`, which now borrows the inner hash (`finish_out(&key, &mut inner, out)`) for HKDF and
+  RFC 6979. Not covered: a by-value final is still handed the worker by a move, which may leave a copy unwiped, as may
+  any move the caller makes, and `XOF::into_squeezer` still consumes.
 * KEM encapsulation and decapsulation move onto the keys, as signing did: the `EncapsulatingKey` /
   `DecapsulatingKey` roles in `core::kem_key` hand out `KEMEncapsulator` / `KEMDecapsulator` workers that
   borrow the key, implemented per algorithm over the parameters a worker is made from (`()` for ML-KEM, a
@@ -162,7 +233,7 @@
 * `bouncycastle-eccdh`: ECC CDH (SP 800-56A Rev. 3 Section 5.7.1.2) over P-256, P-384, P-521, secp256k1,
   brainpoolP256r1, brainpoolP384r1 and brainpoolP512r1, with its own key types per curve (full public-key
   validation at decode, key generation by extra random bits), the markers `ECCDHP256` and friends on the
-  `AgreementKey` role over `()`, and `ECCDHP256_HKDF_SHA256` over `KdfParams<HKDF_SHA256, LEN>` on the P-256 keys;
+  `AgreementKey` role over `()`, and `ECCDHP256_HKDF_SHA256` over `KdfParams<HkdfDescription<SHA256>, LEN>` on the P-256 keys;
   tested against the CAVP ECC CDH primitive vectors, RFC 7027 Appendix A and the Wycheproof ECDH sets.
 * `bouncycastle-x963kdf`: the ANSI X9.63 KDF of SEC 1 v2 Section 3.6.1 over SHA-224, SHA-256, SHA-384 and
   SHA-512, on the `KDF` trait and in `KDFFactory` (`X963KDF-SHA256` and so on) and as the `x963kdf-sha*` CLI
@@ -194,4 +265,14 @@
   encodings and the default pairings' outputs are unchanged. The tests now cover the CAVP SigGen and SigVer matrix
   for P-256, P-384 and P-521 under SHA-224 to SHA-512, RFC 6979's appendix under the same hashes, and every
   Wycheproof ECDSA file for these curves, SHA-3 included.
+* The six per-role key encoding traits are one pair, `PrivateKey<N>` / `PublicKey<N>`, with `from_bytes` returning
+  `KeyDecodingError`, which converts into each role's error as its `DecodingError`. A key that serves two roles, such
+  as X25519 in key agreement and as a KEM, implements it once, so `encode` and `from_bytes` are no longer ambiguous
+  on it.
 
+* Hidden stack copies removed from the `mldsa` and `mldsa-lowmemory` crates; `mldsa-lowmemory`'s memory table is re-measured.
+* `keygen_out` / `keygen_from_seed_out` on `MLDSATrait` and `MLKEMTrait` generate into keys made with `zeroized()` (ML-KEM into the private key alone, whose `pk()` is the public key), leaving no copy of the private key behind; an unfilled key does not sign, verify or decapsulate (`ActingOnZeroizedKey`).
+* ML-DSA and ML-KEM stack usage is lower (ML-DSA-87 KeyGen 133,320 to 99,128 bytes, expanded-key Verify 189,240 to 139,192; ML-KEM-1024 Encaps 41,816 to 32,040); both memory tables are re-measured.
+* `SampleNTT` and `RejBoundedPoly` squeeze whole SHAKE blocks (504 and 272 bytes); the ML-KEM memory tables are re-measured.
+* `bouncycastle-utils`: `ct_eq_bytes_mask` is renamed `ct_eq_bytes_condition`.
+* HashML-DSA can use a pre-hash weaker than the parameter set when the caller names it as `hazmat::AnyStrength<H>` (in `mldsa` and `mldsa-lowmemory`; `--allow-weak-hash` in the CLI), which lowers the signature's strength to the hash's; the default still refuses it. The ACVP pre-hash vectors, which pair every hash with every parameter set, now run. `HashAlgParams` gains `PRE_HASH_STRENGTH_RULE`, which a hash function leaves at its default.

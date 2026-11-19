@@ -41,10 +41,12 @@
 //! the hash's OID go into the message representative (Algorithm 4, line 23), so a pure-message
 //! verifier rejects it. FIPS 204 requires the hash to carry at least the parameter set's strength
 //! (Section 5.4 and footnote 6), which is why SHA-256 pairs with ML-DSA-44 only; a weaker hash is
-//! refused when the signer is made. The named pairings of FIPS 204 are the [`HashMLDSA`] marker
-//! types below, which carry the pairing's name and OID.
+//! refused when the signer is made, unless it is named as
+//! [`hazmat::AnyStrength<H>`](crate::hazmat::AnyStrength), which opts out of that check and
+//! leaves the signature only as strong as the hash. The named pairings of FIPS 204 are the
+//! [`HashMLDSA`] marker types below, which carry the pairing's name and OID.
 
-use crate::mldsa::{MLDSA, MLDSA_RND_LEN, draw_rnd};
+use crate::mldsa::{MLDSA, MLDSA_RND_LEN, Rnd, draw_rnd};
 use crate::params::{
     HashMLDSA44_with_SHA256Params, HashMLDSA44_with_SHA512Params, HashMLDSA65_with_SHA512Params,
     HashMLDSA87_with_SHA512Params, HashMLDSAParams, MLDSAParams, SignatureLen,
@@ -55,9 +57,17 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     DeterministicPreHashSigningKey, PreHash, PreHashSigningKey, PreHashVerifyingKey,
 };
-use bouncycastle_core::traits::{Algorithm, AlgorithmOID, RNG, SignatureSigner, SignatureVerifier};
+
+use bouncycastle_core::traits::{
+    Algorithm, AlgorithmOID, FinishToken, RNG, SignatureSigner, SignatureVerifier,
+};
 use bouncycastle_mldsa_common::mu_builder::compute_mu_ph;
+use bouncycastle_mldsa_common::params::weaker_of;
 use core::marker::PhantomData;
+
+/// The buffer the pre-hash digest is finished into: 512 bits, the widest digest of a hash in
+/// this library.
+const MAX_PH_LEN: usize = 64;
 
 /*** Constants ***/
 
@@ -124,9 +134,12 @@ impl AlgorithmOID for HashMLDSA87_with_SHA512 {
 
 /*** The workers ***/
 
-/// FIPS 204 Section 5.4: the hash must give at least the parameter set's strength.
+/// FIPS 204 Section 5.4: the hash must give at least the parameter set's strength, unless the
+/// caller opted out by naming it as [`AnyStrength`](crate::hazmat::AnyStrength), which waives
+/// the rule.
 fn check_hash_strength<P: MLDSAParams, H: PreHash>() -> Result<(), SignatureError> {
-    if H::MAX_SECURITY_STRENGTH < P::MAX_SECURITY_STRENGTH {
+    if !H::PRE_HASH_STRENGTH_RULE.is_waived() && H::MAX_SECURITY_STRENGTH < P::MAX_SECURITY_STRENGTH
+    {
         return Err(SignatureError::PreHashTooWeak);
     }
     Ok(())
@@ -161,25 +174,36 @@ pub struct HashMLDSASigner<'k, P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>, H: P
     // HashML-DSA buffers the message in the pre-hash, not in mu, so the context waits here.
     ctx: [u8; 255],
     ctx_len: usize,
-    rnd: [u8; MLDSA_RND_LEN],
+    rnd: Rnd,
 }
 
 fn new_ph_signer<'k, P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>, H: PreHash>(
     sk: &'k SK,
-    rnd: [u8; MLDSA_RND_LEN],
+    rnd: &[u8; MLDSA_RND_LEN],
     ctx: Option<&[u8]>,
 ) -> Result<HashMLDSASigner<'k, P, SK, H>, SignatureError> {
     check_hash_strength::<P, H>()?;
     let (ctx, ctx_len) = parse_ctx(ctx)?;
-    Ok(HashMLDSASigner { _phantom: PhantomData, sk, hash: H::default(), ctx, ctx_len, rnd })
+    let mut signer = HashMLDSASigner {
+        _phantom: PhantomData,
+        sk,
+        hash: H::default(),
+        ctx,
+        ctx_len,
+        rnd: Rnd::new(),
+    };
+    *signer.rnd = *rnd;
+    Ok(signer)
 }
 
-/// The worker reports the ML-DSA parameter set it signs with; the hash is in its type.
+/// The worker reports the weaker of its parameter set and its pre-hash, which is the parameter
+/// set's unless the strength rule was waived (`hazmat::AnyStrength`).
 impl<P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>, H: PreHash> Algorithm
     for HashMLDSASigner<'_, P, SK, H>
 {
     const ALG_NAME: &'static str = P::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
+    const MAX_SECURITY_STRENGTH: SecurityStrength =
+        weaker_of(P::MAX_SECURITY_STRENGTH, H::MAX_SECURITY_STRENGTH);
 }
 
 impl<P: SignatureLen<SIG_LEN>, SK: MLDSAPrivateKeyTrait<P>, H: PreHash, const SIG_LEN: usize>
@@ -189,20 +213,21 @@ impl<P: SignatureLen<SIG_LEN>, SK: MLDSAPrivateKeyTrait<P>, H: PreHash, const SI
         self.hash.do_update(msg_chunk);
     }
 
-    fn do_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut out = [0u8; SIG_LEN];
-        self.do_final_out(&mut out)?;
-        Ok(out)
-    }
-
-    fn do_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
+    fn finish_signature_into(
+        &mut self,
+        token: &FinishToken,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
         output.fill(0);
-        let ph = self.hash.do_final();
+        const { assert!(H::OUTPUT_LEN <= MAX_PH_LEN, "the pre-hash digest fits MAX_PH_LEN") };
+        let mut ph = [0u8; MAX_PH_LEN];
+        let ph = &mut ph[..H::OUTPUT_LEN];
+        self.hash.finish_into(token, ph);
         sign_ph_with_rnd::<P, SK, H, SIG_LEN>(
             self.sk,
-            &ph,
+            ph,
             Some(&self.ctx[..self.ctx_len]),
-            self.rnd,
+            &self.rnd,
             output,
         )
     }
@@ -219,7 +244,7 @@ fn sign_ph_with_rnd<
     sk: &SK,
     ph: &[u8],
     ctx: Option<&[u8]>,
-    rnd: [u8; MLDSA_RND_LEN],
+    rnd: &[u8; MLDSA_RND_LEN],
     output: &mut [u8; SIG_LEN],
 ) -> Result<usize, SignatureError> {
     output.fill(0);
@@ -289,7 +314,8 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG
     Algorithm for HashMLDSAVerifier<'_, P, PK, H, SIG_LEN>
 {
     const ALG_NAME: &'static str = P::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
+    const MAX_SECURITY_STRENGTH: SecurityStrength =
+        weaker_of(P::MAX_SECURITY_STRENGTH, H::MAX_SECURITY_STRENGTH);
 }
 
 impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG_LEN: usize>
@@ -299,9 +325,16 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG
         self.hash.do_update(msg_chunk);
     }
 
-    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
-        let ph = self.hash.do_final();
-        verify_ph::<P, PK, H, SIG_LEN>(self.pk, &ph, Some(&self.ctx[..self.ctx_len]), sig)
+    fn finish_signature_verify(
+        &mut self,
+        token: &FinishToken,
+        sig: &[u8],
+    ) -> Result<(), SignatureError> {
+        const { assert!(H::OUTPUT_LEN <= MAX_PH_LEN, "the pre-hash digest fits MAX_PH_LEN") };
+        let mut ph = [0u8; MAX_PH_LEN];
+        let ph = &mut ph[..H::OUTPUT_LEN];
+        self.hash.finish_into(token, ph);
+        verify_ph::<P, PK, H, SIG_LEN>(self.pk, ph, Some(&self.ctx[..self.ctx_len]), sig)
     }
 }
 
@@ -320,7 +353,9 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> PreHashSigningKey<MLDSA<P>,
         rng: &mut dyn RNG,
         ctx: Option<&[u8]>,
     ) -> Result<Self::PreHashSigner<'k, H>, SignatureError> {
-        new_ph_signer(self, draw_rnd(rng)?, ctx)
+        let mut rnd = Rnd::new();
+        draw_rnd(rng, &mut rnd)?;
+        new_ph_signer(self, &rnd, ctx)
     }
 
     fn sign_ph_out<H: PreHash>(
@@ -331,8 +366,9 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> PreHashSigningKey<MLDSA<P>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
         output.fill(0);
-        let rnd = draw_rnd(rng)?;
-        sign_ph_with_rnd::<P, Self, H, SIG_LEN>(self, ph, ctx, rnd, output)
+        let mut rnd = Rnd::new();
+        draw_rnd(rng, &mut rnd)?;
+        sign_ph_with_rnd::<P, Self, H, SIG_LEN>(self, ph, ctx, &rnd, output)
     }
 }
 
@@ -350,7 +386,7 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::PreHashSigner<'k, H>, SignatureError> {
-        new_ph_signer(self, [0u8; MLDSA_RND_LEN], ctx)
+        new_ph_signer(self, &[0u8; MLDSA_RND_LEN], ctx)
     }
 
     fn sign_ph_deterministic_out<H: PreHash>(
@@ -359,7 +395,7 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        sign_ph_with_rnd::<P, Self, H, SIG_LEN>(self, ph, ctx, [0u8; MLDSA_RND_LEN], output)
+        sign_ph_with_rnd::<P, Self, H, SIG_LEN>(self, ph, ctx, &[0u8; MLDSA_RND_LEN], output)
     }
 }
 

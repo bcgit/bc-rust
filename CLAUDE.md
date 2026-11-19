@@ -148,6 +148,13 @@ Repo mechanics behind those rules, which the documents don't spell out:
 - Trait → factory → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework--factory-spine) above for the crates involved.
 - AI-drafted docs and comments run long. Before committing, check them against QUALITY_AND_STYLE.md's "Proportion"
   rule: cut duplicated material, long rationale and restated spec text rather than adding more.
+- **Comments describe the code that is there, not the road that led to it.** Do not add a comment
+  explaining a transient design decision — an approach that was tried and abandoned, what an earlier
+  version did, why one formulation was chosen over another that is no longer present — or describing
+  a design the code does not use. Such comments are noise: they age badly, and a reader has to work
+  out that they describe nothing in front of them. A comment that explains why the present code is
+  the way it is, and that a naive edit would break it (a spec step, an invariant, a constraint), is
+  wanted; a comment narrating how it got that way is not.
 
 ## Scope of changes
 
@@ -187,13 +194,15 @@ taught, as mechanics to apply next time a cipher type is shaped or reshaped:
 - **Fold wrapper state into the struct.** A decrypt-only buffer (the held-back tag) is carried on
   both directions, unused when encrypting, as `Gcm` already does; that is cheaper than a second
   type.
-- **Keyed workers do not suspend.** As of #173 no cipher or MAC worker implements
-  `SuspendableComponent`, and `hazmat::ModeKey` is gone with them; `SuspendableKeyed` itself went
-  with HMAC's and HKDF's impls (a worker cannot be rebuilt without its key, and its state is
-  key-derived material anyway), and the hashes, XOFs and KMAC keep `Suspendable`. A message in progress is paused by holding its worker. A test that needs a
-  worker at a limit the public API cannot reach (GCM at `MAX_DATA_LEN`, the last counter block)
-  is a unit test in the mode's file that sets the private field, not a resume from a patched
-  state.
+- **Keyed workers do not suspend, and cipher workers do not clone.** As of #173 no cipher
+  worker is `Clone`, and of the MAC workers only KMAC's are (a copied MAC computation repeats
+  no nonce or keystream). No cipher or MAC worker implements `SuspendableComponent`, and
+  `hazmat::ModeKey` is gone with them; `SuspendableKeyed` itself went with HMAC's and HKDF's
+  impls (a worker cannot be rebuilt without its key, and its state is key-derived material
+  anyway), and the hashes, XOFs and KMAC keep `Suspendable`. A message in progress is paused by
+  holding its worker. A test that needs a worker at a limit the public API cannot reach (GCM at
+  `MAX_DATA_LEN`, the last counter block) is a unit test in the mode's file that sets the
+  private field, not a resume from a patched state.
 - **When public items go, the tests follow the API, and the benches get built.** Integration
   tests move onto the trait methods rather than the inherent ones surviving for their sake.
   `cargo test --workspace` does not compile `benches/` or `mem_usage_benches`, so finish with
@@ -218,7 +227,8 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   a worker trait.
 - **Mode types carry the role.** A key is `BlockCipherKey<P, M>` (aliased `AES128Key<M>` and the like); which role pairs it implements is
   decided by `M`'s mode-trait impls in `core::hazmat::mode` (`SymmetricEncryptMode`,
-  `BlockEncryptMode`, `EcbEncryptMode`, `AeadEncryptMode`, `AeadDeclaredEncryptMode`, `MacMode`).
+  `BlockEncryptMode`, `EcbEncryptMode`, `AeadEncryptMode`, `AeadDeclaredEncryptMode`,
+  `AeadInPlaceEncryptMode`, `MacMode`).
   Padding and frame parameters live in the mode type (`CBC<PKCS7>`, `CBC<Blocks>`,
   `ECB<Blocks>`, `CTR<12>`, `CCM_Packet<12, 16, 64, 1024>`), not on a worker alias.
 - **The key length stops at the key.** `BlockPermutation<BLOCK_LEN>` carries the block methods
@@ -260,7 +270,7 @@ cipher and MAC traits had (`local/signer_verifier_init_removal_plan.md`). Mechan
   parameter set (`P: SignatureLen<SIG_LEN>`); the solver then infers `N` from `P`, and
   `sk.sign(..)` needs no annotation. One trait per length, not one trait for all of them: an
   impl's const parameter must appear in the trait reference or the self type, and
-  `SignaturePublicKey<PK_LEN>` names only one. Where a whole encoding is needed with no const in
+  `PublicKey<PK_LEN>` names only one. Where a whole encoding is needed with no const in
   scope (`compute_tr`, `PartialEq`), the parameter set supplies the buffer type
   (`P::PkEncoded`). The alternative, one concrete impl per parameter set, is a macro's worth of
   copies.
@@ -310,7 +320,7 @@ agreement next:
 - **Lengths come off the key types the ML-DSA way, with slice helpers where no const is in
   scope.** `MLKEMPublicKey<P>` encodes into a slice (`encode_into`), hashes itself a polynomial
   at a time and compares field by field, so nothing inside a generic `impl<P>` needs a
-  `[u8; PK_LEN]`; the array forms are the `KEMPublicKey<N>` impls, bound `P: PublicKeyLen<N>`.
+  `[u8; PK_LEN]`; the array forms are the `PublicKey<N>` impls, bound `P: PublicKeyLen<N>`.
 - **A `--jobs N` mutants run owns N scratch trees.** Every `/tmp/cargo-mutants-bc-rust-*.tmp`
   with a fresh mtime belongs to the live run; deleting any of them kills it.
 
@@ -335,6 +345,38 @@ direction in the worker types. Mechanics to reuse:
 - **A run-time-length tag has one home, the factory.** `MACFactory` and the `kmac*` CLI
   commands (which bind their length through KMACXOF's final read, SP 800-185 Sec 4.3.1) are
   where a length chosen at run time lives; everywhere else it is the key type's.
+
+## Lessons from the in-place finals (November 2026)
+
+Issue #173's last steps made workers finishable where they sit, so that a `Box<dyn ..>` worker can
+end its message, and took `Clone` off the cipher workers. QUALITY_AND_STYLE.md has the rule (the
+`finish_ / _into` naming and the "Architecture" paragraph); the mechanics behind it:
+
+- **A by-value final is not in the vtable.** `do_final(self)` cannot be called on `Box<dyn ..>`,
+  and a `self: Box<Self>` twin written as a forward moves the worker out of its box, leaving the
+  heap block unwiped. Each worker trait therefore has a required `&mut self` finishing method
+  (`finish_into`, `finish_encrypt`, `finish_mac_into`, `finish_signature_verify`, ...; `Hash`
+  has a second for a partial last byte); the consuming finals and their `_boxed` twins are
+  provided over it, and an implementor writes only the `finish_` methods.
+- **The token guards against accidents, not against intent.** The `finish_` methods take a
+  `&FinishToken` whose constructor is private to `core`, so only a provided final calls them.
+  Code that owns a worker without being one (a KDF's block loop, `MuBuilder::do_final`,
+  `MACFactoryWorker`, CCM's in-place one-shots, HMAC's hazmat `finish_out`) takes a token from
+  `core::hazmat::finish_token()` and with it the duty to finish once and not use the worker
+  again. Crate-internal keyed helpers take the token as a parameter rather than minting one.
+- **A new worker type owes the `finish_` method, not a final.** A worker that implements only
+  `do_*_final` no longer compiles, the `finish_` method being the required one; convert a
+  branch's workers before it merges a release tip that has the token (`feature/rsa-sig`'s
+  signers and verifiers had to be).
+- **Not-`Clone` is asserted at compile time, per crate.** `crypto/aes/tests/worker_not_clone_tests.rs`
+  lists the cipher crate's workers over the AES permutation and fails to compile if one becomes
+  `Clone`; add a new mode's workers to it. A worker in its own crate is asserted there, by the
+  same test (Ascon) or a doctest (ChaCha20, Poly1305). A wrapper over another worker must be
+  named over a `Clone` inner type, or a derived `Clone`, being conditional, passes unnoticed.
+  Check a new assertion by putting `Clone` back on the type. `Tkw`, `HMAC`, the BLAKE MACs,
+  `MACFactoryWorker` and `HpkeContext` are not `Clone` but have no assertion yet.
+- **`git stash create` fails with an intent-to-add file in the tree;** stage the file before
+  pushing a work-in-progress tree to apollo for a mutants run.
 
 ## KDF descriptions must stay readable by hardware (November 2026)
 
@@ -397,7 +439,9 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 Six workflows under `.github/workflows/`, all triggered by pull requests:
 
-- `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable.
+- `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then
+  `cargo test -p bouncycastle-scrypt --no-default-features`, since `--all-features` never
+  builds a crate with a default feature off.
 - `rust-test.yml`: `cargo test --all` on stable.
 - `rust-style.yml`: `cargo fmt --all --check` on **nightly** rustfmt, so format before every commit.
 - `rust-docs.yml`: `cargo doc --all` on stable.

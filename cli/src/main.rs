@@ -17,13 +17,17 @@ mod encoders_cmd;
 mod gcm_cmd;
 mod helpers;
 mod hkdf_cmd;
+mod kbkdf_cmd;
 mod kdf_cmd;
 mod kw_cmd;
 mod mac_cmd;
 mod mldsa_cmd;
 mod mlkem_cmd;
 mod ofb_cmd;
+mod pbkdf2_cmd;
+mod ripemd_cmd;
 mod rng_cmd;
+mod scrypt_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
 mod sm2_cmd;
@@ -42,13 +46,18 @@ mod tdes_ecb_cmd;
 mod tdes_ofb_cmd;
 mod tdes_tkw_cmd;
 mod xts_cmd;
+mod x25519_cmd;
 
 use crate::blake2_cmd::BLAKE2Variant;
 use crate::eccdh_cmd::ECCDHAction;
 use crate::ecdsa_cmd::ECDSAAction;
 use crate::hkdf_cmd::HKDFVariant;
+use crate::kbkdf_cmd::{
+    CounterPositionArg, IterationCounterPositionArg, KbkdfKmac, KbkdfPrf, KdfInputs,
+};
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::{MLDSAAction, PreHashAlg};
+use crate::ripemd_cmd::RIPEMDVariant;
 use crate::rng_cmd::DrbgHash;
 use crate::sha2_cmd::SHA2Variant;
 use crate::sha3_cmd::{SHA3Variant, Strength};
@@ -1360,51 +1369,68 @@ enum Subcommands {
     /// to a file and give that to `hkdf-sha256 --ikm-file`, `x963kdf-sha256 --ikm-file` or
     /// `concatkdf-sha256 --ikm-file`, not the inline `--ikm`, which leaves Z in the command
     /// history. Keys are for key agreement
-    /// only, never also for signing.
+    /// only, never also for signing. `encaps` and `decaps` are DHKEM(P-256, HKDF-SHA256)
+    /// (RFC 9180) on the same key pair: `encaps` writes the ciphertext to --ctfile and the shared
+    /// secret to stdout, or with no --ctfile both to stdout in hex, the ciphertext first, one per
+    /// line.
     ECCDH_P256 {
         action: ECCDHAction,
 
         #[arg(long)]
-        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent, except for decaps, which requires it
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree, the recipient's for encaps (stdin if absent)
         pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (raw bytes; hex with --hex-input): written by encaps, read by decaps (stdin if absent).
+        ctfile: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 
-    /// ECC CDH key agreement over NIST P-384 (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    /// ECC CDH key agreement over NIST P-384 (SP 800-56A Rev. 3 Section 5.7.1.2), and
+    /// DHKEM(P-384, HKDF-SHA384) (RFC 9180). See eccdh-p256.
     ECCDH_P384 {
         action: ECCDHAction,
 
         #[arg(long)]
-        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent, except for decaps, which requires it
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree, the recipient's for encaps (stdin if absent)
         pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (raw bytes; hex with --hex-input): written by encaps, read by decaps (stdin if absent).
+        ctfile: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 
-    /// ECC CDH key agreement over NIST P-521 (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    /// ECC CDH key agreement over NIST P-521 (SP 800-56A Rev. 3 Section 5.7.1.2), and
+    /// DHKEM(P-521, HKDF-SHA512) (RFC 9180). See eccdh-p256.
     ECCDH_P521 {
         action: ECCDHAction,
 
         #[arg(long)]
-        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent, except for decaps, which requires it
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree, the recipient's for encaps (stdin if absent)
         pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (raw bytes; hex with --hex-input): written by encaps, read by decaps (stdin if absent).
+        ctfile: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1973,8 +1999,14 @@ enum Subcommands {
 
         #[arg(long, value_enum, default_value_t = PreHashAlg::Sha512)]
         /// The pre-hash (FIPS 204 Section 5.4); it must be at least as strong as the parameter
-        /// set, so sha256 and shake128 fit hash-mldsa44 only.
+        /// set, so sha256 and shake128 fit hash-mldsa44 only, unless --allow-weak-hash.
         hash: PreHashAlg,
+
+        #[arg(long)]
+        /// Accept a --hash weaker than the parameter set, when signing or verifying. This
+        /// lowers the signature's strength to the hash's; it is for interoperability and
+        /// validation testing.
+        allow_weak_hash: bool,
 
         #[arg(long)]
         /// The file containing the context string (raw bytes; hex with --hex-input) for signing or verifying
@@ -2013,8 +2045,14 @@ enum Subcommands {
 
         #[arg(long, value_enum, default_value_t = PreHashAlg::Sha512)]
         /// The pre-hash (FIPS 204 Section 5.4); it must be at least as strong as the parameter
-        /// set, so sha256 and shake128 fit hash-mldsa44 only.
+        /// set, so sha256 and shake128 fit hash-mldsa44 only, unless --allow-weak-hash.
         hash: PreHashAlg,
+
+        #[arg(long)]
+        /// Accept a --hash weaker than the parameter set, when signing or verifying. This
+        /// lowers the signature's strength to the hash's; it is for interoperability and
+        /// validation testing.
+        allow_weak_hash: bool,
 
         #[arg(long)]
         /// The file containing the context string (raw bytes; hex with --hex-input) for signing or verifying
@@ -2053,8 +2091,14 @@ enum Subcommands {
 
         #[arg(long, value_enum, default_value_t = PreHashAlg::Sha512)]
         /// The pre-hash (FIPS 204 Section 5.4); it must be at least as strong as the parameter
-        /// set, so sha256 and shake128 fit hash-mldsa44 only.
+        /// set, so sha256 and shake128 fit hash-mldsa44 only, unless --allow-weak-hash.
         hash: PreHashAlg,
+
+        #[arg(long)]
+        /// Accept a --hash weaker than the parameter set, when signing or verifying. This
+        /// lowers the signature's strength to the hash's; it is for interoperability and
+        /// validation testing.
+        allow_weak_hash: bool,
 
         #[arg(long)]
         /// The file containing the context string (raw bytes; hex with --hex-input) for signing or verifying
@@ -2094,6 +2138,85 @@ enum Subcommands {
     /// Encode binary data from stdin to hex.
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     HexEncode,
+
+    /// PBKDF2 (RFC 8018 Section 5.2) over HMAC: a derived key of len bytes from a password, a salt
+    /// and an iteration count. The password is read from --password-file, or from stdin, as the
+    /// bytes it is given: a trailing newline is part of it.
+    #[command(name = "pbkdf2")]
+    PBKDF2 {
+        /// The HMAC to run PBKDF2 over.
+        #[arg(long, value_enum)]
+        prf: pbkdf2_cmd::Pbkdf2Prf,
+
+        /// A file containing the password (raw bytes; hex with --hex-input). Stdin when absent.
+        #[arg(short, long)]
+        password_file: Option<String>,
+
+        /// The salt in hex.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// The iteration count: at least 1.
+        #[arg(short = 'c', long)]
+        iterations: std::num::NonZeroU32,
+
+        /// Length of the derived key, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// scrypt (RFC 7914): a derived key of len bytes from a password, a salt and the cost
+    /// parameters N, r and p. The password is read from --password-file, or from stdin, as the
+    /// bytes it is given: a trailing newline is part of it. The working memory is
+    /// `128 * r * (N + p + 1)` bytes.
+    #[command(name = "scrypt")]
+    SCrypt {
+        /// log2 of the CPU/memory cost parameter N: 14 is N = 16384.
+        #[arg(short = 'n', long)]
+        log2_n: u8,
+
+        /// The block size parameter r.
+        #[arg(short, long, default_value_t = 8)]
+        r: u32,
+
+        /// The parallelization parameter p.
+        #[arg(short, long, default_value_t = 1)]
+        p: u32,
+
+        /// The most working memory to use, in MiB; parameters that need more are refused.
+        #[arg(long, default_value_t = 256)]
+        max_memory: usize,
+
+        /// A file containing the password (raw bytes; hex with --hex-input). Stdin when absent.
+        #[arg(long)]
+        password_file: Option<String>,
+
+        /// The salt in hex.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// Length of the derived key, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
 
     /// The NIST concatenation KDF over SHA-256 (SP 800-56C Rev. 2 Section 4.1, H(x) = hash(x)):
     /// keying material of len bytes from a shared secret and the optional FixedInfo,
@@ -2396,6 +2519,253 @@ enum Subcommands {
         additional_input_file: Option<String>,
 
         /// Length of keying data to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The KDF in Counter Mode (SP 800-108r1 Section 4.1): keying material of len bytes from a
+    /// key-derivation key and the fixed input data, `K(i) = PRF(K_IN, [i]2 || fixed input data)`.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "kbkdf-counter")]
+    KBKDF_Counter {
+        /// The PRF.
+        #[arg(long, value_enum)]
+        prf: KbkdfPrf,
+
+        /// The counter's size in bits: 8, 16, 24 or 32.
+        #[arg(long, default_value_t = 32)]
+        counter_bits: u32,
+
+        /// Where the counter goes; in-fixed takes --counter-offset.
+        #[arg(long, value_enum, default_value_t = CounterPositionArg::Before)]
+        counter_position: CounterPositionArg,
+
+        /// With --counter-position in-fixed, the bytes of fixed input data before the counter.
+        #[arg(long)]
+        counter_offset: Option<usize>,
+
+        /// Apply Section 4.1's guard against key control. Changes the output.
+        #[arg(long)]
+        key_control_guard: bool,
+
+        /// The key-derivation key K_IN in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the key-derivation key K_IN in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The fixed input data in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the fixed input data in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The KDF in Feedback Mode (SP 800-108r1 Section 4.2): keying material of len bytes from a
+    /// key-derivation key and the fixed input data,
+    /// `K(i) = PRF(K_IN, K(i-1) {|| [i]2} || fixed input data)`, `K(0) = IV`.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "kbkdf-feedback")]
+    KBKDF_Feedback {
+        /// The PRF.
+        #[arg(long, value_enum)]
+        prf: KbkdfPrf,
+
+        /// The IV in hex. Optional; defaults to empty.
+        /// A secret IV should come from `iv_file`, which keeps it out of command history.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the IV in binary. Optional.
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// The counter's size in bits: 8, 16, 24 or 32. Optional: absent, no counter is used.
+        #[arg(long)]
+        counter_bits: Option<u32>,
+
+        /// Where the counter goes; after-iteration if absent. Needs --counter-bits.
+        #[arg(long, value_enum)]
+        counter_position: Option<IterationCounterPositionArg>,
+
+        /// Apply Section 4.2's guard against key control, which derives the IV: needs
+        /// --counter-bits, and not with --iv or --iv-file. Changes the output.
+        #[arg(long)]
+        key_control_guard: bool,
+
+        /// The key-derivation key K_IN in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the key-derivation key K_IN in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The fixed input data in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the fixed input data in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The KDF in Double-Pipeline Mode (SP 800-108r1 Section 4.3): keying material of len bytes
+    /// from a key-derivation key and the fixed input data, A(i) = PRF(K_IN, A(i-1)),
+    /// `K(i) = PRF(K_IN, A(i) {|| [i]2} || fixed input data)`.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "kbkdf-double-pipeline")]
+    KBKDF_DoublePipeline {
+        /// The PRF.
+        #[arg(long, value_enum)]
+        prf: KbkdfPrf,
+
+        /// The counter's size in bits: 8, 16, 24 or 32. Optional: absent, no counter is used.
+        #[arg(long)]
+        counter_bits: Option<u32>,
+
+        /// Where the counter goes; after-iteration if absent. Needs --counter-bits.
+        #[arg(long, value_enum)]
+        counter_position: Option<IterationCounterPositionArg>,
+
+        /// The key-derivation key K_IN in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the key-derivation key K_IN in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The fixed input data in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the fixed input data in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The KDF Using KMAC128 (SP 800-108r1 Section 4.4): keying material of len bytes,
+    /// K_OUT = KMAC128(K_IN, Context, L, Label), from a key-derivation key of at most 512 bytes.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "kbkdf-kmac128")]
+    KBKDF_KMAC128 {
+        /// The Label, KMAC's customization string, as text. Optional; defaults to empty.
+        #[arg(long)]
+        label: Option<String>,
+
+        /// The Label in hex, instead of --label.
+        #[arg(long)]
+        label_hex: Option<String>,
+
+        /// The key-derivation key K_IN in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the key-derivation key K_IN in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The Context in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the Context in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The KDF Using KMAC256 (SP 800-108r1 Section 4.4): keying material of len bytes,
+    /// K_OUT = KMAC256(K_IN, Context, L, Label), from a key-derivation key of at most 512 bytes.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "kbkdf-kmac256")]
+    KBKDF_KMAC256 {
+        /// The Label, KMAC's customization string, as text. Optional; defaults to empty.
+        #[arg(long)]
+        label: Option<String>,
+
+        /// The Label in hex, instead of --label.
+        #[arg(long)]
+        label_hex: Option<String>,
+
+        /// The key-derivation key K_IN in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the key-derivation key K_IN in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The Context in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the Context in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
         #[arg(short, long)]
         len: usize,
 
@@ -2855,6 +3225,32 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HMAC_SM3 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-RIPEMD160 (RFC 2104) of the content provided on stdin. Legacy construction;
+    /// see the `ripemd160` command.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_RIPEMD160 {
         /// The MAC key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
         #[arg(long)]
@@ -4122,6 +4518,38 @@ enum Subcommands {
 
         #[arg(short)]
         /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform RIPEMD-128 of the content provided on stdin. Legacy: 64-bit collision resistance.
+    /// Supports streaming update for low memory footprint.
+    RIPEMD128 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform RIPEMD-160 of the content provided on stdin. Legacy: 80-bit collision resistance.
+    /// Supports streaming update for low memory footprint.
+    RIPEMD160 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform RIPEMD-256 of the content provided on stdin (the 256-bit extension of RIPEMD-128,
+    /// with RIPEMD-128's security level). Supports streaming update for low memory footprint.
+    RIPEMD256 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform RIPEMD-320 of the content provided on stdin (the 320-bit extension of RIPEMD-160,
+    /// with RIPEMD-160's security level). Supports streaming update for low memory footprint.
+    RIPEMD320 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
         x: bool,
     },
 
@@ -6724,6 +7152,28 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
+
+    /// The X25519 key agreement algorithm (RFC 7748), and the DHKEM(X25519, HKDF-SHA256) key
+    /// encapsulation built on it (RFC 9180).
+    X25519 {
+        action: x25519_cmd::X25519Action,
+
+        #[arg(long)]
+        /// The private key file (binary, or hex under --hex-input) for pk-from-sk, check-consistency, agree and decaps; stdin if absent where allowed
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (binary, or hex under --hex-input) for check-consistency, agree and encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (binary, or hex under --hex-input): written by encaps, read by decaps.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
 }
 
 fn main() {
@@ -6969,14 +7419,14 @@ fn run() {
         Some(Subcommands::ECDSA_BP512R1 { action, skfile, pkfile, sigfile, x, deterministic }) => {
             ecdsa_cmd::ecdsa_bp512r1_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
         }
-        Some(Subcommands::ECCDH_P256 { action, skfile, pkfile, x }) => {
-            eccdh_cmd::eccdh_p256_cmd(action, skfile, pkfile, *x);
+        Some(Subcommands::ECCDH_P256 { action, skfile, pkfile, ctfile, x }) => {
+            eccdh_cmd::eccdh_p256_cmd(action, skfile, pkfile, ctfile, *x);
         }
-        Some(Subcommands::ECCDH_P384 { action, skfile, pkfile, x }) => {
-            eccdh_cmd::eccdh_p384_cmd(action, skfile, pkfile, *x);
+        Some(Subcommands::ECCDH_P384 { action, skfile, pkfile, ctfile, x }) => {
+            eccdh_cmd::eccdh_p384_cmd(action, skfile, pkfile, ctfile, *x);
         }
-        Some(Subcommands::ECCDH_P521 { action, skfile, pkfile, x }) => {
-            eccdh_cmd::eccdh_p521_cmd(action, skfile, pkfile, *x);
+        Some(Subcommands::ECCDH_P521 { action, skfile, pkfile, ctfile, x }) => {
+            eccdh_cmd::eccdh_p521_cmd(action, skfile, pkfile, ctfile, *x);
         }
         Some(Subcommands::ECCDH_SECP256K1 { action, skfile, pkfile, x }) => {
             eccdh_cmd::eccdh_secp256k1_cmd(action, skfile, pkfile, *x);
@@ -7029,6 +7479,7 @@ fn run() {
         Some(Subcommands::HashMLDSA44 {
             action,
             hash,
+            allow_weak_hash,
             ctxfile,
             skfile,
             pkfile,
@@ -7044,6 +7495,7 @@ fn run() {
                 action,
                 &files,
                 Some(*hash),
+                *allow_weak_hash,
                 *deterministic,
                 *x,
             );
@@ -7051,6 +7503,7 @@ fn run() {
         Some(Subcommands::HashMLDSA65 {
             action,
             hash,
+            allow_weak_hash,
             ctxfile,
             skfile,
             pkfile,
@@ -7066,6 +7519,7 @@ fn run() {
                 action,
                 &files,
                 Some(*hash),
+                *allow_weak_hash,
                 *deterministic,
                 *x,
             );
@@ -7073,6 +7527,7 @@ fn run() {
         Some(Subcommands::HashMLDSA87 {
             action,
             hash,
+            allow_weak_hash,
             ctxfile,
             skfile,
             pkfile,
@@ -7088,6 +7543,7 @@ fn run() {
                 action,
                 &files,
                 Some(*hash),
+                *allow_weak_hash,
                 *deterministic,
                 *x,
             );
@@ -7097,6 +7553,24 @@ fn run() {
         }
         Some(Subcommands::HexEncode) => {
             encoders_cmd::hex_encode_cmd();
+        }
+        Some(Subcommands::PBKDF2 { prf, password_file, salt, salt_file, iterations, len, x }) => {
+            pbkdf2_cmd::pbkdf2_cmd(*prf, password_file, salt, salt_file, *iterations, *len, *x);
+        }
+        Some(Subcommands::SCrypt {
+            log2_n,
+            r,
+            p,
+            max_memory,
+            password_file,
+            salt,
+            salt_file,
+            len,
+            x,
+        }) => {
+            scrypt_cmd::scrypt_cmd(
+                *log2_n, *r, *p, *max_memory, password_file, salt, salt_file, *len, *x,
+            );
         }
         Some(Subcommands::ConcatKDF_SHA256 {
             ikm,
@@ -7260,6 +7734,129 @@ fn run() {
                 *x,
             );
         }
+        Some(Subcommands::KBKDF_Counter {
+            prf,
+            counter_bits,
+            counter_position,
+            counter_offset,
+            key_control_guard,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => kbkdf_cmd::kbkdf_counter_cmd(
+            *prf,
+            *counter_bits,
+            *counter_position,
+            *counter_offset,
+            *key_control_guard,
+            &KdfInputs {
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                len: *len,
+                output_hex: *x,
+            },
+        ),
+        Some(Subcommands::KBKDF_Feedback {
+            prf,
+            iv,
+            iv_file,
+            counter_bits,
+            counter_position,
+            key_control_guard,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => kbkdf_cmd::kbkdf_feedback_cmd(
+            *prf,
+            iv,
+            iv_file,
+            *counter_bits,
+            *counter_position,
+            *key_control_guard,
+            &KdfInputs {
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                len: *len,
+                output_hex: *x,
+            },
+        ),
+        Some(Subcommands::KBKDF_DoublePipeline {
+            prf,
+            counter_bits,
+            counter_position,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => kbkdf_cmd::kbkdf_double_pipeline_cmd(
+            *prf,
+            *counter_bits,
+            *counter_position,
+            &KdfInputs {
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                len: *len,
+                output_hex: *x,
+            },
+        ),
+        Some(Subcommands::KBKDF_KMAC128 {
+            label,
+            label_hex,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => kbkdf_cmd::kbkdf_kmac_cmd(
+            KbkdfKmac::KMAC128,
+            label,
+            label_hex,
+            &KdfInputs {
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                len: *len,
+                output_hex: *x,
+            },
+        ),
+        Some(Subcommands::KBKDF_KMAC256 {
+            label,
+            label_hex,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => kbkdf_cmd::kbkdf_kmac_cmd(
+            KbkdfKmac::KMAC256,
+            label,
+            label_hex,
+            &KdfInputs {
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                len: *len,
+                output_hex: *x,
+            },
+        ),
         Some(Subcommands::HKDF_SHA256 {
             salt,
             salt_file,
@@ -7363,6 +7960,9 @@ fn run() {
         Some(Subcommands::HMAC_SM3 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SM3, key, key_file, verify, *x)
         }
+        Some(Subcommands::HMAC_RIPEMD160 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::RIPEMD160, key, key_file, verify, *x)
+        }
         Some(Subcommands::KMAC128 {
             length,
             customization,
@@ -7399,7 +7999,15 @@ fn run() {
         }) => {
             let files =
                 mldsa_cmd::Files { ctx: ctxfile, sk: skfile, pk: pkfile, sig: sigfile, mu: mufile };
-            mldsa_cmd::mldsa_cmd(&mldsa_cmd::MLDSA44_SET, action, &files, None, *deterministic, *x);
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA44_SET,
+                action,
+                &files,
+                None,
+                false,
+                *deterministic,
+                *x,
+            );
         }
         Some(Subcommands::MLDSA65 {
             action,
@@ -7413,7 +8021,15 @@ fn run() {
         }) => {
             let files =
                 mldsa_cmd::Files { ctx: ctxfile, sk: skfile, pk: pkfile, sig: sigfile, mu: mufile };
-            mldsa_cmd::mldsa_cmd(&mldsa_cmd::MLDSA65_SET, action, &files, None, *deterministic, *x);
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA65_SET,
+                action,
+                &files,
+                None,
+                false,
+                *deterministic,
+                *x,
+            );
         }
         Some(Subcommands::MLDSA87 {
             action,
@@ -7427,7 +8043,15 @@ fn run() {
         }) => {
             let files =
                 mldsa_cmd::Files { ctx: ctxfile, sk: skfile, pk: pkfile, sig: sigfile, mu: mufile };
-            mldsa_cmd::mldsa_cmd(&mldsa_cmd::MLDSA87_SET, action, &files, None, *deterministic, *x);
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA87_SET,
+                action,
+                &files,
+                None,
+                false,
+                *deterministic,
+                *x,
+            );
         }
         Some(Subcommands::AES128_KW { direction, key, key_file, x }) => {
             kw_cmd::kw_cmd::<AES128Internal, 16>(direction, key, key_file, *x, "AES-128");
@@ -7659,6 +8283,18 @@ fn run() {
         }
         Some(Subcommands::SM2 { action, idfile, skfile, pkfile, sigfile, x }) => {
             sm2_cmd::sm2_cmd(action, idfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::RIPEMD128 { x }) => {
+            ripemd_cmd::ripemd_cmd(RIPEMDVariant::RIPEMD128, *x);
+        }
+        Some(Subcommands::RIPEMD160 { x }) => {
+            ripemd_cmd::ripemd_cmd(RIPEMDVariant::RIPEMD160, *x);
+        }
+        Some(Subcommands::RIPEMD256 { x }) => {
+            ripemd_cmd::ripemd_cmd(RIPEMDVariant::RIPEMD256, *x);
+        }
+        Some(Subcommands::RIPEMD320 { x }) => {
+            ripemd_cmd::ripemd_cmd(RIPEMDVariant::RIPEMD320, *x);
         }
         Some(Subcommands::SM3 { x }) => {
             sm3_cmd::sm3_cmd(*x);
@@ -8203,6 +8839,9 @@ fn run() {
         }
         Some(Subcommands::HMAC_SHA3_512 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA3_512, key, key_file, verify, *x)
+        }
+        Some(Subcommands::X25519 { action, skfile, pkfile, ctfile, x }) => {
+            x25519_cmd::x25519_cmd(action, skfile, pkfile, ctfile, *x);
         }
         None => {
             eprintln!("No command provided. See -h")

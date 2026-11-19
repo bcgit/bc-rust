@@ -3,8 +3,9 @@
 //! FixedInfo (`--additional-input`), as the `hkdf-*` subcommands take their inputs minus the
 //! salt. The X9.63 KDF is SEC 1 v2 Section 3.6.1 and the concatenation KDF is SP 800-56C Rev. 2
 //! Section 4.1 (Option 1, `H(x) = hash(x)`); which one runs is the instance `main` passes.
+//! The `kbkdf-*` subcommands (SP 800-108r1, `kbkdf_cmd.rs`) run through it too.
 
-use crate::helpers::{decode_hex_arg, load_secret, read_input_file, write_bytes_or_hex};
+use crate::helpers::{decode_hex_arg, load_secret, read_input_file, write_secret_bytes_or_hex};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::traits::KDF;
 use std::process::exit;
@@ -41,12 +42,12 @@ pub(crate) fn kdf_cmd(
         eprintln!("Error: key derivation failed: {e:?}");
         exit(-1);
     }
-    write_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
+    write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
 }
 
 /// The `KDF` trait derives from an empty key (the framework's suites hold that), which no user
-/// of a command line means: an empty `--ikm` or `--ikm-file` is refused by the three KDF
-/// commands, before any derivation.
+/// of a command line means: an empty `--ikm` or `--ikm-file` is refused by every command that
+/// runs through here, before any derivation.
 pub(crate) fn refuse_empty_ikm(ikm: &impl KeyMaterialTrait) {
     if ikm.key_len() == 0 {
         eprintln!("Error: `--ikm` is empty; the input keying material must not be empty.");

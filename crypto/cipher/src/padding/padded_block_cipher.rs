@@ -10,7 +10,7 @@
 use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, FinishToken,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
@@ -28,7 +28,6 @@ const GROUP: usize = 8;
 /// `plaintext_len / BLOCK_LEN + 1` blocks for a scheme that always pads (PKCS7), and exactly the
 /// input length for one that never does (`NoPadding`, which rejects an unaligned input at
 /// `do_encrypt_final`). The buffered partial plaintext block is held in a [`Secret`].
-#[derive(Clone)]
 pub struct PaddedBlockCipherEncryptor<E, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
 where
     E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>,
@@ -146,17 +145,19 @@ where
     /// ([`PaddingError::PaddingNotPermitted`]), which is the alignment check such a scheme exists to
     /// provide; it is reported as [`SymmetricCipherError::DataNotBlockAligned`], as on the decrypt
     /// side.
-    fn do_encrypt_final(self) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
-        let Self { encryptor: mut inner, mut buf, buf_len, .. } = self;
-        if buf_len == 0 && !P::ALWAYS_PADS {
+    fn finish_encrypt(
+        &mut self,
+        _token: &FinishToken,
+    ) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
+        if self.buf_len == 0 && !P::ALWAYS_PADS {
             return Ok(([0u8; BLOCK_LEN], 0));
         }
-        P::pad(&mut buf, buf_len).map_err(|e| match e {
+        P::pad(&mut self.buf, self.buf_len).map_err(|e| match e {
             PaddingError::PaddingNotPermitted => SymmetricCipherError::DataNotBlockAligned,
             e => e.into(),
         })?;
-        inner.do_encrypt_blocks_inplace(buf.as_chunks_mut().0)?;
-        Ok((*buf, BLOCK_LEN))
+        self.encryptor.do_encrypt_blocks_inplace(self.buf.as_chunks_mut().0)?;
+        Ok((*self.buf, BLOCK_LEN))
     }
 
     /// `(plaintext_len / BLOCK_LEN + 1) * BLOCK_LEN` -- always one extra block for the padding --
@@ -173,7 +174,6 @@ where
 /// Only the last block carries padding, so [`do_update_out`](Self::do_decrypt_out) always withholds
 /// the most recent complete block and [`do_decrypt_final`](Self::do_decrypt_final) unpads it.
 /// One-shot: the key's `decrypt_out`.
-#[derive(Clone)]
 pub struct PaddedBlockCipherDecryptor<D, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
 where
     D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>,
@@ -298,21 +298,26 @@ where
     /// least one block); `PaddingError` if the
     /// padding is malformed. Under a scheme that adds nothing, an empty ciphertext is the empty
     /// message and every held block is entirely data.
-    fn do_decrypt_final(self) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
-        let Self { decryptor: mut inner, buf_len, held, .. } = self;
-        if buf_len != 0 {
+    fn finish_decrypt(
+        &mut self,
+        _token: &FinishToken,
+    ) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
+        if self.buf_len != 0 {
             return Err(SymmetricCipherError::DataNotBlockAligned);
         }
-        let Some(mut block) = held else {
+        let Some(held) = self.held.as_ref() else {
             return if P::ALWAYS_PADS {
                 Err(SymmetricCipherError::DecryptionFailed)
             } else {
                 Ok(([0u8; BLOCK_LEN], 0))
             };
         };
-        inner.do_decrypt_blocks_inplace(block.as_chunks_mut().0)?;
+        // The worker keeps the ciphertext block; the plaintext is in a scratch that is wiped.
+        let mut block: Secret<[u8; BLOCK_LEN]> = Secret::new();
+        *block = *held;
+        self.decryptor.do_decrypt_blocks_inplace(block.as_chunks_mut().0)?;
         let data_len = P::unpad(&block)?;
-        Ok((block, data_len))
+        Ok((*block, data_len))
     }
 
     /// `ciphertext_len - 1` for a scheme that always pads (at least one byte of the final block is

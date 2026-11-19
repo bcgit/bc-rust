@@ -111,10 +111,14 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core::symmetric_key::{
+    AeadDecryptionKey, AeadEncryptionKey, AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey,
+    FromKeyMaterial,
+};
+use bouncycastle_core::symmetric_key::{decrypt_detached_inplace, encrypt_detached_inplace};
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, MACGenerator, MACVerifier, RNG,
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, MACGenerator, MACVerifier,
+    RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_poly1305::hazmat::key_from_bytes;
@@ -277,20 +281,22 @@ where
         }
     }
 
-    /// The MAC with the rest of RFC 8439 Sec 2.8's input absorbed, the data's padding and the two
-    /// lengths, ready for its final.
-    fn finish_mac(mut self) -> Poly1305<Dir> {
+    /// Absorbs the rest of RFC 8439 Sec 2.8's input into the MAC, the data's padding and the two
+    /// lengths, leaving it ready for its final.
+    fn finish_mac(&mut self, _token: &FinishToken) {
         self.start_data();
         self.mac.absorb(&[0u8; 15][..padding_len(self.data_len)]);
         self.mac.absorb(&self.aad_len.to_le_bytes());
         self.mac.absorb(&self.data_len.to_le_bytes());
-        self.mac
     }
 }
 
 impl ChaCha20_Poly1305<'_, Encrypting> {
-    fn finish_tag(self) -> [u8; TAG_LEN] {
-        self.finish_mac().do_final()
+    fn finish_tag(&mut self, token: &FinishToken) -> [u8; TAG_LEN] {
+        self.finish_mac(token);
+        let mut tag = [0u8; TAG_LEN];
+        self.mac.finish_mac_into(token, &mut tag);
+        tag
     }
 
     fn encrypt_bytes(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
@@ -313,9 +319,14 @@ impl ChaCha20_Poly1305<'_, Decrypting> {
         Ok(())
     }
 
-    fn verify_tag(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
-        // Poly1305's do_verify_final compares in constant time.
-        self.finish_mac().do_verify_final(tag).map_err(|_| SymmetricCipherError::AEADTagCheckFailed)
+    fn verify_tag(
+        &mut self,
+        token: &FinishToken,
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        self.finish_mac(token);
+        // Poly1305's finish_mac_verify compares in constant time.
+        self.mac.finish_mac_verify(token, tag).map_err(|_| SymmetricCipherError::AEADTagCheckFailed)
     }
 }
 
@@ -360,8 +371,11 @@ impl SymmetricCipherEncryptor<NONCE_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, Encr
         Ok(plaintext.len())
     }
 
-    fn do_encrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
-        Ok((self.finish_tag(), TAG_LEN))
+    fn finish_encrypt(
+        &mut self,
+        token: &FinishToken,
+    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        Ok((self.finish_tag(token), TAG_LEN))
     }
 
     fn encrypt_out_len(plaintext_len: usize) -> usize {
@@ -375,12 +389,13 @@ impl AEADCipherEncryptor<NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, 
     }
 
     /// Nothing is ever held back to flush, so `ciphertext` is left zeroed.
-    fn do_encrypt_final_detached_out(
-        self,
+    fn finish_encrypt_detached_into(
+        &mut self,
+        token: &FinishToken,
         ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
         ciphertext.fill(0);
-        Ok((0, self.finish_tag()))
+        Ok((0, self.finish_tag(token)))
     }
 }
 
@@ -420,12 +435,15 @@ impl SymmetricCipherDecryptor<NONCE_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, Decr
         Ok(release)
     }
 
-    fn do_decrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+    fn finish_decrypt(
+        &mut self,
+        token: &FinishToken,
+    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
         if self.held_len != TAG_LEN {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
         let tag = self.held;
-        self.verify_tag(&tag)?;
+        self.verify_tag(token, &tag)?;
         Ok(([0u8; TAG_LEN], 0))
     }
 
@@ -439,8 +457,9 @@ impl AEADCipherDecryptor<NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, 
         self.absorb_aad(aad)
     }
 
-    fn do_decrypt_final_detached_out(
-        mut self,
+    fn finish_decrypt_detached_into(
+        &mut self,
+        token: &FinishToken,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; TAG_LEN],
     ) -> Result<usize, SymmetricCipherError> {
@@ -452,7 +471,7 @@ impl AEADCipherDecryptor<NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, 
         let mut last: Secret<[u8; TAG_LEN]> = Secret::new();
         last[..n].copy_from_slice(&self.held[..n]);
         self.decrypt_bytes(&mut last[..n])?;
-        self.verify_tag(tag)?;
+        self.verify_tag(token, tag)?;
         plaintext[..n].copy_from_slice(&last[..n]);
         Ok(n)
     }
@@ -518,6 +537,40 @@ impl AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20Poly130
 
     fn create_decryptor<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
         ChaCha20_Poly1305::new(keystream_at(&self.key, nonce, 0))
+    }
+}
+
+impl AeadInPlaceEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305Key {
+    fn encrypt_detached_inplace(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        let (enc, nonce) = self.create_encryptor(rng)?;
+        let tag = encrypt_detached_inplace(enc, aad, buf)?;
+        Ok((nonce, tag))
+    }
+
+    fn encrypt_detached_inplace_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        encrypt_detached_inplace(self.create_encryptor_nonce(nonce), aad, buf)
+    }
+}
+
+impl AeadInPlaceDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305Key {
+    fn decrypt_detached_inplace(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        decrypt_detached_inplace(self.create_decryptor(nonce), aad, buf, tag)
     }
 }
 
@@ -638,6 +691,6 @@ mod tests {
         reference.absorb_aad(&[1]).unwrap();
         cipher.absorb_aad(&[]).unwrap();
         assert_eq!(cipher.aad_len, u64::MAX);
-        assert_eq!(cipher.finish_tag(), reference.finish_tag());
+        assert_eq!(cipher.do_encrypt_final().unwrap().0, reference.do_encrypt_final().unwrap().0);
     }
 }

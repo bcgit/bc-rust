@@ -521,11 +521,15 @@ pub fn rej_bounded_poly<P: MLDSAParamsBase>(rho: &[u8; 64], nonce: &[u8; 2]) -> 
     h.do_update(rho);
     h.do_update(nonce);
 
-    // size doesn't really matter
-    // 312 seemed to be the sweet spot from playing with benchmarks
-    // maybe something to do with the average rejection rate?
-    // Also, 312 is a multiple of 8 (efficient for SHAKE)
-    let mut z_arr = [0u8; 312];
+    // Deviation from FIPS 204, Algorithm 31 step 5, which squeezes one byte per loop iteration:
+    // H is SHAKE256, which produces a whole 136-byte block per Keccak permutation, so squeezing a
+    // byte at a time wastes most of each block. The squeeze is buffered instead, and the refill
+    // below makes the byte stream — and therefore the output — identical to the spec's.
+    //
+    // 272 is exactly two SHAKE256 blocks (2 × 136), so filling the buffer costs two permutations
+    // with nothing stranded in the sponge's output queue, and it covers the whole polynomial in a
+    // single squeeze almost always.
+    let mut z_arr = [0u8; 272];
     let mut h = h.into_squeezer();
     h.do_output_out(&mut z_arr);
     let mut idx: usize = 0;

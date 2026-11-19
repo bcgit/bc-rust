@@ -76,6 +76,8 @@ pub enum KEMError {
     DecapsulationFailed,
     ///
     DecodingError(&'static str),
+    /// The public key given to encapsulation is unusable, for example a point of small order.
+    InvalidPublicKey(&'static str),
     ///
     KeyGenError(&'static str),
     ///
@@ -281,6 +283,34 @@ impl From<MACError> for KDFError {
 impl From<KeyMaterialError> for KDFError {
     fn from(e: KeyMaterialError) -> KDFError {
         Self::KeyMaterialError(e)
+    }
+}
+
+/// An encoded key was refused by [`PrivateKey::from_bytes`](crate::traits::PrivateKey::from_bytes)
+/// or [`PublicKey::from_bytes`](crate::traits::PublicKey::from_bytes): it was not of the expected
+/// length or form, or failed the validation its decoding carries (a public key off the curve, a
+/// private key outside `[1, n - 1]`). The length is part of the form. The message says which.
+///
+/// It converts into each role's error as that error's `DecodingError`, so a function that
+/// returns [`KEMError`], [`KeyAgreementError`] or [`SignatureError`] decodes a key with `?`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct KeyDecodingError(pub &'static str);
+
+impl From<KeyDecodingError> for KEMError {
+    fn from(e: KeyDecodingError) -> Self {
+        Self::DecodingError(e.0)
+    }
+}
+
+impl From<KeyDecodingError> for KeyAgreementError {
+    fn from(e: KeyDecodingError) -> Self {
+        Self::DecodingError(e.0)
+    }
+}
+
+impl From<KeyDecodingError> for SignatureError {
+    fn from(e: KeyDecodingError) -> Self {
+        Self::DecodingError(e.0)
     }
 }
 

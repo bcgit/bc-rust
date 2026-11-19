@@ -18,7 +18,7 @@
 
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::key_material::KeyMaterialTrait;
-use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, wycheproof_json};
 use bouncycastle_hex::decode as hex_decode;
 
@@ -88,8 +88,8 @@ pub fn run<PK, SK, const PK_LEN: usize, const SK_LEN: usize, const SS_LEN: usize
     expected: usize,
     expected_agreed: usize,
 ) where
-    PK: KeyAgreementPublicKey<PK_LEN>,
-    SK: KeyAgreementPrivateKey<SK_LEN> + AgreementKey<(), SS_LEN, PublicKey = PK>,
+    PK: PublicKey<PK_LEN>,
+    SK: PrivateKey<SK_LEN> + AgreementKey<(), SS_LEN, PublicKey = PK>,
 {
     let doc = get_test_data(filename);
     assert_eq!(doc["numberOfTests"].as_u64().unwrap() as usize, expected, "{filename}");

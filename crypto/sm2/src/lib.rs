@@ -27,7 +27,7 @@
 //! is given, so signatures are not reproducible:
 //!
 //! ```
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_sm2::keys::keygen;
 //!
@@ -75,7 +75,7 @@
 //!
 //! ```
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+//! use bouncycastle_core::traits::{PrivateKey, PublicKey};
 //! use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey, keygen};
 //!
 //! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;

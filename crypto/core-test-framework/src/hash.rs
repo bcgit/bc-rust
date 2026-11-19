@@ -87,6 +87,10 @@ impl TestFrameworkHash {
         /*** fn result_len() -> usize ***/
         assert_eq!(H::default().output_len(), H::OUTPUT_LEN);
 
+        // A hash function is held to a signature scheme's pre-hash strength rule; only a
+        // wrapper type made for the purpose waives it.
+        assert!(!H::PRE_HASH_STRENGTH_RULE.is_waived());
+
         /*** fn hash(data: &[u8]) -> Vec<u8> **/
         let output_vec = H::hash(input);
         assert_eq!(output_vec, expected_output);
@@ -104,12 +108,18 @@ impl TestFrameworkHash {
         let output_buf = message_digest.do_final();
         assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
 
-        /*** HashBoxed::do_final_out_boxed, for a hash held as Box<dyn Hash> ***/
+        /*** fn do_final_out_boxed(self: Box<Self>, ..), for a hash held as Box<dyn Hash> ***/
         let mut boxed: Box<dyn Hash + '_> = Box::new(H::default());
         boxed.do_update(input);
         let mut boxed_out = vec![0_u8; H::OUTPUT_LEN];
         assert_eq!(boxed.do_final_out_boxed(&mut boxed_out), H::OUTPUT_LEN);
         assert_eq!(expected_output, boxed_out, "Incorrect output from the boxed final");
+        // and with no trailing bits the boxed partial-bits final is the same digest
+        let mut boxed: Box<dyn Hash + '_> = Box::new(H::default());
+        boxed.do_update(input);
+        let mut boxed_out = vec![0_u8; H::OUTPUT_LEN];
+        assert_eq!(boxed.do_final_partial_bits_out_boxed(0, 0, &mut boxed_out), Ok(H::OUTPUT_LEN));
+        assert_eq!(expected_output, boxed_out, "the boxed partial-bits final, no bits");
 
         for length in 1..output_buf.len() {
             let mut truncated = vec![0_u8; length];

@@ -1,10 +1,8 @@
 //! This crate implements the Module Lattice Digital Signature Algorithm (ML-DSA) as per FIPS 204 optimized
 //! to have the lowest-reasonable runtime memory footprint (aka peak memory usage).
 //!
-//! We achieve an approximate **1/10 the memory footprint** at a cost of approximately **3x
-//! the runtime for signing and no appreciable difference for keygen and verification**,
-//! compared with our un-optimized implementation in the \[bouncycastle_mldsa] crate.
-//! We are extremely happy with the result!
+//! We achieve **roughly a quarter to a ninth of the peak stack** of our un-optimized implementation in the
+//! \[bouncycastle_mldsa] crate, at a cost in throughput that is largest for signing; the table below has both.
 //!
 //! # Philosophy of a low-memory implementation
 //!
@@ -80,37 +78,25 @@
 //! ## Algorithm Peak Memory Usage
 //! The table below shows peak memory usage of the ML-DSA algorithms and the rough performance (throughput) impact.
 //!
-//! Measuring peak application memory usage can be a bit tricky, and the numbers obtained depend heavily on how the
-//! measurement harness is designed. Here, we aim to provide a conservative measurement, meaning that we are aiming for an
-//! over-estimate so that any deployment within an existing application will use incrementally less additional memory
-//! than the amount stated here.
-//!
-//! Our measurement methodology is to compile a simple standalone HelloWorld application that only calls the function under test
-//! with as minimal as possible hard-coded data (such as keys or ciphertexts) and measure the peak memory usage of running
-//! the compiled binary using `valgrind --tool=massif --heap=no --stack=yes`. The flags for heap and stack
-//! reflect the fact that this is a `no_std` rust application and therefore the cryptographic functions use no heap memory.
-//! The measurements may over-estimate by as much as 3 kb since that that's the measured peak memory usage of a do-nothing
-//! HelloWorld rust application.
-//!
-//! | Algorithm                 | Peak swap memory usage (kB) | Throughput (ops/s)  |
+//! | Algorithm                 | Peak stack memory usage (kB) | Throughput (ops/s)  |
 //! |---------------------------|-----------------------------|---------------------|
-//! | MLDSA44_lowmemory/KeyGen  | 12.6 (113.8)                | 11,800     (11,300) |
-//! | MLDSA65_lowmemory/KeyGen  | 15.0 (124.1)                | 5,500      (7,000)  |
-//! | MLDSA87_lowmemory/KeyGen  | 15.2 (197.8)                | 3,300      (4,200)  |
-//! | MLDSA44_lowmemory/Sign    | 24.8 (117.7)                | 850        (4,000)  |
-//! | MLDSA65_lowmemory/Sign    | 28.2 (159.6)                | 580        (2,900)  |
-//! | MLDSA87_lowmemory/Sign    | 31.1 (236.7)                | 315        (2,000)  |
-//! | MLDSA44_lowmemory/Verify  | 17.1 (73.0)                 | 10,100     (14,000) |
-//! | MLDSA65_lowmemory/Verify  | 18.0 (134.4)                | 6,300      (8,400)  |
-//! | MLDSA87_lowmemory/Verify  | 20.6 (211.6)                | 3,500      (5,000)  |
+//! | MLDSA44_lowmemory/KeyGen  | 11.7 (58.7)                 | 11,800     (11,300) |
+//! | MLDSA65_lowmemory/KeyGen  | 12.6 (88.3)                 | 5,500      (7,000)  |
+//! | MLDSA87_lowmemory/KeyGen  | 14.9 (133.3)                | 3,300      (4,200)  |
+//! | MLDSA44_lowmemory/Sign    | 19.7 (74.9)                 | 850        (4,000)  |
+//! | MLDSA65_lowmemory/Sign    | 23.0 (110.8)                | 580        (2,900)  |
+//! | MLDSA87_lowmemory/Sign    | 27.0 (163.4)                | 315        (2,000)  |
+//! | MLDSA44_lowmemory/Verify  | 16.3 (57.9)                 | 10,100     (14,000) |
+//! | MLDSA65_lowmemory/Verify  | 17.8 (94.1)                 | 6,300      (8,400)  |
+//! | MLDSA87_lowmemory/Verify  | 19.8 (140.1)                | 3,500      (5,000)  |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mldsa] crate.
-//! The memory figures come from `mem_usage_benches/src/bench_mldsa_mem_usage.rs` under valgrind as
-//! described above, and the throughput figures from this crate's criterion benches, both run on a
-//! developer workstation when the crate was written and not re-measured since; the throughput
-//! column is indicative only. Regenerate both with those harnesses after a change to the signing or
-//! verifying path. (The private key grew by 64 bytes on the branch that cached `tr`; the peak
-//! figures above predate that.)
+//! The memory figures were measured on 2026-11-18 with `mem_usage_benches/src/bench_mldsa_mem_usage.rs`
+//! under `valgrind --tool=massif --heap=no --stacks=yes`; the method is the one the
+//! `bouncycastle_mlkem_lowmemory` crate docs describe. The throughput figures come from this crate's
+//! criterion benches, run on a developer workstation when the crate was written and not re-measured
+//! since, so that column is indicative only. Regenerate both with those harnesses after a change to
+//! the signing or verifying path.
 //!
 //! # Usage Examples
 //!
@@ -154,13 +140,13 @@
 //! ```
 //!
 //! The private key is the seed: signing expands what it needs from the seed as it goes, so
-//! there is no separate expansion step to pay for before [`SigningKey::sign`].
+//! there is no separate expansion step to pay for before [`OneShotSigningKey::sign`].
 //!
 //! ## Generating and Verifying Signatures
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait};
 //!
@@ -251,10 +237,11 @@
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyMaterialTrait;
 #[allow(unused_imports)]
-use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{OneShotSigningKey, VerifyingKey};
 
 mod aux_functions;
 pub mod hash_mldsa;
+pub mod hazmat;
 mod low_memory_helpers;
 pub mod mldsa;
 mod mldsa_keys;

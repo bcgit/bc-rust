@@ -702,12 +702,12 @@ mod hkdf_tests {
             let mut t1 = hmac_hazmat::inner_state(&key);
             t1.do_update(b"info");
             t1.do_update(&[1]);
-            hmac_hazmat::finish_out(&key, t1, &mut expected[..hash_len]);
+            hmac_hazmat::finish_out(&key, &mut t1, &mut expected[..hash_len]);
             let mut t2 = hmac_hazmat::inner_state(&key);
             t2.do_update(&expected[..hash_len]);
             t2.do_update(b"info");
             t2.do_update(&[2]);
-            hmac_hazmat::finish_out(&key, t2, &mut expected[hash_len..2 * hash_len]);
+            hmac_hazmat::finish_out(&key, &mut t2, &mut expected[hash_len..2 * hash_len]);
 
             let mut okm = KeyMaterial::<128>::new();
             let written = HKDF::<H>::expand_out(&prk, b"info", 2 * hash_len, &mut okm).unwrap();

@@ -16,7 +16,7 @@ use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
-    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
+    AeadDecryptionKey, AeadEncryptionKey, AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey,
     FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey, MacGenerationKey, MacVerificationKey,
     NonceMacGenerationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
@@ -250,8 +250,8 @@ fn ccm_case<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usiz
     valid: bool,
 ) where
     P: Permutation<KEY_LEN>,
-    BlockCipherKey<P, CCM<NONCE_LEN, TAG_LEN>>: AeadDeclaredEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
-        + AeadDeclaredDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>,
+    BlockCipherKey<P, CCM<NONCE_LEN, TAG_LEN>>: AeadInPlaceEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN>
+        + AeadInPlaceDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN>,
 {
     let key = BlockCipherKey::<P, CCM<NONCE_LEN, TAG_LEN>>::from_key_material(
         &cipher_key::<KEY_LEN>(key_bytes),
@@ -265,14 +265,14 @@ fn ccm_case<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usiz
     if valid {
         let mut ct = msg.to_vec();
         let got_tag = key
-            .encrypt_detached_in_place_nonce(&nonce, aad, &mut ct)
+            .encrypt_detached_inplace_nonce(&nonce, aad, &mut ct)
             .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
         assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
         assert_eq!(got_tag, tag, "tcId {tc_id}: tag mismatch");
     }
 
     let mut plaintext = expected_ct.to_vec();
-    match key.decrypt_detached_in_place(&nonce, aad, &mut plaintext, &tag) {
+    match key.decrypt_detached_inplace(&nonce, aad, &mut plaintext, &tag) {
         Ok(()) => {
             assert!(valid, "tcId {tc_id}: an invalid vector decrypted and verified anyway");
             assert_eq!(plaintext, msg, "tcId {tc_id}: decrypted plaintext mismatch");

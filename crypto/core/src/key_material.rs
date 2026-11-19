@@ -13,7 +13,9 @@
 //! Some typical workflows would be:
 //!
 //! * Hash functions take in \[u8\] byte data and return a KeyMaterial of type RawUnknownEntropy.
-//! * Password-based key derivation functions act on KeyMaterial of any type, and in the case of RawFullEntropy, RawLowEntropy, or RawUnknownEntropy, will preserve the entropy rating.
+//! * Password-based key derivation functions (PBKDF2) act on KeyMaterial of any type. A password is typed Unknown and
+//!   so is the key derived from it, the library not vouching for a password's entropy; full-entropy keying material
+//!   in gives CryptographicRandom out.
 //! * Keyed KDFs that are given a key of RawFullEntropy or KeyedHashKey a KeyMaterial data of type RawLowEntropy or RawUnknownEntropy will promote it into RawFullEntropy.
 //! * Symmetric ciphers or asymmetric ciphers such as X25519 or ML-KEM that accept private key seeds will expect KeyMaterial of type AsymmetricPrivateKeySeed.
 //! * A key-agreement primitive (ECC CDH) returns its raw shared secret `Z` as a KeyMaterial of type SharedSecret, to be used only as the input of a KDF.

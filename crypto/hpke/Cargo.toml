@@ -1,0 +1,27 @@
+[package]
+name = "bouncycastle-hpke"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bouncycastle-aes.workspace = true
+bouncycastle-chacha20-poly1305-aead.workspace = true
+bouncycastle-cipher.workspace = true
+bouncycastle-core.workspace = true
+bouncycastle-dhkem.workspace = true
+bouncycastle-hmac.workspace = true
+bouncycastle-sha2.workspace = true
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-ec.workspace = true
+bouncycastle-eccdh.workspace = true
+bouncycastle-ed.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-rng.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "hpke_benches"
+harness = false

@@ -5,11 +5,11 @@ use crate::mlkem::{G, H, MLKEM_SEED_LEN, POLY_BYTES, q};
 use crate::params::{
     MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams, PrivateKeyLen, PublicKeyLen,
 };
-use bouncycastle_core::errors::KEMError;
+use bouncycastle_core::errors::{KEMError, KeyDecodingError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey};
 use bouncycastle_mlkem_common::aux_functions::sample_poly_CBD;
 use bouncycastle_mlkem_common::polynomial::Polynomial;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
@@ -43,7 +43,7 @@ pub type MLKEM1024PrivateKeyExpanded = MLKEMSeedPrivateKeyExpanded<MLKEM1024Para
 
 /// An ML-KEM public key.
 ///
-/// The parameter set fixes every length, so `P` is the only type parameter. [`KEMPublicKey`]
+/// The parameter set fixes every length, so `P` is the only type parameter. [`PublicKey`]
 /// takes the encoded length as a const generic, and an associated const of a type parameter may
 /// not be used as one, so its impl is generic over the length and bound through the per-length
 /// trait (`P: PublicKeyLen<PK_LEN>`), which has one impl per parameter set and so lets the length
@@ -105,9 +105,9 @@ impl<P: MLKEMParams> MLKEMPublicKey<P> {
 
     /// The inverse of [`Self::encode_into`], with the Section 7.2 modulus check; see
     /// [`MLKEMPublicKeyTrait::pk_decode`].
-    pub(crate) fn decode_from(pk: &[u8]) -> Result<Self, KEMError> {
+    pub(crate) fn decode_from(pk: &[u8]) -> Result<Self, KeyDecodingError> {
         if pk.len() != P::PK_LEN {
-            return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
+            return Err(KeyDecodingError("Provided key bytes are the incorrect length"));
         }
         let pk = Self::new(
             {
@@ -123,7 +123,7 @@ impl<P: MLKEMParams> MLKEMPublicKey<P> {
             let p = unpack_t_hat_row(pk.t_hat_packed.as_ref(), i);
             for w in p.coeffs.iter() {
                 if *w >= q {
-                    return Err(KEMError::DecodingError("Invalid public key"));
+                    return Err(KeyDecodingError("Invalid public key"));
                 }
             }
         }
@@ -137,7 +137,7 @@ impl<P: MLKEMParams> MLKEMPublicKeyTrait<P> for MLKEMPublicKey<P> {
     where
         P: PublicKeyLen<PK_LEN>,
     {
-        Self::decode_from(pk)
+        Ok(Self::decode_from(pk)?)
     }
 
     fn t_hat_packed(&self) -> &P::TPacked {
@@ -167,7 +167,7 @@ impl<P: MLKEMParams> MLKEMPublicKeyInternalTrait<P> for MLKEMPublicKey<P> {
     }
 }
 
-impl<P: MLKEMParams + PublicKeyLen<PK_LEN>, const PK_LEN: usize> KEMPublicKey<PK_LEN>
+impl<P: MLKEMParams + PublicKeyLen<PK_LEN>, const PK_LEN: usize> PublicKey<PK_LEN>
     for MLKEMPublicKey<P>
 {
     /// Encodes the encapsulation key, FIPS 203 Algorithm 13 (K-PKE.KeyGen) line 19:
@@ -186,9 +186,9 @@ impl<P: MLKEMParams + PublicKeyLen<PK_LEN>, const PK_LEN: usize> KEMPublicKey<PK
         PK_LEN
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         if bytes.len() != PK_LEN {
-            return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
+            return Err(KeyDecodingError("Provided key bytes are the incorrect length"));
         }
         Self::decode_from(bytes)
     }
@@ -515,7 +515,7 @@ impl<P: MLKEMParams> MLKEMPrivateKeyInternalTrait<P> for MLKEMSeedPrivateKey<P> 
     }
 }
 
-impl<P: MLKEMParams> KEMPrivateKey<MLKEM_SEED_LEN> for MLKEMSeedPrivateKey<P> {
+impl<P: MLKEMParams> PrivateKey<MLKEM_SEED_LEN> for MLKEMSeedPrivateKey<P> {
     /// Encode the private key as a 64-byte seed (d || z)
     fn encode(&self) -> [u8; MLKEM_SEED_LEN] {
         let mut sk = [0u8; MLKEM_SEED_LEN];
@@ -533,17 +533,19 @@ impl<P: MLKEMParams> KEMPrivateKey<MLKEM_SEED_LEN> for MLKEMSeedPrivateKey<P> {
         MLKEM_SEED_LEN
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         if bytes.len() != MLKEM_SEED_LEN {
-            return Err(KEMError::DecodingError("Invalid seed length"));
+            return Err(KeyDecodingError("Invalid seed length"));
         }
-        let mut keymat = KeyMaterial::<64>::from_bytes(bytes)?;
+        let mut keymat = KeyMaterial::<64>::from_bytes(bytes)
+            .map_err(|_| KeyDecodingError("Invalid ML-KEM seed private key"))?;
         do_hazardous_operations(&mut keymat, |keymat| {
             keymat.set_key_type(KeyType::Seed)?;
             keymat.set_security_strength(SecurityStrength::_256bit)
-        })?;
+        })
+        .map_err(|_| KeyDecodingError("Invalid ML-KEM seed private key"))?;
 
-        Self::new(&keymat)
+        Self::new(&keymat).map_err(|_| KeyDecodingError("Invalid ML-KEM seed private key"))
     }
 }
 
@@ -671,7 +673,7 @@ impl<P: MLKEMParams> MLKEMPrivateKeyInternalTrait<P> for MLKEMSeedPrivateKeyExpa
     }
 }
 
-impl<P: MLKEMParams> KEMPrivateKey<MLKEM_SEED_LEN> for MLKEMSeedPrivateKeyExpanded<P> {
+impl<P: MLKEMParams> PrivateKey<MLKEM_SEED_LEN> for MLKEMSeedPrivateKeyExpanded<P> {
     /// The 64-byte seed (d || z), as for the seed key: 𝐭̂ is derived again on load.
     fn encode(&self) -> [u8; MLKEM_SEED_LEN] {
         self.dk.encode()
@@ -681,7 +683,7 @@ impl<P: MLKEMParams> KEMPrivateKey<MLKEM_SEED_LEN> for MLKEMSeedPrivateKeyExpand
         self.dk.encode_out(out)
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         Ok(Self::from(&MLKEMSeedPrivateKey::from_bytes(bytes)?))
     }
 }

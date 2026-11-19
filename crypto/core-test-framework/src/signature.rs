@@ -1,36 +1,59 @@
 //! Generic behaviour tests for the signature role traits of `bouncycastle_core::signature_key`
 //! and the workers they produce.
 
-use crate::DUMMY_SEED;
-use bouncycastle_core::errors::SignatureError;
+use crate::{DUMMY_SEED, FailingRNG};
+use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::signature_key::{
-    DeterministicPreHashSigningKey, DeterministicSigningKey, PreHash, PreHashSigningKey,
-    PreHashVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey,
+    DeterministicOneShotSigningKey, DeterministicPreHashSigningKey, DeterministicSigningKey,
+    OneShotSigningKey, OneShotVerifyingKey, PreHash, PreHashSigningKey, PreHashVerifyingKey,
+    SignatureAlgorithm, SigningKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{
-    AlgorithmInfo, RNG, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
+    AlgorithmInfo, PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier,
 };
 use bouncycastle_rng::FixedSeedRNG;
 
 const MSG: &[u8] = b"The quick brown fox jumped over the lazy dog";
 
+/// What a signature algorithm does with the `ctx` argument of its constructors and one-shots.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CtxBehaviour {
+    /// The context is bound into the signature, and one longer than 255 bytes is refused
+    /// (ML-DSA).
+    Bound,
+    /// The context is accepted and has no effect (ECDSA, RSA).
+    Ignored,
+    /// A non-empty context is a `LengthError`; `None` and the empty context are accepted. Only the
+    /// one-shot suites support this: the streaming suites sign under a context.
+    Refused,
+}
+
 /// Instance of the test framework.
 pub struct TestFrameworkSignature {
-    /// Does the algorithm bind the context into the signature? `false` for an algorithm that
-    /// ignores it (ECDSA, RSA), which is then not expected to refuse a long one either.
-    alg_accepts_ctx: bool,
+    ctx: CtxBehaviour,
 }
 
 impl TestFrameworkSignature {
-    ///
+    /// For an algorithm that binds the context into the signature (`true`,
+    /// [`CtxBehaviour::Bound`]) or ignores it (`false`, [`CtxBehaviour::Ignored`]).
     pub fn new(alg_accepts_ctx: bool) -> Self {
-        Self { alg_accepts_ctx }
+        Self::with_ctx_behaviour(if alg_accepts_ctx {
+            CtxBehaviour::Bound
+        } else {
+            CtxBehaviour::Ignored
+        })
     }
 
-    /// Every member of [`SigningKey`] and [`VerifyingKey`], and of the workers they produce, for
-    /// one algorithm `A` over the key pair `keygen` returns. The randomness comes from a
-    /// [`FixedSeedRNG`] whose consecutive 32-byte draws differ, so the run is repeatable and two
-    /// signatures of one message still get different randomizers.
+    /// For an algorithm with the given treatment of the context.
+    pub fn with_ctx_behaviour(ctx: CtxBehaviour) -> Self {
+        Self { ctx }
+    }
+
+    /// Every member of [`SigningKey`] and [`VerifyingKey`], of the workers they produce and of
+    /// the one-shot roles that come with them, for one algorithm `A` over the key pair `keygen`
+    /// returns. The randomness comes from a [`FixedSeedRNG`] whose consecutive 32-byte draws
+    /// differ, so the run is repeatable and two signatures of one message still get different
+    /// randomizers.
     ///
     /// `run_full_bitflipping_tests` verifies a signature with each of its bits flipped in turn,
     /// which takes a while for a large signature.
@@ -45,25 +68,11 @@ impl TestFrameworkSignature {
         run_full_bitflipping_tests: bool,
     ) {
         // The seed cycles, so it is longer than any one draw: a 64-byte seed hands two 64-byte
-        // RSASSA-PSS/SHA-512 salts the same bytes, and the "two signatures differ" check below fails.
+        // RSASSA-PSS/SHA-512 salts the same bytes, and the "two signatures differ" check fails.
         let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 256, _>(|i| i as u8));
         let (pk, sk) = keygen().unwrap();
 
-        // one-shots
-        let sig = sk.sign(&mut rng, MSG, None).unwrap();
-        pk.verify(MSG, None, &sig).unwrap();
-
-        // a randomized algorithm gives a different signature each time
-        let sig2 = sk.sign(&mut rng, MSG, None).unwrap();
-        assert_ne!(sig, sig2, "two signatures of one message must differ");
-
-        let mut out = [0u8; SIG_LEN];
-        assert_eq!(sk.sign_out(&mut rng, MSG, None, &mut out).unwrap(), SIG_LEN);
-        pk.verify(MSG, None, &out).unwrap();
-
-        // a large message
-        let sig = sk.sign(&mut rng, DUMMY_SEED, None).unwrap();
-        pk.verify(DUMMY_SEED, None, &sig).unwrap();
+        self.check_one_shots(&pk, &sk, &mut rng, run_full_bitflipping_tests);
 
         // streaming signer, in one chunk and in many; the worker names its algorithm
         let mut signer = sk.create_signer(&mut rng, Some(b"streaming")).unwrap();
@@ -112,37 +121,19 @@ impl TestFrameworkSignature {
             Err(SignatureError::SignatureVerificationFailed)
         ));
 
-        // streaming verifier, in one chunk and in many
-        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
-        assert_eq!(verifier.alg_name(), A::ALG_NAME);
-        verifier.do_update(DUMMY_SEED);
-        verifier.do_verify_final(&sig).unwrap();
-
-        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
-        for chunk in DUMMY_SEED.chunks(100) {
-            verifier.do_update(chunk);
+        // the long context is refused at construction
+        if self.ctx == CtxBehaviour::Bound {
+            assert!(matches!(
+                sk.create_signer(&mut rng, Some(&[0u8; 256])),
+                Err(SignatureError::LengthError(_))
+            ));
         }
-        verifier.do_verify_final(&sig).unwrap();
-
-        // the wrong message, through the streaming verifier
-        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
-        verifier.do_update(b"this is the wrong message");
-        assert!(matches!(
-            verifier.do_verify_final(&sig),
-            Err(SignatureError::SignatureVerificationFailed)
-        ));
-
-        self.check_ctx_and_lengths(&pk, &sk, &mut rng);
-        Self::check_corrupted_signatures(
-            &pk,
-            MSG,
-            &sk.sign(&mut rng, MSG, None).unwrap(),
-            run_full_bitflipping_tests,
-        );
+        self.check_streaming_verifier(&pk, &sig);
     }
 
-    /// Every member of [`DeterministicSigningKey`] and [`VerifyingKey`], and of the workers they
-    /// produce, for one algorithm `A` over the key pair `keygen` returns.
+    /// Every member of [`DeterministicSigningKey`] and [`VerifyingKey`], of the workers they
+    /// produce and of the one-shot roles that come with them, for one algorithm `A` over the key
+    /// pair `keygen` returns.
     pub fn test_deterministic_signature<
         A: SignatureAlgorithm,
         PK: VerifyingKey<A, SIG_LEN>,
@@ -155,14 +146,7 @@ impl TestFrameworkSignature {
     ) {
         let (pk, sk) = keygen().unwrap();
 
-        // one-shots; the same inputs give the same signature
-        let sig = sk.sign_deterministic(MSG, None).unwrap();
-        pk.verify(MSG, None, &sig).unwrap();
-        assert_eq!(sig, sk.sign_deterministic(MSG, None).unwrap());
-
-        let mut out = [0u8; SIG_LEN];
-        assert_eq!(sk.sign_deterministic_out(MSG, None, &mut out).unwrap(), SIG_LEN);
-        assert_eq!(out, sig);
+        self.check_deterministic_one_shots(&pk, &sk, run_full_bitflipping_tests);
 
         // streaming signer, in one chunk and in many, equals the one-shot
         let sig = sk.sign_deterministic(DUMMY_SEED, Some(b"streaming")).unwrap();
@@ -182,42 +166,296 @@ impl TestFrameworkSignature {
         assert_eq!(signer.do_final_out(&mut out).unwrap(), SIG_LEN);
         assert_eq!(out, sig);
 
-        // streaming verifier, and the wrong message through it
-        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
-        for chunk in DUMMY_SEED.chunks(100) {
-            verifier.do_update(chunk);
-        }
-        verifier.do_verify_final(&sig).unwrap();
-
-        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
-        verifier.do_update(b"this is the wrong message");
-        assert!(matches!(
-            verifier.do_verify_final(&sig),
-            Err(SignatureError::SignatureVerificationFailed)
-        ));
-
-        // ctx: a signature made under one context does not verify under another
-        if self.alg_accepts_ctx {
-            let sig = sk.sign_deterministic(MSG, Some(b"ctx A")).unwrap();
-            pk.verify(MSG, Some(b"ctx A"), &sig).unwrap();
-            assert!(matches!(
-                pk.verify(MSG, Some(b"ctx B"), &sig),
-                Err(SignatureError::SignatureVerificationFailed)
-            ));
+        // the long context is refused at construction
+        if self.ctx == CtxBehaviour::Bound {
             assert!(matches!(
                 sk.create_signer_deterministic(Some(&[0u8; 256])),
                 Err(SignatureError::LengthError(_))
             ));
         }
-        Self::check_signature_lengths(&pk, MSG, &sk.sign_deterministic(MSG, None).unwrap());
-        Self::check_corrupted_signatures(
-            &pk,
-            MSG,
-            &sk.sign_deterministic(MSG, None).unwrap(),
-            run_full_bitflipping_tests,
-        );
+        self.check_streaming_verifier(&pk, &sig);
     }
 
+    /// Every member of [`OneShotSigningKey`] and [`OneShotVerifyingKey`], for a key pair that
+    /// may have no streaming role. [`test_signature`](Self::test_signature) runs the same checks
+    /// on a pair that has one.
+    pub fn test_one_shot_signature<
+        A: SignatureAlgorithm,
+        PK: OneShotVerifyingKey<A, SIG_LEN>,
+        SK: OneShotSigningKey<A, SIG_LEN>,
+        const SIG_LEN: usize,
+    >(
+        &self,
+        keygen: fn() -> Result<(PK, SK), SignatureError>,
+        run_full_bitflipping_tests: bool,
+    ) {
+        let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 256, _>(|i| i as u8));
+        let (pk, sk) = keygen().unwrap();
+        self.check_one_shots(&pk, &sk, &mut rng, run_full_bitflipping_tests);
+    }
+
+    /// Every member of [`DeterministicOneShotSigningKey`] and [`OneShotVerifyingKey`], for a key
+    /// pair that may have no streaming role.
+    /// [`test_deterministic_signature`](Self::test_deterministic_signature) runs the same checks
+    /// on a pair that has one.
+    pub fn test_deterministic_one_shot_signature<
+        A: SignatureAlgorithm,
+        PK: OneShotVerifyingKey<A, SIG_LEN>,
+        SK: DeterministicOneShotSigningKey<A, SIG_LEN>,
+        const SIG_LEN: usize,
+    >(
+        &self,
+        keygen: fn() -> Result<(PK, SK), SignatureError>,
+        run_full_bitflipping_tests: bool,
+    ) {
+        let (pk, sk) = keygen().unwrap();
+        self.check_deterministic_one_shots(&pk, &sk, run_full_bitflipping_tests);
+    }
+
+    /// The hedged one-shots against the one-shot verify.
+    fn check_one_shots<
+        A: SignatureAlgorithm,
+        PK: OneShotVerifyingKey<A, SIG_LEN>,
+        SK: OneShotSigningKey<A, SIG_LEN>,
+        const SIG_LEN: usize,
+    >(
+        &self,
+        pk: &PK,
+        sk: &SK,
+        rng: &mut dyn RNG,
+        every_bit: bool,
+    ) {
+        // round trip, on a short message and a long one; two signatures of one message differ
+        let sig = sk.sign(rng, MSG, None).unwrap();
+        pk.verify(MSG, None, &sig).unwrap();
+        assert_ne!(sig, sk.sign(rng, MSG, None).unwrap(), "two signatures must differ");
+        let long = sk.sign(rng, DUMMY_SEED, None).unwrap();
+        pk.verify(DUMMY_SEED, None, &long).unwrap();
+
+        // `_out` overwrites what was in the buffer and reports the length
+        let mut out = [0xA5u8; SIG_LEN];
+        assert_eq!(sk.sign_out(rng, MSG, None, &mut out).unwrap(), SIG_LEN);
+        pk.verify(MSG, None, &out).unwrap();
+
+        // ... and leaves nothing stale in it when the RNG fails
+        let mut out = [0xA5u8; SIG_LEN];
+        assert!(matches!(
+            sk.sign_out(&mut FailingRNG, MSG, None, &mut out),
+            Err(SignatureError::RNGError(_))
+        ));
+        assert_eq!(out, [0u8; SIG_LEN]);
+        assert!(matches!(sk.sign(&mut FailingRNG, MSG, None), Err(SignatureError::RNGError(_))));
+
+        // no context and the empty context are the same
+        let sig_empty = sk.sign(rng, MSG, Some(&[])).unwrap();
+        pk.verify(MSG, None, &sig_empty).unwrap();
+
+        // a context, as the algorithm treats one
+        let sig_ctx = match self.ctx {
+            CtxBehaviour::Refused => {
+                let mut out = [0xA5u8; SIG_LEN];
+                assert!(matches!(
+                    sk.sign_out(rng, MSG, Some(b"ctx A"), &mut out),
+                    Err(SignatureError::LengthError(_))
+                ));
+                assert_eq!(out, [0u8; SIG_LEN]);
+                assert!(matches!(
+                    sk.sign(rng, MSG, Some(b"ctx A")),
+                    Err(SignatureError::LengthError(_))
+                ));
+                None
+            }
+            CtxBehaviour::Bound | CtxBehaviour::Ignored => {
+                Some(sk.sign(rng, MSG, Some(b"ctx A")).unwrap())
+            }
+        };
+        if self.ctx == CtxBehaviour::Bound {
+            let mut out = [0xA5u8; SIG_LEN];
+            assert!(matches!(
+                sk.sign_out(rng, MSG, Some(&[0u8; 256]), &mut out),
+                Err(SignatureError::LengthError(_))
+            ));
+            assert_eq!(out, [0u8; SIG_LEN]);
+        }
+
+        self.check_one_shot_verify(pk, &sig, sig_ctx.as_ref(), every_bit);
+    }
+
+    /// The deterministic one-shots against the one-shot verify.
+    fn check_deterministic_one_shots<
+        A: SignatureAlgorithm,
+        PK: OneShotVerifyingKey<A, SIG_LEN>,
+        SK: DeterministicOneShotSigningKey<A, SIG_LEN>,
+        const SIG_LEN: usize,
+    >(
+        &self,
+        pk: &PK,
+        sk: &SK,
+        every_bit: bool,
+    ) {
+        // round trip, on a short message and a long one; the same inputs give the same signature
+        let sig = sk.sign_deterministic(MSG, None).unwrap();
+        pk.verify(MSG, None, &sig).unwrap();
+        assert_eq!(sig, sk.sign_deterministic(MSG, None).unwrap());
+        let long = sk.sign_deterministic(DUMMY_SEED, None).unwrap();
+        pk.verify(DUMMY_SEED, None, &long).unwrap();
+        assert_ne!(sig, long);
+
+        // `_out` overwrites what was in the buffer and reports the length
+        let mut out = [0xA5u8; SIG_LEN];
+        assert_eq!(sk.sign_deterministic_out(MSG, None, &mut out).unwrap(), SIG_LEN);
+        assert_eq!(out, sig);
+
+        // no context and the empty context are the same
+        assert_eq!(sig, sk.sign_deterministic(MSG, Some(&[])).unwrap());
+
+        // a context, as the algorithm treats one
+        let sig_ctx = match self.ctx {
+            CtxBehaviour::Refused => {
+                let mut out = [0xA5u8; SIG_LEN];
+                assert!(matches!(
+                    sk.sign_deterministic_out(MSG, Some(b"ctx A"), &mut out),
+                    Err(SignatureError::LengthError(_))
+                ));
+                assert_eq!(out, [0u8; SIG_LEN]);
+                assert!(matches!(
+                    sk.sign_deterministic(MSG, Some(b"ctx A")),
+                    Err(SignatureError::LengthError(_))
+                ));
+                None
+            }
+            CtxBehaviour::Bound | CtxBehaviour::Ignored => {
+                Some(sk.sign_deterministic(MSG, Some(b"ctx A")).unwrap())
+            }
+        };
+        match self.ctx {
+            CtxBehaviour::Bound => {
+                assert_ne!(Some(sig), sig_ctx);
+                // ... and `_out` leaves nothing stale in the buffer when it refuses a long one
+                let mut out = [0xA5u8; SIG_LEN];
+                assert!(matches!(
+                    sk.sign_deterministic_out(MSG, Some(&[0u8; 256]), &mut out),
+                    Err(SignatureError::LengthError(_))
+                ));
+                assert_eq!(out, [0u8; SIG_LEN]);
+            }
+            CtxBehaviour::Ignored => assert_eq!(Some(sig), sig_ctx),
+            CtxBehaviour::Refused => {}
+        }
+
+        self.check_one_shot_verify(pk, &sig, sig_ctx.as_ref(), every_bit);
+    }
+
+    /// What the one-shot verify accepts and refuses: `sig` is over [`MSG`] with no context,
+    /// `sig_ctx` over [`MSG`] under `"ctx A"`, for an algorithm that takes one.
+    fn check_one_shot_verify<
+        A: SignatureAlgorithm,
+        PK: OneShotVerifyingKey<A, SIG_LEN>,
+        const SIG_LEN: usize,
+    >(
+        &self,
+        pk: &PK,
+        sig: &[u8; SIG_LEN],
+        sig_ctx: Option<&[u8; SIG_LEN]>,
+        every_bit: bool,
+    ) {
+        // no context and the empty context are the same
+        pk.verify(MSG, Some(&[]), sig).unwrap();
+
+        // the wrong message
+        assert!(matches!(
+            pk.verify(b"this is the wrong message", None, sig),
+            Err(SignatureError::SignatureVerificationFailed)
+        ));
+
+        // a context, as the algorithm treats one
+        match (self.ctx, sig_ctx) {
+            (CtxBehaviour::Bound, Some(sig_ctx)) => {
+                pk.verify(MSG, Some(b"ctx A"), sig_ctx).unwrap();
+                assert!(matches!(
+                    pk.verify(MSG, Some(b"ctx B"), sig_ctx),
+                    Err(SignatureError::SignatureVerificationFailed)
+                ));
+                assert!(matches!(
+                    pk.verify(MSG, None, sig_ctx),
+                    Err(SignatureError::SignatureVerificationFailed)
+                ));
+                assert!(matches!(
+                    pk.verify(MSG, Some(&[0u8; 256]), sig_ctx),
+                    Err(SignatureError::LengthError(_))
+                ));
+            }
+            (CtxBehaviour::Ignored, Some(sig_ctx)) => {
+                pk.verify(MSG, Some(b"ctx A"), sig_ctx).unwrap();
+                pk.verify(MSG, Some(b"ctx B"), sig_ctx).unwrap();
+                pk.verify(MSG, None, sig_ctx).unwrap();
+            }
+            (CtxBehaviour::Refused, None) => {
+                assert!(matches!(
+                    pk.verify(MSG, Some(b"ctx A"), sig),
+                    Err(SignatureError::LengthError(_))
+                ));
+            }
+            _ => unreachable!("a signature under a context exists unless one is refused"),
+        }
+
+        // a signature of the wrong length
+        let mut too_long = vec![1u8; SIG_LEN + 2];
+        too_long[..SIG_LEN].copy_from_slice(sig);
+        assert!(matches!(pk.verify(MSG, None, &too_long), Err(SignatureError::LengthError(_))));
+        assert!(matches!(
+            pk.verify(MSG, None, &sig[..SIG_LEN - 1]),
+            Err(SignatureError::LengthError(_))
+        ));
+
+        Self::check_corrupted_signatures(pk, MSG, sig, every_bit);
+    }
+
+    /// The streaming verifier: `sig` is over [`DUMMY_SEED`] under the context `"streaming"`.
+    fn check_streaming_verifier<
+        A: SignatureAlgorithm,
+        PK: VerifyingKey<A, SIG_LEN>,
+        const SIG_LEN: usize,
+    >(
+        &self,
+        pk: &PK,
+        sig: &[u8; SIG_LEN],
+    ) {
+        // in one chunk and in many
+        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
+        assert_eq!(verifier.alg_name(), A::ALG_NAME);
+        verifier.do_update(DUMMY_SEED);
+        verifier.do_verify_final(sig).unwrap();
+
+        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
+        for chunk in DUMMY_SEED.chunks(100) {
+            verifier.do_update(chunk);
+        }
+        verifier.do_verify_final(sig).unwrap();
+
+        // the wrong message
+        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
+        verifier.do_update(b"this is the wrong message");
+        assert!(matches!(
+            verifier.do_verify_final(sig),
+            Err(SignatureError::SignatureVerificationFailed)
+        ));
+
+        // a signature of the wrong length
+        let mut too_long = vec![1u8; SIG_LEN + 2];
+        too_long[..SIG_LEN].copy_from_slice(sig);
+        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
+        verifier.do_update(DUMMY_SEED);
+        assert!(matches!(verifier.do_verify_final(&too_long), Err(SignatureError::LengthError(_))));
+
+        // the long context is refused at construction
+        if self.ctx == CtxBehaviour::Bound {
+            assert!(matches!(
+                pk.create_verifier(Some(&[0u8; 256])),
+                Err(SignatureError::LengthError(_))
+            ));
+        }
+    }
     /// Every member of [`PreHashSigningKey`] and [`PreHashVerifyingKey`] for the hash `H`, and
     /// of the workers they produce. The pure-message members are [`test_signature`](Self::test_signature)'s job.
     pub fn test_ph_signature<
@@ -353,65 +591,10 @@ impl TestFrameworkSignature {
         );
     }
 
-    /// The context binding and the long-context refusal, and the signature-length checks.
-    fn check_ctx_and_lengths<
-        A: SignatureAlgorithm,
-        PK: VerifyingKey<A, SIG_LEN>,
-        SK: SigningKey<A, SIG_LEN>,
-        const SIG_LEN: usize,
-    >(
-        &self,
-        pk: &PK,
-        sk: &SK,
-        rng: &mut dyn RNG,
-    ) {
-        let sig = sk.sign(rng, MSG, Some(b"ctx A")).unwrap();
-        pk.verify(MSG, Some(b"ctx A"), &sig).unwrap();
-        if self.alg_accepts_ctx {
-            // a signature made under one context does not verify under another, and FIPS 204's
-            // 255-byte limit is enforced at construction
-            assert!(matches!(
-                pk.verify(MSG, Some(b"ctx B"), &sig),
-                Err(SignatureError::SignatureVerificationFailed)
-            ));
-            assert!(matches!(
-                sk.create_signer(rng, Some(&[0u8; 256])),
-                Err(SignatureError::LengthError(_))
-            ));
-            assert!(matches!(
-                pk.create_verifier(Some(&[0u8; 256])),
-                Err(SignatureError::LengthError(_))
-            ));
-        }
-        Self::check_signature_lengths(pk, MSG, &sk.sign(rng, MSG, None).unwrap());
-    }
-
-    /// A signature of the wrong length is a `LengthError`, through both verify paths.
-    fn check_signature_lengths<
-        A: SignatureAlgorithm,
-        PK: VerifyingKey<A, SIG_LEN>,
-        const SIG_LEN: usize,
-    >(
-        pk: &PK,
-        msg: &[u8],
-        sig: &[u8; SIG_LEN],
-    ) {
-        let mut too_long = vec![1u8; SIG_LEN + 2];
-        too_long[..SIG_LEN].copy_from_slice(sig);
-        assert!(matches!(pk.verify(msg, None, &too_long), Err(SignatureError::LengthError(_))));
-        assert!(matches!(
-            pk.verify(msg, None, &sig[..SIG_LEN - 1]),
-            Err(SignatureError::LengthError(_))
-        ));
-        let mut verifier = pk.create_verifier(None).unwrap();
-        verifier.do_update(msg);
-        assert!(matches!(verifier.do_verify_final(&too_long), Err(SignatureError::LengthError(_))));
-    }
-
     /// A corrupted signature fails: a spot check, and optionally every single-bit flip.
     fn check_corrupted_signatures<
         A: SignatureAlgorithm,
-        PK: VerifyingKey<A, SIG_LEN>,
+        PK: OneShotVerifyingKey<A, SIG_LEN>,
         const SIG_LEN: usize,
     >(
         pk: &PK,
@@ -480,8 +663,8 @@ impl TestFrameworkSignatureKeys {
     /// Since key generation is not part of any signature trait, the caller supplies a
     /// `keygen` function pointer (the inherent `keygen` associated function on the algorithm struct).
     pub fn test_keys<
-        PK: SignaturePublicKey<PK_LEN>,
-        SK: SignaturePrivateKey<SK_LEN>,
+        PK: PublicKey<PK_LEN>,
+        SK: PrivateKey<SK_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
     >(
@@ -493,8 +676,8 @@ impl TestFrameworkSignatureKeys {
 
     /// Tests the correct behaviour on buffers too large / too small.
     fn test_boundary_conditions<
-        PK: SignaturePublicKey<PK_LEN>,
-        SK: SignaturePrivateKey<SK_LEN>,
+        PK: PublicKey<PK_LEN>,
+        SK: PrivateKey<SK_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
     >(
@@ -507,7 +690,7 @@ impl TestFrameworkSignatureKeys {
         assert_eq!(pk_bytes.len(), PK_LEN);
         // too short
         match PK::from_bytes(&pk_bytes[..PK_LEN - 1]) {
-            Err(SignatureError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
         // too long
@@ -515,7 +698,7 @@ impl TestFrameworkSignatureKeys {
         bytes_too_long.append(&mut Vec::from(&pk_bytes[..PK_LEN]));
         bytes_too_long.push(0xFF);
         match PK::from_bytes(&bytes_too_long) {
-            Err(SignatureError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
 
@@ -523,7 +706,7 @@ impl TestFrameworkSignatureKeys {
         assert_eq!(sk_bytes.len(), SK_LEN);
         // too short
         match SK::from_bytes(&sk_bytes[..SK_LEN - 1]) {
-            Err(SignatureError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
         // too long
@@ -531,7 +714,7 @@ impl TestFrameworkSignatureKeys {
         bytes_too_long.append(&mut Vec::from(&sk_bytes[..SK_LEN]));
         bytes_too_long.push(0xFF);
         match SK::from_bytes(&bytes_too_long) {
-            Err(SignatureError::DecodingError(_)) => { /* good */ }
+            Err(KeyDecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
     }

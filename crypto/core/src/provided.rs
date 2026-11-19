@@ -87,11 +87,14 @@ where
     Ok((written + final_len, tag))
 }
 
-/// Encrypts `buf` in place through `enc` after absorbing `aad`, returning the detached tag.
+/// Encrypts `buf` in place through `enc` after absorbing `aad`, returning the detached tag: the
+/// body of [`AeadInPlaceEncryptionKey`](crate::symmetric_key::AeadInPlaceEncryptionKey)'s methods
+/// for a key with a streaming worker. `enc` must be a worker nothing has been fed to, and one
+/// that never emits more than it has been given, as a conformant AEAD worker does.
 ///
 /// # Errors
-/// Any error of the worker's streaming methods.
-pub(crate) fn encrypt_detached_in_place<
+/// Any error of the worker's streaming methods; the contents of `buf` are then unspecified.
+pub fn encrypt_detached_inplace<
     E,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
@@ -205,12 +208,14 @@ where
 }
 
 /// Decrypts `buf` in place through `dec` after absorbing `aad`, and checks `tag`. On any error
-/// `buf` is zeroized: the plaintext was written into it before the tag could be checked.
+/// `buf` is zeroized: the plaintext was written into it before the tag could be checked. `dec`
+/// must be a worker nothing has been fed to and that never emits more than it has been given,
+/// as for [`encrypt_detached_inplace`].
 ///
 /// # Errors
 /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, or any error of the
 /// worker's streaming methods.
-pub(crate) fn decrypt_detached_in_place<
+pub fn decrypt_detached_inplace<
     D,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,

@@ -198,8 +198,8 @@ pub fn result_is_pass(fields: &BTreeMap<String, String>) -> bool {
     fields.get("Result").unwrap_or_else(|| panic!("record missing Result field")).starts_with('P')
 }
 
-use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
@@ -246,7 +246,7 @@ where
         sig[width..].copy_from_slice(&s);
         let verified =
             ECDSAPublicKey::<C, H>::from_bytes(&uncompressed_pk(&qx, &qy)).ok().and_then(|pk| {
-                VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, &msg, None, &sig).ok()
+                OneShotVerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, &msg, None, &sig).ok()
             });
         assert_eq!(
             verified.is_some(),
@@ -292,13 +292,13 @@ where
             .expect("CAVP Q must be a valid public key");
 
         let mut rng = FixedBytesRng::new(k_minus_1);
-        let sig = SigningKey::<ECDSA<C, H>, SIG_LEN>::sign(&sk, &mut rng, &msg, None)
+        let sig = OneShotSigningKey::<ECDSA<C, H>, SIG_LEN>::sign(&sk, &mut rng, &msg, None)
             .expect("signing with a valid key and k must succeed");
         let mut expected = [0u8; SIG_LEN];
         expected[..width].copy_from_slice(&r);
         expected[width..].copy_from_slice(&s);
         assert_eq!(sig, expected, "{section}: mismatch for record {:?}", record.fields);
-        VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, &msg, None, &sig)
+        OneShotVerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, &msg, None, &sig)
             .expect("NIST's own signature must verify");
     }
 }
@@ -357,10 +357,14 @@ where
         let pk = ECDSAPublicKey::<C, H>::from_bytes(&uncompressed_pk(&qx, &qy))
             .expect("CAVP Q must be a valid public key");
         assert_eq!(sk.derive_pk(), pk, "{section}: [d]G must be Q");
-        let sig =
-            SigningKey::<ECDSA<C, H>, SIG_LEN>::sign(&sk, &mut DefaultRNG::default(), msg, None)
-                .expect("signing with a valid key must succeed");
-        VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, msg, None, &sig)
+        let sig = OneShotSigningKey::<ECDSA<C, H>, SIG_LEN>::sign(
+            &sk,
+            &mut DefaultRNG::default(),
+            msg,
+            None,
+        )
+        .expect("signing with a valid key must succeed");
+        OneShotVerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, msg, None, &sig)
             .expect("Q must be [d]G for this (d, Q) pair to verify");
     }
 }

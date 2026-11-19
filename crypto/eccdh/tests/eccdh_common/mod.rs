@@ -5,11 +5,11 @@
 
 use bouncycastle_concatkdf::ConcatKDF;
 use bouncycastle_core::agreement_key::AgreementKey;
-use bouncycastle_core::errors::{KeyAgreementError, RNGError};
+use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError, RNGError};
 use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, KeyAgreementPrivateKey, KeyAgreementPublicKey};
+use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::key_agreement::{
     TestFrameworkKeyAgreement, TestFrameworkKeyAgreementKeys,
 };
@@ -67,7 +67,7 @@ where
     assert_eq!(from_compressed.encode(), uncompressed);
 
     match ECCDHPrivateKey::<C>::from_bytes(&[0u8; SK_LEN]) {
-        Err(KeyAgreementError::DecodingError(_)) => {}
+        Err(KeyDecodingError(_)) => {}
         other => panic!("expected DecodingError, got {other:?}"),
     }
     let n = C::be_bytes_from_limbs(&C::N);
@@ -75,12 +75,12 @@ where
     n_plus_1[SK_LEN - 1] += 1; // n is odd and n - 1 even, so no carry
     for (what, bytes) in [("n", n), ("n + 1", n_plus_1), ("all ones", [0xffu8; SK_LEN])] {
         match ECCDHPrivateKey::<C>::from_bytes(&bytes) {
-            Err(KeyAgreementError::DecodingError(_)) => {}
+            Err(KeyDecodingError(_)) => {}
             other => panic!("d = {what} should have been rejected, got {other:?}"),
         }
     }
     match ECCDHPrivateKey::<C>::from_bytes(&n[..SK_LEN - 1]) {
-        Err(KeyAgreementError::DecodingError(_)) => {}
+        Err(KeyDecodingError(_)) => {}
         other => panic!("a short encoding should have been rejected, got {other:?}"),
     }
     let mut n_minus_1 = n;
@@ -94,7 +94,7 @@ where
     let mut off_curve = pk.encode();
     off_curve[PK_LEN - 1] ^= 1;
     match ECCDHPublicKey::<C>::from_bytes(&off_curve) {
-        Err(KeyAgreementError::DecodingError(_)) => {}
+        Err(KeyDecodingError(_)) => {}
         other => panic!("expected DecodingError, got {other:?}"),
     }
     let mut out = [0u8; PK_LEN];

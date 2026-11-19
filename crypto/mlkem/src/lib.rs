@@ -69,6 +69,18 @@
 //! let (pk, sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
 //! ```
 //!
+//! Into a private key the caller holds, so that it is built where it will live and no copy of it
+//! is left behind by a move; the private key holds the public key:
+//!
+//! ```rust
+//! use bouncycastle_mlkem::{MLKEM768, MLKEM768PrivateKey, MLKEMPrivateKeyTrait, MLKEMTrait};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! let mut sk = MLKEM768PrivateKey::zeroized();
+//! MLKEM768::keygen_out(&mut HashDRBG_SHA512::new_from_os(), &mut sk).unwrap();
+//! let pk = sk.pk();
+//! ```
+//!
 //! See [`MLKEM`] and [`MLKEM::decaps_from_seed`] for an API that uses a merged
 //! keygen-and-decaps function that allows the private key to be stored only as a 64-byte seed.
 //!
@@ -157,24 +169,35 @@
 //! |----------------------|-----------------|-------------------|-----------------|-------------------|
 //! | ML-KEM-512_expanded  | 800            | 3104              | 1632            | 4226 |
 //! | ML-KEM-768_expanded  | 1184           | 6176              | 2400            | 7810 |
-//! | ML-KEM-1024_expanded | 1568           | 10272              | 3168            | 12418 |
+//! | ML-KEM-1024_expanded | 1568           | 10272             | 3168            | 12418 |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //!
 //! Peak stack usage of each operation, measured with `mem_usage_benches/bench_mlkem_mem_usage` under
-//! `valgrind --tool=massif --stacks=yes` (release build, one call on a fixed key, unexpanded keys):
+//! `valgrind --tool=massif --stacks=yes` on 2026-11-18 (release build, one call, unexpanded keys; the Decaps benches
+//! derive their key from a seed inside the run, so those rows include a key generation):
 //!
 //! | Operation | ML-KEM-512 | ML-KEM-768 | ML-KEM-1024 |
 //! |-----------|------------|------------|-------------|
-//! | KeyGen    | 13,960 | 20,520 | 30,152 |
-//! | Encaps    | 16,424 | 27,256 | 38,840 |
-//! | Decaps    | 20,920 | 33,560 | 47,240 |
+//! | KeyGen    | 13,208 | 17,816 | 24,376 |
+//! | KeyGen, `keygen_out` | 9,496 | 13,592 | 18,712 |
+//! | Encaps    | 16,776 | 23,944 | 32,040 |
+//! | Decaps    | 18,376 | 24,888 | 31,912 |
+//! | Encaps, expanded key | 16,616 | 23,640 | 32,408 |
+//! | Decaps, expanded key | 22,952 | 32,744 | 50,648 |
 //!
-//! Values are in bytes and include the harness's own frames (about 3 KB).
+//! [`MLKEMTrait::keygen_out`] writes into a private key the caller holds, so no copy of it is left
+//! behind by a move. The expanded-key rows include building the expanded key.
+//!
+//! Values are in bytes and include the harness's own frames. A do-nothing run of the same harness
+//! (`bench_do_nothing`) peaks at 7,680 bytes, reached in process start-up before `main` runs, so no
+//! row can read lower.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! Everything at the crate root is considered secure to use. The one
+//! Everything at the crate root is considered secure to use, with one caution: a private key
+//! made by [`MLKEMPrivateKey::zeroized`] and not yet filled by `keygen_out` holds the all-zero
+//! public key, which must not be published. The one
 //! [hazmat](bouncycastle_core::hazmat) item is [`hazmat::EncapsWithRandomness`], which takes the
 //! encapsulation randomness from the caller, so the ciphertext is only as strong as the randomness
 //! provided. Beyond that, the obvious points about handling your private keys properly apply: if

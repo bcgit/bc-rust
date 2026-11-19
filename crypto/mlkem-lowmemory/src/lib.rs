@@ -48,9 +48,8 @@
 //! of memory footprint, performance and readability. Pull requests are welcome if, for example,
 //! a polynomial that does not need to exist has been missed.
 //!
-//! All this combined gives approximately *half the peak memory* at a cost of approximately *2x
-//! the runtime for decapsulating and no appreciable difference for encapsulation*,
-//! compared with the un-optimized implementation in the `bouncycastle_mlkem` crate.
+//! All this combined gives approximately *half the peak memory* of the un-optimized implementation in the
+//! `bouncycastle_mlkem` crate, at a cost in throughput that is largest for decapsulation; the table below has both.
 //!
 //! # Memory Usage
 //!
@@ -85,25 +84,27 @@
 //!
 //! The measurement compiles a simple standalone HelloWorld application that only calls the function under test
 //! with as minimal as possible hard-coded data (such as keys or ciphertexts) and measure the peak memory usage of running
-//! the compiled binary using `valgrind --tool=massif --heap=no --stack=yes`. The flags for heap and stack
+//! the compiled binary using `valgrind --tool=massif --heap=no --stacks=yes`. The flags for heap and stack
 //! reflect the fact that this is a `no_std` rust application and therefore the cryptographic functions use no heap memory.
-//! The measurements may over-estimate by as much as 3 kb since that that's the measured peak memory usage of a do-nothing
-//! HelloWorld rust application.
+//! The measurement has a floor of 7.7 kB: a do-nothing HelloWorld rust application in the same harness
+//! (`bench_do_nothing`) peaks at 7,680 bytes, reached in process start-up before `main` runs, so no row can read
+//! lower, and the two KeyGen rows that read 7.7 are at that floor. The Decaps benches derive their key from a seed
+//! inside the run, so those rows include a key generation.
 //!
 //! | Algorithm                  | Peak stack memory (kB) | Throughput (Kops/s) |
 //! |----------------------------|------------------------|-------------------|
-//! | MLKEM512_lowmemory/KeyGen  | 7.7 (14.0)             | 50.1 (48.7)       |
-//! | MLKEM768_lowmemory/KeyGen  | 7.7 (20.5)             | 28.3 (28.8)       |
-//! | MLKEM1024_lowmemory/KeyGen | 8.8 (30.2)             | 16.9 (18.1)       |
-//! | MLKEM512_lowmemory/Encaps  | 10.8 (16.4)            | 37.8 (43.7)       |
-//! | MLKEM768_lowmemory/Encaps  | 12.6 (27.3)            | 22.3 (26.0)       |
-//! | MLKEM1024_lowmemory/Encaps | 14.8 (38.8)            | 14.2 (15.6)       |
-//! | MLKEM512_lowmemory/Decaps  | 11.8 (20.9)            | 13.4 (31.6)       |
-//! | MLKEM768_lowmemory/Decaps  | 13.7 (33.6)            | 7.8 (21.0)        |
-//! | MLKEM1024_lowmemory/Decaps | 15.7 (47.2)            | 4.9 (13.6)        |
+//! | MLKEM512_lowmemory/KeyGen  | 7.7 (13.6)             | 50.1 (48.7)       |
+//! | MLKEM768_lowmemory/KeyGen  | 7.7 (19.7)             | 28.3 (28.8)       |
+//! | MLKEM1024_lowmemory/KeyGen | 8.1 (28.8)             | 16.9 (18.1)       |
+//! | MLKEM512_lowmemory/Encaps  | 11.0 (18.6)            | 37.8 (43.7)       |
+//! | MLKEM768_lowmemory/Encaps  | 13.1 (29.8)            | 22.3 (26.0)       |
+//! | MLKEM1024_lowmemory/Encaps | 15.7 (41.8)            | 14.2 (15.6)       |
+//! | MLKEM512_lowmemory/Decaps  | 12.2 (19.2)            | 13.4 (31.6)       |
+//! | MLKEM768_lowmemory/Decaps  | 14.0 (30.1)            | 7.8 (21.0)        |
+//! | MLKEM1024_lowmemory/Decaps | 16.1 (41.7)            | 4.9 (13.6)        |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the `bouncycastle_mlkem` crate.
-//! Memory figures were measured with `mem_usage_benches/bench_mlkem_mem_usage` under massif on 2026-11-02;
+//! Memory figures were measured with `mem_usage_benches/bench_mlkem_mem_usage` under massif on 2026-11-18;
 //! throughput figures come from the crates' criterion benches on a developer machine when the crate was
 //! written and have not been re-measured since (decapsulation here has since lost one of its two key
 //! generations, roughly a 30% speed-up).
@@ -256,7 +257,7 @@
 //! If using [`MLKEMTrait::keygen_from_seed`], it is the caller's responsibility to ensure that the seed is
 //! cryptographically random and unpredictable at a security strength that matches the ML-KEM parameter set.
 //!
-//! A private key here *is* its 64-byte seed. `KEMPrivateKey::from_bytes` therefore takes any 64 bytes
+//! A private key here *is* its 64-byte seed. `PrivateKey::from_bytes` therefore takes any 64 bytes
 //! as a seed at the parameter set's strength, with no check possible on where they came from, so an
 //! all-zero or otherwise weak file loads as a key; [`MLKEMTrait::keygen_from_seed`] on typed
 //! [`KeyMaterial`](bouncycastle_core::key_material::KeyMaterial) is the path that enforces key type

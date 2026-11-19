@@ -191,9 +191,9 @@
 //!   decryption failures may be accepted under one key.
 //! - **Tag length:** this crate always produces and verifies the full 128-bit tag. Truncated tags
 //!   (SP 800-232 §4.2.1) are not exposed.
-//! - **Cloning a cipher:** a clone of an [`Ascon_AEAD128<Encrypting>`] continues with the same
-//!   key, nonce and state, so encrypting different data on the two copies reuses the keystream,
-//!   exactly as nonce reuse does.
+//! - **A cipher is not `Clone`:** a copy of an [`Ascon_AEAD128<Encrypting>`] would continue with
+//!   the same key, nonce and state, so encrypting different data on the two copies would reuse
+//!   the keystream, exactly as nonce reuse does. A second worker is made from the key.
 //! - **No partial-byte input:** Ascon-Hash256, Ascon-XOF128 and Ascon-CXOF128 are byte-oriented;
 //!   their `do_final_partial_bits`/`do_final_partial_bits_out` (and the equivalent XOF methods)
 //!   return `HashError::InvalidInput` for 1 to 7 bits, including when reached through

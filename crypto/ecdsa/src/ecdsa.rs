@@ -30,10 +30,12 @@ use crate::rfc6979;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
-    DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
+    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
+    OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, sign_out_with_signer,
+    verify_with_verifier,
 };
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmInfo, HashAlgParams, RNG, SignatureSigner, SignatureVerifier,
+    Algorithm, AlgorithmInfo, FinishToken, HashAlgParams, RNG, SignatureSigner, SignatureVerifier,
 };
 use bouncycastle_ec::curve::{
     Curve, FieldElement, JacobianPoint, PublicScalar, ScalarFieldElement,
@@ -168,12 +170,12 @@ pub struct ECDSAVerifier<'k, C: Curve, H: EcdsaHash> {
 fn sign_with_k<C: Curve, H: EcdsaHash>(
     sk: &ECDSAPrivateKey<C, H>,
     e: &C::ScalarField,
-    k: C::Scalar,
+    k: &C::Scalar,
 ) -> Option<C::Signature> {
-    let mut k_field = C::ScalarField::from_secret(&k);
+    let mut k_field = C::ScalarField::from_secret(k);
     let mut k_inv = k_field.invert(); // step 4
 
-    let mut r_point = C::multiply_base_point(&k); // step 5
+    let mut r_point = C::multiply_base_point(k); // step 5
     let x_r = r_point.affine_x_of_nonidentity(); // steps 6-7, see the module docs
     let r = C::ScalarField::from_limbs(x_r.to_limbs()); // step 8
 
@@ -228,9 +230,9 @@ fn r_or_s_is_zero<C: Curve>(r: &C::ScalarField, s: &C::ScalarField) -> bool {
 }
 
 /// The finished message hash, `H::OUTPUT_LEN` bytes of a `MAX_HASH_LEN` buffer.
-fn finish_hash<H: EcdsaHash>(hash: H) -> [u8; MAX_HASH_LEN] {
+fn finish_hash<H: EcdsaHash>(hash: &mut H, token: &FinishToken) -> [u8; MAX_HASH_LEN] {
     let mut h = [0u8; MAX_HASH_LEN];
-    hash.do_final_out(&mut h[..H::OUTPUT_LEN]);
+    hash.finish_into(token, &mut h[..H::OUTPUT_LEN]);
     h
 }
 
@@ -238,7 +240,8 @@ fn finish_hash<H: EcdsaHash>(hash: H) -> [u8; MAX_HASH_LEN] {
 /// (step 2 is the hashing the caller has done). Both signer types' `do_verify_final` are this
 /// one function, since how `k` was generated does not enter verification.
 fn verify_final<C: Curve, H: EcdsaHash>(
-    hash: H,
+    hash: &mut H,
+    token: &FinishToken,
     pk: &ECDSAPublicKey<C, H>,
     sig: &[u8],
 ) -> Result<(), SignatureError> {
@@ -266,7 +269,7 @@ fn verify_final<C: Curve, H: EcdsaHash>(
     }
     let r = C::ScalarField::from_limbs(r_limbs);
 
-    let h = finish_hash(hash);
+    let h = finish_hash(hash, token);
     let e = e_from_hash::<C, H>(&h[..H::OUTPUT_LEN]); // steps 2-3
 
     // `s` is part of the signature, so its inverse is taken in variable time on the public
@@ -310,6 +313,23 @@ where
     }
 }
 
+impl<C, H: EcdsaHash, const SIG_LEN: usize> OneShotSigningKey<ECDSA<C, H>, SIG_LEN>
+    for ECDSAPrivateKey<C, H>
+where
+    C: Curve<Signature = [u8; SIG_LEN]>,
+{
+    fn sign_out(
+        &self,
+        rng: &mut dyn RNG,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer = SigningKey::<ECDSA<C, H>, SIG_LEN>::create_signer(self, rng, ctx);
+        sign_out_with_signer(signer, msg, output)
+    }
+}
+
 impl<C, H: EcdsaHash, const SIG_LEN: usize> DeterministicSigningKey<ECDSA<C, H>, SIG_LEN>
     for ECDSAPrivateKey<C, H>
 where
@@ -326,6 +346,23 @@ where
     ) -> Result<Self::Signer<'k>, SignatureError> {
         const { check_hash_fits::<C, H>() };
         Ok(ECDetDSASigner { sk: self, hash: H::default() })
+    }
+}
+
+impl<C, H: EcdsaHash, const SIG_LEN: usize> DeterministicOneShotSigningKey<ECDSA<C, H>, SIG_LEN>
+    for ECDSAPrivateKey<C, H>
+where
+    C: Curve<Signature = [u8; SIG_LEN]>,
+{
+    fn sign_deterministic_out(
+        &self,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer =
+            DeterministicSigningKey::<ECDSA<C, H>, SIG_LEN>::create_signer_deterministic(self, ctx);
+        sign_out_with_signer(signer, msg, output)
     }
 }
 
@@ -348,6 +385,17 @@ where
     }
 }
 
+impl<C, H: EcdsaHash, const SIG_LEN: usize> OneShotVerifyingKey<ECDSA<C, H>, SIG_LEN>
+    for ECDSAPublicKey<C, H>
+where
+    C: Curve<Signature = [u8; SIG_LEN]>,
+{
+    fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
+        let verifier = VerifyingKey::<ECDSA<C, H>, SIG_LEN>::create_verifier(self, ctx)?;
+        verify_with_verifier(verifier, msg, sig)
+    }
+}
+
 impl<C: Curve, H: EcdsaHash> AlgorithmInfo for ECDSASigner<'_, C, H> {
     fn alg_name(&self) -> &'static str {
         ECDSA::<C, H>::ALG_NAME
@@ -366,21 +414,20 @@ where
         self.hash.do_update(msg_chunk);
     }
 
-    fn do_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
-        let h = finish_hash(self.hash);
+    fn finish_signature_into(
+        &mut self,
+        token: &FinishToken,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        output.fill(0);
+        let h = finish_hash(&mut self.hash, token);
         // FIPS 186-5 Section 6.4.1 step 11: with a random `k`, `r = 0` or `s = 0` goes back to
         // step 3. `k` was drawn when this signer was created and there is no RNG here to draw
         // another from, so the failure is reported instead; it has probability about 2^-(len(n)-1).
-        sign_with_k::<C, H>(self.sk, &e_from_hash::<C, H>(&h[..H::OUTPUT_LEN]), self.k).ok_or(
-            SignatureError::GenericError(
+        *output = sign_with_k::<C, H>(self.sk, &e_from_hash::<C, H>(&h[..H::OUTPUT_LEN]), &self.k)
+            .ok_or(SignatureError::GenericError(
                 "ECDSA produced r = 0 or s = 0; create a fresh signer and sign again",
-            ),
-        )
-    }
-
-    fn do_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
-        output.fill(0);
-        *output = self.do_final()?;
+            ))?;
         Ok(SIG_LEN)
     }
 }
@@ -403,20 +450,20 @@ where
         self.hash.do_update(msg_chunk);
     }
 
-    fn do_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
-        let h = finish_hash(self.hash);
+    fn finish_signature_into(
+        &mut self,
+        token: &FinishToken,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        output.fill(0);
+        let h = finish_hash(&mut self.hash, token);
         let h = &h[..H::OUTPUT_LEN];
         let k = rfc6979::generate_k::<C, H>(self.sk.scalar(), h); // step 3, Appendix A.3.3
         // FIPS 186-5 Section 6.4.1 step 11: with a deterministic `k`, `r = 0` or `s = 0` outputs
         // failure.
-        sign_with_k::<C, H>(self.sk, &e_from_hash::<C, H>(h), k).ok_or(SignatureError::GenericError(
+        *output = sign_with_k::<C, H>(self.sk, &e_from_hash::<C, H>(h), &k).ok_or(SignatureError::GenericError(
             "deterministic ECDSA produced r = 0 or s = 0; FIPS 186-5 Section 6.4.1 step 11: output failure",
-        ))
-    }
-
-    fn do_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
-        output.fill(0);
-        *output = self.do_final()?;
+        ))?;
         Ok(SIG_LEN)
     }
 }
@@ -436,8 +483,12 @@ impl<C: Curve, H: EcdsaHash> SignatureVerifier for ECDSAVerifier<'_, C, H> {
         self.hash.do_update(msg_chunk);
     }
 
-    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
-        verify_final::<C, H>(self.hash, self.pk, sig)
+    fn finish_signature_verify(
+        &mut self,
+        token: &FinishToken,
+        sig: &[u8],
+    ) -> Result<(), SignatureError> {
+        verify_final::<C, H>(&mut self.hash, token, self.pk, sig)
     }
 }
 

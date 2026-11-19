@@ -30,7 +30,9 @@
 //! differ; `sign_deterministic` takes no RNG and reproduces the same signature every time:
 //!
 //! ```
-//! use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{
+//!     DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
+//! };
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_ecdsa::keys_common::SignatureKeyPair;
 //! use bouncycastle_rng::HashDRBG_SHA512;
@@ -58,7 +60,9 @@
 //! when the signer is created, so the worker itself only hashes:
 //!
 //! ```
-//! use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{
+//!     DeterministicSigningKey, OneShotVerifyingKey, SigningKey, VerifyingKey,
+//! };
 //! use bouncycastle_core::traits::{AlgorithmInfo, SignatureSigner, SignatureVerifier};
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_ecdsa::keys_common::SignatureKeyPair;
@@ -91,8 +95,8 @@
 //! at least the key pair's when signing:
 //!
 //! ```
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
-//! use bouncycastle_core::traits::{Algorithm, SignaturePublicKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
+//! use bouncycastle_core::traits::{Algorithm, PublicKey};
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_ecdsa::ecdsa::ECDSA;
 //! use bouncycastle_ecdsa::keys::ECDSAPublicKey;
@@ -120,7 +124,7 @@
 //! ```
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_sha2::SHA256;
-//! use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+//! use bouncycastle_core::traits::{PrivateKey, PublicKey};
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 //! use bouncycastle_ecdsa::keys_common::SignatureKeyPair;
@@ -144,7 +148,7 @@
 //! decodes it around the role traits:
 //!
 //! ```
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_ecdsa::der;
 //! use bouncycastle_ecdsa::keys_common::SignatureKeyPair;

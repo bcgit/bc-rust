@@ -2,15 +2,19 @@
 //! [`eccdh_cmd`] per curve marker, as `ecdsa_cmd.rs` does for ECDSA. `agree` writes the raw shared secret `Z` of SP 800-56A Rev. 3
 //! Section 5.7.1.2, which is keying material for a KDF (`hkdf-sha256` and friends take it from
 //! a file through `--ikm-file`; the inline `--ikm` would leave it in the command history), not a
-//! key.
+//! key. `encaps` and `decaps` are DHKEM (RFC 9180 Section 4.1) on the same key pair, for the
+//! three curves RFC 9180 defines it over: P-256, P-384 and P-521.
 
+use crate::helpers::kem_helpers::{decaps_cmd, encaps_cmd};
 use crate::helpers::{
     println_stdout, read_input_file, read_secret_file_or_stdin, write_bytes_or_hex,
+    write_private_key, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::errors::KeyAgreementError;
+use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG};
+use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle::ec::curve::Curve;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
@@ -31,14 +35,18 @@ pub(crate) enum ECCDHAction {
     /// Compute the shared secret Z from the own private key (stdin or --skfile) and the peer's
     /// public key (--pkfile), and output it. Z is for a KDF, not a key.
     Agree,
+    /// DHKEM encapsulation against the public key (--pkfile or stdin): the shared secret, and
+    /// the ciphertext. eccdh-p256, eccdh-p384 and eccdh-p521 only.
+    Encaps,
+    /// DHKEM decapsulation of the ciphertext (--ctfile or stdin) with the private key
+    /// (--skfile). eccdh-p256, eccdh-p384 and eccdh-p521 only.
+    Decaps,
 }
 
 #[allow(clippy::type_complexity)] // the keygen function pointer is the one per-curve input
 pub(crate) fn eccdh_cmd<
-    PK: KeyAgreementPublicKey<PK_LEN>,
-    SK: KeyAgreementPrivateKey<SK_LEN>
-        + DerivePublicKey<PK, PK_LEN>
-        + AgreementKey<(), SS_LEN, PublicKey = PK>,
+    PK: PublicKey<PK_LEN>,
+    SK: PrivateKey<SK_LEN> + DerivePublicKey<PK, PK_LEN> + AgreementKey<(), SS_LEN, PublicKey = PK>,
     const SK_LEN: usize,
     const PK_LEN: usize,
     const SS_LEN: usize,
@@ -56,7 +64,7 @@ pub(crate) fn eccdh_cmd<
                 eprintln!("Error: key generation failed: {e:?}");
                 exit(-1);
             });
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            write_private_key(&sk, output_hex);
         }
         ECCDHAction::PkFromSk => {
             let sk =
@@ -83,8 +91,39 @@ pub(crate) fn eccdh_cmd<
                 eprintln!("Error: key agreement failed: {e:?}");
                 exit(-1);
             });
-            write_bytes_or_hex(z.ref_to_bytes(), output_hex);
+            write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
         }
+        // The three curves with a DHKEM take these two in `dhkem_cmd`.
+        ECCDHAction::Encaps | ECCDHAction::Decaps => {
+            eprintln!(
+                "Error: {alg_name} has no DHKEM: RFC 9180 defines one over P-256, P-384 and P-521 only."
+            );
+            exit(-1);
+        }
+    }
+}
+
+/// `encaps` and `decaps`: DHKEM over `C` (RFC 9180 Section 4.1), through the shared KEM actions.
+fn dhkem_cmd<C, const SK_LEN: usize, const N_ENC: usize, const N_SECRET: usize>(
+    action: &ECCDHAction,
+    skfile: &Option<String>,
+    pkfile: &Option<String>,
+    ctfile: &Option<String>,
+    output_hex: bool,
+    alg_name: &str,
+) where
+    C: Curve,
+    ECCDHPublicKey<C>: PublicKey<N_ENC> + EncapsulatingKey<(), N_ENC, N_SECRET>,
+    ECCDHPrivateKey<C>: PrivateKey<SK_LEN> + DecapsulatingKey<(), N_ENC, N_SECRET>,
+{
+    match action {
+        ECCDHAction::Encaps => encaps_cmd::<ECCDHPublicKey<C>, N_ENC, N_ENC, N_SECRET>(
+            pkfile, ctfile, output_hex, alg_name,
+        ),
+        ECCDHAction::Decaps => decaps_cmd::<ECCDHPrivateKey<C>, SK_LEN, N_ENC, N_SECRET>(
+            skfile, ctfile, output_hex, alg_name,
+        ),
+        _ => unreachable!("the callers pass encaps and decaps only"),
     }
 }
 
@@ -101,10 +140,7 @@ fn require_file(file: &Option<String>, flag_name: &str) -> Vec<u8> {
 
 /// The key from its encoding; the bytes are what the file held, or its hex decoded under
 /// `--hex-input`, with nothing guessed from their shape.
-fn parse_sk<SK: KeyAgreementPrivateKey<SK_LEN>, const SK_LEN: usize>(
-    bytes: &[u8],
-    alg_name: &str,
-) -> SK {
+fn parse_sk<SK: PrivateKey<SK_LEN>, const SK_LEN: usize>(bytes: &[u8], alg_name: &str) -> SK {
     match SK::from_bytes(bytes) {
         Ok(sk) => sk,
         Err(_) => {
@@ -115,10 +151,7 @@ fn parse_sk<SK: KeyAgreementPrivateKey<SK_LEN>, const SK_LEN: usize>(
 }
 
 /// See [`parse_sk`]. A public key that parses has passed full validation.
-fn parse_pk<PK: KeyAgreementPublicKey<PK_LEN>, const PK_LEN: usize>(
-    bytes: &[u8],
-    alg_name: &str,
-) -> PK {
+fn parse_pk<PK: PublicKey<PK_LEN>, const PK_LEN: usize>(bytes: &[u8], alg_name: &str) -> PK {
     match PK::from_bytes(bytes) {
         Ok(pk) => pk,
         Err(_) => {
@@ -132,8 +165,14 @@ pub(crate) fn eccdh_p256_cmd(
     action: &ECCDHAction,
     skfile: &Option<String>,
     pkfile: &Option<String>,
+    ctfile: &Option<String>,
     output_hex: bool,
 ) {
+    if matches!(action, ECCDHAction::Encaps | ECCDHAction::Decaps) {
+        return dhkem_cmd::<P256, { P256::SCALAR_LEN }, { P256::PK_UNCOMPRESSED_LEN }, 32>(
+            action, skfile, pkfile, ctfile, output_hex, "ECC CDH P-256",
+        );
+    }
     eccdh_cmd::<
         ECCDHPublicKey<P256>,
         ECCDHPrivateKey<P256>,
@@ -147,8 +186,14 @@ pub(crate) fn eccdh_p384_cmd(
     action: &ECCDHAction,
     skfile: &Option<String>,
     pkfile: &Option<String>,
+    ctfile: &Option<String>,
     output_hex: bool,
 ) {
+    if matches!(action, ECCDHAction::Encaps | ECCDHAction::Decaps) {
+        return dhkem_cmd::<P384, { P384::SCALAR_LEN }, { P384::PK_UNCOMPRESSED_LEN }, 48>(
+            action, skfile, pkfile, ctfile, output_hex, "ECC CDH P-384",
+        );
+    }
     eccdh_cmd::<
         ECCDHPublicKey<P384>,
         ECCDHPrivateKey<P384>,
@@ -162,8 +207,14 @@ pub(crate) fn eccdh_p521_cmd(
     action: &ECCDHAction,
     skfile: &Option<String>,
     pkfile: &Option<String>,
+    ctfile: &Option<String>,
     output_hex: bool,
 ) {
+    if matches!(action, ECCDHAction::Encaps | ECCDHAction::Decaps) {
+        return dhkem_cmd::<P521, { P521::SCALAR_LEN }, { P521::PK_UNCOMPRESSED_LEN }, 64>(
+            action, skfile, pkfile, ctfile, output_hex, "ECC CDH P-521",
+        );
+    }
     eccdh_cmd::<
         ECCDHPublicKey<P521>,
         ECCDHPrivateKey<P521>,

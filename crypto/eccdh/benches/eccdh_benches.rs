@@ -1,6 +1,9 @@
 use bouncycastle_core::agreement_key::AgreementKey;
+use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
+use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
+use bouncycastle_eccdh::dhkem::DhkemCurve;
 use bouncycastle_eccdh::keys::keygen;
 use bouncycastle_rng::DefaultRNG;
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -24,6 +27,24 @@ where
     group.finish();
 }
 
+/// DHKEM (RFC 9180 Section 4.1) on one curve. `encaps` includes the ephemeral keygen and its RNG.
+fn bench_dhkem_curve<C, const N_ENC: usize, const N_SECRET: usize>(c: &mut Criterion, group: &str)
+where
+    C: DhkemCurve<SharedSecret = KeyMaterial<N_SECRET>> + Curve<PkUncompressed = [u8; N_ENC]>,
+{
+    let (pk, sk) = keygen::<C>(&mut DefaultRNG::default()).unwrap();
+    let (_ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
+
+    let mut group = c.benchmark_group(group);
+    group.bench_function("encaps", |bencher| {
+        bencher.iter(|| black_box(black_box(&pk).encaps(&mut DefaultRNG::default(), ()).unwrap()))
+    });
+    group.bench_function("decaps", |bencher| {
+        bencher.iter(|| black_box(black_box(&sk).decaps(black_box(&ct), ()).unwrap()))
+    });
+    group.finish();
+}
+
 fn bench_eccdh(c: &mut Criterion) {
     bench_curve::<P256, 32>(c, "eccdh_p256");
     bench_curve::<P384, 48>(c, "eccdh_p384");
@@ -34,5 +55,11 @@ fn bench_eccdh(c: &mut Criterion) {
     bench_curve::<Bp512r1, 64>(c, "eccdh_bp512r1");
 }
 
-criterion_group!(benches, bench_eccdh);
+fn bench_dhkem(c: &mut Criterion) {
+    bench_dhkem_curve::<P256, 65, 32>(c, "dhkem_p256");
+    bench_dhkem_curve::<P384, 97, 48>(c, "dhkem_p384");
+    bench_dhkem_curve::<P521, 133, 64>(c, "dhkem_p521");
+}
+
+criterion_group!(benches, bench_eccdh, bench_dhkem);
 criterion_main!(benches);

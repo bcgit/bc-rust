@@ -1,15 +1,13 @@
 use crate::low_memory_helpers::{expandA_elem, s_unpack};
 use crate::mldsa::{H, MLDSA_MU_LEN, MLDSA_RND_LEN, N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
-use crate::mldsa::{MuBuilder, draw_rnd, sign_internal, verify_internal};
+use crate::mldsa::{MuBuilder, Rnd, draw_rnd, sign_internal, verify_internal};
 use crate::params::{FullPrivateKeyLen, PrivateKeyLen, PublicKeyLen, SignatureLen};
 use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{
-    Hash, RNG, SignaturePrivateKey, SignaturePublicKey, XOF, XOFSqueezer,
-};
+use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, RNG, XOF, XOFSqueezer};
 use bouncycastle_mldsa_common::aux_functions::{
     bit_pack_eta, bit_pack_t0, power_2_round, rej_bounded_poly, simple_bit_pack_t1,
     simple_bit_unpack_t1,
@@ -84,10 +82,11 @@ pub trait MLDSAPublicKeyTrait<P: MLDSAParams>: Sized {
 
     /// FIPS 204 Algorithm 8 with line 7 removed: verifies `sig` over an externally computed
     /// `mu`. Any ML-DSA signature verifies here with the `mu` of its message, and a signature
-    /// made with [`MLDSAPrivateKeyTrait::sign_mu`] verifies with [`VerifyingKey::verify`]
+    /// made with [`MLDSAPrivateKeyTrait::sign_mu`] verifies with [`OneShotVerifyingKey::verify`]
     /// over the message.
     ///
-    /// [`VerifyingKey::verify`]: bouncycastle_core::signature_key::VerifyingKey::verify
+    /// [`OneShotVerifyingKey::verify`]:
+    ///     bouncycastle_core::signature_key::OneShotVerifyingKey::verify
     fn verify_mu<const SIG_LEN: usize>(
         &self,
         mu: &[u8; MLDSA_MU_LEN],
@@ -166,9 +165,7 @@ impl<P: MLDSAParams> MLDSAPublicKeyInternalTrait<P> for MLDSAPublicKey<P> {
     }
 }
 
-impl<P: PublicKeyLen<PK_LEN>, const PK_LEN: usize> SignaturePublicKey<PK_LEN>
-    for MLDSAPublicKey<P>
-{
+impl<P: PublicKeyLen<PK_LEN>, const PK_LEN: usize> PublicKey<PK_LEN> for MLDSAPublicKey<P> {
     /// Algorithm 22 pkEncode(𝜌, 𝐭1)
     /// Encodes a public key for ML-DSA into a byte string.
     /// Input:𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
@@ -194,11 +191,9 @@ impl<P: PublicKeyLen<PK_LEN>, const PK_LEN: usize> SignaturePublicKey<PK_LEN>
         PK_LEN
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         if bytes.len() != PK_LEN {
-            return Err(SignatureError::DecodingError(
-                "Provided key bytes are the incorrect length",
-            ));
+            return Err(KeyDecodingError("Provided key bytes are the incorrect length"));
         }
         let sized_bytes: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
         Ok(Self::pk_decode(&sized_bytes))
@@ -244,7 +239,7 @@ pub(crate) trait SignMuWithRnd<P: MLDSAParams> {
     fn sign_mu_with_rnd_out<const SIG_LEN: usize>(
         &self,
         mu: &[u8; MLDSA_MU_LEN],
-        rnd: [u8; MLDSA_RND_LEN],
+        rnd: &[u8; MLDSA_RND_LEN],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>
     where
@@ -337,7 +332,9 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
-        self.sign_mu_with_rnd_out(mu, draw_rnd(rng)?, output)
+        let mut rnd = Rnd::new();
+        draw_rnd(rng, &mut rnd)?;
+        self.sign_mu_with_rnd_out(mu, &rnd, output)
     }
 
     /// FIPS 204 Section 3.4, the deterministic variant of [`sign_mu`](Self::sign_mu): `rnd` is
@@ -364,7 +361,7 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
-        self.sign_mu_with_rnd_out(mu, [0u8; MLDSA_RND_LEN], output)
+        self.sign_mu_with_rnd_out(mu, &[0u8; MLDSA_RND_LEN], output)
     }
 }
 
@@ -499,20 +496,12 @@ impl<P: MLDSAParams> MLDSASeedPrivateKey<P> {
     ) -> Polynomial {
         debug_assert!(idx < P::k);
 
-        // [Optimization Note]:
-        // This is one of the places that a row of s1 can be re-computed instead of expanded from the compressed form.
-        // let mut s1 = self.compute_s1_row(0);
-        let mut s1_hat_i = s_unpack::<P, _>(s1_packed, 0);
-        s1_hat_i.ntt();
-
         let mut t_i = {
-            let mut t_hat_i = expandA_elem(&self.rho, idx, 0);
-            t_hat_i.multiply_ntt(&s1_hat_i);
-
-            for col in 1..P::l {
-                // [Optimization Note]:
-                // This is one of the places that a row of s1 can be re-computed instead of expanded from the compressed form.
-                // s1 = self.compute_s1_row(col);
+            // One loop body for every column, the first added to a zero accumulator; see
+            // `compute_wp_approx_row`.
+            let mut t_hat_i = Polynomial::new();
+            for col in 0..P::l {
+                // s1 is unpacked from its compressed form a row at a time.
                 let mut s1_hat = s_unpack::<P, _>(s1_packed, col);
                 s1_hat.ntt();
                 let mut A_elem = expandA_elem(&self.rho, idx, col);
@@ -526,9 +515,6 @@ impl<P: MLDSAParams> MLDSASeedPrivateKey<P> {
             t_hat_i
         };
 
-        // [Optimization Note]:
-        // This is one of the places that a row of s2 can be re-computed instead of unpacked from the compressed form.
-        // let s2 = self.compute_s2_row(idx);
         let s2 = s_unpack::<P, _>(s2_packed, idx);
         t_i.add_ntt(&s2);
         t_i.conditional_add_q();
@@ -537,9 +523,7 @@ impl<P: MLDSAParams> MLDSASeedPrivateKey<P> {
     }
 }
 
-impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> SignaturePrivateKey<SK_LEN>
-    for MLDSASeedPrivateKey<P>
-{
+impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> PrivateKey<SK_LEN> for MLDSASeedPrivateKey<P> {
     /// Encodes the private key seed.
     fn encode(&self) -> [u8; SK_LEN] {
         self.seed.ref_to_bytes().try_into().unwrap()
@@ -558,17 +542,19 @@ impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> SignaturePrivateKey<SK_LEN>
     /// bytes are the key, so there is nothing here to check them against: a caller importing a
     /// seed from storage vouches for how it was generated. [`crate::MLDSATrait::keygen_from_seed`]
     /// on typed [`KeyMaterial`] keeps the key-type and strength checks.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         if bytes.len() != 32 {
-            return Err(SignatureError::DecodingError("Invalid seed length"));
+            return Err(KeyDecodingError("Invalid seed length"));
         }
-        let mut keymat = KeyMaterial::<32>::from_bytes(bytes)?;
+        let mut keymat = KeyMaterial::<32>::from_bytes(bytes)
+            .map_err(|_| KeyDecodingError("Invalid ML-DSA seed private key"))?;
         do_hazardous_operations(&mut keymat, |keymat| {
             keymat.set_key_type(KeyType::Seed)?;
             keymat.set_security_strength(SecurityStrength::_256bit)
-        })?;
+        })
+        .map_err(|_| KeyDecodingError("Invalid ML-DSA seed private key"))?;
 
-        Self::new(&keymat)
+        Self::new(&keymat).map_err(|_| KeyDecodingError("Invalid ML-DSA seed private key"))
     }
 }
 
@@ -780,7 +766,7 @@ impl<P: MLDSAParams> SignMuWithRnd<P> for MLDSASeedPrivateKey<P> {
     fn sign_mu_with_rnd_out<const SIG_LEN: usize>(
         &self,
         mu: &[u8; MLDSA_MU_LEN],
-        rnd: [u8; MLDSA_RND_LEN],
+        rnd: &[u8; MLDSA_RND_LEN],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>
     where

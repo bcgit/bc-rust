@@ -14,14 +14,18 @@ All primitives must be accompanied by a CLI in `/cli`.
 
 Hashes, XOFs and KMAC implement `Suspendable`, so that a computation in progress can be written to a cache and
 resumed later. Keyed workers -- the encryptors, decryptors, generators and verifiers a key object hands out, HMAC's
-included -- and HKDF do not: a suspended or cloned worker is a second copy of
-a nonce, counter or keystream position, and two copies that both go on to encrypt reuse keystream (#173). Those workers
-implement neither `Suspendable` nor `Clone`; a message is paused by holding its worker, and the worker traits are kept
-`dyn`-compatible so it can be held as `&mut dyn` or, where allocation is acceptable, `Box<dyn>`. A worker held as
-`Box<dyn>` is finished through the `_boxed` twin of its consuming final (`do_encrypt_final_boxed(self: Box<Self>)`),
-which a blanket-implemented `*Boxed` supertrait puts in the vtable; no implementor writes it. The twin moves the
-worker out of the box, so the freed heap block is not wiped, as the vacated stack slot of a by-value final is not. The
-`Clone` impls the cipher workers still carry come out in the #173 sweep's next step.
+included -- and HKDF do not: a suspended or cloned worker is a second copy of a nonce, counter or keystream position,
+and two copies that both go on to encrypt reuse keystream (#173). Those workers implement neither `Suspendable` nor
+`Clone` (KMAC's keep both: a copy of a MAC computation repeats no nonce and no keystream); a message is paused by
+holding its worker, and the worker traits are kept `dyn`-compatible so it can be held as
+`&mut dyn` or, where allocation is acceptable, `Box<dyn>`. A worker held as `Box<dyn>` is finished through the `_boxed`
+twin of its consuming final (`do_encrypt_final_boxed(self: Box<Self>)`). Both are provided over the one finishing method
+an implementor writes, which takes `&mut self` so that a worker can be finished, and its `Secret` fields then wiped,
+where it sits: the boxed final never moves the worker out of its box. That method also takes a `&FinishToken`, whose
+constructor is private to `core`, so that it is called by the provided consuming finals and not by accident a second
+time; an implementor passes the token only to a worker it owns and is finishing with itself, and code that owns a worker
+without being one (a KDF's block loop) takes a token from `core::hazmat::finish_token()`. A by-value final is still
+handed the worker by a move, and a move, the caller's own included, may leave the vacated memory unwiped.
 
 `Clone` belongs on the types, not on the `core` traits. Every hash and XOF type is `Clone`, so a computation can be
 forked mid-stream and each copy finished on its own; `Hash` itself carries no `Clone` (and no `Default`), because both
@@ -32,11 +36,18 @@ meant to be held as `dyn` -- the hash, XOF, cipher, MAC, KEM and signature worke
 `where Self: Sized` on any receiver-less or provided by-value method, so the streaming core stays dispatchable through
 `&mut dyn`.
 
+The library in general is meant to serve both embedded systems as well as workstations and servers. In a no std, no
+alloc build everything that is not a static lives on the stack, which warrants particular attention to memory hygiene. A Claude
+skill is available in `.claude/skills/memory-hygiene-in-rust` to assist with this. Note that "memory hygiene" (good
+coding practices that reduce stack usage at no performance cost) can apply to all crates and is different from "low
+memory" (such as the mldsa-lowmemory crate), which uses a different algorithm that trades significant performance loss
+for significant reduction in memory footprint.
+
 # Quality
 
 ## Tests
 
-All crates must have tests in `src/tests`. Part of writing code that treats future maintainers as malicious is that all
+All crates must have tests in `tests/`. Part of writing code that treats future maintainers as malicious is that all
 functions that form part of the public interface should have their expected behaviour fully constrained with tests. In
 other words, any behaviour change of the library that could cause a change in a calling application should also cause a
 test in bc-rust to fail. An excellent tool for achieving this is `cargo mutants` which must be run on every crate and
@@ -121,7 +132,8 @@ subsequent calls can be made to this object (as opposed to the usual pattern of 
 `do_update(&self, ...)`). These tricks go a long way to reducing fallibility since now in general there is no (or very
 very little) object state to track and return errors about.
 
-Any struct that holds sensitive data must impl the `core::Secret` trait and all associated super-traits.
+Any struct that holds sensitive data must keep it in a `bouncycastle_utils::secret::Secret<T>` field (or in a
+`KeyMaterial`, which is built on it), so that it is zeroized on drop and redacted from `Debug` and `Display`.
 
 A primitive whose safe use depends on the caller composing it correctly -- a raw block permutation, a raw keystream
 -- lives under a `hazmat` module in its crate or sub-module, never at the crate root or next to the safe API;
@@ -157,7 +169,14 @@ The following suffixes can be applied
   signature) the worker is constructed by its key object (`create_encryptor`, `create_generator`, `create_signer`) and
   carries no `_init`; `_init` is for a primitive that builds its own state from its arguments, such as `MuBuilder`.
   `_final` indicates that this function call renders the object unusable afterwards by consuming `self` via a move:
-  `_final(self, ..)`.
+  `_final(self, ..)`. On the `core` worker traits the finals are provided over the `finish_` method below.
+* `finish_ / _into`: on a `core` worker trait, the one required method that ends the message. It takes `&mut self`,
+  so that the worker is finished where it sits, and a `&FinishToken`, so that only a `_final` (or code that asks
+  `core::hazmat::finish_token()` for one) calls it: `finish_into(&mut self, token: &FinishToken, out: &mut [u8])`.
+  `_into` marks the ones that write their result into the caller's buffer, under the contract of the `_final_out`
+  they serve (`finish_into`, `finish_mac_into`, `finish_signature_into`, `finish_encrypt_detached_into`); one that
+  returns its result or only checks has no suffix (`finish_encrypt`, `finish_mac_verify`). It is not `_out`, which is
+  a caller's method, nor `_inplace`, which means the input and the output share a buffer.
 * `_rng`: indicates that this version of the function sources its random numbers from a provided `&mut dyn RNG` instead
   of from the default library RNG. `_rng(.., &mut dyn RNG)`. Keyed primitives do not have it: their constructors and
   one-shots take the RNG, full stop.

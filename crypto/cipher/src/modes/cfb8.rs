@@ -55,8 +55,8 @@ use bouncycastle_core::hazmat::{
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    Algorithm, FinishToken, RNG, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use core::marker::PhantomData;
 
@@ -157,7 +157,6 @@ where
 /// Note what is *not* stored: the output block `Oj`. It is recomputed from the register on each
 /// byte and lives only in a local, so no keystream outlives the call that used it. No partial
 /// segment is stored either, because a segment is one byte.
-#[derive(Clone)]
 pub struct Cfb8<'k, P, Dir, const BLOCK_LEN: usize>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
@@ -268,7 +267,10 @@ where
     }
 
     /// Nothing is held back, so there is nothing to finish.
-    fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn finish_encrypt(
+        &mut self,
+        _token: &FinishToken,
+    ) -> Result<([u8; 0], usize), SymmetricCipherError> {
         Ok(([], 0))
     }
 
@@ -330,7 +332,10 @@ where
     }
 
     /// Nothing is held back, so there is nothing to finish.
-    fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn finish_decrypt(
+        &mut self,
+        _token: &FinishToken,
+    ) -> Result<([u8; 0], usize), SymmetricCipherError> {
         Ok(([], 0))
     }
 

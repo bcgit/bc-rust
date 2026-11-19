@@ -1,12 +1,12 @@
 /// This performs tests using the public interfaces of the crate.
 #[cfg(test)]
 mod mlkem_tests {
-    use bouncycastle_core::errors::{KEMError, RNGError};
+    use bouncycastle_core::errors::{KEMError, KeyDecodingError, RNGError};
     use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, XOF, XOFSqueezer};
+    use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, XOF, XOFSqueezer};
     use bouncycastle_hex as hex;
     use bouncycastle_mlkem::hazmat::EncapsWithRandomness;
     use bouncycastle_mlkem::{MLKEM_RND_LEN, MLKEM512, MLKEM768, MLKEM1024};
@@ -415,11 +415,13 @@ mod mlkem_tests {
         let pk3 = MLKEM512PublicKey::from_bytes(pk3_encoded).unwrap();
         assert_ne!(pk1, pk3);
 
-        // Now for the important part: sk will refuse to load with a KEMError::ConsistencyCheckFailed
+        // Now for the important part: sk will refuse to load with the consistency check's message
         match MLKEM512PrivateKey::from_bytes(&sk_encoded) {
-            Err(KEMError::ConsistencyCheckFailed(_)) => { /* good */ }
-            Err(e) => panic!("expected ConsistencyCheckFailed, got {:?}", e),
-            Ok(_) => panic!("expected ConsistencyCheckFailed, got Ok()"),
+            Err(KeyDecodingError(
+                "Corrupted private key: computed hash of ek != h_ek stored in private key",
+            )) => { /* good */ }
+            Err(e) => panic!("expected the consistency check to fail, got {:?}", e),
+            Ok(_) => panic!("expected the consistency check to fail, got Ok()"),
         }
     }
 

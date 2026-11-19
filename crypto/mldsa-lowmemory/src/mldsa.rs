@@ -9,7 +9,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotVerifyingKey, SigningKey, VerifyingKey};
 //! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
@@ -53,7 +53,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::SigningKey;
 //! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
@@ -144,7 +144,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::OneShotVerifyingKey;
 //! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MuBuilder};
@@ -191,7 +191,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait};
@@ -246,7 +246,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::OneShotVerifyingKey;
 //! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
@@ -337,7 +337,7 @@
 //!
 //! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
-//! use bouncycastle_core::signature_key::SigningKey;
+//! use bouncycastle_core::signature_key::OneShotSigningKey;
 //! // first, let's generate a signature to verify
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let sig = sk.sign(&mut rng, b"The quick brown fox jumped over the lazy dog", None).unwrap();
@@ -368,7 +368,9 @@
 //! }
 //! ```
 
-use crate::aux_functions::{unpack_c_tilde, unpack_h_row};
+use crate::aux_functions::{
+    ZEROED_HINT_ROW, hint_get, make_hint_row, unpack_c_tilde, unpack_h_row, use_hint_row,
+};
 use crate::low_memory_helpers::{
     compute_ct0_component, compute_w_row, compute_w0cs2_component, compute_wp_approx_row,
     compute_z_component, s_unpack,
@@ -384,12 +386,16 @@ use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
-    DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
+    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
+    OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, sign_out_with_signer,
+    verify_with_verifier,
 };
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, RNG, SignatureSigner, SignatureVerifier, XOF, XOFSqueezer,
+    Algorithm, AlgorithmOID, FinishToken, Hash, RNG, SignatureSigner, SignatureVerifier, XOF,
+    XOFSqueezer,
 };
 use bouncycastle_mldsa_common::aux_functions::{bitpack_gamma1_out, sample_in_ball};
+use bouncycastle_mldsa_common::polynomial::Polynomial;
 use core::marker::PhantomData;
 
 // imports needed just for docs
@@ -554,7 +560,7 @@ pub(crate) fn sign_internal<
 >(
     sk: &SK,
     mu: &[u8; 64],
-    rnd: [u8; 32],
+    rnd: &[u8; MLDSA_RND_LEN],
     output: &mut [u8; SIG_LEN],
 ) -> Result<usize, SignatureError> {
     output.fill(0);
@@ -571,14 +577,8 @@ pub(crate) fn sign_internal<
     // to avoid having all of it in memory at the same time,
     // components are derived as they are needed.
 
-    // [Optimization Note]:
-    // s1 and s2 are normally part of the stored private key.
-    // They are used many times through this function,
-    // so they are being computed here and kept in the compressed encoding specified in
-    // FIPS 204 Alg 17.
-    // They are uncompresso as-needed, and only one polynomial at a time.
-    // Storing these in memory can be avoided, but then all the sites where they are used
-    // will require calls to sk.compute_s1_row() and sk.compute_s2_row(), which are fairly expensive.
+    // s1 and s2 are computed once here and kept in the compressed encoding specified in FIPS 204
+    // Alg 17, one polynomial unpacked at a time where it is used.
     let s1_packed: Secret<P::S1Packed> = sk.compute_s1_packed();
     let s2_packed: Secret<P::S2Packed> = sk.compute_s2_packed();
 
@@ -589,7 +589,7 @@ pub(crate) fn sign_internal<
     let rho_p_p: Secret<[u8; 64]> = {
         let mut h = H::new();
         h.do_update(sk.K());
-        h.do_update(&rnd);
+        h.do_update(rnd);
         h.do_update(mu);
         let mut rho_p_p: Secret<[u8; 64]> = Secret::new();
         let mut h = h.into_squeezer();
@@ -648,24 +648,18 @@ pub(crate) fn sign_internal<
         // 18-23 (z path): compute and encode each z polynomial directly into the caller buffer.
         let mut rejected = false;
         for col in 0..P::l {
-            let z = match compute_z_component::<P>(
-                // [Optimization Note]:
-                // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
-                // weirdly, in perf testing, this actually caused memory usage to go by a small amount;
-                // maybe because re-computing the intermediates adds more to the widest point of the alg?
-                // &sk.compute_s1_row(col),
-                &s_unpack::<P, _>(&s1_packed, col),
+            let mut z = Polynomial::new();
+            if !compute_z_component::<P>(
+                s_unpack::<P, _>(&s1_packed, col),
                 &rho_p_p,
                 &c_hat,
                 kappa,
                 col,
+                &mut z,
             ) {
-                Some(z) => z,
-                None => {
-                    rejected = true;
-                    break;
-                }
-            };
+                rejected = true;
+                break;
+            }
 
             let start = z_offset + col * P::POLY_Z_PACKED_LEN;
             bitpack_gamma1_out::<P>(&z, &mut output[start..start + P::POLY_Z_PACKED_LEN]);
@@ -681,40 +675,35 @@ pub(crate) fn sign_internal<
         let mut hint_count = 0usize;
         for row in 0..P::k {
             let mut w = compute_w_row::<P>(sk.rho(), &rho_p_p, kappa, row);
-            let mut tmp = match compute_w0cs2_component::<P>(
-                // [Optimization Note]:
-                // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
-                // &sk.compute_s2_row(row),
-                &s_unpack::<P, _>(&s2_packed, row),
+            let mut tmp = Polynomial::new();
+            if !compute_w0cs2_component::<P>(
+                s_unpack::<P, _>(&s2_packed, row),
                 &w,
                 &c_hat,
+                &mut tmp,
             ) {
-                Some(tmp) => tmp,
-                None => {
-                    rejected = true;
-                    break;
-                }
-            };
+                rejected = true;
+                break;
+            }
 
-            let ct0 = match compute_ct0_component::<P>(
-                // [Optimization Note]:
-                // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
-                // &sk.compute_t0_row(row), &c_hat) {
-                &sk.compute_t0_row(row, &s1_packed, &s2_packed),
+            let mut ct0 = Polynomial::new();
+            if !compute_ct0_component::<P>(
+                // t0 is not kept in any form: `compute_t0_row` re-derives this row from the packed
+                // s1 and s2 each time.
+                sk.compute_t0_row(row, &s1_packed, &s2_packed),
                 &c_hat,
+                &mut ct0,
             ) {
-                Some(ct0) => ct0,
-                None => {
-                    rejected = true;
-                    break;
-                }
-            };
+                rejected = true;
+                break;
+            }
 
             tmp.add_ntt(&ct0);
             tmp.conditional_add_q();
 
             w.high_bits_inplace::<P>();
-            let (hint_row, weight) = tmp.make_hint::<P>(&w);
+            let mut hint_row = ZEROED_HINT_ROW;
+            let weight = make_hint_row::<P>(&tmp, &w, &mut hint_row);
             let next_hint_count = hint_count + weight as usize;
 
             // mutants note: don't have a test vector that exercises this condition,
@@ -725,7 +714,7 @@ pub(crate) fn sign_internal<
             }
 
             for idx in 0..N {
-                if hint_row[idx] != 0 {
+                if hint_get(&hint_row, idx) != 0 {
                     output[hint_offset + hint_count] = idx as u8;
                     hint_count += 1;
                 }
@@ -787,7 +776,7 @@ pub(crate) fn verify_internal<
         let mut wp_approx = match compute_wp_approx_row::<P, SIG_LEN>(
             pk.rho(),
             sig,
-            &pk.unpack_t1_row(row),
+            pk.unpack_t1_row(row),
             &c_hat,
             row,
         ) {
@@ -796,15 +785,15 @@ pub(crate) fn verify_internal<
             None => return Err(SignatureError::SignatureVerificationFailed),
         };
 
-        let h_i = match unpack_h_row::<P, SIG_LEN>(row, sig) {
-            Some(h_i) => h_i,
-            // means there were more than OMEGA bits set in the hint
-            None => return Err(SignatureError::SignatureVerificationFailed),
+        // `None` means the encoded hint is malformed: out-of-order indices, more than OMEGA
+        // bits set, or nonzero padding
+        let Some(h_i) = unpack_h_row::<P, SIG_LEN>(row, sig) else {
+            return Err(SignatureError::SignatureVerificationFailed);
         };
 
         // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
         // ▷ reconstruction of signer’s commitment
-        wp_approx.use_hint::<P>(&h_i);
+        use_hint_row::<P>(&mut wp_approx, &h_i);
         hash.do_update(wp_approx.w1_encode::<P>().as_ref());
     }
 
@@ -873,11 +862,14 @@ impl<P: MLDSAParams> SignatureAlgorithm for MLDSA<P> {}
 
 /// Draws `rnd` (FIPS 204 Section 3.4: "the 32-byte random value rnd shall be generated by the
 /// cryptographic module that generates the signature").
-pub(crate) fn draw_rnd(rng: &mut dyn RNG) -> Result<[u8; MLDSA_RND_LEN], SignatureError> {
-    let mut rnd = [0u8; MLDSA_RND_LEN];
-    rng.next_bytes_out(&mut rnd)?;
-    Ok(rnd)
+/// Into `rnd`, so that the bytes go from the RNG to a wiped slot and not through a return value.
+pub(crate) fn draw_rnd(rng: &mut dyn RNG, rnd: &mut Rnd) -> Result<(), SignatureError> {
+    rng.next_bytes_out(&mut rnd[..])?;
+    Ok(())
 }
+
+/// The signing randomizer `rnd`, wiped when dropped.
+pub(crate) type Rnd = Secret<[u8; MLDSA_RND_LEN]>;
 
 /// An ML-DSA signature in progress: FIPS 204 Algorithm 7, with the message representative
 /// (line 6) built as the message streams in. Made by [`SigningKey::create_signer`] on an ML-DSA
@@ -887,15 +879,22 @@ pub struct MLDSASigner<'k, P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>> {
     _phantom: PhantomData<P>,
     sk: &'k SK,
     mu_builder: MuBuilder,
-    rnd: [u8; MLDSA_RND_LEN],
+    rnd: Rnd,
 }
 
 fn new_signer<'k, P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>>(
     sk: &'k SK,
-    rnd: [u8; MLDSA_RND_LEN],
+    rnd: &[u8; MLDSA_RND_LEN],
     ctx: Option<&[u8]>,
 ) -> Result<MLDSASigner<'k, P, SK>, SignatureError> {
-    Ok(MLDSASigner { _phantom: PhantomData, sk, mu_builder: sk.create_mu_builder(ctx)?, rnd })
+    let mut signer = MLDSASigner {
+        _phantom: PhantomData,
+        sk,
+        mu_builder: sk.create_mu_builder(ctx)?,
+        rnd: Rnd::new(),
+    };
+    *signer.rnd = *rnd;
+    Ok(signer)
 }
 
 impl<P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>> Algorithm for MLDSASigner<'_, P, SK> {
@@ -910,15 +909,13 @@ impl<P: SignatureLen<SIG_LEN>, SK: MLDSAPrivateKeyTrait<P>, const SIG_LEN: usize
         self.mu_builder.do_update(msg_chunk);
     }
 
-    fn do_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut out = [0u8; SIG_LEN];
-        self.do_final_out(&mut out)?;
-        Ok(out)
-    }
-
-    fn do_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
-        let mu = self.mu_builder.do_final();
-        self.sk.sign_mu_with_rnd_out(&mu, self.rnd, output)
+    fn finish_signature_into(
+        &mut self,
+        token: &FinishToken,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let mu = self.mu_builder.finish(token);
+        self.sk.sign_mu_with_rnd_out(&mu, &self.rnd, output)
     }
 }
 
@@ -952,8 +949,12 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, const SIG_LEN: usize>
         self.mu_builder.do_update(msg_chunk);
     }
 
-    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
-        let mu = self.mu_builder.do_final();
+    fn finish_signature_verify(
+        &mut self,
+        token: &FinishToken,
+        sig: &[u8],
+    ) -> Result<(), SignatureError> {
+        let mu = self.mu_builder.finish(token);
         let sig: &[u8; SIG_LEN] = sig.try_into().map_err(|_| {
             SignatureError::LengthError("Signature value is not the correct length.")
         })?;
@@ -976,7 +977,24 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> SigningKey<MLDSA<P>, SIG_LE
         rng: &mut dyn RNG,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
-        new_signer(self, draw_rnd(rng)?, ctx)
+        let mut rnd = Rnd::new();
+        draw_rnd(rng, &mut rnd)?;
+        new_signer(self, &rnd, ctx)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotSigningKey<MLDSA<P>, SIG_LEN>
+    for MLDSASeedPrivateKey<P>
+{
+    fn sign_out(
+        &self,
+        rng: &mut dyn RNG,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer = SigningKey::<MLDSA<P>, SIG_LEN>::create_signer(self, rng, ctx);
+        sign_out_with_signer(signer, msg, output)
     }
 }
 
@@ -994,7 +1012,22 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> DeterministicSigningKey<MLD
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
-        new_signer(self, [0u8; MLDSA_RND_LEN], ctx)
+        new_signer(self, &[0u8; MLDSA_RND_LEN], ctx)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
+    DeterministicOneShotSigningKey<MLDSA<P>, SIG_LEN> for MLDSASeedPrivateKey<P>
+{
+    fn sign_deterministic_out(
+        &self,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer =
+            DeterministicSigningKey::<MLDSA<P>, SIG_LEN>::create_signer_deterministic(self, ctx);
+        sign_out_with_signer(signer, msg, output)
     }
 }
 
@@ -1011,6 +1044,15 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> VerifyingKey<MLDSA<P>, SIG_
         ctx: Option<&[u8]>,
     ) -> Result<Self::Verifier<'k>, SignatureError> {
         new_verifier(self, ctx)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotVerifyingKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPublicKey<P>
+{
+    fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
+        let verifier = VerifyingKey::<MLDSA<P>, SIG_LEN>::create_verifier(self, ctx)?;
+        verify_with_verifier(verifier, msg, sig)
     }
 }
 

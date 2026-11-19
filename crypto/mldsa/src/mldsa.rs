@@ -9,7 +9,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotVerifyingKey, SigningKey, VerifyingKey};
 //! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
@@ -54,7 +54,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::SigningKey;
 //! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
@@ -147,7 +147,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::OneShotVerifyingKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
@@ -194,7 +194,7 @@
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let msg = b"The quick brown fox";
@@ -243,7 +243,7 @@
 //! ```rust
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
 //! use bouncycastle_mldsa::{MLDSA65PublicKeyExpanded, MLDSA65PrivateKeyExpanded};
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::errors::SignatureError;
 //!
@@ -279,7 +279,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::OneShotVerifyingKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
 //! use bouncycastle_hex as hex;
@@ -345,7 +345,7 @@
 //! ```rust
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
 //! use bouncycastle_mldsa::{MLDSA65PublicKeyExpanded, MLDSA65PrivateKeyExpanded};
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::errors::SignatureError;
 //!
@@ -420,7 +420,7 @@
 //!
 //! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
-//! use bouncycastle_core::signature_key::SigningKey;
+//! use bouncycastle_core::signature_key::OneShotSigningKey;
 //! // first, let's generate a signature to verify
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let sig = sk.sign(&mut rng, b"The quick brown fox jumped over the lazy dog", None).unwrap();
@@ -451,10 +451,7 @@
 //! }
 //! ```
 
-use crate::aux_functions::{
-    expand_mask, expandA, expandS, make_hint_vecs, power_2_round_vec, sig_decode, sig_encode,
-    use_hint_vecs,
-};
+use crate::aux_functions::{expand_mask, make_hint_vecs, sig_decode, sig_encode, use_hint_vecs};
 use crate::matrix::{MatrixTrait, VectorTrait};
 use crate::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPrivateKeyTrait};
 use crate::mldsa_keys::{MLDSAPublicKeyInternalTrait, MLDSAPublicKeyTrait};
@@ -463,14 +460,17 @@ use crate::params::{
     SignatureLen,
 };
 use crate::{MLDSAPrivateKey, MLDSAPrivateKeyExpanded, MLDSAPublicKey, MLDSAPublicKeyExpanded};
-use bouncycastle_core::errors::{RNGError, SignatureError};
+use bouncycastle_core::errors::{KeyMaterialError, RNGError, SignatureError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
-    DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
+    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
+    OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, sign_out_with_signer,
+    verify_with_verifier,
 };
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, RNG, SignatureSigner, SignatureVerifier, XOF, XOFSqueezer,
+    Algorithm, AlgorithmOID, FinishToken, Hash, RNG, SignatureSigner, SignatureVerifier, XOF,
+    XOFSqueezer,
 };
 use bouncycastle_mldsa_common::aux_functions::sample_in_ball;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
@@ -561,6 +561,24 @@ impl<P: MLDSAParams> MLDSA<P> {
     pub(crate) fn keygen_internal(
         seed: &KeyMaterial256,
     ) -> Result<(MLDSAPublicKey<P>, MLDSAPrivateKey<P>), SignatureError> {
+        // A wrapper over the `_out` form. ML-KEM's `keygen_internal` assembles its keys a second
+        // time instead: as a wrapper it cost that crate's Decaps row 1.1 to 9.0 kB of stack.
+        let mut pk = MLDSAPublicKey::<P>::zeroized();
+        let mut sk = MLDSAPrivateKey::<P>::zeroized();
+        Self::keygen_internal_out(seed, &mut pk, &mut sk)?;
+        Ok((pk, sk))
+    }
+
+    /// [`keygen_internal`](Self::keygen_internal) into keys the caller holds: every field is
+    /// computed where it will live. Both keys are cleared first and left so on an error.
+    pub(crate) fn keygen_internal_out(
+        seed: &KeyMaterial256,
+        pk: &mut MLDSAPublicKey<P>,
+        sk: &mut MLDSAPrivateKey<P>,
+    ) -> Result<(), SignatureError> {
+        pk.clear();
+        sk.clear();
+
         if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
             || seed.key_len() != 32
         {
@@ -575,86 +593,16 @@ impl<P: MLDSAParams> MLDSA<P> {
             ));
         }
 
-        // Alg 6 line 1: (rho, rho_prime, K) <- H(𝜉||IntegerToBytes(𝑘, 1)||IntegerToBytes(ℓ, 1), 128)
-        //   ▷ expand seed
-        let mut rho: [u8; 32] = [0u8; 32];
-        let mut K = Secret::<[u8; 32]>::new();
-
-        let (s1_hat, mut s2) = {
-            // scope for h
-            let mut h = H::default();
-            h.do_update(seed.ref_to_bytes());
-            h.do_update(&(P::k as u8).to_le_bytes());
-            h.do_update(&(P::l as u8).to_le_bytes());
-            let mut h = h.into_squeezer();
-            let bytes_written = h.do_output_out(&mut rho);
-            debug_assert_eq!(bytes_written, 32);
-            let mut rho_prime: Secret<[u8; 64]> = Secret::new();
-            let bytes_written = h.do_output_out(&mut *rho_prime);
-            debug_assert_eq!(bytes_written, 64);
-            let bytes_written = h.do_output_out(&mut *K);
-            debug_assert_eq!(bytes_written, 32);
-
-            // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
-            let (mut s1, s2) = expandS::<P>(&rho_prime);
-
-            s1.ntt();
-            (s1, s2)
-        };
-
-        let t_hat = {
-            // scope for s1_hat
-            // 3: 𝐀_hat ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-            let A_hat = expandA::<P>(&rho);
-
-            // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
-            //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
-            A_hat.matrix_vector_ntt(&s1_hat)
-        };
-
-        let (t1, mut t0) = {
-            // scope for t
-            let mut t = t_hat;
-            // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
-            t.reduce32();
-            t.inv_ntt();
-            t.add_vector_ntt(&s2);
-            t.conditional_add_q();
-
-            // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
-            //   ▷ compress 𝐭
-            //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
-            power_2_round_vec(&t)
-        };
-
-        // 8: 𝑝𝑘 ← pkEncode(𝜌, 𝐭1)
-        let pk = MLDSAPublicKey::<P>::new(rho, t1);
-
-        // 9: 𝑡𝑟 ← H(𝑝𝑘, 64)
-        let tr = pk.compute_tr();
-
-        // 10: 𝑠𝑘 ← skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
-        //   ▷ 𝐾 and 𝑡𝑟 are for use in signing
-        // Deviation from the FIPS:
-        //   Hold on to s1, s2, t0 in ntt form
-        //   Note: the result here is not necessarily in reduced form, but since .reduce() is expensive,
-        //   it is saved for the encode() operation since that is the only place where it matters
-        //   to have them in normalized form.
-        s2.ntt();
-        t0.ntt();
-        // let sk = SK::new(&rho, &K, &tr, &s1_hat, &s2, &t0, Some(seed.clone()));
-        let sk = MLDSAPrivateKey::<P>::new(rho, K, tr, s1_hat, s2, t0, Some(seed.clone()));
-
-        // tr is public data, does not need to be zeroized
-        // s1, s2, t0 are all Vectors of Polynomials, so implement a zeroizing Drop
-
-        // 11: return (𝑝𝑘, 𝑠𝑘)
-        Ok((pk, sk))
+        sk.fill(seed, pk);
+        Ok(())
     }
 }
 
 /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑), taking an externally computed mu in place of
 /// M' and the public matrix A_hat already expanded. The key traits' `sign_mu_*` methods call it.
+// Not inlined: see `MLDSAPublicKeyExpanded`'s `from`. It costs signing with a plain key up to
+// 2.5 kB and saves signing with an expanded key 9 to 42 kB.
+#[inline(never)]
 pub(crate) fn sign_internal<
     P: SignatureLen<SIG_LEN>,
     SK: MLDSAPrivateKeyInternalTrait<P>,
@@ -663,7 +611,7 @@ pub(crate) fn sign_internal<
     sk: &SK,
     A_hat: &P::MatrixA,
     mu: &[u8; 64],
-    rnd: [u8; 32],
+    rnd: &[u8; MLDSA_RND_LEN],
     output: &mut [u8; SIG_LEN],
 ) -> Result<usize, SignatureError> {
     output.fill(0);
@@ -686,7 +634,7 @@ pub(crate) fn sign_internal<
         // 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
         let mut h = H::new();
         h.do_update(&**sk.K());
-        h.do_update(&rnd);
+        h.do_update(rnd);
         h.do_update(mu);
         let mut rho_p_p: Secret<[u8; 64]> = Secret::new();
         let mut h = h.into_squeezer();
@@ -721,7 +669,7 @@ pub(crate) fn sign_internal<
         // 11: 𝐲 ∈ 𝑅^ℓ ← ExpandMask(𝜌″, 𝜅)
         let mut y = expand_mask::<P>(&rho_p_p, kappa);
 
-        let w = {
+        let mut w = {
             // scope for y_hat
             // 12: 𝐰 ← NTT−1(𝐀_hat * NTT(𝐲))
             let mut y_hat = y;
@@ -783,7 +731,11 @@ pub(crate) fn sign_internal<
         cs2.inv_ntt();
 
         // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-        let mut r0 = w.sub_vector(&cs2).low_bits::<P>();
+        // 𝐰 is not read again below -- 𝐰1 was taken from it above -- so the subtraction and the
+        // LowBits both run in its buffer, which 𝐫0 names from here on.
+        let r0 = &mut w;
+        r0.sub_vector(&cs2);
+        r0.low_bits::<P>();
 
         // 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
         //  ▷ validity checks
@@ -818,7 +770,7 @@ pub(crate) fn sign_internal<
         let hint_hamming_weight: i32;
         sig_val_h = {
             // scope for hint
-            let (hint, inner_hint_hamming_weight) = make_hint_vecs::<P>(&r0, &w1);
+            let (hint, inner_hint_hamming_weight) = make_hint_vecs::<P>(r0, &w1);
             hint_hamming_weight = inner_hint_hamming_weight;
             hint
         };
@@ -846,6 +798,8 @@ pub(crate) fn sign_internal<
 /// M' and the public matrix A_hat already expanded. The key traits' `verify_mu` calls it.
 /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑) and message 𝑀′ ∈ {0, 1}∗ .
 /// Input: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
+// Not inlined: see `MLDSAPublicKeyExpanded`'s `from`.
+#[inline(never)]
 pub(crate) fn verify_internal<
     P: SignatureLen<SIG_LEN>,
     PK: MLDSAPublicKeyInternalTrait<P>,
@@ -862,8 +816,12 @@ pub(crate) fn verify_internal<
     // 2: (𝑐_tilde, 𝐳, 𝐡) ← sigDecode(𝜎)
     //  ▷ signer’s commitment hash c_tilde, response 𝐳, and hint 𝐡
     // 3: if 𝐡 = ⊥ then return false
-    let (c_tilde, z, h) =
-        sig_decode::<P, SIG_LEN>(sig).ok_or(SignatureError::SignatureVerificationFailed)?;
+    let mut c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
+    let mut z = P::VecL::new();
+    let mut h = P::VecK::new();
+    if !sig_decode::<P, SIG_LEN>(sig, &mut c_tilde, &mut z, &mut h) {
+        return Err(SignatureError::SignatureVerificationFailed);
+    }
 
     // 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
     if z.check_norm(P::gamma1_minus_beta) {
@@ -909,7 +867,8 @@ pub(crate) fn verify_internal<
             t1_shift_hat.ntt();
             t1_shift_hat.scalar_vector_ntt(&c_hat)
         };
-        let mut wp_approx = Az.sub_vector(&ct1);
+        let mut wp_approx = Az;
+        wp_approx.sub_vector(&ct1);
         // Bound-keeping step before NTT⁻¹, not in FIPS 204: see `Polynomial::reduce32`. Here it
         // is security-critical: 𝐳 and 𝐭1 are attacker-controlled, and without it a crafted
         // signature overflows the butterflies (<https://eprint.iacr.org/2026/1032>, Wycheproof mldsa_87_verify tcId 240/241).
@@ -949,6 +908,13 @@ impl<P: MLDSAParams> MLDSATrait<P> for MLDSA<P> {
     ) -> Result<(MLDSAPublicKey<P>, MLDSAPrivateKey<P>), SignatureError> {
         Self::keygen_internal(seed)
     }
+    fn keygen_from_seed_out(
+        seed: &KeyMaterial<32>,
+        pk: &mut MLDSAPublicKey<P>,
+        sk: &mut MLDSAPrivateKey<P>,
+    ) -> Result<(), SignatureError> {
+        Self::keygen_internal_out(seed, pk, sk)
+    }
     fn keygen_from_seed_and_encoded<const SK_LEN: usize>(
         seed: &KeyMaterial<32>,
         encoded_sk: &[u8; SK_LEN],
@@ -971,6 +937,9 @@ impl<P: MLDSAParams> MLDSATrait<P> for MLDSA<P> {
         pk: &MLDSAPublicKey<P>,
         sk: &MLDSAPrivateKey<P>,
     ) -> Result<(), SignatureError> {
+        // Two keys that were never filled agree with each other, and are not a key pair.
+        pk.check_filled()?;
+        sk.check_filled()?;
         // This is maybe a computationally heavy way to compare them, but it works
         let derived_pk = sk.derive_pk();
         if bouncycastle_utils::ct::ct_eq_bytes(&derived_pk.compute_tr(), &pk.compute_tr()) {
@@ -997,10 +966,35 @@ pub trait MLDSATrait<P: MLDSAParams>: Sized {
         rng.fill_keymaterial_out(&mut seed)?;
         Self::keygen_from_seed(&seed)
     }
+    /// [`keygen`](Self::keygen) into keys the caller holds: each field of the private key is
+    /// computed in `sk` itself, so no copy of it is staged on the way and none is left behind by
+    /// a move, which wipes nothing. Start from [`MLDSAPrivateKey::zeroized`] and
+    /// [`MLDSAPublicKey::zeroized`]. Both keys are cleared first and left so on every error.
+    fn keygen_out(
+        rng: &mut dyn RNG,
+        pk: &mut MLDSAPublicKey<P>,
+        sk: &mut MLDSAPrivateKey<P>,
+    ) -> Result<(), SignatureError> {
+        pk.clear();
+        sk.clear();
+        if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
+        }
+        let mut seed = KeyMaterial256::new();
+        rng.fill_keymaterial_out(&mut seed)?;
+        Self::keygen_from_seed_out(&seed, pk, sk)
+    }
     /// Imports a secret key from a seed.
     fn keygen_from_seed(
         seed: &KeyMaterial<32>,
     ) -> Result<(MLDSAPublicKey<P>, MLDSAPrivateKey<P>), SignatureError>;
+    /// [`keygen_from_seed`](Self::keygen_from_seed) into keys the caller holds; see
+    /// [`keygen_out`](Self::keygen_out).
+    fn keygen_from_seed_out(
+        seed: &KeyMaterial<32>,
+        pk: &mut MLDSAPublicKey<P>,
+        sk: &mut MLDSAPrivateKey<P>,
+    ) -> Result<(), SignatureError>;
     /// Imports a secret key from both a seed and an encoded_sk.
     ///
     /// This is a convenience function to expand the key from seed and compare it against
@@ -1020,7 +1014,8 @@ pub trait MLDSATrait<P: MLDSAParams>: Sized {
     /// the two pk's are encoded and compared for byte equality), or if `sk` contains a seed
     /// (in which case a keygen_from_seed is run and then the pk's compared).
     ///
-    /// Returns either `()` or [`SignatureError::ConsistencyCheckFailed`].
+    /// Returns either `()` or [`SignatureError::ConsistencyCheckFailed`]; a key that was never
+    /// filled ([`MLDSAPrivateKey::zeroized`]) is refused as it is everywhere else.
     fn keypair_consistency_check(
         pk: &MLDSAPublicKey<P>,
         sk: &MLDSAPrivateKey<P>,
@@ -1029,13 +1024,25 @@ pub trait MLDSATrait<P: MLDSAParams>: Sized {
 
 impl<P: MLDSAParams> SignatureAlgorithm for MLDSA<P> {}
 
+/// Refuses a private key that was never generated or decoded, by its `tr`; see
+/// [`MLDSAPrivateKey::zeroized`].
+pub(crate) fn check_filled_tr(tr: &[u8; MLDSA_TR_LEN]) -> Result<(), SignatureError> {
+    if *tr == [0u8; MLDSA_TR_LEN] {
+        return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+    }
+    Ok(())
+}
+
 /// Draws `rnd` (FIPS 204 Section 3.4: "the 32-byte random value rnd shall be generated by the
 /// cryptographic module that generates the signature").
-pub(crate) fn draw_rnd(rng: &mut dyn RNG) -> Result<[u8; MLDSA_RND_LEN], SignatureError> {
-    let mut rnd = [0u8; MLDSA_RND_LEN];
-    rng.next_bytes_out(&mut rnd)?;
-    Ok(rnd)
+/// Into `rnd`, so that the bytes go from the RNG to a wiped slot and not through a return value.
+pub(crate) fn draw_rnd(rng: &mut dyn RNG, rnd: &mut Rnd) -> Result<(), SignatureError> {
+    rng.next_bytes_out(&mut rnd[..])?;
+    Ok(())
 }
+
+/// The signing randomizer `rnd`, wiped when dropped.
+pub(crate) type Rnd = Secret<[u8; MLDSA_RND_LEN]>;
 
 /// An ML-DSA signature in progress: FIPS 204 Algorithm 7, with the message representative
 /// (line 6) built as the message streams in. Made by [`SigningKey::create_signer`] on an ML-DSA
@@ -1044,15 +1051,23 @@ pub struct MLDSASigner<'k, P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>> {
     _phantom: PhantomData<P>,
     sk: &'k SK,
     mu_builder: MuBuilder,
-    rnd: [u8; MLDSA_RND_LEN],
+    rnd: Rnd,
 }
 
 fn new_signer<'k, P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>>(
     sk: &'k SK,
-    rnd: [u8; MLDSA_RND_LEN],
+    rnd: &[u8; MLDSA_RND_LEN],
     ctx: Option<&[u8]>,
 ) -> Result<MLDSASigner<'k, P, SK>, SignatureError> {
-    Ok(MLDSASigner { _phantom: PhantomData, sk, mu_builder: sk.create_mu_builder(ctx)?, rnd })
+    check_filled_tr(sk.tr())?;
+    let mut signer = MLDSASigner {
+        _phantom: PhantomData,
+        sk,
+        mu_builder: sk.create_mu_builder(ctx)?,
+        rnd: Rnd::new(),
+    };
+    *signer.rnd = *rnd;
+    Ok(signer)
 }
 
 impl<P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>> Algorithm for MLDSASigner<'_, P, SK> {
@@ -1067,15 +1082,13 @@ impl<P: SignatureLen<SIG_LEN>, SK: MLDSAPrivateKeyTrait<P>, const SIG_LEN: usize
         self.mu_builder.do_update(msg_chunk);
     }
 
-    fn do_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut out = [0u8; SIG_LEN];
-        self.do_final_out(&mut out)?;
-        Ok(out)
-    }
-
-    fn do_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
-        let mu = self.mu_builder.do_final();
-        self.sk.sign_mu_with_rnd_out(&mu, self.rnd, output)
+    fn finish_signature_into(
+        &mut self,
+        token: &FinishToken,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let mu = self.mu_builder.finish(token);
+        self.sk.sign_mu_with_rnd_out(&mu, &self.rnd, output)
     }
 }
 
@@ -1109,8 +1122,12 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, const SIG_LEN: usize>
         self.mu_builder.do_update(msg_chunk);
     }
 
-    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
-        let mu = self.mu_builder.do_final();
+    fn finish_signature_verify(
+        &mut self,
+        token: &FinishToken,
+        sig: &[u8],
+    ) -> Result<(), SignatureError> {
+        let mu = self.mu_builder.finish(token);
         let sig: &[u8; SIG_LEN] = sig.try_into().map_err(|_| {
             SignatureError::LengthError("Signature value is not the correct length.")
         })?;
@@ -1133,7 +1150,24 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> SigningKey<MLDSA<P>, SIG_LE
         rng: &mut dyn RNG,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
-        new_signer(self, draw_rnd(rng)?, ctx)
+        let mut rnd = Rnd::new();
+        draw_rnd(rng, &mut rnd)?;
+        new_signer(self, &rnd, ctx)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotSigningKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPrivateKey<P>
+{
+    fn sign_out(
+        &self,
+        rng: &mut dyn RNG,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer = SigningKey::<MLDSA<P>, SIG_LEN>::create_signer(self, rng, ctx);
+        sign_out_with_signer(signer, msg, output)
     }
 }
 
@@ -1151,7 +1185,22 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> DeterministicSigningKey<MLD
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
-        new_signer(self, [0u8; MLDSA_RND_LEN], ctx)
+        new_signer(self, &[0u8; MLDSA_RND_LEN], ctx)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
+    DeterministicOneShotSigningKey<MLDSA<P>, SIG_LEN> for MLDSAPrivateKey<P>
+{
+    fn sign_deterministic_out(
+        &self,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer =
+            DeterministicSigningKey::<MLDSA<P>, SIG_LEN>::create_signer_deterministic(self, ctx);
+        sign_out_with_signer(signer, msg, output)
     }
 }
 
@@ -1168,7 +1217,24 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> SigningKey<MLDSA<P>, SIG_LE
         rng: &mut dyn RNG,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
-        new_signer(self, draw_rnd(rng)?, ctx)
+        let mut rnd = Rnd::new();
+        draw_rnd(rng, &mut rnd)?;
+        new_signer(self, &rnd, ctx)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotSigningKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPrivateKeyExpanded<'_, P>
+{
+    fn sign_out(
+        &self,
+        rng: &mut dyn RNG,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer = SigningKey::<MLDSA<P>, SIG_LEN>::create_signer(self, rng, ctx);
+        sign_out_with_signer(signer, msg, output)
     }
 }
 
@@ -1186,7 +1252,22 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> DeterministicSigningKey<MLD
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
-        new_signer(self, [0u8; MLDSA_RND_LEN], ctx)
+        new_signer(self, &[0u8; MLDSA_RND_LEN], ctx)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
+    DeterministicOneShotSigningKey<MLDSA<P>, SIG_LEN> for MLDSAPrivateKeyExpanded<'_, P>
+{
+    fn sign_deterministic_out(
+        &self,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer =
+            DeterministicSigningKey::<MLDSA<P>, SIG_LEN>::create_signer_deterministic(self, ctx);
+        sign_out_with_signer(signer, msg, output)
     }
 }
 
@@ -1202,7 +1283,17 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> VerifyingKey<MLDSA<P>, SIG_
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Verifier<'k>, SignatureError> {
+        self.check_filled()?;
         new_verifier(self, ctx)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotVerifyingKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPublicKey<P>
+{
+    fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
+        let verifier = VerifyingKey::<MLDSA<P>, SIG_LEN>::create_verifier(self, ctx)?;
+        verify_with_verifier(verifier, msg, sig)
     }
 }
 
@@ -1218,7 +1309,17 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> VerifyingKey<MLDSA<P>, SIG_
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Verifier<'k>, SignatureError> {
+        self.pk.check_filled()?;
         new_verifier(self, ctx)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotVerifyingKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPublicKeyExpanded<'_, P>
+{
+    fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
+        let verifier = VerifyingKey::<MLDSA<P>, SIG_LEN>::create_verifier(self, ctx)?;
+        verify_with_verifier(verifier, msg, sig)
     }
 }
 

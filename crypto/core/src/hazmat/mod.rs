@@ -13,16 +13,21 @@
 
 mod ecb_key;
 mod electronic_code_book;
+mod finish_token;
 mod hazardous_operations;
 mod key_stream;
 mod mode;
+mod pre_hash_strength;
 
 pub use ecb_key::{EcbDecryptionKey, EcbEncryptionKey};
 pub use electronic_code_book::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
+pub use finish_token::finish_token;
 pub use hazardous_operations::do_hazardous_operations;
 pub use key_stream::KeyStream;
 pub use mode::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
-    BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbEncryptMode, KeyUnwrapMode, KeyWrapMode,
-    MacMode, Mode, NonceMacMode, SymmetricDecryptMode, SymmetricEncryptMode,
+    AeadInPlaceDecryptMode, AeadInPlaceEncryptMode, BlockDecryptMode, BlockEncryptMode,
+    EcbDecryptMode, EcbEncryptMode, KeyUnwrapMode, KeyWrapMode, MacMode, Mode, NonceMacMode,
+    SymmetricDecryptMode, SymmetricEncryptMode,
 };
+pub use pre_hash_strength::waive_pre_hash_strength_rule;

@@ -31,7 +31,9 @@
 use bouncycastle::aes::AES128Key;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::cipher::modes::{CCM, CCM_Packet, CcmPacketDecryptor, CcmPacketEncryptor};
-use bouncycastle::core::hazmat::{AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, KeyExpansion};
+use bouncycastle::core::hazmat::{
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadInPlaceEncryptMode, KeyExpansion,
+};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle::core::traits::{
@@ -139,13 +141,13 @@ fn print_struct_sizes() {
 /// and `bench_oneshot_encrypt_out_detached`.
 #[inline(never)]
 fn bench_in_place_encrypt() {
-    eprintln!("CCM::encrypt_detached_in_place_nonce, {MESSAGE_LEN} B");
+    eprintln!("CCM::encrypt_detached_inplace_nonce, {MESSAGE_LEN} B");
 
     let perm = perm();
     let nonce = [0x24u8; NONCE_LEN];
     let mut data = message();
     let data = core::hint::black_box(&mut data);
-    let tag = Aes128CcmMode::encrypt_detached_in_place_nonce(&perm, &nonce, &[], data).unwrap();
+    let tag = Aes128CcmMode::encrypt_detached_inplace_nonce(&perm, &nonce, &[], data).unwrap();
     print!("{:x?}", &tag);
 }
 
@@ -188,7 +190,7 @@ fn bench_streaming_decrypt() {
     let nonce = [0x24u8; NONCE_LEN];
     let mut sealed = [0u8; MESSAGE_LEN + TAG_LEN];
     sealed[..MESSAGE_LEN].fill(core::hint::black_box(0xA5));
-    let tag = Aes128CcmMode::encrypt_detached_in_place_nonce(
+    let tag = Aes128CcmMode::encrypt_detached_inplace_nonce(
         &perm(),
         &nonce,
         &[],
