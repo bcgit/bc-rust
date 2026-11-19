@@ -12,7 +12,10 @@ use bouncycastle_core::hazmat::{
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core::symmetric_key::{
+    AeadDecryptionKey, AeadEncryptionKey, AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey,
+    FromKeyMaterial,
+};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
@@ -385,7 +388,9 @@ fn in_place_decryption_zeroizes_the_buffer_on_a_bad_tag() {
 fn supplied_nonce_forms_match_the_drawing_forms() {
     fn check<K>(key: &K, msg: &[u8])
     where
-        K: AeadEncryptionKey<16, 12, 16, 16> + AeadDecryptionKey<16, 12, 16, 16>,
+        K: AeadEncryptionKey<16, 12, 16, 16>
+            + AeadDecryptionKey<16, 12, 16, 16>
+            + AeadInPlaceEncryptionKey<16, 12, 16>,
     {
         let (nonce, ct, tag) = key.encrypt_detached(&mut rng(), AAD, msg).unwrap();
         let inline = key.encrypt_with_aad(&mut rng(), AAD, msg).unwrap().1;

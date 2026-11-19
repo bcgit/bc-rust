@@ -107,6 +107,12 @@
 * The AEAD keys' one-shots that work in the caller's buffer are spelled `_inplace`, as QUALITY_AND_STYLE.md's suffix
   rule and every other in-place method already were: `encrypt_detached_inplace`, `encrypt_detached_inplace_nonce`
   and `decrypt_detached_inplace` on the AEAD key and mode traits (formerly `_in_place`).
+* The in-place AEAD one-shots move to a role pair of their own, `AeadInPlaceEncryptionKey` /
+  `AeadInPlaceDecryptionKey` (mode traits `AeadInPlaceEncryptMode` / `AeadInPlaceDecryptMode`), which names no worker
+  type and which every AEAD key implements; `AeadEncryptionKey`, `AeadDeclaredEncryptionKey` and their decrypting
+  halves no longer carry them. Callers import the new traits; behaviour is unchanged. The bodies over a streaming
+  worker are public as `core::symmetric_key::encrypt_detached_inplace` / `decrypt_detached_inplace`, for an AEAD key
+  outside `core` to implement the role with.
 * Workers are finished where they sit, and a worker held as `Box<dyn ..>` can finish its message (#173). Each worker
   trait (`Hash`, the symmetric and AEAD encryptors and decryptors, `MACGenerator` / `MACVerifier`, `SignatureSigner` /
   `SignatureVerifier`) now has one required finishing method on `&mut self` (`finish_into`,

@@ -22,7 +22,11 @@ use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core::symmetric_key::{
+    AeadDecryptionKey, AeadEncryptionKey, AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey,
+    FromKeyMaterial,
+};
+use bouncycastle_core::symmetric_key::{decrypt_detached_inplace, encrypt_detached_inplace};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, RNG,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -716,6 +720,45 @@ impl
         nonce: &[u8; ASCON_AEAD128_NONCE_LEN],
     ) -> Self::Decryptor<'k> {
         Ascon_AEAD128::from_key_words(&self.key, nonce)
+    }
+}
+
+impl AeadInPlaceEncryptionKey<ASCON_AEAD128_KEY_LEN, ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN>
+    for AsconAEAD128Key
+{
+    fn encrypt_detached_inplace(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; ASCON_AEAD128_NONCE_LEN], [u8; ASCON_AEAD128_TAG_LEN]), SymmetricCipherError>
+    {
+        let (enc, nonce) = self.create_encryptor(rng)?;
+        let tag = encrypt_detached_inplace(enc, aad, buf)?;
+        Ok((nonce, tag))
+    }
+
+    fn encrypt_detached_inplace_nonce(
+        &self,
+        nonce: &[u8; ASCON_AEAD128_NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; ASCON_AEAD128_TAG_LEN], SymmetricCipherError> {
+        encrypt_detached_inplace(self.create_encryptor_nonce(nonce), aad, buf)
+    }
+}
+
+impl AeadInPlaceDecryptionKey<ASCON_AEAD128_KEY_LEN, ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN>
+    for AsconAEAD128Key
+{
+    fn decrypt_detached_inplace(
+        &self,
+        nonce: &[u8; ASCON_AEAD128_NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; ASCON_AEAD128_TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        decrypt_detached_inplace(self.create_decryptor(nonce), aad, buf, tag)
     }
 }
 

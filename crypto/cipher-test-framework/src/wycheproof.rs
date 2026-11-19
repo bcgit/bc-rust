@@ -16,7 +16,7 @@ use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
-    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
+    AeadDecryptionKey, AeadEncryptionKey, AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey,
     FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey, MacGenerationKey, MacVerificationKey,
     NonceMacGenerationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
@@ -250,8 +250,8 @@ fn ccm_case<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usiz
     valid: bool,
 ) where
     P: Permutation<KEY_LEN>,
-    BlockCipherKey<P, CCM<NONCE_LEN, TAG_LEN>>: AeadDeclaredEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
-        + AeadDeclaredDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>,
+    BlockCipherKey<P, CCM<NONCE_LEN, TAG_LEN>>: AeadInPlaceEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN>
+        + AeadInPlaceDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN>,
 {
     let key = BlockCipherKey::<P, CCM<NONCE_LEN, TAG_LEN>>::from_key_material(
         &cipher_key::<KEY_LEN>(key_bytes),

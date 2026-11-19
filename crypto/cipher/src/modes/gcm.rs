@@ -186,10 +186,12 @@ use crate::modes::hazmat::ctr_key_stream::CtrKeyStream;
 use crate::{Decrypting, Direction, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
-    AeadDecryptMode, AeadEncryptMode, BlockPermutation, ElectronicCodeBook, Mode,
+    AeadDecryptMode, AeadEncryptMode, AeadInPlaceDecryptMode, AeadInPlaceEncryptMode,
+    BlockPermutation, ElectronicCodeBook, Mode,
 };
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{decrypt_detached_inplace, encrypt_detached_inplace};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, RNG, StreamCipherDecryptor,
     StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -268,6 +270,50 @@ where
         nonce: &[u8; GCM_NONCE_LEN],
     ) -> Self::Decryptor<'k> {
         Gcm::<P, Decrypting, TAG_LEN>::from_key_state(state, nonce)
+    }
+}
+
+impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
+    AeadInPlaceEncryptMode<P, KEY_LEN, GCM_NONCE_LEN, TAG_LEN> for GCM<TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    fn encrypt_detached_inplace(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; GCM_NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        let (enc, nonce) = Gcm::<P, Encrypting, TAG_LEN>::from_key_state(state, rng)?;
+        let tag = encrypt_detached_inplace(enc, aad, buf)?;
+        Ok((nonce, tag))
+    }
+
+    fn encrypt_detached_inplace_nonce(
+        state: &Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        let enc = Gcm::<P, Encrypting, TAG_LEN>::from_key_state_nonce(state, nonce);
+        encrypt_detached_inplace(enc, aad, buf)
+    }
+}
+
+impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
+    AeadInPlaceDecryptMode<P, KEY_LEN, GCM_NONCE_LEN, TAG_LEN> for GCM<TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    fn decrypt_detached_inplace(
+        state: &Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        let dec = Gcm::<P, Decrypting, TAG_LEN>::from_key_state(state, nonce);
+        decrypt_detached_inplace(dec, aad, buf, tag)
     }
 }
 
