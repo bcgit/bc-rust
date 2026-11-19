@@ -1294,6 +1294,35 @@ mod tests {
         }
     }
 
+    /// The scan for the highest digit must stop where any of the four recodings has one, also
+    /// when two of them have the same digit there.
+    #[test]
+    fn straus_starts_at_a_position_two_scalars_share() {
+        let b = base_point();
+        let p = PointAffine::decode_var(&encoded_extended(&reference_mult(&[5], &b))).unwrap();
+        let q = PointAffine::decode_var(&encoded_extended(&reference_mult(&[7], &b))).unwrap();
+        let top = 1_u64 << 56; // bit 120 of a 128-bit half
+        for (nb, np) in [
+            // the two halves of nb have their only digit at the same position
+            ([0, top, 0, top], [3, 0]),
+            // nb's low half and np do
+            ([0, top, 0, 0], [0, top]),
+        ] {
+            let nq = [1_u64, 0];
+            let r = scalar_mult_straus_128_var(&nb, &np, &p, &nq, &q);
+
+            let mut nb_octets = [0_u8; 32];
+            for (chunk, limb) in nb_octets.chunks_mut(8).zip(nb) {
+                chunk.copy_from_slice(&limb.to_le_bytes());
+            }
+            let sum = reference_mult(&nb_octets, &b)
+                .add(&reference_mult_signed(&np, &p))
+                .add(&reference_mult_signed(&nq, &q));
+            let sum = PointAffine::decode_var(&encoded_extended(&sum)).unwrap();
+            assert_eq!(encoded_accum(&r), encoded_extended(&reference_mult(&[8], &sum)));
+        }
+    }
+
     /// The check on a computed result: a point off the curve and a point with y = 0 fail it,
     /// through the encoding function too.
     #[test]
