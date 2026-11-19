@@ -56,7 +56,7 @@
 //!
 //! ```rust
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::errors::SignatureError;
 //!
@@ -191,6 +191,7 @@ use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
 
 mod aux_functions;
 pub mod hash_mldsa;
+pub mod hazmat;
 mod matrix;
 pub mod mldsa;
 mod mldsa_keys;

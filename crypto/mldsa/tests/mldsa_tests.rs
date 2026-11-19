@@ -55,7 +55,10 @@ mod mldsa_tests {
     use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+    use bouncycastle_core::signature_key::{
+        DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey, SigningKey,
+        VerifyingKey,
+    };
     use bouncycastle_core::traits::{
         Hash, PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier, Suspendable,
     };
@@ -121,6 +124,91 @@ mod mldsa_tests {
         assert_eq!(sk_expanded.sign_deterministic(msg, Some(b"ctx")).unwrap(), hedged_zero);
         assert_eq!(sk_expanded.sign_mu_deterministic(&mu).unwrap(), hedged_zero);
         MLDSA65PublicKeyExpanded::from(&pk).verify(msg, Some(b"ctx"), &hedged_zero).unwrap();
+    }
+
+    /// A key pair with only the one-shot roles, as a scheme that cannot stream has, is driven by
+    /// the framework's one-shot suites: wrappers that forward to ML-DSA-44 and implement nothing
+    /// else. `REFUSE_CTX` makes the pair refuse a non-empty context, as a scheme without a
+    /// context input may, for the suites' third context behaviour.
+    #[test]
+    fn test_framework_one_shot_only_keys() {
+        use bouncycastle_core::signature_key::{
+            DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
+        };
+        use bouncycastle_core::traits::RNG;
+        use bouncycastle_core_test_framework::signature::CtxBehaviour;
+
+        struct OneShotOnlyPk<const REFUSE_CTX: bool>(MLDSA44PublicKey);
+        struct OneShotOnlySk<const REFUSE_CTX: bool>(MLDSA44PrivateKey);
+
+        fn check_ctx<const REFUSE_CTX: bool>(ctx: Option<&[u8]>) -> Result<(), SignatureError> {
+            match ctx {
+                Some(ctx) if REFUSE_CTX && !ctx.is_empty() => {
+                    Err(SignatureError::LengthError("this scheme takes no context"))
+                }
+                _ => Ok(()),
+            }
+        }
+
+        impl<const REFUSE_CTX: bool> OneShotVerifyingKey<MLDSA44, MLDSA44_SIG_LEN>
+            for OneShotOnlyPk<REFUSE_CTX>
+        {
+            fn verify(
+                &self,
+                msg: &[u8],
+                ctx: Option<&[u8]>,
+                sig: &[u8],
+            ) -> Result<(), SignatureError> {
+                check_ctx::<REFUSE_CTX>(ctx)?;
+                self.0.verify(msg, ctx, sig)
+            }
+        }
+        impl<const REFUSE_CTX: bool> OneShotSigningKey<MLDSA44, MLDSA44_SIG_LEN>
+            for OneShotOnlySk<REFUSE_CTX>
+        {
+            fn sign_out(
+                &self,
+                rng: &mut dyn RNG,
+                msg: &[u8],
+                ctx: Option<&[u8]>,
+                output: &mut [u8; MLDSA44_SIG_LEN],
+            ) -> Result<usize, SignatureError> {
+                output.fill(0);
+                check_ctx::<REFUSE_CTX>(ctx)?;
+                self.0.sign_out(rng, msg, ctx, output)
+            }
+        }
+        impl<const REFUSE_CTX: bool> DeterministicOneShotSigningKey<MLDSA44, MLDSA44_SIG_LEN>
+            for OneShotOnlySk<REFUSE_CTX>
+        {
+            fn sign_deterministic_out(
+                &self,
+                msg: &[u8],
+                ctx: Option<&[u8]>,
+                output: &mut [u8; MLDSA44_SIG_LEN],
+            ) -> Result<usize, SignatureError> {
+                output.fill(0);
+                check_ctx::<REFUSE_CTX>(ctx)?;
+                self.0.sign_deterministic_out(msg, ctx, output)
+            }
+        }
+        fn keygen<const REFUSE_CTX: bool>()
+        -> Result<(OneShotOnlyPk<REFUSE_CTX>, OneShotOnlySk<REFUSE_CTX>), SignatureError> {
+            let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default())?;
+            Ok((OneShotOnlyPk(pk), OneShotOnlySk(sk)))
+        }
+
+        let tf = TestFrameworkSignature::new(true);
+        tf.test_one_shot_signature::<MLDSA44, _, _, MLDSA44_SIG_LEN>(keygen::<false>, false);
+        tf.test_deterministic_one_shot_signature::<MLDSA44, _, _, MLDSA44_SIG_LEN>(
+            keygen::<false>, false,
+        );
+
+        let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Refused);
+        tf.test_one_shot_signature::<MLDSA44, _, _, MLDSA44_SIG_LEN>(keygen::<true>, false);
+        tf.test_deterministic_one_shot_signature::<MLDSA44, _, _, MLDSA44_SIG_LEN>(
+            keygen::<true>, false,
+        );
     }
 
     /// The full bit-flipping suite of the framework, several minutes per parameter set:

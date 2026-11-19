@@ -23,12 +23,12 @@ use bouncycastle_cipher::modes::{
     CCM, CCM_Packet, CcmPacketDecryptor, CcmPacketEncryptor, ModeNames,
 };
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, KeyExpansion};
+use bouncycastle_core::hazmat::{AeadInPlaceDecryptMode, AeadInPlaceEncryptMode, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
-    FromKeyMaterial,
+    AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, FromKeyMaterial,
 };
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,

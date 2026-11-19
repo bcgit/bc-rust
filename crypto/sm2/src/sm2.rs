@@ -53,7 +53,10 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::security_strength::SecurityStrength;
 #[allow(unused_imports)] // for the docs
 use bouncycastle_core::signature_key::DeterministicSigningKey;
-use bouncycastle_core::signature_key::{SignatureAlgorithm, SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{
+    OneShotSigningKey, OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey,
+    sign_out_with_signer, verify_with_verifier,
+};
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, FinishToken, Hash, RNG, SignatureSigner, SignatureVerifier,
 };
@@ -223,6 +226,19 @@ impl SigningKey<SM2, SIG_LEN> for SM2PrivateKey {
     }
 }
 
+impl OneShotSigningKey<SM2, SIG_LEN> for SM2PrivateKey {
+    fn sign_out(
+        &self,
+        rng: &mut dyn RNG,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer = SigningKey::<SM2, SIG_LEN>::create_signer(self, rng, ctx);
+        sign_out_with_signer(signer, msg, output)
+    }
+}
+
 impl VerifyingKey<SM2, SIG_LEN> for SM2PublicKey {
     type Verifier<'k>
         = SM2Verifier<'k>
@@ -235,6 +251,13 @@ impl VerifyingKey<SM2, SIG_LEN> for SM2PublicKey {
     ) -> Result<Self::Verifier<'k>, SignatureError> {
         let (x, y) = self.affine();
         Ok(SM2Verifier { pk: self, hash: za_hash(ctx, &x, &y)? })
+    }
+}
+
+impl OneShotVerifyingKey<SM2, SIG_LEN> for SM2PublicKey {
+    fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
+        let verifier = VerifyingKey::<SM2, SIG_LEN>::create_verifier(self, ctx)?;
+        verify_with_verifier(verifier, msg, sig)
     }
 }
 

@@ -82,10 +82,11 @@ pub trait MLDSAPublicKeyTrait<P: MLDSAParams>: Sized {
 
     /// FIPS 204 Algorithm 8 with line 7 removed: verifies `sig` over an externally computed
     /// `mu`. Any ML-DSA signature verifies here with the `mu` of its message, and a signature
-    /// made with [`MLDSAPrivateKeyTrait::sign_mu`] verifies with [`VerifyingKey::verify`]
+    /// made with [`MLDSAPrivateKeyTrait::sign_mu`] verifies with [`OneShotVerifyingKey::verify`]
     /// over the message.
     ///
-    /// [`VerifyingKey::verify`]: bouncycastle_core::signature_key::VerifyingKey::verify
+    /// [`OneShotVerifyingKey::verify`]:
+    ///     bouncycastle_core::signature_key::OneShotVerifyingKey::verify
     fn verify_mu<const SIG_LEN: usize>(
         &self,
         mu: &[u8; MLDSA_MU_LEN],

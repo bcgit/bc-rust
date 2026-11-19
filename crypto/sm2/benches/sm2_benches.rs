@@ -1,4 +1,4 @@
-use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_rng::DefaultRNG;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;

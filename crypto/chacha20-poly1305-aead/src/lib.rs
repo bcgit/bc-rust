@@ -111,7 +111,11 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core::symmetric_key::{
+    AeadDecryptionKey, AeadEncryptionKey, AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey,
+    FromKeyMaterial,
+};
+use bouncycastle_core::symmetric_key::{decrypt_detached_inplace, encrypt_detached_inplace};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, MACGenerator, MACVerifier,
     RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
@@ -533,6 +537,40 @@ impl AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20Poly130
 
     fn create_decryptor<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
         ChaCha20_Poly1305::new(keystream_at(&self.key, nonce, 0))
+    }
+}
+
+impl AeadInPlaceEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305Key {
+    fn encrypt_detached_inplace(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        let (enc, nonce) = self.create_encryptor(rng)?;
+        let tag = encrypt_detached_inplace(enc, aad, buf)?;
+        Ok((nonce, tag))
+    }
+
+    fn encrypt_detached_inplace_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        encrypt_detached_inplace(self.create_encryptor_nonce(nonce), aad, buf)
+    }
+}
+
+impl AeadInPlaceDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305Key {
+    fn decrypt_detached_inplace(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        decrypt_detached_inplace(self.create_decryptor(nonce), aad, buf, tag)
     }
 }
 

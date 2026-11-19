@@ -31,7 +31,7 @@ pub const CCM_TAG_LEN: usize = 16;
 /// use bouncycastle_cipher::modes::CCM;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{
-///     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial,
+///     AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, FromKeyMaterial,
 /// };
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///

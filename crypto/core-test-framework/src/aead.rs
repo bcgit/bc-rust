@@ -17,7 +17,9 @@
 
 use crate::{DUMMY_SEED, FailingRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey};
+use bouncycastle_core::symmetric_key::{
+    AeadDecryptionKey, AeadEncryptionKey, AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey,
+};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, RNG, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
@@ -41,7 +43,9 @@ impl TestFrameworkAEADCipher {
         Self { fixed_message_len: None }
     }
 
-    /// The AEAD contract over an [`AeadEncryptionKey`] / [`AeadDecryptionKey`] pair: the AAD and
+    /// The AEAD contract over an [`AeadEncryptionKey`] / [`AeadDecryptionKey`] pair that also
+    /// carries the in-place roles, [`AeadInPlaceEncryptionKey`] / [`AeadInPlaceDecryptionKey`],
+    /// whose one-shots must agree with the detached ones: the AAD and
     /// tag contract reached through a key object, with `rng` supplying every nonce draw that is not
     /// pinned. The key-policy checks are `TestFrameworkFromKeyMaterial`'s, and the no-AAD
     /// symmetric contract is reached here as the AEAD one with an empty AAD.
@@ -60,7 +64,9 @@ impl TestFrameworkAEADCipher {
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
         K: AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>
-            + AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+            + AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>
+            + AeadInPlaceEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN>
+            + AeadInPlaceDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN>,
     >(
         &self,
         key: &K,

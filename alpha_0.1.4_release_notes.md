@@ -107,6 +107,19 @@
 * The AEAD keys' one-shots that work in the caller's buffer are spelled `_inplace`, as QUALITY_AND_STYLE.md's suffix
   rule and every other in-place method already were: `encrypt_detached_inplace`, `encrypt_detached_inplace_nonce`
   and `decrypt_detached_inplace` on the AEAD key and mode traits (formerly `_in_place`).
+* The in-place AEAD one-shots move to a role pair of their own, `AeadInPlaceEncryptionKey` /
+  `AeadInPlaceDecryptionKey` (mode traits `AeadInPlaceEncryptMode` / `AeadInPlaceDecryptMode`), which names no worker
+  type and which every AEAD key implements; `AeadEncryptionKey`, `AeadDeclaredEncryptionKey` and their decrypting
+  halves no longer carry them. Callers import the new traits; behaviour is unchanged. The bodies over a streaming
+  worker are public as `core::symmetric_key::encrypt_detached_inplace` / `decrypt_detached_inplace`, for an AEAD key
+  outside `core` to implement the role with.
+* The signature one-shots over a whole message move to roles of their own, `OneShotSigningKey`,
+  `DeterministicOneShotSigningKey` and `OneShotVerifyingKey`, which name no worker type, so a scheme that cannot take
+  its message in pieces can implement them alone. Each is a supertrait of its streaming role (`SigningKey`,
+  `DeterministicSigningKey`, `VerifyingKey`), which keeps only its `create_*` constructor; every key implements the
+  one-shot role over its own worker with `core::signature_key::sign_out_with_signer` / `verify_with_verifier`, which
+  are public for a key outside `core` to do the same. Callers of `sign`, `sign_out`, `sign_deterministic`,
+  `sign_deterministic_out` and `verify` import the new traits; behaviour is unchanged.
 * Workers are finished where they sit, and a worker held as `Box<dyn ..>` can finish its message (#173). Each worker
   trait (`Hash`, the symmetric and AEAD encryptors and decryptors, `MACGenerator` / `MACVerifier`, `SignatureSigner` /
   `SignatureVerifier`) now has one required finishing method on `&mut self` (`finish_into`,
@@ -259,3 +272,4 @@
 * ML-DSA and ML-KEM stack usage is lower (ML-DSA-87 KeyGen 133,320 to 99,128 bytes, expanded-key Verify 189,240 to 139,192; ML-KEM-1024 Encaps 41,816 to 32,040); both memory tables are re-measured.
 * `SampleNTT` and `RejBoundedPoly` squeeze whole SHAKE blocks (504 and 272 bytes); the ML-KEM memory tables are re-measured.
 * `bouncycastle-utils`: `ct_eq_bytes_mask` is renamed `ct_eq_bytes_condition`.
+* HashML-DSA can use a pre-hash weaker than the parameter set when the caller names it as `hazmat::AnyStrength<H>` (in `mldsa` and `mldsa-lowmemory`; `--allow-weak-hash` in the CLI), which lowers the signature's strength to the hash's; the default still refuses it. The ACVP pre-hash vectors, which pair every hash with every parameter set, now run. `HashAlgParams` gains `PRE_HASH_STRENGTH_RULE`, which a hash function leaves at its default.

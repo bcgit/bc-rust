@@ -4,7 +4,7 @@
 mod common;
 
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::symmetric_key::AeadDecryptionKey;
+use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadInPlaceDecryptionKey};
 use bouncycastle_core::traits::{AEADCipherDecryptor, SymmetricCipherDecryptor};
 use bouncycastle_core_test_framework::test_data_loaders::wycheproof_json;
 
