@@ -241,6 +241,7 @@ use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
 
 mod aux_functions;
 pub mod hash_mldsa;
+pub mod hazmat;
 mod low_memory_helpers;
 pub mod mldsa;
 mod mldsa_keys;

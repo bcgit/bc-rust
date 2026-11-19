@@ -4,7 +4,8 @@
 //! This is not an API for callers, and every item in it is `#[doc(hidden)]`. The two ML-DSA crates
 //! differ in how they hold a private key and in how they schedule FIPS 204's algorithms, but they
 //! agree on the ring arithmetic, the samplers, the bit packing, the rounding and the parameter
-//! tables; this crate holds that one copy. Use one of those two crates.
+//! tables; this crate holds that one copy. Use one of those two crates: what a caller names from
+//! here, such as `hazmat::AnyStrength`, each of them re-exports.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -21,6 +22,8 @@
 
 #[doc(hidden)]
 pub mod aux_functions;
+#[doc(hidden)]
+pub mod hazmat;
 #[doc(hidden)]
 pub mod mu_builder;
 #[doc(hidden)]
