@@ -100,7 +100,7 @@ impl SignatureAlgorithm for Ed25519ph {}
 ///
 /// # Errors
 /// [`SignatureError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver;
-/// [`SignatureError::GenericError`] if the computed public key fails its check, which no input
+/// [`SignatureError::ComputationFault`] if the computed public key fails its check, which no input
 /// causes.
 pub fn keygen(rng: &mut dyn RNG) -> Result<(Ed25519PublicKey, Ed25519PrivateKey), SignatureError> {
     let mut sk = Ed25519PrivateKey::zeroized();
@@ -348,7 +348,7 @@ fn refuse_context(ctx: Option<&[u8]>) -> Result<(), SignatureError> {
 /// after a value computed from the first, so it is taken whole.
 ///
 /// The errors beyond the role's are [`KeyMaterialError::ActingOnZeroizedKey`] for a key that
-/// was never filled, and [`SignatureError::GenericError`] if a computed point fails its check,
+/// was never filled, and [`SignatureError::ComputationFault`] if a computed point fails its check,
 /// which no input causes; `output` holds zeros after any of them.
 impl DeterministicOneShotSigningKey<Ed25519, SIGNATURE_LEN> for Ed25519PrivateKey {
     fn sign_deterministic_out(
@@ -468,7 +468,7 @@ impl SignatureVerifier for Ed25519phVerifier<'_> {
 /// Ed25519ph signing, the message taken as it arrives.
 ///
 /// The errors beyond the role's are [`KeyMaterialError::ActingOnZeroizedKey`] from the
-/// constructor for a key that was never filled, and [`SignatureError::GenericError`] from the
+/// constructor for a key that was never filled, and [`SignatureError::ComputationFault`] from the
 /// signer's final if a computed point fails its check, which no input causes.
 impl DeterministicSigningKey<Ed25519ph, SIGNATURE_LEN> for Ed25519PrivateKey {
     type Signer<'k>

@@ -36,7 +36,7 @@ const DOM2_PREFIX: &[u8; 32] = b"SigEd25519 no Ed25519 collisions";
 /// whose result failed its own check (FIPS 186-5 Section 7.1 asks implementations to "verify
 /// the correctness of group arithmetic computations"), which no input causes.
 fn computation_fault() -> SignatureError {
-    SignatureError::GenericError("Ed25519: a computed point failed its check")
+    SignatureError::ComputationFault
 }
 
 /// The private key after RFC 8032 Section 5.1.6, step 1, with its public key: the secret
