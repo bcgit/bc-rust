@@ -7,9 +7,10 @@
 //!
 //! Every group and every case is run: a `valid` case must verify and every other case must
 //! not. This crate validates a public key in full when it is decoded, so a case whose key is
-//! outside the prime-order subgroup would be refused at the key and never reach verification.
-//! That is the expected rejection of an `invalid` case, and it would fail the test for a
-//! `valid` one; the test counts both, and the file has neither.
+//! outside the prime-order subgroup is refused at the key and never reaches verification. The
+//! file flags those keys `SmallOrderPublicKey` or `MixedOrderPublicKey` and marks most of their
+//! cases `acceptable`; the test requires a case to be refused at key decode exactly when it
+//! carries one of the two flags, and an `acceptable` case to carry one.
 
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::signature_key::OneShotVerifyingKey;
@@ -24,8 +25,8 @@ fn wycheproof_ed25519() {
 
     assert_eq!(doc.get("algorithm").and_then(Value::as_str), Some("EDDSA"), "{filename}");
 
-    let (mut groups, mut valid, mut invalid) = (0usize, 0usize, 0usize);
-    // How the invalid cases were refused.
+    let (mut groups, mut valid, mut invalid, mut acceptable) = (0usize, 0usize, 0usize, 0usize);
+    // How the invalid and acceptable cases were refused.
     let (mut at_key_decode, mut at_length, mut at_verify) = (0usize, 0usize, 0usize);
     for group in doc.get("testGroups").and_then(Value::as_array).expect("testGroups") {
         groups += 1;
@@ -38,6 +39,11 @@ fn wycheproof_ed25519() {
             let ctx = format!("{filename} tcId {tc_id}");
             let msg = hex_field(test, "msg", tc_id);
             let sig = hex_field(test, "sig", tc_id);
+            let key_flagged =
+                test.get("flags").and_then(Value::as_array).expect("flags").iter().any(|f| {
+                    matches!(f.as_str(), Some("SmallOrderPublicKey" | "MixedOrderPublicKey"))
+                });
+            assert_eq!(pk.is_err(), key_flagged, "{ctx}: key decode against the key flags");
             let verdict = pk.as_ref().map_err(|_| "key decode").and_then(|pk| {
                 match OneShotVerifyingKey::<Ed25519, _>::verify(pk, &msg, None, &sig) {
                     Ok(()) => Ok(()),
@@ -67,6 +73,12 @@ fn wycheproof_ed25519() {
                         }
                     }
                 }
+                "acceptable" => {
+                    acceptable += 1;
+                    assert!(key_flagged, "{ctx}: acceptable for a reason other than its key");
+                    assert_eq!(verdict, Err("key decode"), "{ctx}");
+                    at_key_decode += 1;
+                }
                 other => panic!("{ctx}: unexpected result {other}"),
             }
         }
@@ -74,16 +86,17 @@ fn wycheproof_ed25519() {
 
     println!(
         "Wycheproof Ed25519: {groups} groups, {} cases: {valid} valid accepted; {invalid} \
-         invalid refused ({at_verify} by verification, {at_length} for their length, \
-         {at_key_decode} at key decode)",
-        valid + invalid
+         invalid and {acceptable} acceptable refused ({at_verify} by verification, {at_length} \
+         for their length, {at_key_decode} at key decode)",
+        valid + invalid + acceptable
     );
     assert_eq!(
         doc.get("numberOfTests").and_then(Value::as_u64),
-        Some((valid + invalid) as u64),
+        Some((valid + invalid + acceptable) as u64),
         "{filename}: every case was run"
     );
-    assert!(valid > 0 && at_verify > 0 && at_length > 0, "{filename}: expected every kind of case");
-    // No key in the file is outside the prime-order subgroup.
-    assert_eq!(at_key_decode, 0, "{filename}");
+    assert!(
+        valid > 0 && at_verify > 0 && at_length > 0 && at_key_decode > 0,
+        "{filename}: expected every kind of case"
+    );
 }
