@@ -6,14 +6,14 @@
 /// `-2^(width-1)` and `2^(width-1)`, and is followed by at least `width - 1` zero digits.
 ///
 /// `n` is little-endian limbs read as a two's complement integer, so a set top bit makes it
-/// negative. `width` is from 2 to 8. `ws` is cleared first and must reach the highest non-zero
-/// digit, which `64 * n.len()` entries always do; fewer are enough when `n` is known to be
-/// shorter, and a digit that does not fit panics on the index.
+/// negative. `width` is from 2 to 8, or the call panics. `ws` is cleared first and must reach
+/// the highest non-zero digit, which `64 * n.len()` entries always do; fewer are enough when
+/// `n` is known to be shorter, and a digit that does not fit panics on the index.
 ///
 /// Variable time: the number of steps and the positions written depend on `n`, which must be
 /// public.
 pub(crate) fn get_signed_var(n: &[u64], width: usize, ws: &mut [i8]) {
-    debug_assert!((2..=8).contains(&width));
+    assert!((2..=8).contains(&width), "wNAF width must be from 2 to 8");
     ws.fill(0);
 
     let top = n[n.len() - 1];
@@ -343,6 +343,20 @@ mod tests {
             }
             assert_eq!(ws, expected, "case {i}");
         }
+    }
+
+    /// A width outside 2 to 8 is refused in every build: 0 would never advance, and above 8 a
+    /// digit does not fit an `i8`.
+    #[test]
+    #[should_panic(expected = "wNAF width must be from 2 to 8")]
+    fn get_signed_var_refuses_a_width_of_one() {
+        get_signed_var(&[1], 1, &mut [0; 64]);
+    }
+
+    #[test]
+    #[should_panic(expected = "wNAF width must be from 2 to 8")]
+    fn get_signed_var_refuses_a_width_of_nine() {
+        get_signed_var(&[1], 9, &mut [0; 64]);
     }
 
     /// splitmix64: a fixed stream of test values.

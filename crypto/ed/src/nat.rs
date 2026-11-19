@@ -3,8 +3,15 @@
 //!
 //! Operand lengths are the slices' lengths and are public. Every function not named `_var` is
 //! constant time in the limb values: a fixed pass over the limbs with no branch or index that
-//! depends on them. A slice too short for the operation is a caller's bug and panics on the
-//! index.
+//! depends on them. For `mul`, `mul_add_to` and `square` that assumes the target multiplies two
+//! 64-bit words into 128 bits in time independent of their values, as the field multiplication
+//! in `curve25519` already does; a target that makes it a library call or a variable-latency
+//! instruction is outside the claim. A slice too short for the operation is a caller's bug and
+//! panics on the index.
+//!
+//! Nothing here wipes anything: the buffers are the caller's. A caller whose operands derive
+//! from a secret keeps every operand and every output buffer in a `Secret`, as the `ec` crate's
+//! scalar code does over its own limb helpers.
 
 use bouncycastle_utils::ct::Condition;
 
@@ -38,7 +45,7 @@ pub(crate) fn cadd_to(cond: Condition<u64>, x: &[u64], z: &mut [u64]) -> u64 {
 /// Whether `x < y`, for operands of the same length. Variable time: it stops at the first
 /// limb, from the top, where the two differ, so both must be public.
 pub(crate) fn lt_var(x: &[u64], y: &[u64]) -> bool {
-    debug_assert_eq!(x.len(), y.len());
+    assert_eq!(x.len(), y.len(), "lt_var needs operands of one length");
     for (x_i, y_i) in x.iter().zip(y).rev() {
         if x_i < y_i {
             return true;
@@ -580,6 +587,14 @@ mod tests {
         let mut z = split(a);
         assert_eq!(sub_from(&split(b), &mut z), -1);
         assert_eq!(z, split(a.wrapping_sub(b)));
+    }
+
+    /// Operands of different lengths are refused in every build, not compared over the limbs
+    /// they share.
+    #[test]
+    #[should_panic(expected = "lt_var needs operands of one length")]
+    fn lt_var_refuses_operands_of_different_lengths() {
+        lt_var(&[0, 1], &[1]);
     }
 
     /// `lt_var` on ordered pairs: the answer is the highest limb that differs, whatever the

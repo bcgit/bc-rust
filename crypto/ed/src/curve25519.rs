@@ -232,7 +232,8 @@ impl FieldElement25519 {
     ///
     /// Total on every input whose limbs lie in `[-2^53, 2^53]`, which covers everything the
     /// arithmetic here produces: [`Self::reduce_products`] leaves limb 0 in `[0, 2^51)` and the
-    /// others in `(-2^9, 2^51 + 2^9)`, [`Self::decode_255`] leaves all five in `[0, 2^51)`, and
+    /// others in `(-2^9, 2^51 + 2^9)` for reduced operands (lazily reduced ones widen that
+    /// slightly, still far inside the bound), [`Self::decode_255`] leaves all five in `[0, 2^51)`, and
     /// one lazy [`Self::add`] or [`Self::sub`] of two such values stays well inside the bound.
     ///
     /// Four carry passes of [`Self::reduce`]. With `V` the value and `x4 >> 51` the top limb's
