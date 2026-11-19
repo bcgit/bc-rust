@@ -18,37 +18,68 @@ use bouncycastle_core::traits::Hash;
 use bouncycastle_sha2::SHA512;
 use bouncycastle_utils::secret::Secret;
 
-/// Octets in a private key, a public key, a signature and the SHA-512 pre-hash of Ed25519ph.
-pub(crate) const PRIVATE_KEY_LEN: usize = 32;
-pub(crate) const PUBLIC_KEY_LEN: usize = 32;
-pub(crate) const SIGNATURE_LEN: usize = 64;
+/// Octets in an Ed25519 private key (RFC 8032 Section 5.1.5).
+pub const PRIVATE_KEY_LEN: usize = 32;
+/// Octets in an Ed25519 public key (RFC 8032 Section 5.1.5).
+pub const PUBLIC_KEY_LEN: usize = 32;
+/// Octets in an Ed25519 or Ed25519ph signature (RFC 8032 Section 5.1.6).
+pub const SIGNATURE_LEN: usize = 64;
+/// Octets in the SHA-512 pre-hash of Ed25519ph.
 pub(crate) const PREHASH_LEN: usize = 64;
-/// RFC 8032 Section 5.1: the context is a "maximum of 255 octets".
-pub(crate) const CONTEXT_MAX_LEN: usize = 255;
+/// The longest Ed25519ph context, in octets (RFC 8032 Section 5.1: "maximum of 255 octets").
+pub const CONTEXT_MAX_LEN: usize = 255;
 
 /// The fixed part of `dom2` (RFC 8032 Section 2), "in ASCII (32 octets)".
 const DOM2_PREFIX: &[u8; 32] = b"SigEd25519 no Ed25519 collisions";
 
-/// The private key after RFC 8032 Section 5.1.6, step 1: the secret scalar `s` and `prefix`,
-/// the two halves of its SHA-512 digest. Both are wiped when the value is dropped.
+/// The one error of the two fault paths, key expansion and signing: a fixed-base multiplication
+/// whose result failed its own check (FIPS 186-5 Section 7.1 asks implementations to "verify
+/// the correctness of group arithmetic computations"), which no input causes.
+fn computation_fault() -> SignatureError {
+    SignatureError::GenericError("Ed25519: a computed point failed its check")
+}
+
+/// The private key after RFC 8032 Section 5.1.6, step 1, with its public key: the secret
+/// scalar `s` and `prefix`, the two halves of its SHA-512 digest, and `A`, the encoding of
+/// `[s]B`. The scalar and the prefix are wiped when the value is dropped.
+///
+/// `A` is computed here, once, and signing reads it from here: a signature made with any
+/// other value in its place exposes the private scalar to whoever also holds a correct
+/// signature on the same message, so no caller is given the chance to supply one.
+#[derive(Clone)]
+#[allow(non_snake_case)]
 pub(crate) struct ExpandedKey {
     /// The pruned first half of the digest: the scalar, in 32 little-endian octets.
     s: Secret<[u8; 32]>,
     /// The second half of the digest.
     prefix: Secret<[u8; 32]>,
+    /// The public key. All zero exactly while the key is unfilled: an all-zero encoding is
+    /// y = 0, which no multiple of B has, and the result check refuses.
+    A: [u8; PUBLIC_KEY_LEN],
 }
 
-// No caller until the key types are built on this.
-#[allow(dead_code)]
 impl ExpandedKey {
-    /// An all-zero value for [`Self::expand`] to fill where it will live.
+    /// An all-zero, unfilled value for [`Self::expand`] to fill where it will live.
     pub(crate) const fn zeroized() -> Self {
-        Self { s: Secret::new(), prefix: Secret::new() }
+        Self { s: Secret::new(), prefix: Secret::new(), A: [0; PUBLIC_KEY_LEN] }
     }
 
-    /// Fills `self` from the private key `sk` (RFC 8032 Section 5.1.5, steps 1 and 2).
-    /// Constant time; the digest is wiped on return.
-    pub(crate) fn expand(&mut self, sk: &[u8; PRIVATE_KEY_LEN]) {
+    /// Back to the unfilled value, the scalar and the prefix wiped.
+    pub(crate) fn clear(&mut self) {
+        self.s.zeroize();
+        self.prefix.zeroize();
+        self.A = [0; PUBLIC_KEY_LEN];
+    }
+
+    /// Whether [`Self::expand`] has filled the key.
+    pub(crate) fn is_filled(&self) -> bool {
+        self.A != [0; PUBLIC_KEY_LEN]
+    }
+
+    /// Fills `self` from the private key `sk` (RFC 8032 Section 5.1.5, steps 1 to 4).
+    /// Constant time; the digest is wiped on return. The only error is the multiplication
+    /// failing its own result check, when `self` is left unfilled.
+    pub(crate) fn expand(&mut self, sk: &[u8; PRIVATE_KEY_LEN]) -> Result<(), SignatureError> {
         // Step 1: "Hash the 32-byte private key using SHA-512, storing the digest in a
         // 64-octet large buffer, denoted h."
         // The hash is finished where it sits, so that its state, which has absorbed the
@@ -65,55 +96,64 @@ impl ExpandedKey {
         self.s[0] &= 0xF8;
         self.s[31] &= 0x7F;
         self.s[31] |= 0x40;
+
+        // Steps 3 and 4: "Interpret the buffer as the little-endian integer, forming a
+        // secret scalar s. Perform a fixed-base scalar multiplication [s]B." "The public key
+        // A is the encoding of the point [s]B."
+        // The multiplication wants a scalar below 2^256 - L (`scalar::to_signed_digits`):
+        // step 2 cleared bit 255, so s < 2^255, and L < 2^253.
+        if point::scalar_mult_base_encoded(&self.s, &mut self.A).is_err() {
+            self.clear();
+            return Err(computation_fault());
+        }
+        Ok(())
     }
 
-    /// Writes the public key, the encoding of `[s]B`, to `A` (RFC 8032 Section 5.1.5, steps
-    /// 3 and 4). Constant time. The only error is the multiplication failing its own result
-    /// check, when `A` is left zero.
-    #[allow(non_snake_case)]
-    pub(crate) fn public_key(&self, A: &mut [u8; PUBLIC_KEY_LEN]) -> Result<(), SignatureError> {
-        point::scalar_mult_base_encoded(&self.s, A).map_err(|_| {
-            SignatureError::KeyGenError("Ed25519: the computed public key failed its check")
-        })
+    /// The public key, the encoding of `[s]B`; all zero for an unfilled key.
+    pub(crate) fn public_key(&self) -> &[u8; PUBLIC_KEY_LEN] {
+        &self.A
+    }
+
+    /// The public key as a point, or `None` for an unfilled key. Costs a square root, and no
+    /// scalar multiplication: see [`PublicPoint::decode_base_multiple_var`], whose two
+    /// conditions hold here. `A` is the checked encoding of `[s]B`, and `[s]B` is not the
+    /// neutral element, because the pruned `s` is a multiple of 8 below `8 L` and not zero,
+    /// so not a multiple of the odd `L`.
+    pub(crate) fn public_point(&self) -> Option<PublicPoint> {
+        if !self.is_filled() {
+            return None;
+        }
+        PublicPoint::decode_base_multiple_var(&self.A)
     }
 }
 
 /// Signs the message `M` with Ed25519 (RFC 8032 Section 5.1.6), writing `R || S` to `sig`.
-///
-/// `A` must be the public key of `key`, from [`ExpandedKey::public_key`]: a signature made
-/// with any other value in its place exposes the private scalar to whoever also holds a
-/// correct signature on the same message. The only error is the multiplication failing its
-/// own result check, when `sig` is left zero.
-// No caller until the key types are built on this.
-#[allow(dead_code, non_snake_case)]
+/// `key` must be filled. The only error is the multiplication failing its own result check,
+/// when `sig` is left zero.
+#[allow(non_snake_case)]
 pub(crate) fn sign(
     key: &ExpandedKey,
-    A: &[u8; PUBLIC_KEY_LEN],
     M: &[u8],
     sig: &mut [u8; SIGNATURE_LEN],
 ) -> Result<(), SignatureError> {
-    sign_core(key, A, None, M, sig)
+    sign_core(key, None, M, sig)
 }
 
 /// Signs with Ed25519ph (RFC 8032 Section 5.1.6): `prehash` is `PH(M)`, the SHA-512 digest of
 /// the message, and `context` is at most [`CONTEXT_MAX_LEN`] octets, or the call fails with
 /// a `LengthError`. Otherwise as [`sign`].
-// No caller until the key types are built on this.
-#[allow(dead_code, non_snake_case)]
 pub(crate) fn sign_ph(
     key: &ExpandedKey,
-    A: &[u8; PUBLIC_KEY_LEN],
     context: &[u8],
     prehash: &[u8; PREHASH_LEN],
     sig: &mut [u8; SIGNATURE_LEN],
 ) -> Result<(), SignatureError> {
-    sign_core(key, A, Some(context), prehash, sig)
+    sign_core(key, Some(context), prehash, sig)
 }
 
 /// Verifies an Ed25519 signature on the message `M` (RFC 8032 Section 5.1.7).
 /// `SignatureVerificationFailed` is the only error.
-// No caller until the key types are built on this.
-#[allow(dead_code, non_snake_case)]
+#[allow(non_snake_case)]
 pub(crate) fn verify(
     sig: &[u8; SIGNATURE_LEN],
     A: &PublicPoint,
@@ -125,8 +165,7 @@ pub(crate) fn verify(
 /// Verifies an Ed25519ph signature (RFC 8032 Section 5.1.7): `prehash` and `context` as for
 /// [`sign_ph`], with a `LengthError` for a context that is too long and
 /// `SignatureVerificationFailed` otherwise.
-// No caller until the key types are built on this.
-#[allow(dead_code, non_snake_case)]
+#[allow(non_snake_case)]
 pub(crate) fn verify_ph(
     sig: &[u8; SIGNATURE_LEN],
     A: &PublicPoint,
@@ -136,7 +175,8 @@ pub(crate) fn verify_ph(
     verify_core(sig, A, Some(context), prehash)
 }
 
-fn check_context(context: Option<&[u8]>) -> Result<(), SignatureError> {
+/// Whether `context` fits Ed25519ph's `dom2`.
+pub(crate) fn check_context(context: Option<&[u8]>) -> Result<(), SignatureError> {
     match context {
         Some(context) if context.len() > CONTEXT_MAX_LEN => {
             Err(SignatureError::LengthError("an Ed25519ph context is at most 255 octets"))
@@ -164,7 +204,6 @@ fn absorb_dom2(hash: &mut SHA512, context: Option<&[u8]>) {
 #[allow(non_snake_case)]
 fn sign_core(
     key: &ExpandedKey,
-    A: &[u8; PUBLIC_KEY_LEN],
     context: Option<&[u8]>,
     PH_M: &[u8],
     sig: &mut [u8; SIGNATURE_LEN],
@@ -186,10 +225,10 @@ fn sign_core(
     // [..] Let the string R be the encoding of this point."
     let mut r = Secret::<[u8; 32]>::new();
     scalar::reduce_512(&r_digest, &mut r);
+    // The multiplication wants a scalar below 2^256 - L (`scalar::to_signed_digits`), and
+    // `reduce_512` leaves r < L.
     let mut R = [0_u8; 32];
-    point::scalar_mult_base_encoded(&r, &mut R).map_err(|_| {
-        SignatureError::GenericError("Ed25519: the computed point R failed its check")
-    })?;
+    point::scalar_mult_base_encoded(&r, &mut R).map_err(|_| computation_fault())?;
 
     // Step 4: "Compute SHA512(dom2(F, C) || R || A || PH(M)), and interpret the 64-octet
     // digest as a little-endian integer k."
@@ -197,7 +236,7 @@ fn sign_core(
     let mut hash = SHA512::new();
     absorb_dom2(&mut hash, context);
     hash.do_update(&R);
-    hash.do_update(A);
+    hash.do_update(&key.A);
     hash.do_update(PH_M);
     hash.do_final_out(&mut k_digest);
 
@@ -255,6 +294,8 @@ fn verify_core(
     // signature is refused rather than checked the long way.)
     let (v0, v1) =
         scalar::reduce_basis_var(&k).ok_or(SignatureError::SignatureVerificationFailed)?;
+    // Straus wants its base-point scalar below 2^253: `multiply_128_var` ends in a reduction
+    // mod L, and L < 2^253.
     let v1_S = scalar::multiply_128_var(&S, &v1);
     let Z =
         point::scalar_mult_straus_128_var(&v1_S, &v0, &A.point().negate(), &v1, &R_point.negate());
@@ -700,9 +741,8 @@ mod tests {
     /// The expanded key and the public key of a private key.
     fn key_pair(sk: &[u8; PRIVATE_KEY_LEN]) -> (ExpandedKey, [u8; PUBLIC_KEY_LEN]) {
         let mut key = ExpandedKey::zeroized();
-        key.expand(sk);
-        let mut pk = [0xA5_u8; PUBLIC_KEY_LEN];
-        key.public_key(&mut pk).unwrap();
+        key.expand(sk).unwrap();
+        let pk = *key.public_key();
         (key, pk)
     }
 
@@ -714,7 +754,7 @@ mod tests {
         assert_eq!(public, octets::<32>(pk), "{name}");
         let m = bytes(m);
         let mut signature = [0xA5_u8; SIGNATURE_LEN];
-        sign(&key, &public, &m, &mut signature).unwrap();
+        sign(&key, &m, &mut signature).unwrap();
         assert_eq!(signature, octets::<64>(sig), "{name}");
 
         let point = PublicPoint::decode_var(&public).unwrap();
@@ -727,7 +767,7 @@ mod tests {
         assert_eq!(public, octets::<32>(pk), "{name}");
         let (context, prehash) = (bytes(context), sha512(&bytes(m)));
         let mut signature = [0xA5_u8; SIGNATURE_LEN];
-        sign_ph(&key, &public, &context, &prehash, &mut signature).unwrap();
+        sign_ph(&key, &context, &prehash, &mut signature).unwrap();
         assert_eq!(signature, octets::<64>(sig), "{name}");
 
         let point = PublicPoint::decode_var(&public).unwrap();
@@ -805,7 +845,7 @@ mod tests {
         let point = PublicPoint::decode_var(&public).unwrap();
         let m = bytes(m);
         let mut signature = [0_u8; SIGNATURE_LEN];
-        sign(&key, &public, &m, &mut signature).unwrap();
+        sign(&key, &m, &mut signature).unwrap();
         assert_eq!(verify(&signature, &point, &m), Ok(()));
 
         for bit in 0..8 * SIGNATURE_LEN {
@@ -827,15 +867,15 @@ mod tests {
 
         // Ed25519ph: the context and the instance are bound.
         let prehash = sha512(&m);
-        sign_ph(&key, &public, b"context", &prehash, &mut signature).unwrap();
+        sign_ph(&key, b"context", &prehash, &mut signature).unwrap();
         assert_eq!(verify_ph(&signature, &point, b"context", &prehash), Ok(()));
         assert_eq!(verify_ph(&signature, &point, b"contexu", &prehash), FAILED);
         assert_eq!(verify_ph(&signature, &point, b"", &prehash), FAILED);
         assert_eq!(verify_ph(&signature, &point, b"context\0", &prehash), FAILED);
         assert_eq!(verify(&signature, &point, &prehash), FAILED);
-        sign_ph(&key, &public, b"", &prehash, &mut signature).unwrap();
+        sign_ph(&key, b"", &prehash, &mut signature).unwrap();
         assert_eq!(verify(&signature, &point, &prehash), FAILED);
-        sign(&key, &public, &prehash, &mut signature).unwrap();
+        sign(&key, &prehash, &mut signature).unwrap();
         assert_eq!(verify_ph(&signature, &point, b"", &prehash), FAILED);
     }
 
@@ -849,7 +889,7 @@ mod tests {
         let context = [0x5A_u8; CONTEXT_MAX_LEN + 1];
 
         let mut signature = [0xA5_u8; SIGNATURE_LEN];
-        sign_ph(&key, &public, &context[..CONTEXT_MAX_LEN], &prehash, &mut signature).unwrap();
+        sign_ph(&key, &context[..CONTEXT_MAX_LEN], &prehash, &mut signature).unwrap();
         assert_eq!(verify_ph(&signature, &point, &context[..CONTEXT_MAX_LEN], &prehash), Ok(()));
         assert_eq!(
             verify_ph(&signature, &point, &context[..CONTEXT_MAX_LEN - 1], &prehash),
@@ -860,7 +900,7 @@ mod tests {
             matches!(result, Err(SignatureError::LengthError(_)))
         };
         assert!(too_long(verify_ph(&signature, &point, &context, &prehash)));
-        assert!(too_long(sign_ph(&key, &public, &context, &prehash, &mut signature)));
+        assert!(too_long(sign_ph(&key, &context, &prehash, &mut signature)));
         assert_eq!(signature, [0; SIGNATURE_LEN]);
     }
 
@@ -899,7 +939,7 @@ mod tests {
         let point = PublicPoint::decode_var(&public).unwrap();
         let m = b"message";
         let mut signature = [0_u8; SIGNATURE_LEN];
-        sign(&key, &public, m, &mut signature).unwrap();
+        sign(&key, m, &mut signature).unwrap();
 
         // S + L, which is S mod L and still fits 32 octets.
         let mut s_plus_l = [0_u8; 32];
