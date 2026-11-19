@@ -5,6 +5,7 @@
 use crate::errors::*;
 use crate::key_material::KeyMaterialTrait;
 use crate::security_strength::SecurityStrength;
+use crate::signature_key::PreHashStrengthRule;
 use bouncycastle_utils::secret::Secret;
 use core::fmt::{Debug, Display};
 use core::marker::Sized;
@@ -643,6 +644,10 @@ pub trait HashAlgParams: Algorithm {
     /// determining the security strength of the hash function since this limits the internal
     /// collision resistance of the hash function.
     const BLOCK_LEN: usize;
+    /// Whether a signature scheme that requires its pre-hash to be at least as strong as its
+    /// parameter set holds this type to that. A hash function leaves the default; see
+    /// [`PreHashStrengthRule`] for the one other value and where it comes from.
+    const PRE_HASH_STRENGTH_RULE: PreHashStrengthRule = PreHashStrengthRule::ENFORCED;
 }
 
 /// The most keying material the provided one-shots [`KDF::derive_key`] and

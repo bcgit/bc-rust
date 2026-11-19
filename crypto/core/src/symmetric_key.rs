@@ -14,7 +14,9 @@
 //!   A key that lives in a hardware token implements neither; it has its own way in.
 //! * **Roles**, one trait per direction: [`AeadEncryptionKey`] / [`AeadDecryptionKey`], their
 //!   declared-length forms [`AeadDeclaredEncryptionKey`] / [`AeadDeclaredDecryptionKey`] for a mode that must
-//!   know the lengths up front, [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] for the
+//!   know the lengths up front, [`AeadInPlaceEncryptionKey`] / [`AeadInPlaceDecryptionKey`] for a
+//!   whole message in its own buffer, which every AEAD key implements,
+//!   [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] for the
 //!   unauthenticated modes that take data of any length (padded CBC, CFB, CFB8, OFB, CTR),
 //!   [`BlockEncryptionKey`] / [`BlockDecryptionKey`] for the whole-block modes, the ECB pair in
 //!   [`crate::hazmat`], [`MacGenerationKey`] / [`MacVerificationKey`], their nonce-bound forms
@@ -22,13 +24,14 @@
 //!   nonce (GMAC), and [`KeyWrappingKey`] / [`KeyUnwrappingKey`] for the key-wrap modes. A key type
 //!   implements the sides it is allowed to use, so a decrypt-only or verify-only key refuses the
 //!   other side at compile time. The one-shots are provided methods over `create_*` and the
-//!   worker's streaming methods, the cipher traits in [`crate::traits`].
+//!   worker's streaming methods, the cipher traits in [`crate::traits`]; the in-place AEAD
+//!   role names no worker, so its methods are the implementor's.
 //!
 //! Which role a cipher key carries is decided by its mode type through the mode traits in
 //! [`crate::hazmat`] ([`Mode`], [`AeadEncryptMode`], [`AeadDecryptMode`] and their declared-length,
-//! symmetric, block and ECB forms); the permutation crate connects the two with a forwarding
-//! impl per role. A mode implements exactly one pair, so `key.create_encryptor(..)` on a key
-//! bound to it is never ambiguous.
+//! in-place, symmetric, block and ECB forms); the permutation crate connects the two with a
+//! forwarding impl per role. A mode implements exactly one pair with a `create_encryptor`, so
+//! `key.create_encryptor(..)` on a key bound to it is never ambiguous.
 //!
 //! ```text
 //! let key = AES128Key::<GCM>::generate(&mut rng)?;
@@ -47,7 +50,10 @@
 //! [`AeadDecryptMode`]: crate::hazmat::AeadDecryptMode
 
 use crate::errors::{MACError, SymmetricCipherError};
+// The in-place AEAD one-shot bodies over a streaming worker, for a key or mode that has one to
+// implement `AeadInPlaceEncryptionKey` / `AeadInPlaceDecryptionKey` with.
 use crate::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+pub use crate::provided::{decrypt_detached_inplace, encrypt_detached_inplace};
 #[cfg(feature = "std")]
 use crate::traits::AEADEncryptedTuple;
 use crate::traits::{
@@ -250,23 +256,6 @@ pub trait AeadEncryptionKey<
         Ok((nonce, ciphertext, tag))
     }
 
-    /// One-shot in place, tag detached: encrypts `buf` under `aad` and a nonce drawn from `rng`,
-    /// in its own buffer, and returns the nonce and tag. For a message that is already in a
-    /// buffer the caller owns, this needs no second buffer the size of the message.
-    ///
-    /// # Errors
-    /// As [`encrypt_detached_out`](Self::encrypt_detached_out).
-    fn encrypt_detached_inplace(
-        &self,
-        rng: &mut dyn RNG,
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        let (enc, nonce) = self.create_encryptor(rng)?;
-        let tag = crate::provided::encrypt_detached_inplace(enc, aad, buf)?;
-        Ok((nonce, tag))
-    }
-
     /// [`encrypt_with_aad_out`](Self::encrypt_with_aad_out) under a nonce the caller supplies;
     /// returns the number of bytes written.
     ///
@@ -356,20 +345,6 @@ pub trait AeadEncryptionKey<
             self.encrypt_detached_nonce_out(nonce, aad, plaintext, &mut ciphertext)?;
         ciphertext.truncate(written);
         Ok((ciphertext, tag))
-    }
-
-    /// [`encrypt_detached_inplace`](Self::encrypt_detached_inplace) under a nonce the caller
-    /// supplies; returns the tag.
-    ///
-    /// # Errors
-    /// Any error of the encryptor's streaming methods.
-    fn encrypt_detached_inplace_nonce(
-        &self,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        crate::provided::encrypt_detached_inplace(self.create_encryptor_nonce(nonce), aad, buf)
     }
 }
 
@@ -482,23 +457,6 @@ pub trait AeadDecryptionKey<
         let written = self.decrypt_detached_out(nonce, aad, ciphertext, tag, &mut plaintext)?;
         plaintext.truncate(written);
         Ok(plaintext)
-    }
-
-    /// One-shot in place, tag detached: decrypts `buf` under `nonce` and `aad` in its own buffer
-    /// and checks `tag`. On any error `buf` is left zeroized, as the `_out` forms leave their
-    /// output: the plaintext was written into it before the tag could be checked.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, or any error of
-    /// the decryptor's streaming methods.
-    fn decrypt_detached_inplace(
-        &self,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-        tag: &[u8; TAG_LEN],
-    ) -> Result<(), SymmetricCipherError> {
-        crate::provided::decrypt_detached_inplace(self.create_decryptor(nonce), aad, buf, tag)
     }
 }
 
@@ -626,22 +584,6 @@ pub trait AeadDeclaredEncryptionKey<
         Ok((nonce, ciphertext, tag))
     }
 
-    /// As [`AeadEncryptionKey::encrypt_detached_inplace`].
-    ///
-    /// # Errors
-    /// As [`create_encryptor`](Self::create_encryptor), or any error of the encryptor's
-    /// streaming methods.
-    fn encrypt_detached_inplace(
-        &self,
-        rng: &mut dyn RNG,
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        let (enc, nonce) = self.create_encryptor(rng, aad.len(), buf.len())?;
-        let tag = crate::provided::encrypt_detached_inplace(enc, aad, buf)?;
-        Ok((nonce, tag))
-    }
-
     /// As [`AeadEncryptionKey::encrypt_with_aad_nonce_out`].
     ///
     /// # Errors
@@ -721,21 +663,6 @@ pub trait AeadDeclaredEncryptionKey<
             self.encrypt_detached_nonce_out(nonce, aad, plaintext, &mut ciphertext)?;
         ciphertext.truncate(written);
         Ok((ciphertext, tag))
-    }
-
-    /// As [`AeadEncryptionKey::encrypt_detached_inplace_nonce`].
-    ///
-    /// # Errors
-    /// As [`create_encryptor_nonce`](Self::create_encryptor_nonce), or any error of the
-    /// encryptor's streaming methods.
-    fn encrypt_detached_inplace_nonce(
-        &self,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        let enc = self.create_encryptor_nonce(nonce, aad.len(), buf.len())?;
-        crate::provided::encrypt_detached_inplace(enc, aad, buf)
     }
 }
 
@@ -849,23 +776,72 @@ pub trait AeadDeclaredDecryptionKey<
         plaintext.truncate(written);
         Ok(plaintext)
     }
+}
 
-    /// As [`AeadDecryptionKey::decrypt_detached_inplace`]; `buf` is untouched if construction
-    /// refuses the lengths, and zeroized on any error after that.
+/// A key that can encrypt a whole message in its own buffer, with the tag detached: the role
+/// every AEAD key implements, whatever the shape of its streaming constructors, and the only AEAD
+/// role of a mode that cannot take its message in pieces. For a message already in a buffer the
+/// caller owns, this needs no second buffer the size of the message.
+///
+/// The nonce is drawn by [`encrypt_detached_inplace`](Self::encrypt_detached_inplace) and taken
+/// from the caller by the `_nonce` form, who then takes on the obligation that it never repeat
+/// under this key.
+pub trait AeadInPlaceEncryptionKey<
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+>
+{
+    /// Encrypts `buf` in place under `aad` and a nonce drawn from `rng`, and returns the nonce
+    /// and the tag. The ciphertext is the same length as the plaintext it replaces.
     ///
     /// # Errors
-    /// As [`AeadDecryptionKey::decrypt_detached_inplace`], or
-    /// [`create_decryptor`](Self::create_decryptor)'s.
+    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails, or the mode's refusal of a
+    /// length it cannot take. After an error the contents of `buf` are unspecified.
+    fn encrypt_detached_inplace(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError>;
+
+    /// As [`encrypt_detached_inplace`](Self::encrypt_detached_inplace) under a nonce the caller
+    /// supplies; returns the tag.
+    ///
+    /// # Errors
+    /// The mode's refusal of a length it cannot take. After an error the contents of `buf` are
+    /// unspecified.
+    fn encrypt_detached_inplace_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError>;
+}
+
+/// A key that can decrypt a whole message in its own buffer, with the tag detached; see
+/// [`AeadInPlaceEncryptionKey`]. Separate from it so that a key type can carry one side and not
+/// the other.
+pub trait AeadInPlaceDecryptionKey<
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+>
+{
+    /// Decrypts `buf` in place under `nonce` and `aad`, and checks `tag`. A failure never leaves
+    /// unauthenticated plaintext in `buf`: it is zeroized, or untouched if the message was
+    /// refused for its length before any of it was processed.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, or the mode's
+    /// refusal of a length it cannot take.
     fn decrypt_detached_inplace(
         &self,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         buf: &mut [u8],
         tag: &[u8; TAG_LEN],
-    ) -> Result<(), SymmetricCipherError> {
-        let dec = self.create_decryptor(nonce, aad.len(), buf.len())?;
-        crate::provided::decrypt_detached_inplace(dec, aad, buf, tag)
-    }
+    ) -> Result<(), SymmetricCipherError>;
 }
 
 /// A key that can begin an unauthenticated encryption of data of any length: the encryption half of

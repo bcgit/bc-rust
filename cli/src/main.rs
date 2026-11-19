@@ -2005,8 +2005,14 @@ enum Subcommands {
 
         #[arg(long, value_enum, default_value_t = PreHashAlg::Sha512)]
         /// The pre-hash (FIPS 204 Section 5.4); it must be at least as strong as the parameter
-        /// set, so sha256 and shake128 fit hash-mldsa44 only.
+        /// set, so sha256 and shake128 fit hash-mldsa44 only, unless --allow-weak-hash.
         hash: PreHashAlg,
+
+        #[arg(long)]
+        /// Accept a --hash weaker than the parameter set, when signing or verifying. This
+        /// lowers the signature's strength to the hash's; it is for interoperability and
+        /// validation testing.
+        allow_weak_hash: bool,
 
         #[arg(long)]
         /// The file containing the context string (raw bytes; hex with --hex-input) for signing or verifying
@@ -2045,8 +2051,14 @@ enum Subcommands {
 
         #[arg(long, value_enum, default_value_t = PreHashAlg::Sha512)]
         /// The pre-hash (FIPS 204 Section 5.4); it must be at least as strong as the parameter
-        /// set, so sha256 and shake128 fit hash-mldsa44 only.
+        /// set, so sha256 and shake128 fit hash-mldsa44 only, unless --allow-weak-hash.
         hash: PreHashAlg,
+
+        #[arg(long)]
+        /// Accept a --hash weaker than the parameter set, when signing or verifying. This
+        /// lowers the signature's strength to the hash's; it is for interoperability and
+        /// validation testing.
+        allow_weak_hash: bool,
 
         #[arg(long)]
         /// The file containing the context string (raw bytes; hex with --hex-input) for signing or verifying
@@ -2085,8 +2097,14 @@ enum Subcommands {
 
         #[arg(long, value_enum, default_value_t = PreHashAlg::Sha512)]
         /// The pre-hash (FIPS 204 Section 5.4); it must be at least as strong as the parameter
-        /// set, so sha256 and shake128 fit hash-mldsa44 only.
+        /// set, so sha256 and shake128 fit hash-mldsa44 only, unless --allow-weak-hash.
         hash: PreHashAlg,
+
+        #[arg(long)]
+        /// Accept a --hash weaker than the parameter set, when signing or verifying. This
+        /// lowers the signature's strength to the hash's; it is for interoperability and
+        /// validation testing.
+        allow_weak_hash: bool,
 
         #[arg(long)]
         /// The file containing the context string (raw bytes; hex with --hex-input) for signing or verifying
@@ -7805,6 +7823,7 @@ fn run() {
         Some(Subcommands::HashMLDSA44 {
             action,
             hash,
+            allow_weak_hash,
             ctxfile,
             skfile,
             pkfile,
@@ -7820,6 +7839,7 @@ fn run() {
                 action,
                 &files,
                 Some(*hash),
+                *allow_weak_hash,
                 *deterministic,
                 *x,
             );
@@ -7827,6 +7847,7 @@ fn run() {
         Some(Subcommands::HashMLDSA65 {
             action,
             hash,
+            allow_weak_hash,
             ctxfile,
             skfile,
             pkfile,
@@ -7842,6 +7863,7 @@ fn run() {
                 action,
                 &files,
                 Some(*hash),
+                *allow_weak_hash,
                 *deterministic,
                 *x,
             );
@@ -7849,6 +7871,7 @@ fn run() {
         Some(Subcommands::HashMLDSA87 {
             action,
             hash,
+            allow_weak_hash,
             ctxfile,
             skfile,
             pkfile,
@@ -7864,6 +7887,7 @@ fn run() {
                 action,
                 &files,
                 Some(*hash),
+                *allow_weak_hash,
                 *deterministic,
                 *x,
             );
@@ -8319,7 +8343,15 @@ fn run() {
         }) => {
             let files =
                 mldsa_cmd::Files { ctx: ctxfile, sk: skfile, pk: pkfile, sig: sigfile, mu: mufile };
-            mldsa_cmd::mldsa_cmd(&mldsa_cmd::MLDSA44_SET, action, &files, None, *deterministic, *x);
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA44_SET,
+                action,
+                &files,
+                None,
+                false,
+                *deterministic,
+                *x,
+            );
         }
         Some(Subcommands::MLDSA65 {
             action,
@@ -8333,7 +8365,15 @@ fn run() {
         }) => {
             let files =
                 mldsa_cmd::Files { ctx: ctxfile, sk: skfile, pk: pkfile, sig: sigfile, mu: mufile };
-            mldsa_cmd::mldsa_cmd(&mldsa_cmd::MLDSA65_SET, action, &files, None, *deterministic, *x);
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA65_SET,
+                action,
+                &files,
+                None,
+                false,
+                *deterministic,
+                *x,
+            );
         }
         Some(Subcommands::MLDSA87 {
             action,
@@ -8347,7 +8387,15 @@ fn run() {
         }) => {
             let files =
                 mldsa_cmd::Files { ctx: ctxfile, sk: skfile, pk: pkfile, sig: sigfile, mu: mufile };
-            mldsa_cmd::mldsa_cmd(&mldsa_cmd::MLDSA87_SET, action, &files, None, *deterministic, *x);
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA87_SET,
+                action,
+                &files,
+                None,
+                false,
+                *deterministic,
+                *x,
+            );
         }
         Some(Subcommands::AES128_KW { direction, key, key_file, x }) => {
             kw_cmd::kw_cmd::<AES128Internal, 16>(direction, key, key_file, *x, "AES-128");

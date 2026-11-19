@@ -227,7 +227,8 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   a worker trait.
 - **Mode types carry the role.** A key is `BlockCipherKey<P, M>` (aliased `AES128Key<M>` and the like); which role pairs it implements is
   decided by `M`'s mode-trait impls in `core::hazmat::mode` (`SymmetricEncryptMode`,
-  `BlockEncryptMode`, `EcbEncryptMode`, `AeadEncryptMode`, `AeadDeclaredEncryptMode`, `MacMode`).
+  `BlockEncryptMode`, `EcbEncryptMode`, `AeadEncryptMode`, `AeadDeclaredEncryptMode`,
+  `AeadInPlaceEncryptMode`, `MacMode`).
   Padding and frame parameters live in the mode type (`CBC<PKCS7>`, `CBC<Blocks>`,
   `ECB<Blocks>`, `CTR<12>`, `CCM_Packet<12, 16, 64, 1024>`), not on a worker alias.
 - **The key length stops at the key.** `BlockPermutation<BLOCK_LEN>` carries the block methods

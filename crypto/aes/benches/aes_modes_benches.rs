@@ -32,7 +32,7 @@ use bouncycastle_cipher::modes::{
     KW, KWP, OFB, Ofb,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::{AeadDeclaredEncryptMode, EcbEncryptionKey, KeyExpansion};
+use bouncycastle_core::hazmat::{AeadInPlaceEncryptMode, EcbEncryptionKey, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadEncryptionKey, BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey,

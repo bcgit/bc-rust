@@ -64,6 +64,37 @@ pub trait PreHash: HashOneShot + HashAlgParams + AlgorithmOID {}
 
 impl<H: HashOneShot + HashAlgParams + AlgorithmOID> PreHash for H {}
 
+/// Whether a signature scheme that requires its pre-hash to be at least as strong as its
+/// parameter set (HashML-DSA, FIPS 204 Section 5.4) holds a hash type to that. Carried by
+/// [`HashAlgParams::PRE_HASH_STRENGTH_RULE`], which every hash function leaves at
+/// [`ENFORCED`](Self::ENFORCED).
+///
+/// The waived value says nothing about the hash and changes nothing a hash computes or reports:
+/// [`Algorithm::MAX_SECURITY_STRENGTH`] stays the hash's own, so only a scheme that asks
+/// [`is_waived`](Self::is_waived) behaves differently. The value originates
+/// only from [`crate::hazmat::waive_pre_hash_strength_rule`]:
+///
+/// ```compile_fail
+/// let rule = bouncycastle_core::signature_key::PreHashStrengthRule { waived: true };
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PreHashStrengthRule {
+    waived: bool,
+}
+
+impl PreHashStrengthRule {
+    /// The rule applies: a scheme refuses the hash where it is weaker than the parameter set.
+    pub const ENFORCED: Self = Self { waived: false };
+
+    /// For [`crate::hazmat::waive_pre_hash_strength_rule`].
+    pub(crate) const WAIVED: Self = Self { waived: true };
+
+    /// Whether the type opts out of the rule, so that the scheme accepts it at any strength.
+    pub const fn is_waived(&self) -> bool {
+        self.waived
+    }
+}
+
 /// A key that signs with an algorithm that draws randomness for each signature.
 ///
 /// The signer is the algorithm's ordinary worker; this trait adds where it comes from. The
