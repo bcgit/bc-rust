@@ -37,7 +37,7 @@ fn measure(f: impl FnOnce()) {
 }
 
 use bouncycastle::core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle::core::signature_key::VerifyingKey;
+use bouncycastle::core::signature_key::OneShotVerifyingKey;
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::hex;
 use bouncycastle::mldsa::MLDSA44_SIG_LEN;

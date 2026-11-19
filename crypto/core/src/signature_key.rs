@@ -21,11 +21,17 @@
 //!   approved hash, RSA over any hash), either by the worker as the message streams in, or by
 //!   the caller, who hands over the digest.
 //!
+//! The one-shots over a whole message are roles of their own, which name no worker:
+//! [`OneShotSigningKey`], [`DeterministicOneShotSigningKey`] and [`OneShotVerifyingKey`]. Each
+//! is a supertrait of the streaming role, so every key that streams has it, and a scheme that
+//! cannot take its message in pieces implements it alone: `K: OneShotVerifyingKey<A, N>` is the
+//! bound for any verifying key with the whole message in hand.
+//!
 //! ```text
 //! let mut signer = sk.create_signer(&mut rng, Some(b"ctx"))?;   // SigningKey<MLDSA44, _>
 //! signer.do_update(msg);
 //! let sig = signer.do_final()?;
-//! pk.verify(msg, Some(b"ctx"), &sig)?;                          // VerifyingKey<MLDSA44, _>
+//! pk.verify(msg, Some(b"ctx"), &sig)?;                    // OneShotVerifyingKey<MLDSA44, _>
 //!
 //! let sig = sk.sign_ph::<SHA512>(&mut rng, &digest, None)?;     // PreHashSigningKey
 //! ```
@@ -95,12 +101,14 @@ impl PreHashStrengthRule {
     }
 }
 
-/// A key that signs with an algorithm that draws randomness for each signature.
+/// A key that signs with an algorithm that draws randomness for each signature, taking the
+/// message as it arrives.
 ///
 /// The signer is the algorithm's ordinary worker; this trait adds where it comes from. The
-/// one-shots are provided over [`create_signer`](Self::create_signer) and the worker's streaming
-/// methods, and return the same bytes as streaming the message by hand.
-pub trait SigningKey<A: SignatureAlgorithm, const SIG_LEN: usize> {
+/// one-shots are the supertrait's.
+pub trait SigningKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
+    OneShotSigningKey<A, SIG_LEN>
+{
     /// The streaming signer this key produces, borrowing the key for `'k`.
     type Signer<'k>: SignatureSigner<SIG_LEN>
     where
@@ -117,27 +125,34 @@ pub trait SigningKey<A: SignatureAlgorithm, const SIG_LEN: usize> {
         rng: &mut dyn RNG,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError>;
+}
 
-    /// One-shot: signs `msg` into `output`, which is zeroized first; returns the number of bytes
-    /// written, always `SIG_LEN`.
+/// A key that signs a whole message with an algorithm that draws randomness for each signature:
+/// the role every such key implements, and the only signing role of a scheme that cannot take its
+/// message in pieces.
+///
+/// It is a supertrait of [`SigningKey`]: a key that streams implements it over its own signer
+/// with [`sign_out_with_signer`], and its one-shots return the same bytes as streaming the
+/// message by hand.
+pub trait OneShotSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize> {
+    /// Signs `msg` into `output`, which is zeroized first; returns the number of bytes written,
+    /// always `SIG_LEN`.
     ///
     /// # Errors
-    /// Those of [`create_signer`](Self::create_signer) and of the signer's final step ([`SignatureError::RejectionLimitExceeded`]
-    /// for an algorithm that bounds its rejection loop).
+    /// [`SignatureError::RNGError`] if a draw from `rng` fails, which every hedged algorithm
+    /// makes; [`SignatureError::LengthError`] if `ctx` is longer than the algorithm allows,
+    /// which for an algorithm that takes no context is any non-empty one;
+    /// [`SignatureError::RejectionLimitExceeded`] for an algorithm that bounds its rejection
+    /// loop, and whatever else the algorithm's signing step can fail with.
     fn sign_out(
         &self,
         rng: &mut dyn RNG,
         msg: &[u8],
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        output.fill(0);
-        let mut signer = self.create_signer(rng, ctx)?;
-        signer.do_update(msg);
-        signer.do_final_out(output)
-    }
+    ) -> Result<usize, SignatureError>;
 
-    /// One-shot: the signature of `msg`.
+    /// The signature of `msg`.
     ///
     /// # Errors
     /// As [`sign_out`](Self::sign_out).
@@ -154,8 +169,11 @@ pub trait SigningKey<A: SignatureAlgorithm, const SIG_LEN: usize> {
 }
 
 /// A key that signs with an algorithm that draws nothing per signature: the same signature for
-/// the same key, message and context every time. No method takes an RNG.
-pub trait DeterministicSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize> {
+/// the same key, message and context every time. No method takes an RNG. The one-shots are the
+/// supertrait's.
+pub trait DeterministicSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
+    DeterministicOneShotSigningKey<A, SIG_LEN>
+{
     /// The streaming signer this key produces, borrowing the key for `'k`.
     type Signer<'k>: SignatureSigner<SIG_LEN>
     where
@@ -169,26 +187,27 @@ pub trait DeterministicSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize> {
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError>;
+}
 
-    /// One-shot: signs `msg` into `output`, which is zeroized first; returns the number of bytes
-    /// written, always `SIG_LEN`.
+/// The deterministic form of [`OneShotSigningKey`]: a key that signs a whole message and draws
+/// nothing. It is a supertrait of [`DeterministicSigningKey`]: a key that streams implements it
+/// over its own signer with [`sign_out_with_signer`].
+pub trait DeterministicOneShotSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize> {
+    /// Signs `msg` into `output`, which is zeroized first; returns the number of bytes written,
+    /// always `SIG_LEN`.
     ///
     /// # Errors
-    /// Those of [`create_signer_deterministic`](Self::create_signer_deterministic) and of the
-    /// signer's final step.
+    /// [`SignatureError::LengthError`] if `ctx` is longer than the algorithm allows, which for an
+    /// algorithm that takes no context is any non-empty one, and whatever the algorithm's
+    /// signing step can fail with.
     fn sign_deterministic_out(
         &self,
         msg: &[u8],
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        output.fill(0);
-        let mut signer = self.create_signer_deterministic(ctx)?;
-        signer.do_update(msg);
-        signer.do_final_out(output)
-    }
+    ) -> Result<usize, SignatureError>;
 
-    /// One-shot: the signature of `msg`.
+    /// The signature of `msg`.
     ///
     /// # Errors
     /// As [`sign_deterministic_out`](Self::sign_deterministic_out).
@@ -203,9 +222,12 @@ pub trait DeterministicSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize> {
     }
 }
 
-/// A key that verifies signatures made with `A`. A key may implement this and no signing trait,
-/// which is what a public key is.
-pub trait VerifyingKey<A: SignatureAlgorithm, const SIG_LEN: usize> {
+/// A key that verifies signatures made with `A`, over a message taken as it arrives. A key may
+/// implement this and no signing trait, which is what a public key is. The one-shot is the
+/// supertrait's.
+pub trait VerifyingKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
+    OneShotVerifyingKey<A, SIG_LEN>
+{
     /// The streaming verifier this key produces, borrowing the key for `'k`.
     type Verifier<'k>: SignatureVerifier
     where
@@ -219,17 +241,58 @@ pub trait VerifyingKey<A: SignatureAlgorithm, const SIG_LEN: usize> {
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Verifier<'k>, SignatureError>;
+}
 
-    /// One-shot: checks `sig` over `msg`.
+/// A key that verifies a signature made with `A` over a whole message: the role every verifying
+/// key implements, and the only one of a scheme that needs the signature before it can read the
+/// message. It is a supertrait of [`VerifyingKey`]: a key that streams implements it over its
+/// own verifier with [`verify_with_verifier`].
+pub trait OneShotVerifyingKey<A: SignatureAlgorithm, const SIG_LEN: usize> {
+    /// Checks `sig` over `msg`.
     ///
     /// # Errors
     /// [`SignatureError::SignatureVerificationFailed`] if the signature does not verify;
-    /// [`SignatureError::LengthError`] if `sig` is not `SIG_LEN` bytes or `ctx` is too long.
-    fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
-        let mut verifier = self.create_verifier(ctx)?;
-        verifier.do_update(msg);
-        verifier.do_verify_final(sig)
-    }
+    /// [`SignatureError::LengthError`] if `sig` is not `SIG_LEN` bytes or `ctx` is longer than
+    /// the algorithm allows, which for an algorithm that takes no context is any non-empty one.
+    fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
+}
+
+/// Signs `msg` through `signer` into `output`: the body of [`OneShotSigningKey::sign_out`] and
+/// [`DeterministicOneShotSigningKey::sign_deterministic_out`] for a key with a streaming signer,
+/// which passes the result of its `create_signer` or `create_signer_deterministic` straight in.
+/// The signer must be one nothing has been fed to. Returns the number of bytes written, always
+/// `SIG_LEN`.
+///
+/// `output` is zeroized before anything else, so it holds zeros when `signer` is an error; after
+/// an error from the signer's final it holds what that final left.
+///
+/// # Errors
+/// The error in `signer`, or that of the signer's final.
+pub fn sign_out_with_signer<S: SignatureSigner<SIG_LEN>, const SIG_LEN: usize>(
+    signer: Result<S, SignatureError>,
+    msg: &[u8],
+    output: &mut [u8; SIG_LEN],
+) -> Result<usize, SignatureError> {
+    output.fill(0);
+    let mut signer = signer?;
+    signer.do_update(msg);
+    signer.do_final_out(output)
+}
+
+/// Checks `sig` over `msg` through `verifier`: the body of [`OneShotVerifyingKey::verify`] for a
+/// key with a streaming verifier. The verifier must be one nothing has been fed to.
+///
+/// # Errors
+/// Those of the verifier's final: [`SignatureError::SignatureVerificationFailed`] if the
+/// signature does not verify, [`SignatureError::LengthError`] if `sig` is not the algorithm's
+/// signature length.
+pub fn verify_with_verifier<V: SignatureVerifier>(
+    mut verifier: V,
+    msg: &[u8],
+    sig: &[u8],
+) -> Result<(), SignatureError> {
+    verifier.do_update(msg);
+    verifier.do_verify_final(sig)
 }
 
 /// A [`SigningKey`] whose algorithm can also sign a digest of the message made with a hash the

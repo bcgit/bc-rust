@@ -9,7 +9,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotVerifyingKey, SigningKey, VerifyingKey};
 //! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
@@ -54,7 +54,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::SigningKey;
 //! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
@@ -147,7 +147,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::OneShotVerifyingKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
@@ -194,7 +194,7 @@
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let msg = b"The quick brown fox";
@@ -243,7 +243,7 @@
 //! ```rust
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
 //! use bouncycastle_mldsa::{MLDSA65PublicKeyExpanded, MLDSA65PrivateKeyExpanded};
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::errors::SignatureError;
 //!
@@ -279,7 +279,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::OneShotVerifyingKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
 //! use bouncycastle_hex as hex;
@@ -345,7 +345,7 @@
 //! ```rust
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
 //! use bouncycastle_mldsa::{MLDSA65PublicKeyExpanded, MLDSA65PrivateKeyExpanded};
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::errors::SignatureError;
 //!
@@ -420,7 +420,7 @@
 //!
 //! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
-//! use bouncycastle_core::signature_key::SigningKey;
+//! use bouncycastle_core::signature_key::OneShotSigningKey;
 //! // first, let's generate a signature to verify
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let sig = sk.sign(&mut rng, b"The quick brown fox jumped over the lazy dog", None).unwrap();
@@ -464,7 +464,9 @@ use bouncycastle_core::errors::{KeyMaterialError, RNGError, SignatureError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
-    DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
+    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
+    OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, sign_out_with_signer,
+    verify_with_verifier,
 };
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, FinishToken, Hash, RNG, SignatureSigner, SignatureVerifier, XOF,
@@ -1154,6 +1156,21 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> SigningKey<MLDSA<P>, SIG_LE
     }
 }
 
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotSigningKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPrivateKey<P>
+{
+    fn sign_out(
+        &self,
+        rng: &mut dyn RNG,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer = SigningKey::<MLDSA<P>, SIG_LEN>::create_signer(self, rng, ctx);
+        sign_out_with_signer(signer, msg, output)
+    }
+}
+
 /// FIPS 204 Section 3.4, the deterministic variant: `rnd` is 32 zero bytes, so the signature is a
 /// function of the key and the message alone. See the module docs on `rnd` for what that gives up.
 impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> DeterministicSigningKey<MLDSA<P>, SIG_LEN>
@@ -1169,6 +1186,21 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> DeterministicSigningKey<MLD
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
         new_signer(self, &[0u8; MLDSA_RND_LEN], ctx)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
+    DeterministicOneShotSigningKey<MLDSA<P>, SIG_LEN> for MLDSAPrivateKey<P>
+{
+    fn sign_deterministic_out(
+        &self,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer =
+            DeterministicSigningKey::<MLDSA<P>, SIG_LEN>::create_signer_deterministic(self, ctx);
+        sign_out_with_signer(signer, msg, output)
     }
 }
 
@@ -1191,6 +1223,21 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> SigningKey<MLDSA<P>, SIG_LE
     }
 }
 
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotSigningKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPrivateKeyExpanded<'_, P>
+{
+    fn sign_out(
+        &self,
+        rng: &mut dyn RNG,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer = SigningKey::<MLDSA<P>, SIG_LEN>::create_signer(self, rng, ctx);
+        sign_out_with_signer(signer, msg, output)
+    }
+}
+
 /// FIPS 204 Section 3.4, the deterministic variant: `rnd` is 32 zero bytes, so the signature is a
 /// function of the key and the message alone. See the module docs on `rnd` for what that gives up.
 impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> DeterministicSigningKey<MLDSA<P>, SIG_LEN>
@@ -1206,6 +1253,21 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> DeterministicSigningKey<MLD
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
         new_signer(self, &[0u8; MLDSA_RND_LEN], ctx)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
+    DeterministicOneShotSigningKey<MLDSA<P>, SIG_LEN> for MLDSAPrivateKeyExpanded<'_, P>
+{
+    fn sign_deterministic_out(
+        &self,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer =
+            DeterministicSigningKey::<MLDSA<P>, SIG_LEN>::create_signer_deterministic(self, ctx);
+        sign_out_with_signer(signer, msg, output)
     }
 }
 
@@ -1226,6 +1288,15 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> VerifyingKey<MLDSA<P>, SIG_
     }
 }
 
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotVerifyingKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPublicKey<P>
+{
+    fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
+        let verifier = VerifyingKey::<MLDSA<P>, SIG_LEN>::create_verifier(self, ctx)?;
+        verify_with_verifier(verifier, msg, sig)
+    }
+}
+
 impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> VerifyingKey<MLDSA<P>, SIG_LEN>
     for MLDSAPublicKeyExpanded<'_, P>
 {
@@ -1240,6 +1311,15 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> VerifyingKey<MLDSA<P>, SIG_
     ) -> Result<Self::Verifier<'k>, SignatureError> {
         self.pk.check_filled()?;
         new_verifier(self, ctx)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotVerifyingKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPublicKeyExpanded<'_, P>
+{
+    fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
+        let verifier = VerifyingKey::<MLDSA<P>, SIG_LEN>::create_verifier(self, ctx)?;
+        verify_with_verifier(verifier, msg, sig)
     }
 }
 

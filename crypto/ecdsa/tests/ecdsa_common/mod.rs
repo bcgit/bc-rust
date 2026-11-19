@@ -7,7 +7,9 @@
 
 use bouncycastle_core::errors::{KeyDecodingError, RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{
+    DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
+};
 use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::signature::{
     TestFrameworkSignature, TestFrameworkSignatureKeys,
@@ -83,21 +85,21 @@ where
     let (pk, sk) = keygen_default::<C, H>().unwrap();
     let msg = b"one verifier for both kinds of k";
     let random =
-        SigningKey::<ECDSA<C, H>, SIG_LEN>::sign(&sk, &mut DefaultRNG::default(), msg, None)
+        OneShotSigningKey::<ECDSA<C, H>, SIG_LEN>::sign(&sk, &mut DefaultRNG::default(), msg, None)
             .unwrap();
     let again =
-        SigningKey::<ECDSA<C, H>, SIG_LEN>::sign(&sk, &mut DefaultRNG::default(), msg, None)
+        OneShotSigningKey::<ECDSA<C, H>, SIG_LEN>::sign(&sk, &mut DefaultRNG::default(), msg, None)
             .unwrap();
     assert_ne!(random, again, "Appendix A.3.1's k comes from fresh randomness each call");
     let deterministic =
-        DeterministicSigningKey::<ECDSA<C, H>, SIG_LEN>::sign_deterministic(&sk, msg, None)
+        DeterministicOneShotSigningKey::<ECDSA<C, H>, SIG_LEN>::sign_deterministic(&sk, msg, None)
             .unwrap();
     for sig in [&random, &again, &deterministic] {
-        VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, msg, None, sig).unwrap();
+        OneShotVerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, msg, None, sig).unwrap();
     }
 
     let (other_pk, _) = keygen_default::<C, H>().unwrap();
-    match VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&other_pk, msg, None, &random) {
+    match OneShotVerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&other_pk, msg, None, &random) {
         Err(SignatureError::SignatureVerificationFailed) => {}
         other => panic!("expected SignatureVerificationFailed, got {other:?}"),
     }
@@ -202,22 +204,27 @@ where
 {
     let (pk, sk) = keygen_default::<C, H>().unwrap();
     let msg = b"length-checked, range-checked signature";
-    let sig = SigningKey::<ECDSA<C, H>, SIG_LEN>::sign(&sk, &mut DefaultRNG::default(), msg, None)
-        .unwrap();
-    VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, msg, None, &sig)
+    let sig =
+        OneShotSigningKey::<ECDSA<C, H>, SIG_LEN>::sign(&sk, &mut DefaultRNG::default(), msg, None)
+            .unwrap();
+    OneShotVerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, msg, None, &sig)
         .expect("the untampered signature must verify");
 
     for extra in 1..=3 {
         let mut too_long = sig.to_vec();
         too_long.extend(core::iter::repeat_n(0xAAu8, extra));
-        match VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, msg, None, &too_long) {
+        match OneShotVerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, msg, None, &too_long) {
             Err(SignatureError::LengthError(_)) => {}
             other => panic!("{extra} trailing byte(s) should have failed, got {other:?}"),
         }
     }
     for short in 1..=3 {
-        match VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, msg, None, &sig[..SIG_LEN - short])
-        {
+        match OneShotVerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(
+            &pk,
+            msg,
+            None,
+            &sig[..SIG_LEN - short],
+        ) {
             Err(SignatureError::LengthError(_)) => {}
             other => panic!("{short} byte(s) short should have failed, got {other:?}"),
         }
@@ -228,7 +235,7 @@ where
         for (half, offset) in [("r", 0usize), ("s", SK_LEN)] {
             let mut tampered = sig;
             tampered[offset..offset + SK_LEN].copy_from_slice(&bad);
-            match VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, msg, None, &tampered) {
+            match OneShotVerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, msg, None, &tampered) {
                 Err(SignatureError::SignatureVerificationFailed) => {}
                 other => panic!("{half} = {name} should have been rejected, got {other:?}"),
             }

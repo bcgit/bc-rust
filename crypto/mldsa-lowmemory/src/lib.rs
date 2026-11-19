@@ -140,13 +140,13 @@
 //! ```
 //!
 //! The private key is the seed: signing expands what it needs from the seed as it goes, so
-//! there is no separate expansion step to pay for before [`SigningKey::sign`].
+//! there is no separate expansion step to pay for before [`OneShotSigningKey::sign`].
 //!
 //! ## Generating and Verifying Signatures
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait};
 //!
@@ -237,7 +237,7 @@
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyMaterialTrait;
 #[allow(unused_imports)]
-use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{OneShotSigningKey, VerifyingKey};
 
 mod aux_functions;
 pub mod hash_mldsa;

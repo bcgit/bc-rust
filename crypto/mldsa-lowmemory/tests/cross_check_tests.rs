@@ -4,7 +4,7 @@
 //! signature bytes, and that each crate verifies the other's signatures.
 
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core::signature_key::VerifyingKey;
+use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_mldsa as full;
