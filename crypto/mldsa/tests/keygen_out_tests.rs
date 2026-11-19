@@ -5,8 +5,8 @@ use bouncycastle_core::errors::{KeyMaterialError, RNGError, SignatureError};
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
-    DeterministicPreHashSigningKey, DeterministicSigningKey, PreHashSigningKey,
-    PreHashVerifyingKey, SigningKey, VerifyingKey,
+    DeterministicOneShotSigningKey, DeterministicPreHashSigningKey, DeterministicSigningKey,
+    OneShotVerifyingKey, PreHashSigningKey, PreHashVerifyingKey, SigningKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::FailingRNG;

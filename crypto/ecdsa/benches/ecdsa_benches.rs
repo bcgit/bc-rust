@@ -1,4 +1,6 @@
-use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{
+    DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
+};
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;

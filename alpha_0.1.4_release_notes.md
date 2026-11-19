@@ -113,6 +113,13 @@
   halves no longer carry them. Callers import the new traits; behaviour is unchanged. The bodies over a streaming
   worker are public as `core::symmetric_key::encrypt_detached_inplace` / `decrypt_detached_inplace`, for an AEAD key
   outside `core` to implement the role with.
+* The signature one-shots over a whole message move to roles of their own, `OneShotSigningKey`,
+  `DeterministicOneShotSigningKey` and `OneShotVerifyingKey`, which name no worker type, so a scheme that cannot take
+  its message in pieces can implement them alone. Each is a supertrait of its streaming role (`SigningKey`,
+  `DeterministicSigningKey`, `VerifyingKey`), which keeps only its `create_*` constructor; every key implements the
+  one-shot role over its own worker with `core::signature_key::sign_out_with_signer` / `verify_with_verifier`, which
+  are public for a key outside `core` to do the same. Callers of `sign`, `sign_out`, `sign_deterministic`,
+  `sign_deterministic_out` and `verify` import the new traits; behaviour is unchanged.
 * Workers are finished where they sit, and a worker held as `Box<dyn ..>` can finish its message (#173). Each worker
   trait (`Hash`, the symmetric and AEAD encryptors and decryptors, `MACGenerator` / `MACVerifier`, `SignatureSigner` /
   `SignatureVerifier`) now has one required finishing method on `&mut self` (`finish_into`,
