@@ -132,6 +132,31 @@ impl TestFrameworkSymmetricCipher {
             assert_eq!(pt3, msg, "decrypt must agree with decrypt_out");
         }
 
+        // a worker held as `Box<dyn ..>` streams through the box and finishes through its
+        // `_boxed` final, which consumes the box
+        {
+            let len = self.fixed_message_len.unwrap_or(max_len);
+            let msg = &DUMMY_SEED[..len];
+            let (enc, init_data) = key.create_encryptor(rng).unwrap();
+            let mut enc: Box<dyn SymmetricCipherEncryptor<INIT_DATA_LEN, FINAL_LEN> + '_> =
+                Box::new(enc);
+            let mut ct = vec![0u8; enc.do_encrypt_out_len(len)];
+            let n = enc.do_encrypt_out(msg, &mut ct).unwrap();
+            ct.truncate(n);
+            let (last, last_len) = enc.do_encrypt_final_boxed().unwrap();
+            ct.extend_from_slice(&last[..last_len]);
+            assert_eq!(key.decrypt(&init_data, &ct).unwrap(), msg, "boxed encryptor");
+
+            let mut dec: Box<dyn SymmetricCipherDecryptor<INIT_DATA_LEN, FINAL_LEN> + '_> =
+                Box::new(key.create_decryptor(&init_data));
+            let mut pt = vec![0u8; dec.do_decrypt_out_len(ct.len())];
+            let n = dec.do_decrypt_out(&ct, &mut pt).unwrap();
+            pt.truncate(n);
+            let (last, last_len) = dec.do_decrypt_final_boxed().unwrap();
+            pt.extend_from_slice(&last[..last_len]);
+            assert_eq!(pt, msg, "boxed decryptor");
+        }
+
         // streaming in every chunking agrees with the one-shot
         let len = self.fixed_message_len.unwrap_or(max_len);
         let msg = &DUMMY_SEED[..len];

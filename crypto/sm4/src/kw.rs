@@ -46,9 +46,9 @@ use bouncycastle_cipher::modes::{Kw, Kwp};
 /// wrapping function's scratch is one block on the stack; the data is wrapped and unwrapped in
 /// the caller's buffers.
 #[allow(non_camel_case_types)]
-pub type SM4_KW<'k> = Kw<'k, SM4Internal>;
+pub type SM4_KW<'k, Dir> = Kw<'k, SM4Internal, Dir>;
 
 /// SM4 Key Wrap with Padding: the `Kwp` worker over the SM4 permutation, from an `SM4Key<KWP>`.
 /// See [`SM4_KW`].
 #[allow(non_camel_case_types)]
-pub type SM4_KWP<'k> = Kwp<'k, SM4Internal>;
+pub type SM4_KWP<'k, Dir> = Kwp<'k, SM4Internal, Dir>;

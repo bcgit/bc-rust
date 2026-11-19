@@ -11,7 +11,7 @@ use bouncycastle_core::traits::Algorithm;
 #[allow(unused_imports)]
 use crate::modes::Ctr;
 #[allow(unused_imports)]
-use crate::stream::StreamCipher;
+use crate::stream::{KeyStreamPolicy, StreamCipher};
 // end of imports needed for docs
 
 /// The CTR keystream `Oj = CIPH_K(Tj)` (SP 800-38A Sec 6.5) over any [`BlockPermutation`], with
@@ -126,6 +126,21 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> crate::sealed::Sealed
+    for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
+where
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
+{
+}
+
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> KeyStreamPolicy
+    for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
+where
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
+{
+    const DECRYPT_ONLY: bool = P::DECRYPT_ONLY;
+}
+
 impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> KeyStream<INIT_DATA_LEN, BLOCK_LEN>
     for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
 where
@@ -149,12 +164,6 @@ where
     }
 }
 
-/// The toys the `tests/modes` integration tests use, shared with the unit tests below rather than
-/// copied. Declared here, not inside `mod tests`, so that `#[path]` is relative to this file.
-#[cfg(test)]
-#[path = "../../../tests/modes/common/mod.rs"]
-mod modes_common;
-
 #[cfg(test)]
 mod tests {
     //! Unit tests for [`CtrKeyStream`], which is `pub(crate)` and so cannot be reached from
@@ -162,9 +171,9 @@ mod tests {
     //! the public API" case QUALITY_AND_STYLE.md carves out for a unit test here rather than an
     //! integration test.
 
-    use super::modes_common::{ForwardOnlyToy, TOY_LEN, Toy};
     use super::*;
     use crate::Encrypting;
+    use crate::modes::modes_common::{ForwardOnlyToy, TOY_LEN, Toy};
     use bouncycastle_core::hazmat::KeyExpansion;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
     use bouncycastle_core::traits::StreamCipherEncryptor;

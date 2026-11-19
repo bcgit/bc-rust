@@ -21,18 +21,19 @@
 //! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
 //! messages as needed: `CBC<PKCS7>` for CBC (NIST SP 800-38A Sec 6.2) with PKCS#7 padding, `CFB`
 //! for CFB128 (Sec 6.3), `CFB8` for the `s = 8` segment size, a different and non-interoperable
-//! mode costing one Camellia call per byte, and `CTR` for CTR (Sec 6.5) with a 12-byte nonce and
-//! a 4-byte counter; `GCM` and `CCM<N, T>` for the authenticated modes (NIST SP 800-38D and
-//! 800-38C; RFC 6367 and RFC 5528 define them over Camellia), `CMAC` and `GMAC` for the MACs, and
-//! `KW` for key wrap (NIST SP 800-38F; RFC 3657 defines it over Camellia). The aliases
-//! [`Camellia_CBC_128`], [`Camellia_CFB_128`], [`Camellia_CFB8_128`], [`Camellia_CTR_128`],
-//! [`Camellia_GCM_128`], [`Camellia_CCM_128`], [`Camellia_CMAC_128`], [`Camellia_GMAC_128`],
-//! [`Camellia_KW_128`] and their `_192` / `_256` siblings name the workers the keys hand out.
+//! mode costing one Camellia call per byte, `OFB` for OFB (Sec 6.4), and `CTR` for CTR (Sec 6.5)
+//! with a 12-byte nonce and a 4-byte counter; `GCM` and `CCM<N, T>` for the authenticated modes
+//! (NIST SP 800-38D and 800-38C; RFC 6367 and RFC 5528 define them over Camellia), `CMAC` and
+//! `GMAC` for the MACs, and `KW` for key wrap (NIST SP 800-38F; RFC 3657 defines it over Camellia).
+//! The aliases [`Camellia_CBC_128`], [`Camellia_CFB_128`], [`Camellia_CFB8_128`],
+//! [`Camellia_OFB_128`], [`Camellia_CTR_128`], [`Camellia_GCM_128`], [`Camellia_CCM_128`],
+//! [`Camellia_CMAC_128`], [`Camellia_GMAC_128`], [`Camellia_KW_128`] and their `_192` / `_256`
+//! siblings name the workers the keys hand out.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
-//! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
-//! length with no padding at all; GCM and CCM authenticate as well as encrypt, and are the modes
-//! to prefer. See the `bouncycastle_cipher::modes` crate docs for the comparison.
+//! padding scheme to bridge the difference; the CFB modes, OFB and CTR are stream ciphers and take
+//! any length with no padding at all; GCM and CCM authenticate as well as encrypt, and are the
+//! modes to prefer. See the `bouncycastle_cipher::modes` crate docs for the comparison.
 //!
 //! ```
 //! use bouncycastle_camellia::Camellia256Key;
@@ -293,16 +294,16 @@
 //!   <https://eprint.iacr.org/2009/191.pdf>, as transcribed in `bouncycastle-aes`.
 //! * **The bit-plane transpose** is translated from BearSSL's `aes_ct` by Thomas Pornin (MIT
 //!   licence), as in the AES and SM4 crates.
-//! * Verified against the three vectors of RFC 3713 Appendix A; all 3840 vectors of NTT's
-//!   CRYPTREC test-vector file `t_camellia.txt` (ten keys per key length, 128 single-bit
-//!   plaintexts each), both directions; the nine vectors of `tests/bc_java_tests.rs` (RFC 3713
-//!   and NESSIE); the CBC and CFB128 vectors of OpenSSL's `evpciph_camellia.txt` through the CBC
-//!   and CFB aliases; RFC 5528's nine Camellia-CTR vectors, through a reference built from the
-//!   SP 800-38A Sec 6.5 equations which the CTR keys are then held to (see
-//!   `tests/stream_mode_tests.rs` for why RFC 5528's counter blocks are not ones they produce);
-//!   and the transcription of `CamelliaLightEngine` on thousands of keys and blocks in every lane.
-//!   Project Wycheproof's `camellia_cbc_pkcs5_test.json` runs through the padded CBC keys and
-//!   its `camellia_ccm_test.json` through the `CCM` mode traits over the engines.
+//! * Verified against the three vectors of RFC 3713 Appendix A; all 3840 vectors of NTT's CRYPTREC
+//!   test-vector file `t_camellia.txt` (ten keys per key length, 128 single-bit plaintexts each),
+//!   both directions; the nine vectors of `tests/bc_java_tests.rs` (RFC 3713 and NESSIE); the CBC,
+//!   CFB128 and OFB vectors of OpenSSL's `evpciph_camellia.txt` through the CBC, CFB and OFB
+//!   aliases; RFC 5528's nine Camellia-CTR vectors, through a reference built from the SP 800-38A
+//!   Sec 6.5 equations which the CTR keys are then held to (see `tests/stream_mode_tests.rs` for
+//!   why RFC 5528's counter blocks are not ones they produce); and the transcription of
+//!   `CamelliaLightEngine` on thousands of keys and blocks in every lane. Project Wycheproof's
+//!   `camellia_cbc_pkcs5_test.json` runs through the padded CBC keys and its
+//!   `camellia_ccm_test.json` through the `CCM` mode traits over the engines.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -320,6 +321,7 @@ mod gmac;
 pub mod hazmat;
 mod key;
 mod kw;
+mod ofb;
 mod round;
 mod sbox;
 mod schedule;
@@ -341,6 +343,7 @@ pub use gcm::{Camellia_GCM_128, Camellia_GCM_192, Camellia_GCM_256};
 pub use gmac::{Camellia_GMAC_128, Camellia_GMAC_192, Camellia_GMAC_256};
 pub use key::{Camellia128Key, Camellia192Key, Camellia256Key};
 pub use kw::{Camellia_KW_128, Camellia_KW_192, Camellia_KW_256};
+pub use ofb::{Camellia_OFB_128, Camellia_OFB_192, Camellia_OFB_256};
 pub use schedule::{Camellia128Params, Camellia192Params, Camellia256Params, CamelliaParams};
 
 // Imports needed for docs

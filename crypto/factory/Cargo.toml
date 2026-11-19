@@ -5,11 +5,15 @@ edition.workspace = true
 
 [dependencies]
 bouncycastle-ascon.workspace = true
+bouncycastle-blake2.workspace = true
+bouncycastle-blake3.workspace = true
+bouncycastle-concatkdf.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-hmac.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
 bouncycastle-sm3.workspace = true
+bouncycastle-x963kdf.workspace = true
 bouncycastle-rng.workspace = true
 
 [dev-dependencies]

@@ -216,13 +216,20 @@ impl<P, const DATA_UNIT_LEN: usize> XTSKey<P, DATA_UNIT_LEN> {
 
 impl<P: BlockPermutation<BLOCK_LEN>, const DATA_UNIT_LEN: usize> XTSKey<P, DATA_UNIT_LEN> {
     /// Encrypts one data unit in place under its tweak, and returns the number of bytes written,
-    /// which is always `DATA_UNIT_LEN`: the ciphertext is as long as the plaintext.
+    /// which is always `DATA_UNIT_LEN`: the ciphertext is as long as the plaintext. Over a
+    /// permutation that decrypts only ([`BlockPermutation::DECRYPT_ONLY`]) it does not compile.
     pub fn encrypt_inplace(
         &self,
         tweak: &[u8; XTS_TWEAK_LEN],
         data_unit: &mut [u8; DATA_UNIT_LEN],
     ) -> usize {
         const { Self::DATA_UNIT_LEN_CHECK };
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no data unit may be encrypted over it"
+            )
+        };
         encrypt(&self.key1, &self.key2, tweak, data_unit);
         DATA_UNIT_LEN
     }

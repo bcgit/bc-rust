@@ -218,25 +218,28 @@
 //! The same keys run ML-KEM-512-HKDF-SHA256, ML-KEM-768-HKDF-SHA512 and ML-KEM-1024-HKDF-SHA512
 //! ([`MLKEM512_HKDF_SHA256`], [`MLKEM768_HKDF_SHA512`], [`MLKEM1024_HKDF_SHA512`]), whose shared
 //! secret is HKDF-Hash(salt, 𝐾, info) over the ML-KEM secret 𝐾, of the length the parameters name. The
-//! parameters are a [`KdfParams`]: a borrowed HKDF instance keyed with RFC 5869's salt through
-//! `new_with_salt` (key material of any length but
-//! [`KeyType::Unknown`](bouncycastle_core::key_material::KeyType::Unknown); a zero-length one is
-//! the absent salt), and the info. The KDF type on the parameters selects the algorithm, and each
-//! parameter set is paired with one HKDF, so the wrong one is a compile error.
+//! parameters are a [`KdfParams`]: a borrowed description of the HKDF, its hash and RFC 5869's
+//! salt (`bouncycastle_hkdf::HkdfDescription`; key material of any length but
+//! [`KeyType::Unknown`](bouncycastle_core::key_material::KeyType::Unknown), a zero-length one
+//! being the absent salt), and the info. The description is readable, so a key that cannot run
+//! the derivation itself, one held in a token, can hand it on; a software key builds the HKDF
+//! from it. The KDF type on the parameters selects the algorithm, and each parameter set is
+//! paired with one HKDF, so the wrong one is a compile error.
 //!
 //! ```rust
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mlkem_lowmemory::{KdfParams, KeyLen, MLKEM512, MLKEMTrait};
 //! use bouncycastle_core::kem_key::{EncapsulatingKey, DecapsulatingKey};
 //! use bouncycastle_core::key_material::KeyMaterial;
-//! use bouncycastle_sha2::hkdf::HKDF_SHA256;
+//! use bouncycastle_hkdf::HkdfDescription;
+//! use bouncycastle_sha2::SHA256;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let (pk, sk) = MLKEM512::keygen(&mut rng).unwrap();
 //!
-//! // The KDF and info both parties agree on: HKDF-SHA256 keyed with the salt.
+//! // The KDF and info both parties agree on: HKDF-SHA256 with the salt, as a description.
 //! let salt = KeyMaterial::<32>::from_rng(&mut rng).unwrap();
-//! let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+//! let hkdf = HkdfDescription::<SHA256>::with_salt(&salt).unwrap();
 //! // The parameters name the key's length too: here one SHA-256 output.
 //! let params = KdfParams::new(&hkdf, b"example protocol v1", KeyLen::<32>);
 //!

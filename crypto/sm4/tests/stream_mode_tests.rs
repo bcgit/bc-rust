@@ -1,9 +1,12 @@
 //! The stream modes of operation over SM4: the known-answer tests from draft-ribose-cfrg-sm4-10
-//! Appendix A.2 that cover them, through the `CFB`, `CFB8` and `CTR` keys.
+//! Appendix A.2 that cover them, through the `OFB`, `CFB`, `CFB8` and `CTR` keys.
 //!
-//! Appendix A.2 has an SM4-CFB section (A.2.4) and an SM4-CTR section (A.2.5), and the two are used
-//! differently here because only one of them lines up with the key's parameters:
+//! Appendix A.2 has an SM4-OFB section (A.2.3), an SM4-CFB section (A.2.4) and an SM4-CTR section
+//! (A.2.5); the first two line up with the keys' parameters and the third does not:
 //!
+//! * **A.2.3, SM4-OFB.** Straight known-answer tests through `SM4Key<OFB>`, as for A.2.4 below,
+//!   beside the one `SM4-OFB` entry of OpenSSL's `evpciph_sm4.txt` (OpenSSL 3.6.2), whose key and
+//!   IV are both `0123..10`.
 //! * **A.2.4, SM4-CFB.** Straight known-answer tests through `SM4Key<CFB>`. There is no API for
 //!   supplying an IV, so encryption is driven through the key's `create_encryptor` with a
 //!   [`FixedSeedRNG`] whose stream is the vector's IV, and the test asserts the returned init data
@@ -24,7 +27,7 @@
 //!
 //! All vector values are transcribed from the downloaded text of the draft.
 
-use bouncycastle_cipher::modes::{CFB, CFB8, CTR};
+use bouncycastle_cipher::modes::{CFB, CFB8, CTR, OFB};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -44,7 +47,17 @@ const KEY_2: &str = "fedcba98765432100123456789abcdef";
 /// The IV shared by every A.2 IV-based example.
 const IV: &str = "000102030405060708090a0b0c0d0e0f";
 
-/// The two plaintext blocks shared by the A.2.4 SM4-CFB examples.
+/// A.2.3.1 SM4-OFB Example 1 ciphertext; the plaintext is the A.2.4 one, [`CFB_PT`].
+const OFB_CT_1: &str = "ac3236cb861dd316e6413b4e3c7524b71d01aca2487ca582cbf5463e6698539b";
+/// A.2.3.2 SM4-OFB Example 2 ciphertext.
+const OFB_CT_2: &str = "5dcccd25a84ba16560d7f2658870684933fa16bd5cd9c856cacaa1e101897a97";
+
+/// OpenSSL's `SM4-OFB` entry: key and IV are both this value, and so is each plaintext block.
+const OPENSSL_OFB_KEY_IV_PT: &str = "0123456789abcdeffedcba9876543210";
+/// OpenSSL's `SM4-OFB` ciphertext, two blocks.
+const OPENSSL_OFB_CT: &str = "693d9a535bad5bb1786f53d7253a7056f2075d28b5235f58d50027e4177d2bce";
+
+/// The two plaintext blocks shared by the A.2.3 SM4-OFB and A.2.4 SM4-CFB examples.
 const CFB_PT: &str = "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffffaaaaaaaabbbbbbbb";
 /// A.2.4.1 SM4-CFB Example 1 ciphertext.
 const CFB_CT_1: &str = "ac3236cb861dd316e6413b4e3c7524b769d4c54ed433b9a0346009beb37b2b3f";
@@ -150,6 +163,51 @@ fn a_2_4_1_cfb_example_1() {
 #[test]
 fn a_2_4_2_cfb_example_2() {
     check_cfb("A.2.4.2", KEY_2, CFB_CT_2);
+}
+
+// ---- A.2.3  SM4-OFB, through the alias -------------------------------------------------------
+
+/// One OFB vector through `SM4Key<OFB>`: encrypted under the vector's IV, drawn and supplied, in
+/// one call and in seven-byte pieces, and decrypted back.
+fn check_ofb(section: &str, key_hex: &str, iv: [u8; BLOCK_LEN], pt: &str, expected: &str) {
+    let key = SM4Key::<OFB>::from_key_material(&key_material(key_hex)).expect("a valid key");
+    let pt = bytes(pt);
+    let ct = bytes(expected);
+
+    let (mut enc, got_iv) =
+        key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("encryption init");
+    assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
+    let mut data = pt.clone();
+    enc.do_encrypt_inplace(&mut data).expect("encryption");
+    assert_eq!(data, ct, "{section} encrypt, one call");
+
+    let mut enc = key.create_encryptor_nonce(&iv);
+    let mut data = pt.clone();
+    for chunk in data.chunks_mut(7) {
+        enc.do_encrypt_inplace(chunk).expect("encryption");
+    }
+    assert_eq!(data, ct, "{section} encrypt, supplied IV, seven bytes at a time");
+
+    let mut data = ct.clone();
+    key.decrypt_inplace(&iv, &mut data).expect("decryption");
+    assert_eq!(data, pt, "{section} decrypt");
+}
+
+#[test]
+fn a_2_3_1_ofb_example_1() {
+    check_ofb("A.2.3.1", KEY_1, iv_bytes(), CFB_PT, OFB_CT_1);
+}
+
+#[test]
+fn a_2_3_2_ofb_example_2() {
+    check_ofb("A.2.3.2", KEY_2, iv_bytes(), CFB_PT, OFB_CT_2);
+}
+
+#[test]
+fn openssl_sm4_ofb_vector() {
+    let iv: [u8; BLOCK_LEN] = bytes(OPENSSL_OFB_KEY_IV_PT).try_into().expect("16 bytes");
+    let pt = OPENSSL_OFB_KEY_IV_PT.repeat(2);
+    check_ofb("OpenSSL SM4-OFB", OPENSSL_OFB_KEY_IV_PT, iv, &pt, OPENSSL_OFB_CT);
 }
 
 // ---- A.2.5  SM4-CTR, through a reference built from the equations ------------------------------

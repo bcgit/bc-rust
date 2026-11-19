@@ -4,17 +4,24 @@
 
 * ARIA -- `bouncycastle-aria`, the RFC 5794 block cipher at 128, 192 and 256 bits, constant-time and table-free (the
   S-boxes as bit-sliced Boolean circuits, four blocks at a time), on the key objects as `ARIA128Key<M>` and friends
-  with CBC, CFB, CFB8, CTR, GCM, CCM, CMAC, GMAC, KW and KWP; the `aria*-{cbc,cfb,cfb8,ctr,gcm,ccm,kw,kwp}` CLI
-  commands.
+  with CBC, CFB, CFB8, OFB, CTR, GCM, CCM, CMAC, GMAC, KW and KWP; the
+  `aria*-{cbc,cfb,cfb8,ofb,ctr,gcm,ccm,kw,kwp}` CLI commands.
 * Camellia -- `bouncycastle-camellia`, the RFC 3713 block cipher at 128, 192 and 256 bits, constant-time and table-free
   (the S-box as a bit-sliced Boolean circuit, four blocks at a time), on the key objects as `Camellia128Key<M>` and
-  friends with CBC, CFB, CFB8, CTR, GCM, CCM, CMAC, GMAC and KW; the `camellia*-{cbc,cfb,cfb8,ctr,gcm,ccm,kw}` CLI
-  commands.
+  friends with CBC, CFB, CFB8, OFB, CTR, GCM, CCM, CMAC, GMAC and KW; the
+  `camellia*-{cbc,cfb,cfb8,ofb,ctr,gcm,ccm,kw}` CLI commands.
 * SM4 -- `bouncycastle-sm4`, the GB/T 32907-2016 block cipher (draft-ribose-cfrg-sm4-10), constant-time and
   table-free (the S-box as a bit-sliced Boolean circuit, four blocks at a time), on the key object `SM4Key<M>` with
-  CBC, CFB, CFB8, CTR, GCM and CCM (RFC 8998's AEAD_SM4_GCM and AEAD_SM4_CCM), KW and KWP; the
-  `sm4-{cbc,cfb,cfb8,ctr,gcm,ccm,kw,kwp}` CLI commands.
+  CBC, CFB, CFB8, OFB, CTR, GCM and CCM (RFC 8998's AEAD_SM4_GCM and AEAD_SM4_CCM), KW and KWP; the
+  `sm4-{cbc,cfb,cfb8,ofb,ctr,gcm,ccm,kw,kwp}` CLI commands.
 * CHACHA20 -- ChaCha20, Poly1305 and ChaCha20-Poly1305 (RFC 8439).
+* TDES -- three-key TDEA (NIST SP 800-67 Rev 2) as a constant-time, table-free bit-sliced engine under `hazmat`,
+  with ECB, CBC, CFB64, CFB8, OFB and CTR (SP 800-38A Appendix E) and TDEA Key Wrap (SP 800-38F TKW) through the key
+  role traits; two-key TDEA decrypts, unwraps and verifies CMAC tags only, which `BlockPermutation::DECRYPT_ONLY`
+  makes a compile error for every encrypting, wrapping and tag-generating route (CMAC over TDEA is reached through
+  the generic `BlockCipherKey`, not `TDESKey`); the `tdes-*` and `tdes2-*` CLI commands, whose `encrypt` refuses input past
+  SP 800-67 Rev 2 Sec 3.4's 2^20 blocks counted as the blocks TDEA processes (8 MiB; 1 MiB for CFB8, 699,048
+  bytes for TKW).
 * AES Key Wrap -- AES_KW and AES_KWP (NIST SP 800-38F; RFC 3394 / RFC 5649) over any 128-bit block permutation,
   with the `KeyWrapper` / `KeyUnwrapper` core traits and the `aes*-kw` / `aes*-kwp` CLI commands.
 * AES-XTS -- XTS-AES-128 and XTS-AES-256 (NIST SP 800-38E; IEEE Std 1619-2007) for storage, as `XTS_AES_128<N>` /
@@ -30,6 +37,15 @@
 
 ## Minor features / bug fixes
 
+* OFB (NIST SP 800-38A Sec 6.4) over any block permutation, as `bouncycastle_cipher::modes::OFB` / `Ofb`, a keystream
+  under `StreamCipher`; the `AES_OFB_*`, `ARIA_OFB_*`, `Camellia_OFB_*`, `SM4_OFB`, `TDES_OFB` and `TDES2_OFB` aliases,
+  `ModeNames::OFB_ALG_NAME`, and the `aes*-ofb`, `aria*-ofb`, `camellia*-ofb`, `sm4-ofb`, `tdes-ofb` and `tdes2-ofb`
+  CLI commands.
+* The key-wrap workers `Kw`, `Kwp` and `Tkw` carry their direction in the type, as the cipher modes do:
+  `KeyWrapper` is implemented for the encrypting worker only, so an unwrapper has no wrapping method and a
+  permutation that decrypts only is refused a wrapper at compile time by every route. The `AES_KW_*`, `AES_KWP_*`,
+  `ARIA_KW_*`, `ARIA_KWP_*`, `Camellia_KW_*`, `SM4_KW`, `SM4_KWP` and `TDES_TKW` aliases gain the `Dir` parameter;
+  `TDES2_TKW` is the decrypting one.
 * `bouncycastle_utils::bitslice` holds what the bit-sliced ciphers share: the `PlaneWord` trait, the byte-lane
   transpose `ortho`, and the non-linear section of the Boyar-Peralta AES S-box circuit as `gf256_inverse_nonlinear`,
   which the AES, ARIA, Camellia and SM4 S-boxes all call instead of carrying their own copies.
@@ -47,6 +63,14 @@
   so an instantiation is `HKDF<SHA256>`. The SHA-3 family's suspended states are 10 bytes shorter than before
   (SHA-3 and SHAKE 405, cSHAKE 406, KMAC and TupleHash 414, ParallelHashXOF 832, ParallelHash 840), the KDF
   bookkeeping having left the sponge; a state suspended by an earlier build does not resume.
+* A worker held as `Box<dyn ..>` can finish its message (#173): each required consuming final has a `_boxed` twin
+  taking `self: Box<Self>` (`do_encrypt_final_boxed`, `do_decrypt_final_boxed`, `do_encrypt_final_detached_out_boxed`,
+  `do_decrypt_final_detached_out_boxed`, `do_final_out_boxed` on hashes, MAC generators and signers,
+  `do_verify_final_boxed` on MAC and signature verifiers), on a `*Boxed` supertrait of the worker trait that is
+  implemented for every implementor, so no worker type changes and a second final still does not compile. Not
+  covered: a hash's `Vec` and partial-bits finals and `XOF::into_squeezer`, which stay with the concrete value. The
+  twin moves the worker out of its box, so the freed heap block is not wiped, as the vacated stack slot of a
+  by-value final is not.
 * KEM encapsulation and decapsulation move onto the keys, as signing did: the `EncapsulatingKey` /
   `DecapsulatingKey` roles in `core::kem_key` hand out `KEMEncapsulator` / `KEMDecapsulator` workers that
   borrow the key, implemented per algorithm over the parameters a worker is made from (`()` for ML-KEM, a
@@ -70,6 +94,22 @@
   32-byte secret seeds HKDF-SHA512 as it does HKDF-SHA256. The `hkdf-*` CLI subcommands type their salt as
   RFC 5869's non-secret random value, as the `mlkem*-hkdf-*` ones do; `--secret-salt` marks it as the secret salt
   of SP 800-56C Rev. 2 Section 5.1, which HKDF credits.
+* The KDF of a KEM or key-agreement pairing is described, not instantiated: `core::kdf_params::KdfParams<D, LEN>`
+  borrows a `KdfDescription`, what the KDF is made from as readable fields and the `Engine` it builds, so that a
+  key held where the shared secret must not leave (a token, an HSM) can read the KDF's identity and parameters and
+  hand the device the same derivation, where a software key builds the engine for each derivation. HKDF's is
+  `bouncycastle_hkdf::HkdfDescription<'s, H>`, the hash and RFC 5869's salt (`with_salt`, `new` for the absent one,
+  `salt()` to read it back; a salt typed `Unknown` is refused where the description is made); the X9.63 and
+  concatenation KDFs, made from nothing but their hash, describe themselves, so `X963KDF<H>` and `ConcatKDF<H>`
+  serve as before. The ML-KEM pairings are over `KdfParams<'p, HkdfDescription<'s, SHA256>, LEN>` and siblings,
+  the ECC CDH HKDF pairing likewise; an HKDF instance that absorbed input through the streaming API, which the
+  pairings refused at the derivation, can no longer reach one. `bouncycastle-eccdh`'s `token_key_tests` is the
+  shape: a key that holds no material, agreeing through the same parameters as the software key by reading them.
+  `KDFFactory` has no description form yet, so a derivation chosen at run time is still built by hand. Mutants on
+  apollo: core `kdf_params.rs` 5 (3 caught, 2 unviable), hkdf 133 (89 caught, 43 unviable, 1 missed, the
+  description's `Clone`, closed by a test), mlkem-common `kdf.rs` 12 (4 caught, 7 unviable, 1 missed, `derive`'s
+  defensive length check), eccdh `kdf.rs` and `eccdh.rs` 39 (10 caught, 21 unviable, 8 missed: `x963_max_len`'s
+  const-only arithmetic and `derive`'s defensive check, as before).
 * The MAC worker trait splits in two, as the signature and cipher workers are: `MACGenerator<MAC_LEN>`
   (`do_update`, `do_final_out` into a `[u8; MAC_LEN]`, `do_final`) and `MACVerifier<MAC_LEN>` (`do_update`,
   `do_verify_final(&[u8; MAC_LEN]) -> Result<(), MACError>`) replace `MAC`, whose finals and key-era one-shots
@@ -95,7 +135,7 @@
 * Every encrypting key takes a caller-supplied IV or nonce as the AEAD keys already did:
   `SymmetricEncryptionKey` and `BlockEncryptionKey` gain `create_encryptor_nonce` and the `encrypt_nonce_out` /
   `encrypt_nonce` / `encrypt_inplace_nonce` one-shots, `SymmetricEncryptMode` and `BlockEncryptMode` the
-  `encrypt_init_nonce` constructor, implemented by CBC, CFB, CFB8, CTR, padded ECB and `ChaCha20Key`. The drawing
+  `encrypt_init_nonce` constructor, implemented by CBC, CFB, CFB8, OFB, CTR, padded ECB and `ChaCha20Key`. The drawing
   forms remain the default; the caller of a `_nonce` form takes on the obligation they discharge (SP 800-38A
   Appendix C's unpredictable IV for CBC and CFB, Appendix B's unique counter blocks for CTR, RFC 8439 Sec 2.4's
   never-repeated nonce for ChaCha20). The known-answer suites pin their IVs through the new forms instead of a
@@ -113,4 +153,45 @@
   standard describes: SP 800-56C Rev. 2 Section 4.1's one-step KDF puts a counter before `Z || FixedInfo` and
   admits the SHA-3 hashes and KMAC as its function, and SHAKE not at all. HKDF over SHA-3 remains as
   `HKDF<SHA3_256>` and its siblings, written out; there is no alias or factory entry for it.
+* Two-party key agreement gets the same shape ahead of the ECC CDH crate: the `AgreementKey` role in
+  `core::agreement_key`, `AgreementKey<Params, SS_LEN>` with `()` the raw primitive's parameters and a KDF's
+  `KdfParams` a KDF-bearing variant's, hands out a
+  `KeyAgreement` worker whose `agree_out(&peer_pk, &mut z)` writes `Z` into the caller's buffer as
+  `KeyType::SharedSecret`, zeroized first, with `agree(&peer_pk)` provided over it on the worker and the key; `KeyAgreementError` and
+  the encodable `KeyAgreementPrivateKey` / `KeyAgreementPublicKey` traits go with it.
+* `bouncycastle-eccdh`: ECC CDH (SP 800-56A Rev. 3 Section 5.7.1.2) over P-256, P-384, P-521, secp256k1,
+  brainpoolP256r1, brainpoolP384r1 and brainpoolP512r1, with its own key types per curve (full public-key
+  validation at decode, key generation by extra random bits), the markers `ECCDHP256` and friends on the
+  `AgreementKey` role over `()`, and `ECCDHP256_HKDF_SHA256` over `KdfParams<HKDF_SHA256, LEN>` on the P-256 keys;
+  tested against the CAVP ECC CDH primitive vectors, RFC 7027 Appendix A and the Wycheproof ECDH sets.
+* `bouncycastle-x963kdf`: the ANSI X9.63 KDF of SEC 1 v2 Section 3.6.1 over SHA-224, SHA-256, SHA-384 and
+  SHA-512, on the `KDF` trait and in `KDFFactory` (`X963KDF-SHA256` and so on) and as the `x963kdf-sha*` CLI
+  subcommands, checked against the CAVP ANS X9.63-2001 component vectors; `KdfParams<X963KDF_SHA256, LEN>` and its
+  siblings, the KDF instance, `SharedInfo` and `keydatalen`, are the parameters of the ECC CDH keys' second agreement role, SEC 1 Section 6.1's ECDH scheme
+  (`ECCDHP256_X963KDF_SHA256`, `ECCDHP384_X963KDF_SHA384`, `ECCDHP521_X963KDF_SHA512` and the rest).
+* `bouncycastle-concatkdf`: the NIST concatenation KDF, SP 800-56C Rev. 2 Section 4.1's one-step KDF with
+  `H(x) = hash(x)`, over SHA-2 and SHA-3 (`ConcatKDF_SHA256` and so on) on the `KDF` trait and in `KDFFactory`
+  (`ConcatKDF-SHA256` and so on) and as the `concatkdf-sha*` CLI subcommands, checked against the ACVP KDA OneStep
+  SP800-56Cr2 vectors; `KdfParams<ConcatKDF_SHA256, LEN>` and its siblings are a third KDF role on the ECC CDH keys,
+  SP 800-56A Rev. 3 Section 5.8's one-step derivation (`ECCDHP256_ConcatKDF_SHA256` and the rest).
+* `bouncycastle-ec` gains one marker type per curve at its root (`P256`, `P384`, `P521`, `Secp256K1`, `Bp256r1`,
+  `Bp384r1`, `Bp512r1`) and `curve::Curve`, implemented by the markers, which names a curve's arithmetic types
+  and routes to its `hazmat` functions, so a role crate is written once over `C: Curve`; the signature and
+  key-agreement crates hang their key pairs on the markers (`P256::generate_signature_key_pair::<SHA256>(&mut rng)`,
+  `P256::generate_agreement_key_pair(&mut rng)`). `bouncycastle-utils` gains `const_str::ConstStr`, a string
+  concatenated at compile time, for algorithm names built from type parameters.
+* `bouncycastle-eccdh` is one implementation over `Curve`: the algorithm is `ECCDH<C>` and the keys
+  `ECCDHPublicKey<C>` / `ECCDHPrivateKey<C>` for a marker `C`, `keys::keygen::<C>`, and the KDF pairings are
+  `ECCDH_X963KDF<C, H>` and `ECCDH_ConcatKDF<C, H>` over the hash matched to the curve (`eccdh::MatchedHash`)
+  and `ECCDH_HKDF_SHA256<C>` on P-256. The per-curve modules and markers (`ECCDHP256`, `keys_p256` and the
+  rest) go; the algorithm names, encodings, strengths and test vectors are unchanged.
+* `bouncycastle-ecdsa` is one implementation over `Curve` and the hash: the algorithm is `ECDSA<C, H>` for a
+  marker `C` and any `ecdsa::EcdsaHash` hash `H` (SHA-2, SHA-3, SM3), named `ECDSA-P256-SHA256` and so on, at the lesser
+  of the curve's and the hash's strength; the keys `ECDSAPublicKey<C, H>` / `ECDSAPrivateKey<C, H>` carry the
+  pairing in full, with no default hash, and re-pair with `with_hash`; the conventional pairings keep their names as aliases (`ECDSAP256 = ECDSA<P256, SHA256>`). The
+  per-curve modules (`ecdsa_p256`, `keys_p256`, `rfc6979_p256` and the rest) go; RFC 6979 is implemented once in
+  its general form. The algorithm names change from `ECDSA-P256` to `ECDSA-P256-SHA256` (and `ECDetDSA-` likewise);
+  encodings and the default pairings' outputs are unchanged. The tests now cover the CAVP SigGen and SigVer matrix
+  for P-256, P-384 and P-521 under SHA-224 to SHA-512, RFC 6979's appendix under the same hashes, and every
+  Wycheproof ECDSA file for these curves, SHA-3 included.
 

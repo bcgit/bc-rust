@@ -24,6 +24,7 @@
 //! * [`AES_GCM_128`]
 //! * [`AES_GMAC_128`], a nonce-based MAC rather than a cipher
 //! * [`AES_KW_128`] and [`AES_KWP_128`], key wraps rather than ciphers
+//! * [`AES_OFB_128`]
 //! * [`XTS_AES_128`], for storage: one data unit at a time, in place, under a tweak
 //!
 //! Each mode is used through a mode-bound key object such as [`AES256Key<GCM>`](AES256Key),
@@ -74,8 +75,9 @@
 //! single-block encryption is about 240 us per 16 KiB and decryption about 330 us. That multiplier
 //! is what the modes of operation batch through wherever their blocks are independent: both
 //! directions of ECB, CTR (and so GCM's CTR half) and XTS, and the decryption direction of CBC,
-//! CFB and CFB8. CBC and CFB *encryption* cannot, because each forward cipher input depends on
-//! the previous output (SP 800-38A Sec 6.2 and 6.3), so those two paths run one block at a time.
+//! CFB and CFB8. CBC and CFB *encryption*, and OFB in both directions, cannot, because each
+//! forward cipher input depends on the previous output (SP 800-38A Sec 6.2, 6.3 and 6.4), so those
+//! paths run one block at a time.
 //!
 //! SHIFTROWS() and MIXCOLUMNS() become masks and rotations in the same representation, and the
 //! key schedule is stored bit-sliced too, so no transposition happens inside the round loop. The
@@ -196,6 +198,7 @@ mod gmac;
 pub mod hazmat;
 mod key;
 mod kw;
+mod ofb;
 mod round;
 mod sbox;
 mod schedule;
@@ -287,4 +290,5 @@ pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256, GCM_NONCE_LEN};
 pub use gmac::{AES_GMAC_128, AES_GMAC_192, AES_GMAC_256};
 pub use key::{AES128Key, AES192Key, AES256Key};
 pub use kw::{AES_KW_128, AES_KW_192, AES_KW_256, AES_KWP_128, AES_KWP_192, AES_KWP_256};
+pub use ofb::{AES_OFB_128, AES_OFB_192, AES_OFB_256};
 pub use xts::{XTS_AES_128, XTS_AES_256};

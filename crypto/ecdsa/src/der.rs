@@ -1,6 +1,6 @@
 //! Minimal DER encode/decode for `Ecdsa-Sig-Value ::= SEQUENCE { r INTEGER, s INTEGER }` (RFC 3279
 //! §2.2.3), as an alternative to this crate's native raw `r || s` signature encoding (see e.g.
-//! [`crate::ecdsa_p256::SIG_LEN`]'s docs on why raw was chosen as the default). This handles
+//! [`crate::ecdsa::ECDSA`]'s docs). This handles
 //! exactly two ASN.1 types -- `INTEGER` (universal tag `0x02`) and constructed `SEQUENCE`
 //! (universal tag `0x30`) -- which is all `Ecdsa-Sig-Value` ever needs, so there is no general
 //! ASN.1/BER/DER crate here, just this.

@@ -300,8 +300,8 @@ impl BlockPermutation<BLOCK_LEN> for ARIA256Internal {
     }
 }
 
-// RFC 5794 Appendix B assigns object identifiers to ARIA in ECB, CBC, CFB (whose parameters
-// carry the segment size, so CFB8 is `id-aria*-cfb` with `k = 8`), CTR, CMAC, GCM and CCM, among
+// RFC 5794 Appendix B assigns object identifiers to ARIA in ECB, CBC, CFB (whose parameters carry
+// the segment size, so CFB8 is `id-aria*-cfb` with `k = 8`), OFB, CTR, CMAC, GCM and CCM, among
 // others; GMAC has none, and is named here only because the trait asks for every mode.
 impl ModeNames for ARIA128Internal {
     const CBC_ALG_NAME: &'static str = "ARIA_CBC_128";
@@ -315,6 +315,7 @@ impl ModeNames for ARIA128Internal {
     const GMAC_ALG_NAME: &'static str = "ARIA_GMAC_128";
     const KW_ALG_NAME: &'static str = "ARIA_KW_128";
     const KWP_ALG_NAME: &'static str = "ARIA_KWP_128";
+    const OFB_ALG_NAME: &'static str = "ARIA_OFB_128";
 }
 
 impl ModeNames for ARIA192Internal {
@@ -329,6 +330,7 @@ impl ModeNames for ARIA192Internal {
     const GMAC_ALG_NAME: &'static str = "ARIA_GMAC_192";
     const KW_ALG_NAME: &'static str = "ARIA_KW_192";
     const KWP_ALG_NAME: &'static str = "ARIA_KWP_192";
+    const OFB_ALG_NAME: &'static str = "ARIA_OFB_192";
 }
 
 impl ModeNames for ARIA256Internal {
@@ -343,6 +345,7 @@ impl ModeNames for ARIA256Internal {
     const GMAC_ALG_NAME: &'static str = "ARIA_GMAC_256";
     const KW_ALG_NAME: &'static str = "ARIA_KW_256";
     const KWP_ALG_NAME: &'static str = "ARIA_KWP_256";
+    const OFB_ALG_NAME: &'static str = "ARIA_OFB_256";
 }
 
 impl<P: ARIAParams> core::fmt::Debug for ARIAInternal<P> {

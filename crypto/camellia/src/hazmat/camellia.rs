@@ -319,6 +319,7 @@ impl ModeNames for Camellia128Internal {
     const GMAC_ALG_NAME: &'static str = "Camellia_GMAC_128";
     const KW_ALG_NAME: &'static str = "Camellia_KW_128";
     const KWP_ALG_NAME: &'static str = "Camellia_KWP_128";
+    const OFB_ALG_NAME: &'static str = "Camellia_OFB_128";
 }
 
 impl ModeNames for Camellia192Internal {
@@ -333,6 +334,7 @@ impl ModeNames for Camellia192Internal {
     const GMAC_ALG_NAME: &'static str = "Camellia_GMAC_192";
     const KW_ALG_NAME: &'static str = "Camellia_KW_192";
     const KWP_ALG_NAME: &'static str = "Camellia_KWP_192";
+    const OFB_ALG_NAME: &'static str = "Camellia_OFB_192";
 }
 
 impl ModeNames for Camellia256Internal {
@@ -347,6 +349,7 @@ impl ModeNames for Camellia256Internal {
     const GMAC_ALG_NAME: &'static str = "Camellia_GMAC_256";
     const KW_ALG_NAME: &'static str = "Camellia_KW_256";
     const KWP_ALG_NAME: &'static str = "Camellia_KWP_256";
+    const OFB_ALG_NAME: &'static str = "Camellia_OFB_256";
 }
 
 impl<P: CamelliaParams> core::fmt::Debug for CamelliaInternal<P> {

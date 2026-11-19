@@ -52,12 +52,18 @@ mod sealed {
 pub trait Direction: sealed::Sealed {
     /// `Enc` for [`Encrypting`], `Dec` for [`Decrypting`].
     type Select<Enc, Dec>;
+
+    /// `true` for [`Encrypting`]: the direction a permutation that decrypts only
+    /// (`BlockPermutation::DECRYPT_ONLY`) refuses, at compile time, however the worker is made.
+    const IS_ENCRYPTING: bool;
 }
 
 impl Direction for Encrypting {
     type Select<Enc, Dec> = Enc;
+    const IS_ENCRYPTING: bool = true;
 }
 
 impl Direction for Decrypting {
     type Select<Enc, Dec> = Dec;
+    const IS_ENCRYPTING: bool = false;
 }

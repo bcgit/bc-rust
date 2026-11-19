@@ -2,7 +2,7 @@
 mod hkdf_tests {
     use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError};
     use bouncycastle_core::hazmat::do_hazardous_operations;
-    use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
+    use bouncycastle_core::kdf_params::{KdfDescription, KdfParams, KeyLen};
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512,
         KeyMaterialTrait, KeyType,
@@ -15,7 +15,7 @@ mod hkdf_tests {
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_hex as hex;
-    use bouncycastle_hkdf::HKDF;
+    use bouncycastle_hkdf::{HKDF, HkdfDescription};
     use bouncycastle_hmac::hazmat as hmac_hazmat;
     use bouncycastle_hmac::{HMACParams, HmacKey};
     use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA512, HKDF_SHA512_NAME};
@@ -530,34 +530,55 @@ mod hkdf_tests {
         assert_eq!(salt_only.security_strength(), SecurityStrength::None);
     }
 
-    /// `KdfParams` borrows the KDF instance and the info: a derivation through it is the
-    /// instance's (its salt, a zero-length one being the absent salt), and the value is `Copy`.
+    /// `KdfParams` borrows the KDF's description and the info: the description names the salt
+    /// (readable, a zero-length one being the absent salt), its engine is an instance keyed with
+    /// it, a derivation through that is `extract_and_expand` with the salt, and the value is
+    /// `Copy`.
     #[test]
-    fn kdf_params_carry_the_kdf_and_info() {
+    fn kdf_params_carry_the_description_and_info() {
         let salt =
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..13], KeyType::CryptographicRandom)
                 .unwrap();
         let ikm = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::Seed).unwrap();
-        let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+        let hkdf = HkdfDescription::<SHA256>::with_salt(&salt).unwrap();
+        assert_eq!(hkdf.salt().unwrap().ref_to_bytes(), salt.ref_to_bytes());
+        assert_eq!(hkdf.alg_name(), HKDF_SHA256_NAME);
         let params = KdfParams::new(&hkdf, b"info", KeyLen::<32>);
         let copy = params;
         assert_eq!(params.info(), b"info");
-        let via_params = params.kdf().derive_key(&ikm, copy.info(), 32).unwrap();
+        let via_params = params.kdf().engine().unwrap().derive_key(&ikm, copy.info(), 32).unwrap();
         let mut direct = KeyMaterial256::new();
         HKDF_SHA256::extract_and_expand_out(&salt, &ikm, b"info", 32, &mut direct).unwrap();
         assert!(via_params.equals(&direct));
 
+        // the absent salt, as `new` and as a zero-length `with_salt`
         let absent = KeyMaterial0::new();
-        let no_salt = HKDF_SHA256::new_with_salt(&absent).unwrap();
-        let params = KdfParams::new(&no_salt, b"", KeyLen::<32>);
-        let via_params = params.kdf().derive_key(&ikm, params.info(), 32).unwrap();
-        let mut direct = KeyMaterial256::new();
-        HKDF_SHA256::extract_and_expand_out(&absent, &ikm, b"", 32, &mut direct).unwrap();
-        assert!(via_params.equals(&direct));
+        for no_salt in
+            [HkdfDescription::<SHA256>::new(), HkdfDescription::with_salt(&absent).unwrap()]
+        {
+            let params = KdfParams::new(&no_salt, b"", KeyLen::<32>);
+            let via_params =
+                params.kdf().engine().unwrap().derive_key(&ikm, params.info(), 32).unwrap();
+            let mut direct = KeyMaterial256::new();
+            HKDF_SHA256::extract_and_expand_out(&absent, &ikm, b"", 32, &mut direct).unwrap();
+            assert!(via_params.equals(&direct));
+        }
+        assert!(HkdfDescription::<SHA256>::new().salt().is_none());
 
-        // what an instance refuses is refused before any parameters exist
+        // a copy of a description is the same description: the salt comes with it
+        let copied = hkdf;
+        assert_eq!(copied.salt().unwrap().ref_to_bytes(), salt.ref_to_bytes());
+        #[allow(clippy::clone_on_copy)]
+        let cloned = hkdf.clone();
+        assert_eq!(cloned.salt().unwrap().ref_to_bytes(), salt.ref_to_bytes());
+
+        // what the engine would refuse is refused before any parameters exist
         let unknown =
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Unknown).unwrap();
+        assert!(matches!(
+            HkdfDescription::<SHA256>::with_salt(&unknown),
+            Err(KeyMaterialError::InvalidKeyType(_))
+        ));
         assert!(HKDF_SHA256::new_with_salt(&unknown).is_err());
     }
 

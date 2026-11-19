@@ -24,6 +24,7 @@
 //! wycheproof's `ecdsa_secp384r1` suite found a product that sets it. `p256k1_field_tests.rs`
 //! constructs and pins a product that sets it on this curve.
 
+use crate::curve::FieldElement;
 use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
@@ -65,6 +66,12 @@ impl P256K1FieldElement {
     /// Returns the canonical little-endian `u64` limbs, `< p`.
     pub fn to_limbs(&self) -> [u64; 4] {
         self.0
+    }
+
+    /// [`Self::to_limbs`] into `out`: for a secret value, so that no copy of it is staged in a
+    /// return slot.
+    pub fn to_limbs_into(&self, out: &mut [u64; 4]) {
+        out.copy_from_slice(&self.0);
     }
 
     /// The limbs exactly as this type stores them: the canonical value itself, so this is
@@ -335,4 +342,54 @@ fn reduce(t: &[u64; 8]) -> [u64; 4] {
     let mut result = [0u64; 4];
     ct::conditional_select(Condition::<u64>::from_lsb(borrow), &folded, &diff, &mut result);
     result
+}
+
+impl FieldElement for P256K1FieldElement {
+    type Limbs = [u64; 4];
+    const ZERO: Self = P256K1FieldElement::ZERO;
+    const ONE: Self = P256K1FieldElement::ONE;
+
+    fn from_limbs(limbs: [u64; 4]) -> Self {
+        P256K1FieldElement::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 4] {
+        P256K1FieldElement::to_limbs(self)
+    }
+
+    fn to_limbs_into(&self, out: &mut [u64; 4]) {
+        P256K1FieldElement::to_limbs_into(self, out)
+    }
+
+    fn is_zero(&self) -> Condition<u64> {
+        P256K1FieldElement::is_zero(self)
+    }
+
+    fn zeroize(&mut self) {
+        P256K1FieldElement::zeroize(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        P256K1FieldElement::add(self, other)
+    }
+
+    fn sub(&self, other: &Self) -> Self {
+        P256K1FieldElement::sub(self, other)
+    }
+
+    fn negate(&self) -> Self {
+        P256K1FieldElement::negate(self)
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        P256K1FieldElement::mul(self, other)
+    }
+
+    fn square(&self) -> Self {
+        P256K1FieldElement::square(self)
+    }
+
+    fn invert(&self) -> Self {
+        P256K1FieldElement::invert(self)
+    }
 }

@@ -93,6 +93,25 @@ impl TestFrameworkSignature {
         dyn_verifier.do_update(MSG);
         verifier.do_verify_final(&sig_dyn).unwrap();
 
+        // and, held as `Box<dyn ..>`, finished through their `_boxed` finals
+        let mut boxed_signer: Box<dyn SignatureSigner<SIG_LEN> + '_> =
+            Box::new(sk.create_signer(&mut rng, None).unwrap());
+        boxed_signer.do_update(MSG);
+        let mut sig_boxed = [0u8; SIG_LEN];
+        assert_eq!(boxed_signer.do_final_out_boxed(&mut sig_boxed).unwrap(), SIG_LEN);
+        pk.verify(MSG, None, &sig_boxed).unwrap();
+        let boxed_verifier = |msg: &[u8]| {
+            let mut verifier: Box<dyn SignatureVerifier + '_> =
+                Box::new(pk.create_verifier(None).unwrap());
+            verifier.do_update(msg);
+            verifier
+        };
+        boxed_verifier(MSG).do_verify_final_boxed(&sig_boxed).unwrap();
+        assert!(matches!(
+            boxed_verifier(b"this is the wrong message").do_verify_final_boxed(&sig_boxed),
+            Err(SignatureError::SignatureVerificationFailed)
+        ));
+
         // streaming verifier, in one chunk and in many
         let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
         assert_eq!(verifier.alg_name(), A::ALG_NAME);

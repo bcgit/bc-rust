@@ -1,6 +1,6 @@
-//! Known-answer tests for the stream modes of operation over Camellia: CFB128 from OpenSSL's
-//! vector file, CTR from RFC 5528, and CFB8 from the SP 800-38A equations for want of anything
-//! published.
+//! Known-answer tests for the stream modes of operation over Camellia: CFB128 and OFB from
+//! OpenSSL's vector file, CTR from RFC 5528, and CFB8 from the SP 800-38A equations for want of
+//! anything published.
 //!
 //! RFC 3713 has no mode vectors at all (Sec 3 only assigns the `id-camellia*-cbc` identifiers), so
 //! each mode is pinned against the best published source there is, and each source needs a
@@ -12,6 +12,13 @@
 //!   so they form one four-block CFB128 message under the IV `000102..0f`, which is what is checked
 //!   here through `Camellia128Key<CFB>` and its siblings. The plaintext blocks and the keys are
 //!   NIST SP 800-38A Appendix F's.
+//! * **OFB.** The `CAMELLIA-*-OFB` entries of the same OpenSSL file. Unlike the CFB ones they do
+//!   **not** chain: the IV of each key length's second, third and fourth entry is AES's SP 800-38A
+//!   F.4 `Output Block` 1, 2 and 3, not Camellia's, so the twelve entries are twelve one-block OFB
+//!   messages, `C = P XOR CIPH_K(IV)`, and are checked as such (with each entry's `NextIV`, which
+//!   is that message's `O1`). Do not "fix" them into a four-block message. The multi-block path is
+//!   then pinned as CTR's is: [`reference_ofb`], from the Sec 6.4 equations, is held to the
+//!   single-block vectors, and the `OFB` keys to the reference.
 //! * **CTR.** RFC 5528's nine Camellia-CTR test vectors (Sec 4.1). Its counter block is a 4-octet
 //!   nonce, an 8-octet IV and a 4-octet block counter **starting at one**, where `Ctr` here takes a
 //!   12-byte nonce and a counter starting at zero, so the published counter blocks are one step
@@ -35,7 +42,7 @@ use bouncycastle_camellia::hazmat::{
 use bouncycastle_camellia::{
     BLOCK_LEN, CTR_NONCE_LEN, Camellia128Key, Camellia192Key, Camellia256Key,
 };
-use bouncycastle_cipher::modes::{CFB, CFB8, CTR};
+use bouncycastle_cipher::modes::{CFB, CFB8, CTR, OFB};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -347,6 +354,228 @@ fn the_ctr_keys_agree_with_the_reference() {
         "Camellia_CTR_256",
         KEY_256,
         &Camellia256Key::<CTR>::from_key_material(&key_material::<32>(KEY_256)).unwrap(),
+    );
+}
+
+// ---- OFB: the OpenSSL vectors, one block each, and the equations ----------------------------
+
+/// One `CAMELLIA-*-OFB` entry: a one-block message, and `NextIV`, its `O1 = CIPH_K(IV)`.
+struct OfbVector {
+    iv: &'static str,
+    pt: &'static str,
+    ct: &'static str,
+    next_iv: &'static str,
+}
+
+/// `CAMELLIA-128-OFB`: `(IV, Plaintext, Ciphertext, NextIV)`, four one-block messages.
+const OFB_128: [OfbVector; 4] = [
+    OfbVector {
+        iv: "000102030405060708090A0B0C0D0E0F",
+        pt: "6BC1BEE22E409F96E93D7E117393172A",
+        ct: "14F7646187817EB586599146B82BD719",
+        next_iv: "7f36da83a9c1e1236f64ef57cbb8c033",
+    },
+    OfbVector {
+        iv: "50FE67CC996D32B6DA0937E99BAFEC60",
+        pt: "AE2D8A571E03AC9C9EB76FAC45AF8E51",
+        ct: "25623DB569CA51E01482649977E28D84",
+        next_iv: "8b4fb7e277c9fd7c8a350b35324d03d5",
+    },
+    OfbVector {
+        iv: "D9A4DADA0892239F6B8B3D7680E15674",
+        pt: "30C81C46A35CE411E5FBC1191A0A52EF",
+        ct: "C776634A60729DC657D12B9FCA801E98",
+        next_iv: "f7be7f0cc32e79d7b22aea86d08a4c77",
+    },
+    OfbVector {
+        iv: "A78819583F0308E7A6BF36B1386ABF23",
+        pt: "F69F2445DF4F9B17AD2B417BE66C3710",
+        ct: "D776379BE0E50825E681DA1A4C980E8E",
+        next_iv: "21e913de3faa93324baa9b61aaf4399e",
+    },
+];
+
+/// `CAMELLIA-192-OFB`: `(IV, Plaintext, Ciphertext, NextIV)`, four one-block messages.
+const OFB_192: [OfbVector; 4] = [
+    OfbVector {
+        iv: "000102030405060708090A0B0C0D0E0F",
+        pt: "6BC1BEE22E409F96E93D7E117393172A",
+        ct: "C832BB9780677DAA82D9B6860DCD565E",
+        next_iv: "a3f30575ae27e23c6be4c8977e5e4174",
+    },
+    OfbVector {
+        iv: "A609B38DF3B1133DDDFF2718BA09565E",
+        pt: "AE2D8A571E03AC9C9EB76FAC45AF8E51",
+        ct: "8ECEB7D0350D72C7F78562AEBDF99339",
+        next_iv: "20e33d872b0ede5b69320d02f8561d68",
+    },
+    OfbVector {
+        iv: "52EF01DA52602FE0975F78AC84BF8A50",
+        pt: "30C81C46A35CE411E5FBC1191A0A52EF",
+        ct: "BDD62DBBB9700846C53B507F544696F0",
+        next_iv: "8d1e31fd1a2cec5720c091664e4cc41f",
+    },
+    OfbVector {
+        iv: "BD5286AC63AABD7EB067AC54B553F71D",
+        pt: "F69F2445DF4F9B17AD2B417BE66C3710",
+        ct: "E28014E046B802F385C4C2E13EAD4A72",
+        next_iv: "141f30a599f799e428ef839ad8c17d62",
+    },
+];
+
+/// `CAMELLIA-256-OFB`: `(IV, Plaintext, Ciphertext, NextIV)`, four one-block messages.
+const OFB_256: [OfbVector; 4] = [
+    OfbVector {
+        iv: "000102030405060708090A0B0C0D0E0F",
+        pt: "6BC1BEE22E409F96E93D7E117393172A",
+        ct: "CF6107BB0CEA7D7FB1BD31F5E7B06C93",
+        next_iv: "a4a0b95922aae2e958804fe494237bb9",
+    },
+    OfbVector {
+        iv: "B7BF3A5DF43989DD97F0FA97EBCE2F4A",
+        pt: "AE2D8A571E03AC9C9EB76FAC45AF8E51",
+        ct: "127AD97E8E3994E4820027D7BA109368",
+        next_iv: "bc575329903a38781cb7487bffbf1d39",
+    },
+    OfbVector {
+        iv: "E1C656305ED1A7A6563805746FE03EDC",
+        pt: "30C81C46A35CE411E5FBC1191A0A52EF",
+        ct: "6BFF6265A6A6B7A535BC65A80B17214E",
+        next_iv: "5b377e2305fa53b4d047a4b1111d73a1",
+    },
+    OfbVector {
+        iv: "41635BE625B48AFC1666DD42A09D96E7",
+        pt: "F69F2445DF4F9B17AD2B417BE66C3710",
+        ct: "0A4A0404E26AA78A27CB271E8BF3CF20",
+        next_iv: "fcd520413d253c9d8ae066656d9ff830",
+    },
+];
+
+/// OFB straight from SP 800-38A Sec 6.4, in place; the same function in both directions.
+///
+/// ```text
+/// I_1 = IV;  I_j = O_{j-1};  O_j = CIPH_K(I_j);  C_j = P_j XOR O_j;  C*_n = P*_n XOR MSB_u(O_n)
+/// ```
+fn reference_ofb<P, const KEY_LEN: usize>(
+    key: &KeyMaterial<KEY_LEN>,
+    iv: [u8; BLOCK_LEN],
+    data: &mut [u8],
+) where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    let cipher = P::new(key).expect("a valid key");
+    let mut o = iv;
+    for block in data.chunks_mut(BLOCK_LEN) {
+        cipher.encrypt_block(&mut o);
+        block.iter_mut().zip(o.iter()).for_each(|(b, o)| *b ^= o);
+    }
+}
+
+/// Each entry through the key in both directions, and its `NextIV` as the keystream of a zero
+/// block; then the reference against the same entry, so the reference is pinned to published
+/// values before the keys are held to it on longer messages.
+fn check_ofb_vectors<'k, P, const KEY_LEN: usize, K>(
+    name: &str,
+    key_hex: &str,
+    key: &'k K,
+    vectors: &[OfbVector; 4],
+) where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
+{
+    let material = key_material::<KEY_LEN>(key_hex);
+    for (i, v) in vectors.iter().enumerate() {
+        let iv = bytes::<BLOCK_LEN>(v.iv);
+        let pt = bytes::<BLOCK_LEN>(v.pt);
+        let ct = bytes::<BLOCK_LEN>(v.ct);
+
+        let mut data = pt;
+        key.create_encryptor_nonce(&iv).do_encrypt_inplace(&mut data).expect("encryption");
+        assert_eq!(data, ct, "{name} entry {}: encrypt", i + 1);
+        key.create_decryptor(&iv).do_decrypt_inplace(&mut data).expect("decryption");
+        assert_eq!(data, pt, "{name} entry {}: decrypt", i + 1);
+
+        let mut o1 = [0u8; BLOCK_LEN];
+        key.create_encryptor_nonce(&iv).do_encrypt_inplace(&mut o1).expect("encryption");
+        assert_eq!(o1, bytes::<BLOCK_LEN>(v.next_iv), "{name} entry {}: NextIV is O1", i + 1);
+
+        let mut data = pt;
+        reference_ofb::<P, KEY_LEN>(&material, iv, &mut data);
+        assert_eq!(data, ct, "{name} entry {}: the reference", i + 1);
+    }
+}
+
+#[test]
+fn ofb_openssl_vectors() {
+    check_ofb_vectors::<Camellia128Internal, 16, _>(
+        "CAMELLIA-128-OFB",
+        KEY_128,
+        &Camellia128Key::<OFB>::from_key_material(&key_material::<16>(KEY_128)).unwrap(),
+        &OFB_128,
+    );
+    check_ofb_vectors::<Camellia192Internal, 24, _>(
+        "CAMELLIA-192-OFB",
+        KEY_192,
+        &Camellia192Key::<OFB>::from_key_material(&key_material::<24>(KEY_192)).unwrap(),
+        &OFB_192,
+    );
+    check_ofb_vectors::<Camellia256Internal, 32, _>(
+        "CAMELLIA-256-OFB",
+        KEY_256,
+        &Camellia256Key::<OFB>::from_key_material(&key_material::<32>(KEY_256)).unwrap(),
+        &OFB_256,
+    );
+}
+
+/// Each `OFB` key agrees with the reference, both directions, at lengths that reach the second
+/// block onwards and end in a partial block.
+fn check_ofb_key<'k, P, const KEY_LEN: usize, K>(name: &str, key_hex: &str, key: &'k K)
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
+{
+    let material = key_material::<KEY_LEN>(key_hex);
+    let iv = bytes::<BLOCK_LEN>(CFB_IV);
+    let mut seed = 0x0FB0u32;
+    for len in [0usize, 1, 15, 16, 17, 33, 64, 87] {
+        let plaintext: Vec<u8> =
+            (0..len).map(|_| common::pseudo_random::<1>(&mut seed)[0]).collect();
+        let mut expected = plaintext.clone();
+        reference_ofb::<P, KEY_LEN>(&material, iv, &mut expected);
+
+        let mut data = plaintext.clone();
+        let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("enc init");
+        assert_eq!(got_iv, iv);
+        enc.do_encrypt_inplace(&mut data).expect("encryption");
+        assert_eq!(data, expected, "{name}, len {len}: encrypt should match the equations");
+
+        key.decrypt_inplace(&iv, &mut data).expect("decryption");
+        assert_eq!(data, plaintext, "{name}, len {len}: decrypt should match");
+    }
+}
+
+#[test]
+fn the_ofb_keys_agree_with_the_reference() {
+    check_ofb_key::<Camellia128Internal, 16, _>(
+        "Camellia_OFB_128",
+        KEY_128,
+        &Camellia128Key::<OFB>::from_key_material(&key_material::<16>(KEY_128)).unwrap(),
+    );
+    check_ofb_key::<Camellia192Internal, 24, _>(
+        "Camellia_OFB_192",
+        KEY_192,
+        &Camellia192Key::<OFB>::from_key_material(&key_material::<24>(KEY_192)).unwrap(),
+    );
+    check_ofb_key::<Camellia256Internal, 32, _>(
+        "Camellia_OFB_256",
+        KEY_256,
+        &Camellia256Key::<OFB>::from_key_material(&key_material::<32>(KEY_256)).unwrap(),
     );
 }
 

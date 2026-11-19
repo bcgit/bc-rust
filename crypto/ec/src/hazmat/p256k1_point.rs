@@ -10,6 +10,7 @@
 //! F-2*D`, `Y3 = E*(D-X3)-8*C`, `Z3 = 2*Y1*Z1`), verified (not checked in) against the affine
 //! doubling law over many random on-curve points before being ported here.
 
+use crate::curve::JacobianPoint;
 use crate::hazmat::p256k1::P256K1FieldElement;
 use crate::hazmat::p256k1_domain::B_LIMBS;
 use bouncycastle_utils::ct;
@@ -381,5 +382,50 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+impl JacobianPoint for P256K1JacobianPoint {
+    type Fe = P256K1FieldElement;
+    const INFINITY: Self = P256K1JacobianPoint::INFINITY;
+
+    fn from_affine(x: P256K1FieldElement, y: P256K1FieldElement) -> Self {
+        P256K1JacobianPoint::from_affine(x, y)
+    }
+
+    fn x(&self) -> &P256K1FieldElement {
+        &self.x
+    }
+
+    fn y(&self) -> &P256K1FieldElement {
+        &self.y
+    }
+
+    fn z(&self) -> &P256K1FieldElement {
+        &self.z
+    }
+
+    fn is_infinity(&self) -> Condition<u64> {
+        P256K1JacobianPoint::is_infinity(self)
+    }
+
+    fn to_affine(&self) -> Option<(P256K1FieldElement, P256K1FieldElement)> {
+        P256K1JacobianPoint::to_affine(self)
+    }
+
+    fn negate(&self) -> Self {
+        P256K1JacobianPoint::negate(self)
+    }
+
+    fn zeroize(&mut self) {
+        P256K1JacobianPoint::zeroize(self)
+    }
+
+    fn double(&self) -> Self {
+        P256K1JacobianPoint::double(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        P256K1JacobianPoint::add(self, other)
     }
 }

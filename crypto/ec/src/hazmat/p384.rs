@@ -25,6 +25,7 @@
 //! survives in two places: [`P384FieldElement::add`] uses it to correct a carry out of the top
 //! limb, and `reduce`'s final fold uses it on the accumulator's top limb.
 
+use crate::curve::FieldElement;
 use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
@@ -78,6 +79,12 @@ impl P384FieldElement {
     /// Returns the canonical little-endian `u64` limbs, `< p`.
     pub fn to_limbs(&self) -> [u64; 6] {
         self.0
+    }
+
+    /// [`Self::to_limbs`] into `out`: for a secret value, so that no copy of it is staged in a
+    /// return slot.
+    pub fn to_limbs_into(&self, out: &mut [u64; 6]) {
+        out.copy_from_slice(&self.0);
     }
 
     /// The limbs exactly as this type stores them: the canonical value itself, so this is
@@ -394,4 +401,54 @@ fn reduce(t: &[u64; 12]) -> [u64; 6] {
     ct::conditional_select(Condition::<u64>::from_lsb(borrow), &v, &diff, &mut selected);
     debug_assert_eq!(selected[6], 0, "P-384 reduction left a value >= 2^384");
     [selected[0], selected[1], selected[2], selected[3], selected[4], selected[5]]
+}
+
+impl FieldElement for P384FieldElement {
+    type Limbs = [u64; 6];
+    const ZERO: Self = P384FieldElement::ZERO;
+    const ONE: Self = P384FieldElement::ONE;
+
+    fn from_limbs(limbs: [u64; 6]) -> Self {
+        P384FieldElement::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 6] {
+        P384FieldElement::to_limbs(self)
+    }
+
+    fn to_limbs_into(&self, out: &mut [u64; 6]) {
+        P384FieldElement::to_limbs_into(self, out)
+    }
+
+    fn is_zero(&self) -> Condition<u64> {
+        P384FieldElement::is_zero(self)
+    }
+
+    fn zeroize(&mut self) {
+        P384FieldElement::zeroize(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        P384FieldElement::add(self, other)
+    }
+
+    fn sub(&self, other: &Self) -> Self {
+        P384FieldElement::sub(self, other)
+    }
+
+    fn negate(&self) -> Self {
+        P384FieldElement::negate(self)
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        P384FieldElement::mul(self, other)
+    }
+
+    fn square(&self) -> Self {
+        P384FieldElement::square(self)
+    }
+
+    fn invert(&self) -> Self {
+        P384FieldElement::invert(self)
+    }
 }

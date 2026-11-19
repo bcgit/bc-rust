@@ -336,25 +336,47 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
 
     /// Creates a new instance of KeyMaterial containing random bytes from the provided random number generator.
     ///
-    /// The key is tagged at the lesser of the RNG's strength and what `KEY_LEN` bytes can carry;
-    /// a `KeyMaterial<0>` comes back [`KeyType::Zeroized`] without consulting the RNG, so an RNG
-    /// that would refuse (reseed required) is not reported for it.
+    /// The key is tagged [`KeyType::CryptographicRandom`] at the lesser of the RNG's strength and
+    /// what `KEY_LEN` bytes can carry; a `KeyMaterial<0>` comes back [`KeyType::Zeroized`]
+    /// without consulting the RNG, so an RNG that would refuse (reseed required) is not reported
+    /// for it.
     pub fn from_rng(rng: &mut (impl RNG + ?Sized)) -> Result<Self, KeyMaterialError> {
+        Self::from_rng_as_type(rng, KEY_LEN, KeyType::CryptographicRandom)
+    }
+
+    /// `len` random bytes from `rng`, tagged `key_type` at the lesser of the RNG's strength and
+    /// what `len` bytes can carry (SP 800-90A r1 Section 8.4: "Security_strength_of_output =
+    /// min(output_length, DRBG_security_strength)"): the draw behind [`Self::from_rng`] and
+    /// behind a MAC key's `generate`, whose key is shorter than its buffer and a
+    /// [`KeyType::MACKey`]. A `len` of 0 comes back [`KeyType::Zeroized`] without consulting the
+    /// RNG.
+    ///
+    /// # Errors
+    /// [`KeyMaterialError::InputDataLongerThanKeyCapacity`] if `len` exceeds `KEY_LEN`;
+    /// [`KeyMaterialError::GenericError`] if the RNG fails.
+    pub fn from_rng_as_type(
+        rng: &mut (impl RNG + ?Sized),
+        len: usize,
+        key_type: KeyType,
+    ) -> Result<Self, KeyMaterialError> {
         let mut key = Self::new();
-        if KEY_LEN == 0 {
+        if len > KEY_LEN {
+            return Err(KeyMaterialError::InputDataLongerThanKeyCapacity);
+        }
+        if len == 0 {
             return Ok(key);
         }
 
         do_hazardous_operations(&mut key, |key| {
-            rng.next_bytes_out(key.ref_to_bytes_mut()?)
+            rng.next_bytes_out(&mut key.ref_to_bytes_mut()?[..len])
                 .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
-            key.set_key_len(KEY_LEN)?;
-            key.set_key_type(KeyType::CryptographicRandom)?;
-            // SP 800-90A r1 Section 8.4: "Security_strength_of_output = min(output_length,
-            // DRBG_security_strength)".
+            key.set_key_len(len)?;
+            key.set_key_type(key_type)?;
+            // Mutants note: at equal strengths both arms of the min give the same value, so
+            // `<` -> `<=` in `min` is an equivalent mutant.
             key.set_security_strength(*min(
                 &rng.security_strength(),
-                &SecurityStrength::from_bytes(KEY_LEN),
+                &SecurityStrength::from_bytes(len),
             ))
         })?;
         Ok(key)

@@ -23,7 +23,7 @@
 //! | `ACVP-AES-CCM` | `ccm_bc-test-data.rs` |
 //! | `ACVP-AES-CFB128` | `cfb_bc-test-data.rs` |
 //! | `ACVP-AES-CFB8` | `cfb8_bc-test-data.rs` |
-//! | `ACVP-AES-OFB` | nothing yet (OFB is unimplemented) |
+//! | `ACVP-AES-OFB` | `ofb_bc-test-data.rs` |
 //! | `ACVP-AES-CTR` | `ctr_bc-test-data.rs` |
 //! | `ACVP-AES-GCM` / `-GMAC` | `gcm_bc-test-data.rs` / `gmac_bc-test-data.rs` |
 //! | `ACVP-AES-KW` / `-KWP` | `kw_bc-test-data.rs` |

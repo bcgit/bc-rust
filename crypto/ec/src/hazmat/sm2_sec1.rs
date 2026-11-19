@@ -182,11 +182,12 @@ pub fn decode_point(bytes: &[u8]) -> Option<Sm2JacobianPoint> {
     Some(Sm2JacobianPoint::from_affine(x, y))
 }
 
-// `limbs_less_than_p` and `either_out_of_range` are private and, through `decode`, only ever
-// reached on inputs that also fail (or coincidentally would also fail) a later curve-membership
-// check, so no integration test through the public API can pin either one's pass/fail boundary
-// independent of that coincidence -- the QUALITY_AND_STYLE.md "private function, known-answer,
-// can't be reached cleanly from outside the crate" exception applies to both. Known answers for
+// `limbs_less_than_p` and `either_out_of_range` are private. Through `decode` a coordinate at or
+// above `p` is rejected before the curve check, and nothing else rejects it when the point is on
+// the curve once reduced (`x + p` for a point `(x, y)`): `sm2_sec1_tests.rs` pins that through
+// the public API. The boundary itself, `p - 1` against `p`, and the OR over the two coordinates
+// are pinned here on the private functions, under the QUALITY_AND_STYLE.md "private function,
+// known-answer, can't be reached cleanly from outside the crate" exception. Known answers for
 // `limbs_less_than_p`: GB/T 32918.5-2017 (draft Appendix D) gives `p`; 0 and `p - 1` are its immediate neighbours
 // inside `[0, p)`, and `p` itself plus a value with only a non-adjacent limb bumped above `p`'s
 // are its immediate neighbours outside it. `either_out_of_range` is exercised over all four

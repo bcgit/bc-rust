@@ -83,7 +83,10 @@ use core::marker::PhantomData;
 /// block length, 16 by default and 8 for a 64-bit block cipher; it is a parameter because stable
 /// Rust cannot read it off the permutation from inside the mode impl, as for `CTR`. It is also
 /// the tag length. The impls below are generic over any [`BlockPermutation`] of that block
-/// length.
+/// length. A permutation that decrypts only (`BlockPermutation::DECRYPT_ONLY`) gets a verifier
+/// and no generator: `generate_init` refuses it at compile time, as the encrypting constructors
+/// of the cipher modes do, so a key over it can check tags and not produce them (SP 800-131A
+/// Rev 2 Table 9: two-key TDEA CMAC generation "Disallowed", verification "Legacy use").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CMAC<const BLOCK_LEN: usize = 16>;
 
@@ -113,6 +116,12 @@ where
         P: 'k;
 
     fn generate_init<'k>(state: &'k Self::KeyState) -> Self::Generator<'k> {
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no MAC generator may be made over it"
+            )
+        };
         Cmac::from_key_state(state)
     }
 

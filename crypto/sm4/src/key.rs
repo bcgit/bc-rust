@@ -8,8 +8,8 @@ use bouncycastle_cipher::BlockCipherKey;
 ///
 /// [`SM4Key<M>`] is one type per mode `M`: [`BlockCipherKey`] over the SM4 permutation, as
 /// `AES128Key<M>` is over AES-128's. Which workers a key hands out is decided by its mode, as
-/// that type's docs say. The eight modes this crate aliases as `SM4_*` are CBC, CFB, CFB8, CTR,
-/// GCM, CCM, KW and KWP; a key under `ECB<Blocks>`, `CMAC` or `GMAC` carries the roles those
+/// that type's docs say. The nine modes this crate aliases as `SM4_*` are CBC, CFB, CFB8, OFB,
+/// CTR, GCM, CCM, KW and KWP; a key under `ECB<Blocks>`, `CMAC` or `GMAC` carries the roles those
 /// modes give every permutation, but no alias and no known answers here, since no SM4 standard
 /// names them.
 ///
