@@ -53,6 +53,12 @@
   for implementors of a DHKEM group. Checked against the RFC's machine-readable vectors for P-256 and P-521 (32
   sets each; P-521's key derivation is the first two-block `LabeledExpand`), and, for P-384, which the RFC defines
   but publishes no vectors for, against BC Java 1.84 in both directions.
+* PBKDF2 -- RFC 8018 Section 5.2 over HMAC (SHA-2, SHA-3), as `bouncycastle-pbkdf2`, on the `KDF` trait with the salt
+  and the iteration count on the instance; a key derived from a password is typed `Unknown`. The `pbkdf2` CLI command
+  reads the password from a file or stdin.
+* scrypt -- RFC 7914, as `bouncycastle-scrypt`: `SCrypt` over working memory the caller supplies
+  (`derive_with_memory_out`, `ScryptParams::work_len`), and on the `KDF` trait with the `std` feature, allocating up to
+  a limit. The `scrypt` CLI command takes `--log2-n`, `-r`, `-p` and `--max-memory`.
 * HPKE -- RFC 9180 Sections 5 and 6 in all four modes, as `bouncycastle-hpke`, on the X25519, P-256, P-384 and
   P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
   (Auth, AuthPSK) give contexts with `seal_out` / `open_out` and `export_out`; HKDF over SHA-256, SHA-384 or

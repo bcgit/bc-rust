@@ -438,7 +438,9 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 Six workflows under `.github/workflows/`, all triggered by pull requests:
 
-- `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable.
+- `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then
+  `cargo test -p bouncycastle-scrypt --no-default-features`, since `--all-features` never
+  builds a crate with a default feature off.
 - `rust-test.yml`: `cargo test --all` on stable.
 - `rust-style.yml`: `cargo fmt --all --check` on **nightly** rustfmt, so format before every commit.
 - `rust-docs.yml`: `cargo doc --all` on stable.
