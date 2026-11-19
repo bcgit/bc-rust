@@ -49,7 +49,9 @@ pub(super) fn decode_canonical_var(s: &[u8; 32]) -> Option<[u64; SIZE]> {
 /// Section 5.1.6 reduces the digests `r` and `k` (steps 3 and 5).
 ///
 /// Constant time: a fixed sequence of shifts, masks and 64-bit multiplications by the digits of
-/// L, with the final correction applied through a mask. The working digits are wiped on return.
+/// L, with the final correction applied through a mask, on the assumption the `nat` module
+/// header states for its own multiplications: a multiply whose time does not depend on its
+/// operands. The working digits are wiped on return.
 pub(super) fn reduce_512(n: &[u8; 64], r: &mut [u8; 32]) {
     /// `x[i]` goes away: its weight `2^(28 i)` is `2^252 * 2^(28 (i - 9))`.
     #[inline(always)]
@@ -223,7 +225,11 @@ pub(super) fn reduce_basis_var(k: &[u64; SIZE]) -> Option<([u64; 2], [u64; 2])> 
 
     let mut nv = [0_u64; SIZE * 2];
     nat::square(k, &mut nv);
-    // A square is 0, 1 or 4 mod 8, so adding v's second coordinate squared, 1, cannot carry.
+    // v = (k, 1), so its squared norm is k^2 + 1. The 1 is not decoration: the loop stops on
+    // the norm, and it is the norm being exact that bounds both coordinates of the result to
+    // 128 bits. Without it the reduction still ends on a valid pair for the inputs tried, so no
+    // test tells the difference; with a wrong norm the bound is no longer a proof.
+    // A square is 0, 1 or 4 mod 8, so the addition cannot carry.
     debug_assert!(nv[0] & 7 < 7);
     nv[0] += 1;
 
