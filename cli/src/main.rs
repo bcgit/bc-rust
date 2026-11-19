@@ -24,11 +24,13 @@ mod mac_cmd;
 mod mldsa_cmd;
 mod mlkem_cmd;
 mod ofb_cmd;
+mod pbkdf2_cmd;
 mod ripemd_cmd;
 mod rng_cmd;
 mod rsa_cmd;
 mod rsa_oaep_cmd;
 mod rsasve_cmd;
+mod scrypt_cmd;
 mod sha1_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
@@ -2124,6 +2126,85 @@ enum Subcommands {
     /// Encode binary data from stdin to hex.
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     HexEncode,
+
+    /// PBKDF2 (RFC 8018 Section 5.2) over HMAC: a derived key of len bytes from a password, a salt
+    /// and an iteration count. The password is read from --password-file, or from stdin, as the
+    /// bytes it is given: a trailing newline is part of it.
+    #[command(name = "pbkdf2")]
+    PBKDF2 {
+        /// The HMAC to run PBKDF2 over.
+        #[arg(long, value_enum)]
+        prf: pbkdf2_cmd::Pbkdf2Prf,
+
+        /// A file containing the password (raw bytes; hex with --hex-input). Stdin when absent.
+        #[arg(short, long)]
+        password_file: Option<String>,
+
+        /// The salt in hex.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// The iteration count: at least 1.
+        #[arg(short = 'c', long)]
+        iterations: std::num::NonZeroU32,
+
+        /// Length of the derived key, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// scrypt (RFC 7914): a derived key of len bytes from a password, a salt and the cost
+    /// parameters N, r and p. The password is read from --password-file, or from stdin, as the
+    /// bytes it is given: a trailing newline is part of it. The working memory is
+    /// `128 * r * (N + p + 1)` bytes.
+    #[command(name = "scrypt")]
+    SCrypt {
+        /// log2 of the CPU/memory cost parameter N: 14 is N = 16384.
+        #[arg(short = 'n', long)]
+        log2_n: u8,
+
+        /// The block size parameter r.
+        #[arg(short, long, default_value_t = 8)]
+        r: u32,
+
+        /// The parallelization parameter p.
+        #[arg(short, long, default_value_t = 1)]
+        p: u32,
+
+        /// The most working memory to use, in MiB; parameters that need more are refused.
+        #[arg(long, default_value_t = 256)]
+        max_memory: usize,
+
+        /// A file containing the password (raw bytes; hex with --hex-input). Stdin when absent.
+        #[arg(long)]
+        password_file: Option<String>,
+
+        /// The salt in hex.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// Length of the derived key, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
 
     /// The NIST concatenation KDF over SHA-256 (SP 800-56C Rev. 2 Section 4.1, H(x) = hash(x)):
     /// keying material of len bytes from a shared secret and the optional FixedInfo,
@@ -7792,6 +7873,24 @@ fn run() {
         }
         Some(Subcommands::HexEncode) => {
             encoders_cmd::hex_encode_cmd();
+        }
+        Some(Subcommands::PBKDF2 { prf, password_file, salt, salt_file, iterations, len, x }) => {
+            pbkdf2_cmd::pbkdf2_cmd(*prf, password_file, salt, salt_file, *iterations, *len, *x);
+        }
+        Some(Subcommands::SCrypt {
+            log2_n,
+            r,
+            p,
+            max_memory,
+            password_file,
+            salt,
+            salt_file,
+            len,
+            x,
+        }) => {
+            scrypt_cmd::scrypt_cmd(
+                *log2_n, *r, *p, *max_memory, password_file, salt, salt_file, *len, *x,
+            );
         }
         Some(Subcommands::ConcatKDF_SHA256 {
             ikm,
