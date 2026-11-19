@@ -26,13 +26,11 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-// The multi-precision and recoding helpers of the EdDSA scalar arithmetic (`bits`, `nat`, `wnaf`)
-// have no caller until the Ed25519 port lands, when their allows go.
+// `bits` has no caller until the Ed25519 point arithmetic lands, when its allow goes.
 #[allow(dead_code)]
 mod bits;
 mod curve25519;
-#[allow(dead_code)]
+mod ed25519;
 mod nat;
-#[allow(dead_code)]
 mod wnaf;
 pub mod x25519;
