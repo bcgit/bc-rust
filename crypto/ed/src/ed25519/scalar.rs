@@ -211,12 +211,10 @@ pub(super) fn multiply_128_var(x: &[u64; SIZE], y128: &[u64; 2]) -> [u64; SIZE] 
 /// multiplications at half length. `None` if the reduction has not finished within its
 /// iteration bound, which is not known to happen.
 ///
-/// This is the lattice basis reduction of Pornin, "Optimized Lattice Basis Reduction In
-/// Dimension 2, and Fast Schnorr and EdDSA Signature Verification"
-/// (<https://ia.cr/2020/454>), on the lattice spanned by `u = (L, 0)` and `v = (k, 1)`. It
-/// carries the squared norms `nu`, `nv` and the inner product `p` of the two vectors, and takes
-/// `2^s` times the shorter from the longer until the shorter fits. Variable time: `k` is
-/// public.
+/// This is the lattice basis reduction of Pornin (<https://ia.cr/2020/454>), on the lattice
+/// spanned by `u = (L, 0)` and `v = (k, 1)`. It carries the squared norms `nu`, `nv` and the
+/// inner product `p` of the two vectors, and takes `2^s` times the shorter from the longer
+/// until the shorter fits. Variable time: `k` is public.
 pub(super) fn reduce_basis_var(k: &[u64; SIZE]) -> Option<([u64; 2], [u64; 2])> {
     /// The squared norm to stop at: both coordinates of `v` then fit 128 bits with their sign.
     const TARGET_LENGTH: usize = 254;
@@ -984,7 +982,7 @@ mod tests {
             assert_eq!(reduce_basis_var(&limbs(&k)), Some((halves(v0), halves(v1))), "{k:02x?}");
             ks.push(k);
         }
-        let mut state = 0x6261_7369_73;
+        let mut state = 0x0062_6173_6973;
         for _ in 0..200 {
             let mut k = [0_u8; 32];
             reduce_512(&random_octets(&mut state), &mut k);
@@ -1018,7 +1016,7 @@ mod tests {
     #[test]
     fn add_shifted_var_agrees_with_u128_arithmetic() {
         let value = |v: &[u64]| (v[1] as u128) << 64 | v[0] as u128;
-        let mut state = 0x7368_6966_74;
+        let mut state = 0x0073_6869_6674;
         for s in [0, 1, 17, 63, 64, 65, 100, 127] {
             for subtract in [false, true] {
                 let x = [next(&mut state), next(&mut state), 0x1111];

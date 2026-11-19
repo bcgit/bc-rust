@@ -125,6 +125,8 @@ impl PublicPoint {
     /// Decodes and fully validates a public key, or returns `None`: the encoding must be that
     /// of a point (RFC 8032 Section 5.1.3), and the point must have order L. Costs about one
     /// scalar multiplication. Variable time: a public key is public.
+    // No caller until the key types are built on this.
+    #[allow(dead_code)]
     pub(crate) fn decode_var(pk: &[u8; 32]) -> Option<Self> {
         let point = PointAffine::decode_var(pk)?;
         // x = 0 is the neutral element (0, 1), and (0, -1) of order 2. The neutral element
