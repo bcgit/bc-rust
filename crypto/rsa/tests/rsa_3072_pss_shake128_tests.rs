@@ -4,7 +4,7 @@
 //! `rsa_3072_tests.rs` recovered), and all of Wycheproof's real vectors for verification.
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey, SigningKey};
 use bouncycastle_core::traits::SignatureSigner;
 use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;

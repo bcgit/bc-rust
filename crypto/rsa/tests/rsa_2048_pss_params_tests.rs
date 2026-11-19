@@ -6,7 +6,10 @@
 //! parameters, so the other set's signatures are invalid under it.
 
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{
+    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
+    OneShotVerifyingKey, SigningKey,
+};
 use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, SignatureSigner, XOF};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;

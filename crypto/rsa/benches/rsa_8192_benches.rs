@@ -4,7 +4,9 @@
 //! wired up at this modulus size (see `bouncycastle_rsa::rsa_8192`'s docs for why).
 
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
-use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{
+    DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
+};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_rsa::RSA8192;
 use bouncycastle_rsa::rsa_8192::{RSA8192KEMPrivateKey, RSA8192KEMPublicKey};

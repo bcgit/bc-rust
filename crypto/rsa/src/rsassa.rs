@@ -17,7 +17,9 @@ use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
-    DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
+    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
+    OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, sign_out_with_signer,
+    verify_with_verifier,
 };
 use bouncycastle_core::traits::{
     AlgorithmInfo, FinishToken, Hash, HashAlgParams, HashOneShot, RNG, SignatureSigner,
@@ -117,6 +119,23 @@ where
     }
 }
 
+impl<A, const K_LEN: usize> OneShotSigningKey<A, K_LEN> for RsaPrivateKey<A>
+where
+    A: RsaRandomizedSignatureAlgorithm,
+    A::Size: RsaSigningSize + RsaSize<Modulus = [u8; K_LEN]>,
+{
+    fn sign_out(
+        &self,
+        rng: &mut dyn RNG,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; K_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer = SigningKey::<A, K_LEN>::create_signer(self, rng, ctx);
+        sign_out_with_signer(signer, msg, output)
+    }
+}
+
 impl<A, const K_LEN: usize> DeterministicSigningKey<A, K_LEN> for RsaPrivateKey<A>
 where
     A: RsaDeterministicSignatureAlgorithm,
@@ -136,6 +155,22 @@ where
     }
 }
 
+impl<A, const K_LEN: usize> DeterministicOneShotSigningKey<A, K_LEN> for RsaPrivateKey<A>
+where
+    A: RsaDeterministicSignatureAlgorithm,
+    A::Size: RsaSigningSize + RsaSize<Modulus = [u8; K_LEN]>,
+{
+    fn sign_deterministic_out(
+        &self,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; K_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer = DeterministicSigningKey::<A, K_LEN>::create_signer_deterministic(self, ctx);
+        sign_out_with_signer(signer, msg, output)
+    }
+}
+
 impl<A, const K_LEN: usize> VerifyingKey<A, K_LEN> for RsaPublicKey<A>
 where
     A: RsaSignatureAlgorithm,
@@ -152,6 +187,17 @@ where
         _ctx: Option<&[u8]>,
     ) -> Result<Self::Verifier<'k>, SignatureError> {
         Ok(RsaVerifier { pk: self, hash: A::Hash::default() })
+    }
+}
+
+impl<A, const K_LEN: usize> OneShotVerifyingKey<A, K_LEN> for RsaPublicKey<A>
+where
+    A: RsaSignatureAlgorithm,
+    A::Size: RsaSize<Modulus = [u8; K_LEN]>,
+{
+    fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
+        let verifier = VerifyingKey::<A, K_LEN>::create_verifier(self, ctx)?;
+        verify_with_verifier(verifier, msg, sig)
     }
 }
 

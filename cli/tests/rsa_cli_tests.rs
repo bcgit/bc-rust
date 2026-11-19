@@ -8,7 +8,7 @@
 //! `CARGO_BIN_EXE_bc-rust` is set by cargo for integration tests and points at the binary for the
 //! current profile, so there is nothing to build or locate by hand.
 
-use bouncycastle::core::signature_key::{DeterministicSigningKey, VerifyingKey};
+use bouncycastle::core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::rsa::RSA2048;
 use bouncycastle::rsa::keys::{

@@ -3,7 +3,7 @@
 //! `rsa_pkcs1_1536_sig_gen_test.json`'s own genuine `(n, e)` and real `(msg, sig)` pairs, the same
 //! provenance `tests/rsa_1536_tests.rs` uses.
 
-use bouncycastle_core::signature_key::VerifyingKey;
+use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 

@@ -5,7 +5,9 @@
 //! `rsa_pkcs1_2048_sig_gen_test.json` (see that file for the full, sourced provenance).
 
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
-use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{
+    DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
+};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::rsa_2048::{RSA2048KEMPrivateKey, RSA2048KEMPublicKey};

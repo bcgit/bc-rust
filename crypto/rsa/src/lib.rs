@@ -75,7 +75,7 @@
 //! uses every signature scheme. The key names its scheme, so the calls name nothing:
 //!
 //! ```
-//! use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey, OneShotVerifyingKey, SigningKey, VerifyingKey};
 //! use bouncycastle_core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_rsa::keys::{RsaPrivateKey, RsaPublicKey};
@@ -153,7 +153,7 @@
 //! signatures (`tests/rsa_1024_tests.rs` has the full, sourced provenance):
 //!
 //! ```
-//! use bouncycastle_core::signature_key::VerifyingKey;
+//! use bouncycastle_core::signature_key::{OneShotVerifyingKey, VerifyingKey};
 //! use bouncycastle_rsa::keys::RsaPublicKey;
 //! use bouncycastle_rsa::rsa_1024::RSASSA_PKCS1_v1_5_SHA256;
 //! # const N: [u64; 16] = [0xd00343468eaacfbf, 0xb7c7044cc202dcca, 0x9686f30f478db649, 0x5179b54951fff6aa, 0xbabb14f550d5d0dd, 0x5405db7c5c8f4cf6, 0x9816e2eda41fd7b9, 0xb31b6abd805bace9, 0xb909dd0f4c6014f2, 0x9c8a5810b6d05990, 0x40760d1f23fe9250, 0x90adb011a919575a, 0x45e48572113cab28, 0xcb9ca9ec12000fc8, 0x91b4fcaf62a14595, 0xac9048a7a4f560af];

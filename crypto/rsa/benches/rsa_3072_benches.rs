@@ -3,7 +3,9 @@
 //! `rsa_pkcs1_3072_sig_gen_test.json`.
 
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
-use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{
+    DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
+};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_rsa::RSA3072;
 use bouncycastle_rsa::rsa_3072::{RSA3072KEMPrivateKey, RSA3072KEMPublicKey};

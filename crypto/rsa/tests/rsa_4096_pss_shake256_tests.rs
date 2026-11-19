@@ -3,7 +3,7 @@
 //! self-consistency round trip for signing (reusing the genuine RSA-4096 key `rsa_4096_tests.rs`
 //! recovered), and all of Wycheproof's real vectors for verification.
 
-use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey, SigningKey};
 use bouncycastle_core::traits::SignatureSigner;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;

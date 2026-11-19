@@ -14,7 +14,7 @@
 //! the hash in question -- is checked against all of Wycheproof's real vectors for both hashes.
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::RSA2048;

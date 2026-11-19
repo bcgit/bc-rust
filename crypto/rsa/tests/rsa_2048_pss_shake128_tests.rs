@@ -6,7 +6,9 @@
 //! checked against all of Wycheproof's real vectors.
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{
+    OneShotSigningKey, OneShotVerifyingKey, SigningKey, VerifyingKey,
+};
 use bouncycastle_core::traits::RNG;
 use bouncycastle_core::traits::{HashOneShot, SignatureSigner, SignatureVerifier};
 use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
