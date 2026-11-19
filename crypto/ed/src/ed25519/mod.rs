@@ -91,6 +91,26 @@
 //! [`Ed25519PublicKey`] holds the decoded point; [`Ed25519PrivateKey`] holds the private key,
 //! the scalar and prefix derived from it, and the encoded public key.
 //!
+//! Per-call stack usage, measured as the deepest frame chain from the `measure` wrapper of
+//! `mem_usage_benches`' ed25519 harness down, the wrapper's own frame included, in the release
+//! build (x86-64 Linux, rustc 1.97.0-nightly, return addresses included):
+//!
+//! | Entry point                          | Stack  |
+//! |--------------------------------------|--------|
+//! | `keygen`                             | 2952 B |
+//! | `keygen_out`                         | 2600 B |
+//! | `Ed25519PrivateKey::from_bytes`      | 2536 B |
+//! | `Ed25519PrivateKey::from_bytes_out`  | 2200 B |
+//! | `Ed25519PublicKey::from_bytes`       | 3704 B |
+//! | `Ed25519PrivateKey::pk`              | 2072 B |
+//! | Ed25519 sign                         | 2952 B |
+//! | Ed25519 verify                       | 5224 B |
+//! | Ed25519ph sign                       | 4040 B |
+//! | Ed25519ph verify                     | 6408 B |
+//!
+//! The key generation figures leave out the RNG. The Ed25519ph figures are for the streaming
+//! signer and verifier, and include the worker: a SHA-512 state and the context.
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! **Signatures are deterministic** (RFC 8032 Section 8.2): signing draws no randomness, and

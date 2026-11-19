@@ -48,7 +48,9 @@
   markers `Ed25519` (one-shot roles only, no context) and `Ed25519ph` (streaming and one-shot, with a context).
   Verification is cofactored, and a decoded public key is validated in full, so one outside the prime-order subgroup
   is refused. `keygen` and `keygen_out` draw the key from the caller's RNG; checked against RFC 8032 Sections 7.1
-  and 7.3, Wycheproof's Ed25519 set and the vectors of "Taming the many EdDSAs". No CLI command yet.
+  and 7.3, Wycheproof's Ed25519 set and the vectors of "Taming the many EdDSAs"; the `ed25519` and `ed25519ph` CLI
+  subcommands cover keygen, pk-from-sk, check-consistency, sign and verify, `ed25519ph` streaming the message under
+  an optional `--ctxfile`; with criterion benches and a stack harness in `mem_usage_benches`.
 * DHKEM over P-256, P-384 and P-521 -- RFC 9180 Section 4.1's DHKEM(P-256, HKDF-SHA256), DHKEM(P-384, HKDF-SHA384)
   and DHKEM(P-521, HKDF-SHA512) (`kem_id` 0x0010 to 0x0012) on the ECC CDH keys: `ECCDHPublicKey<C>` and
   `ECCDHPrivateKey<C>` over `P256`, `P384` and `P521` carry the KEM roles with `()` as the parameters, under the
