@@ -433,9 +433,7 @@ impl FieldElement25519 {
     }
 }
 
-// The operations Ed25519 needs and X25519 does not. Nothing calls them until the Ed25519 port
-// lands, when this allow goes.
-#[allow(dead_code)]
+// The operations Ed25519 needs and X25519 does not.
 impl FieldElement25519 {
     /// The element with the given limbs, least significant first; `const`, for curve constants.
     ///
@@ -627,9 +625,7 @@ impl NormalizedFieldElement25519 {
     }
 }
 
-// The tests Ed25519 needs on a canonical value. Nothing calls them until the Ed25519 port lands,
-// when this allow goes.
-#[allow(dead_code)]
+// The tests Ed25519 needs on a canonical value.
 impl NormalizedFieldElement25519 {
     /// Whether two values are equal. Variable time: both must be public.
     pub(crate) fn are_equal_var(lhs: &Self, rhs: &Self) -> bool {

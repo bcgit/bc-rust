@@ -26,8 +26,6 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-// `bits` has no caller until the Ed25519 point arithmetic lands, when its allow goes.
-#[allow(dead_code)]
 mod bits;
 mod curve25519;
 mod ed25519;
