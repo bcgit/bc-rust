@@ -77,6 +77,12 @@ fn the_markers_and_workers_name_their_algorithm() {
     assert_eq!(Ed25519::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
     assert_eq!(Ed25519ph::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
 
+    // id-Ed25519, RFC 8410 Section 3: { 1 3 101 112 }; the encoding is the one inside the
+    // RFC's example public key (Section 10.1), `30 2a 30 05 06 03 2b 65 70 ...`.
+    use bouncycastle_core::traits::AlgorithmOID;
+    assert_eq!(<Ed25519 as AlgorithmOID>::OID, &[1, 3, 101, 112]);
+    assert_eq!(<Ed25519 as AlgorithmOID>::OID_DER, &[0x06, 0x03, 0x2b, 0x65, 0x70]);
+
     let (pk, sk) = key_pair().unwrap();
     let signer = sk.create_signer_deterministic(None).unwrap();
     assert_eq!(signer.alg_name(), "Ed25519ph");

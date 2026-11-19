@@ -11,7 +11,8 @@ use bouncycastle_core::signature_key::{
     SignatureAlgorithm, VerifyingKey, sign_out_with_signer, verify_with_verifier,
 };
 use bouncycastle_core::traits::{
-    Algorithm, FinishToken, Hash, PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier,
+    Algorithm, AlgorithmOID, FinishToken, Hash, PrivateKey, PublicKey, RNG, SignatureSigner,
+    SignatureVerifier,
 };
 use bouncycastle_sha2::SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
@@ -73,6 +74,14 @@ impl Algorithm for Ed25519 {
 }
 
 impl SignatureAlgorithm for Ed25519 {}
+
+/// `id-Ed25519` (RFC 8410 Section 3), which identifies the public key, the private key and the
+/// signature alike. [`Ed25519ph`] has none: RFC 8410 Section 1 "does not provide the
+/// conventions needed for the prehash versions of the signature algorithm".
+impl AlgorithmOID for Ed25519 {
+    const OID: &'static [u32] = &[1, 3, 101, 112];
+    const OID_DER: &'static [u8] = &[0x06, 0x03, 0x2B, 0x65, 0x70];
+}
 
 /// Ed25519ph (RFC 8032 Section 5.1), the algorithm that signs the SHA-512 digest of the
 /// message, under a context of at most [`CONTEXT_MAX_LEN`] octets that is empty by default. The
