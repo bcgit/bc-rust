@@ -45,8 +45,8 @@ mod tdes_ctr_cmd;
 mod tdes_ecb_cmd;
 mod tdes_ofb_cmd;
 mod tdes_tkw_cmd;
-mod xts_cmd;
 mod x25519_cmd;
+mod xts_cmd;
 
 use crate::blake2_cmd::BLAKE2Variant;
 use crate::eccdh_cmd::ECCDHAction;
