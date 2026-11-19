@@ -5,7 +5,7 @@ use bouncycastle_core::errors::{KeyMaterialError, SignatureError};
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
-use bouncycastle_core::traits::{Hash, PrivateKey, SignatureSigner, SignatureVerifier};
+use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
 use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
 use bouncycastle_ed::ed25519::{
     CONTEXT_MAX_LEN, ED25519_NAME, ED25519PH_NAME, Ed25519, Ed25519PrivateKey, Ed25519PublicKey,
@@ -149,12 +149,96 @@ fn s_not_below_the_group_order_is_rejected() {
         assert_eq!(verdict, FAILED, "{name}");
 
         // S = L itself, and S of all ones.
+        let either = |sig: &[u8]| {
+            if name == "Ed25519" { verify(&pk, MSG, sig) } else { verify_ph(&pk, MSG, None, sig) }
+        };
         let mut s_is_l = sig;
         s_is_l[32..].copy_from_slice(&l);
-        assert_eq!(verify(&pk, MSG, &s_is_l), FAILED, "{name}");
+        assert_eq!(either(&s_is_l), FAILED, "{name}");
         let mut s_is_max = sig;
         s_is_max[32..].fill(0xFF);
-        assert_eq!(verify(&pk, MSG, &s_is_max), FAILED, "{name}");
+        assert_eq!(either(&s_is_max), FAILED, "{name}");
+    }
+}
+
+// The vectors of the next two tests were generated with the Python library of RFC 8032
+// Appendix A, lifted from the text of the RFC by script.
+
+/// RFC 8032 Section 7.1, TEST 1's public key.
+const RFC8032_TEST1_PK: &str = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
+
+// Signatures of b"cofactored" under that key whose `R` is the point of order 4 with y = 0, and
+// `S` = k s mod L: `[8][S]B = [8]R + [8][k]A` holds, and `[S]B = R + [k]A` does not.
+const ZERO_R: &str = concat!(
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "e0ed5470b77fb2d2fb5b76d0c54380f752f1be0560c47cb7f7e616ecbdcfde07",
+);
+const R_Y_IS_P: &str = concat!(
+    "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "84d87ff0e0b71e676a40a2f31779b98583f3f45bbbd4735a64a035b7d850cd05",
+);
+
+/// Verification through the API is cofactored (RFC 8032 Section 5.1.7, step 3, the first
+/// equation), and `R` must be canonically encoded (Section 5.1.3): the same point with its y
+/// given as p is refused, though the equation would hold for it.
+#[test]
+fn a_small_order_r_is_accepted_only_canonically_encoded() {
+    let pk =
+        Ed25519PublicKey::from_bytes(&bouncycastle_hex::decode(RFC8032_TEST1_PK).unwrap()).unwrap();
+    let zero_r = bouncycastle_hex::decode(ZERO_R).unwrap();
+    assert_eq!(verify(&pk, b"cofactored", &zero_r), Ok(()));
+    assert_eq!(verify(&pk, b"cofactoreD", &zero_r), FAILED);
+    let r_y_is_p = bouncycastle_hex::decode(R_Y_IS_P).unwrap();
+    assert_eq!(verify(&pk, b"cofactored", &r_y_is_p), FAILED);
+}
+
+// (context, signature) under the key and message of RFC 8032 Section 7.3
+const ED25519PH_CONTEXTS: &[(&str, &str)] = &[
+    (
+        "00",
+        concat!(
+            "3e0a12876df934436205c5ee0e8559e1ed726098748aa5c932a7afa34e8fe8178ef3ad700f0a6aa8",
+            "291d63deee2161df578dee604a433aece1b6d3f688222004",
+        ),
+    ),
+    (
+        "6162",
+        concat!(
+            "4f5c824df5d30fd1dea73a732202ec12150d0b7fac254b44f4046a9aa4c8b7a0e12e4a91a62e75fb",
+            "3c79a16d568c59f47ecf5042f24815ab3b024b9e833ac407",
+        ),
+    ),
+    (
+        concat!(
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324252627",
+            "28292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f",
+            "505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f7071727374757677",
+            "78797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+            "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7",
+            "c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeef",
+            "f0f1f2f3f4f5f6f7f8f9fafbfcfdfe",
+        ),
+        concat!(
+            "e92b7df2fb33385643a075cb7f5baf8cf000f7c3fd17ebc8e353587f7b5247b3cbb4b6b931e67cf6",
+            "c9f526ca203dee437528706964137893b9ec911be9cff70b",
+        ),
+    ),
+];
+
+/// Ed25519ph known answers under contexts of 1, 2 and 255 octets, which pin the length octet
+/// and the placing of the context in `dom2` (RFC 8032 Section 2); the RFC's own Ed25519ph
+/// vector has an empty context.
+#[test]
+fn ed25519ph_known_answers_with_a_context() {
+    // RFC 8032 Section 7.3: the secret key, and the message "abc".
+    let sk = "833fe62409237b9d62ec77587520911e9a759cec1d19755b7da901b96dca3d42";
+    let sk = Ed25519PrivateKey::from_bytes(&bouncycastle_hex::decode(sk).unwrap()).unwrap();
+    let pk = sk.pk().unwrap();
+    for (ctx, sig) in ED25519PH_CONTEXTS {
+        let ctx = bouncycastle_hex::decode(ctx).unwrap();
+        let sig = bouncycastle_hex::decode(sig).unwrap();
+        assert_eq!(sign_ph(&sk, b"abc", Some(&ctx))[..], sig[..], "context of {}", ctx.len());
+        assert_eq!(verify_ph(&pk, b"abc", Some(&ctx), &sig), Ok(()));
     }
 }
 

@@ -164,10 +164,66 @@ fn the_unfilled_key() {
 
     let zeros = Ed25519PrivateKey::from_bytes(&[0u8; 32]).unwrap();
     assert_eq!(zeros.encode(), unfilled.encode());
-    assert!(zeros != unfilled && unfilled != zeros);
+    // Both directions, on purpose.
+    #[allow(clippy::nonminimal_bool)]
+    {
+        assert!(zeros != unfilled && unfilled != zeros);
+    }
     let pk = zeros.pk().unwrap();
     keypair_consistency_check(&pk, &zeros).unwrap();
     assert_eq!(keypair_consistency_check(&pk, &unfilled), Err(ZEROIZED));
+}
+
+/// `from_bytes_out` fills a key the caller holds as `from_bytes` would, replaces what the key
+/// held, and leaves it as `zeroized()` makes it when the octets are refused.
+#[test]
+fn from_bytes_out_fills_a_held_key() {
+    let (pk, sk) = keygen(&mut rng()).unwrap();
+    let mut held = Ed25519PrivateKey::zeroized();
+    Ed25519PrivateKey::from_bytes_out(&sk.encode(), &mut held).unwrap();
+    assert!(held == sk);
+    assert_eq!(held.pk().unwrap(), pk);
+    assert_eq!(
+        DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(&held, b"msg", None),
+        DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(&sk, b"msg", None)
+    );
+
+    Ed25519PrivateKey::from_bytes_out(&[7u8; 32], &mut held).unwrap();
+    assert!(held == Ed25519PrivateKey::from_bytes(&[7u8; 32]).unwrap() && held != sk);
+
+    for wrong in [&[7u8; 31][..], &[7u8; 33], &[]] {
+        Ed25519PrivateKey::from_bytes_out(&sk.encode(), &mut held).unwrap();
+        assert_eq!(
+            Ed25519PrivateKey::from_bytes_out(wrong, &mut held),
+            Err(KeyDecodingError("An Ed25519 private key must be 32 bytes"))
+        );
+        assert!(held == Ed25519PrivateKey::zeroized());
+        assert_eq!(held.encode(), [0u8; 32]);
+        assert_eq!(held.pk().err(), Some(ZEROIZED));
+    }
+}
+
+/// `clone` and `clone_from` give the same key, and `clone_from` replaces what the destination
+/// held, an unfilled source included.
+#[test]
+fn clone_and_clone_from() {
+    let (pk, sk) = keygen(&mut rng()).unwrap();
+    assert!(sk.clone() == sk);
+    assert_eq!(sk.clone().pk().unwrap(), pk);
+
+    let mut held = Ed25519PrivateKey::from_bytes(&[7u8; 32]).unwrap();
+    held.clone_from(&sk);
+    assert!(held == sk);
+    assert_eq!(held.encode(), sk.encode());
+    assert_eq!(held.pk().unwrap(), pk);
+    assert_eq!(
+        DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(&held, b"msg", None),
+        DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(&sk, b"msg", None)
+    );
+
+    held.clone_from(&Ed25519PrivateKey::zeroized());
+    assert!(held == Ed25519PrivateKey::zeroized());
+    assert_eq!(held.pk().err(), Some(ZEROIZED));
 }
 
 #[test]

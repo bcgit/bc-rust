@@ -168,7 +168,6 @@ pub fn keypair_consistency_check(
 /// The derivation runs once, when the key is generated or decoded, so signing does not repeat
 /// it. Everything secret is wiped when the key is dropped, and the type has no `Debug`.
 /// One key signs with [`Ed25519`] and with [`Ed25519ph`].
-#[derive(Clone)]
 pub struct Ed25519PrivateKey {
     /// The private key as RFC 8032 has it, kept for the encoding.
     private_key: Secret<[u8; PRIVATE_KEY_LEN]>,
@@ -207,6 +206,27 @@ impl Ed25519PrivateKey {
         }
     }
 
+    /// Decodes the 32 octets of a private key into `sk`, a key you hold: they are copied
+    /// straight into the key, which is expanded where it sits, so no copy is staged on the
+    /// way, where the trait's [`from_bytes`](PrivateKey::from_bytes) moves the key it returns.
+    /// `sk` is zeroized first and left so on every error.
+    ///
+    /// # Errors
+    /// As [`from_bytes`](PrivateKey::from_bytes).
+    pub fn from_bytes_out(bytes: &[u8], sk: &mut Self) -> Result<(), KeyDecodingError> {
+        sk.clear();
+        if bytes.len() != PRIVATE_KEY_LEN {
+            return Err(KeyDecodingError("An Ed25519 private key must be 32 bytes"));
+        }
+        sk.private_key.copy_from_slice(bytes);
+        if sk.expanded.expand(&sk.private_key).is_err() {
+            // The fault path of key expansion; this trait's error carries no other kind.
+            sk.clear();
+            return Err(KeyDecodingError("Ed25519: a computed point failed its check"));
+        }
+        Ok(())
+    }
+
     /// The public key (RFC 8032 Section 5.1.5). It was computed when this key was made; this
     /// puts it in the form verification uses, at the cost of a square root in the field, with
     /// no scalar multiplication.
@@ -242,17 +262,24 @@ impl PrivateKey<PRIVATE_KEY_LEN> for Ed25519PrivateKey {
     /// [`KeyDecodingError`] if `bytes` is not 32 octets, or if the computed public key fails
     /// its check, which no input causes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
-        let bytes: &[u8; PRIVATE_KEY_LEN] = bytes
-            .try_into()
-            .map_err(|_| KeyDecodingError("An Ed25519 private key must be 32 bytes"))?;
         let mut sk = Self::zeroized();
-        *sk.private_key = *bytes;
-        if sk.expanded.expand(&sk.private_key).is_err() {
-            // The fault path of key expansion; this trait's error carries no other kind.
-            sk.clear();
-            return Err(KeyDecodingError("Ed25519: a computed point failed its check"));
-        }
+        Self::from_bytes_out(bytes, &mut sk)?;
         Ok(sk)
+    }
+}
+
+/// `clone` returns the copy by value, and a move wipes nothing (the module's Security
+/// Considerations); `clone_from` copies field by field into a key you hold.
+impl Clone for Ed25519PrivateKey {
+    fn clone(&self) -> Self {
+        let mut sk = Self::zeroized();
+        sk.clone_from(self);
+        sk
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.private_key.copy_from_slice(&*source.private_key);
+        self.expanded.copy_from(&source.expanded);
     }
 }
 

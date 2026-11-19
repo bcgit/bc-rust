@@ -9,7 +9,8 @@
 //!
 //! [`keygen`] draws the 32-octet private key from the caller's RNG, which must offer 128 bits;
 //! [`keygen_out`] does so into a key the caller holds. An existing key is imported with
-//! `from_bytes`, from its 32 octets.
+//! `from_bytes`, from its 32 octets, or with [`Ed25519PrivateKey::from_bytes_out`] into a key
+//! the caller holds.
 //!
 //! ```rust
 //! use bouncycastle_core::traits::{PrivateKey, PublicKey};
@@ -119,7 +120,8 @@
 //! variants SHOULD NOT be used." Prefer Ed25519 unless the message cannot be held. A streaming
 //! verifier has also read the whole message before it can say whether the signature is good;
 //! Section 8.7 warns against acting on data before then. One key pair may serve both algorithms
-//! (Section 8.6).
+//! (Section 8.6). The digest is computed here, from the message: a caller that holds only a
+//! SHA-512 digest cannot sign or verify it as Ed25519ph.
 //!
 //! **Constant time.** Key expansion and signing are constant time in the private key and
 //! everything derived from it, on a target that multiplies two 64-bit words into 128 bits in
@@ -130,9 +132,10 @@
 //! **What is wiped, and what is not.** The private key, the scalar and prefix derived from it,
 //! and the secret intermediates of signing live in `Secret`s or self-wiping types and are
 //! cleared at the end of their lifetime. A value returned by value is moved, and a move does
-//! not wipe its source: that holds for the key pair of [`keygen`], for the trait's `from_bytes`
-//! and for the array `encode` returns. Use [`keygen_out`] and `encode_out` into a key or buffer
-//! you own where that matters.
+//! not wipe its source: that holds for the key pair of [`keygen`], for the trait's `from_bytes`,
+//! for `clone` and for the array `encode` returns. Use [`keygen_out`],
+//! [`Ed25519PrivateKey::from_bytes_out`], `clone_from` and `encode_out` into a key or buffer you
+//! own where that matters.
 //!
 //! Each fixed-base multiplication checks that its result is a point of the curve before
 //! anything is released, and a failure is reported as an error; no input causes one.

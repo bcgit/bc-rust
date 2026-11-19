@@ -46,7 +46,6 @@ fn computation_fault() -> SignatureError {
 /// `A` is computed here, once, and signing reads it from here: a signature made with any
 /// other value in its place exposes the private scalar to whoever also holds a correct
 /// signature on the same message, so no caller is given the chance to supply one.
-#[derive(Clone)]
 #[allow(non_snake_case)]
 pub(crate) struct ExpandedKey {
     /// The pruned first half of the digest: the scalar, in 32 little-endian octets.
@@ -69,6 +68,13 @@ impl ExpandedKey {
         self.s.zeroize();
         self.prefix.zeroize();
         self.A = [0; PUBLIC_KEY_LEN];
+    }
+
+    /// Makes `self` a copy of `source`, field by field, with nothing staged on the way.
+    pub(crate) fn copy_from(&mut self, source: &Self) {
+        self.s.copy_from_slice(&*source.s);
+        self.prefix.copy_from_slice(&*source.prefix);
+        self.A = source.A;
     }
 
     /// Whether [`Self::expand`] has filled the key.
