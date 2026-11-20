@@ -246,3 +246,25 @@ fn the_aliases_name_the_expected_types() {
     let _: AES_OFB_128<'_, Encrypting> = enc;
     let _: AES_OFB_128<'_, Decrypting> = key.create_decryptor(&iv);
 }
+
+/// A key reports the algorithm of its mode over its permutation: the name its workers carry,
+/// and for GCM-SIV, which has no worker, the only place the name is.
+#[test]
+fn keys_report_their_algorithm() {
+    use bouncycastle_aes::{AES192Key, AES256Key};
+    use bouncycastle_cipher::modes::{CMAC, GCM, GCM_SIV};
+
+    assert_eq!(<AES128Key<GCM> as Algorithm>::ALG_NAME, "AES_GCM_128");
+    assert_eq!(
+        <AES128Key<GCM> as Algorithm>::ALG_NAME,
+        <AES_GCM_128<Encrypting> as Algorithm>::ALG_NAME
+    );
+    assert_eq!(<AES192Key<CBC<PKCS7>> as Algorithm>::ALG_NAME, "AES_CBC_192");
+    assert_eq!(<AES256Key<CMAC<16>> as Algorithm>::ALG_NAME, "AES_CMAC_256");
+    assert_eq!(<AES128Key<GCM_SIV> as Algorithm>::ALG_NAME, "AES_GCM_SIV_128");
+    assert_eq!(<AES256Key<GCM_SIV> as Algorithm>::ALG_NAME, "AES_GCM_SIV_256");
+
+    assert_eq!(<AES128Key<GCM> as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+    assert_eq!(<AES192Key<GCM> as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
+    assert_eq!(<AES256Key<GCM_SIV> as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
+}

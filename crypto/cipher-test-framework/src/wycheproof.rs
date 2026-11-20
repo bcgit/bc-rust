@@ -10,7 +10,10 @@
 use crate::Permutation;
 use crate::material::{cipher_key, mac_key};
 use bouncycastle_cipher::BlockCipherKey;
-use bouncycastle_cipher::modes::{CBC, CCM, CMAC, GCM, GCM_NONCE_LEN, GMAC};
+use bouncycastle_cipher::modes::hazmat::gcm_siv::GcmSivPermutation;
+use bouncycastle_cipher::modes::{
+    CBC, CCM, CMAC, GCM, GCM_NONCE_LEN, GCM_SIV, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN, GMAC,
+};
 use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
 use bouncycastle_core::hazmat::Mode;
@@ -470,6 +473,125 @@ pub fn gcm<P: Permutation<KEY_LEN>, const KEY_LEN: usize>(
     println!(
         "Wycheproof {algorithm} at {KEY_LEN} bytes: {} cases run ({} valid, {} invalid), {} not \
          supported (no 96-bit-IV instantiation)",
+        counts.run(),
+        counts.valid,
+        counts.invalid,
+        counts.unsupported
+    );
+    Some(counts)
+}
+
+/// One GCM-SIV case through the key's in-place one-shots, the only ones it has. A valid case
+/// must encrypt to exactly the vector's ciphertext and tag under its nonce and decrypt back; an
+/// invalid case is checked on the decrypt side only and must fail the tag check, leaving the
+/// buffer zeroized.
+#[allow(clippy::too_many_arguments)]
+fn gcm_siv_case<P, const KEY_LEN: usize>(
+    tc_id: u64,
+    key_bytes: &[u8],
+    nonce: &[u8; GCM_SIV_NONCE_LEN],
+    aad: &[u8],
+    msg: &[u8],
+    expected_ct: &[u8],
+    tag: &[u8; GCM_SIV_TAG_LEN],
+    valid: bool,
+) where
+    P: Permutation<KEY_LEN> + GcmSivPermutation,
+{
+    let key = BlockCipherKey::<P, GCM_SIV>::from_key_material(&cipher_key::<KEY_LEN>(key_bytes))
+        .expect("a wycheproof key");
+
+    if valid {
+        let mut ct = msg.to_vec();
+        let got_tag = key
+            .encrypt_detached_inplace_nonce(nonce, aad, &mut ct)
+            .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
+        assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
+        assert_eq!(&got_tag, tag, "tcId {tc_id}: tag mismatch");
+    }
+
+    let mut plaintext = expected_ct.to_vec();
+    match key.decrypt_detached_inplace(nonce, aad, &mut plaintext, tag) {
+        Ok(()) => {
+            assert!(valid, "tcId {tc_id}: an invalid vector decrypted and verified anyway");
+            assert_eq!(plaintext, msg, "tcId {tc_id}: decrypted plaintext mismatch");
+        }
+        Err(SymmetricCipherError::AEADTagCheckFailed) => {
+            assert!(!valid, "tcId {tc_id}: a valid vector failed its tag check");
+            assert!(
+                plaintext.iter().all(|&b| b == 0),
+                "tcId {tc_id}: a failed tag check must leave the buffer zeroized"
+            );
+        }
+        Err(e) => panic!("tcId {tc_id}: unexpected GCM-SIV error: {e:?}"),
+    }
+}
+
+/// `aes_gcm_siv_test.json` through `BlockCipherKey<P, GCM_SIV>` at one key length.
+///
+/// Every flag in the file is named here, and a flag this does not know is a failure rather than
+/// a case run blind: `Ktv` (a known test vector), `Pseudorandom` (generated inputs of various
+/// sizes) and `WrappedIv` (the 32-bit counter wraps) mark `valid` cases, which run in both
+/// directions; `ModifiedTag` (a ciphertext whose computed tag differs slightly from the one
+/// given) marks `invalid` ones, which must fail the tag check.
+///
+/// RFC 8452 Section 6 fixes the nonce at 12 bytes and the tag at 16, and the key type takes
+/// nothing else, so an `invalid` case with any other size is refused by its type and counted as
+/// unsupported; a `valid` one would be a vector the RFC does not define, and fails.
+pub fn gcm_siv<P, const KEY_LEN: usize>(file: &str) -> Option<Counts>
+where
+    P: Permutation<KEY_LEN> + GcmSivPermutation,
+{
+    let doc = wycheproof_json(file)?;
+    check_algorithm(&doc, "AES-GCM-SIV");
+    let mut counts = Counts::default();
+    for group in groups(&doc) {
+        for test in tests(group) {
+            let tc_id = tc_id(test);
+            let key_bytes = hex_field(test, "key", tc_id);
+            if key_bytes.len() != KEY_LEN {
+                continue;
+            }
+            let nonce = hex_field(test, "iv", tc_id);
+            let aad = hex_field(test, "aad", tc_id);
+            let msg = hex_field(test, "msg", tc_id);
+            let ct = hex_field(test, "ct", tc_id);
+            let tag = hex_field(test, "tag", tc_id);
+            let valid = result(test, tc_id);
+            for flag in flags(test) {
+                let marks_valid = match flag {
+                    "Ktv" | "Pseudorandom" | "WrappedIv" => true,
+                    "ModifiedTag" => false,
+                    other => panic!("tcId {tc_id}: unknown flag {other}"),
+                };
+                assert_eq!(valid, marks_valid, "tcId {tc_id}: result does not fit flag {flag}");
+            }
+            // The sizes are fixed by the type, so a case is dispatched on its actual fields.
+            match (
+                <&[u8; GCM_SIV_NONCE_LEN]>::try_from(nonce.as_slice()),
+                <&[u8; GCM_SIV_TAG_LEN]>::try_from(tag.as_slice()),
+            ) {
+                (Ok(nonce), Ok(tag)) => {
+                    gcm_siv_case::<P, KEY_LEN>(
+                        tc_id, &key_bytes, nonce, &aad, &msg, &ct, tag, valid,
+                    );
+                    if valid { counts.valid += 1 } else { counts.invalid += 1 }
+                }
+                _ => {
+                    assert!(
+                        !valid,
+                        "tcId {tc_id}: a valid case with a {}-byte nonce and a {}-byte tag",
+                        nonce.len(),
+                        tag.len()
+                    );
+                    counts.unsupported += 1;
+                }
+            }
+        }
+    }
+    println!(
+        "Wycheproof {file} at {KEY_LEN} bytes: {} cases run ({} valid, {} invalid), {} refused \
+         by the type (not a 12-byte nonce and a 16-byte tag)",
         counts.run(),
         counts.valid,
         counts.invalid,

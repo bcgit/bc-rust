@@ -185,23 +185,43 @@ pub(crate) fn load_iv<const INIT_DATA_LEN: usize>(
     iv: &Option<String>,
     iv_file: &Option<String>,
 ) -> Option<[u8; INIT_DATA_LEN]> {
-    let bytes = if let Some(file) = iv_file {
+    load_init_data(iv, iv_file, "IV", "iv")
+}
+
+/// [`load_iv`] for a command whose flags are `--nonce` / `--nonce-file` first and `--iv` only as
+/// an alias: the same loading, with messages that say "nonce".
+pub(crate) fn load_nonce<const INIT_DATA_LEN: usize>(
+    nonce: &Option<String>,
+    nonce_file: &Option<String>,
+) -> Option<[u8; INIT_DATA_LEN]> {
+    load_init_data(nonce, nonce_file, "nonce", "nonce")
+}
+
+/// The body of [`load_iv`] and [`load_nonce`]; `what` names the value in messages and `flag` the
+/// option that carries it inline.
+fn load_init_data<const INIT_DATA_LEN: usize>(
+    value: &Option<String>,
+    file: &Option<String>,
+    what: &str,
+    flag: &str,
+) -> Option<[u8; INIT_DATA_LEN]> {
+    let bytes = if let Some(file) = file {
         let bytes = read_input_file(file);
         if !hex_input() && bytes.last() == Some(&b'\n') {
             eprintln!(
-                "Warning: IV file '{file}' ends with a newline byte (0x0a), which is used as part \
-                 of the IV. If that is not intended, write it with `printf` or `echo -n`."
+                "Warning: {what} file '{file}' ends with a newline byte (0x0a), which is used as \
+                 part of the {what}. If that is not intended, write it with `printf` or `echo -n`."
             );
         }
         bytes
-    } else if let Some(v) = iv {
-        decode_hex_arg(v, "iv")
+    } else if let Some(v) = value {
+        decode_hex_arg(v, flag)
     } else {
         return None;
     };
     Some(bytes.as_slice().try_into().unwrap_or_else(|_| {
         eprintln!(
-            "Error: IV is {} bytes; this mode requires exactly {INIT_DATA_LEN}.",
+            "Error: {what} is {} bytes; this mode requires exactly {INIT_DATA_LEN}.",
             bytes.len()
         );
         exit(-1)

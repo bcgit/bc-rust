@@ -10,6 +10,15 @@ bouncycastle-rng.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
+# For the unit tests in src/modes/gcm_siv.rs alone: AES-GCM-SIV is defined over AES only, and the
+# RFC 8452 known answers for its internal steps need the real cipher. bouncycastle-aes depends on
+# this crate, so this is a dev-dependency cycle, which cargo permits; the test build of this crate
+# is then a second copy of it beside the one bouncycastle-aes links, so those tests reach AES
+# through bouncycastle-core's traits and not through any trait defined here.
+# Given by path and with no version, and not through the workspace table, on purpose: cargo
+# publishes only the dev-dependencies that specify a version, so this one is left out of the
+# published manifest and the two crates can be published in order, this one first.
+bouncycastle-aes = { path = "../aes" }
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true
 criterion.workspace = true

@@ -11,13 +11,14 @@ use bouncycastle_core::hazmat::{
     SymmetricEncryptMode, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
     AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, BlockDecryptionKey, BlockEncryptionKey,
     FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey, MacGenerationKey, MacVerificationKey,
     NonceMacGenerationKey, NonceMacVerificationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
-use bouncycastle_core::traits::RNG;
+use bouncycastle_core::traits::{Algorithm, RNG};
 
 /// A block cipher key for the permutation `P` under the mode `M`: one type per cipher, key
 /// length and mode, so a key is bound to all three by the Rust type rather than by the length of
@@ -36,11 +37,12 @@ use bouncycastle_core::traits::RNG;
 /// padded block modes (`CFB`, `CFB8`, `OFB`, `CTR<N>` at any nonce length, `CBC<PKCS7>`,
 /// `CBC<NoPadding>`, `ECB<PKCS7>`, `ECB<NoPadding>`), the block pair for `CBC<Blocks>`, the
 /// `hazmat` ECB pair for `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM` and `CCM_Packet` (each
-/// its streaming pair and the in-place pair), the MAC pair for `CMAC`, the key-wrap pair for `KW`
+/// its streaming pair and the in-place pair) and the in-place pair alone for `GCM_SIV`, the MAC
+/// pair for `CMAC`, the key-wrap pair for `KW`
 /// and `KWP`, and for `GMAC`, whose tag is nonce-bound, the inherent
 /// [`create_generator`](Self::create_generator) / [`create_verifier`](Self::create_verifier)
 /// pair. A permutation that implements a mode's traits carries that mode's roles; there is no
-/// per-cipher opt-in.
+/// per-cipher opt-in, except that `GCM_SIV` exists over AES-128 and AES-256 alone.
 ///
 /// The only state is the mode's per-key state, which holds the expanded schedule in a `Secret`
 /// and so is zeroized on drop; the key has no `Debug` and no way to read the material back. A
@@ -64,6 +66,13 @@ use bouncycastle_core::traits::RNG;
 /// on its alias, plus what the mode keeps per key. The cost is paid per key, not per message.
 pub struct BlockCipherKey<P, M: Mode<P>> {
     state: M::KeyState,
+}
+
+/// A key is for one algorithm, the mode's over the permutation, and reports its name and the
+/// permutation's strength. This is where a mode with no worker, such as `GCM_SIV`, is named.
+impl<P: Algorithm, M: Mode<P>> Algorithm for BlockCipherKey<P, M> {
+    const ALG_NAME: &'static str = M::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
 impl<P, M: Mode<P>> Clone for BlockCipherKey<P, M> {
