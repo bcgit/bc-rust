@@ -674,7 +674,8 @@ pub const KDF_ONE_SHOT_MAX_LEN: usize = 1024;
 /// passed twice in `ikms` counts twice, which is the caller's to avoid. `fixed_info` is context
 /// and credits nothing. A [`KeyType::Zeroized`] or [`KeyType::Unknown`] input is derived from
 /// and yields `Unknown` output rather than an error, since a KDF cannot tell such bytes from
-/// random ones.
+/// random ones. [`crate::hazmat::label_kdf_output`] is the rule as code, for an implementation
+/// to call.
 ///
 /// An instance holds only what it was made from (an HKDF's salt): one that has also absorbed
 /// input through a streaming API is refused by the derivations. A zero-length derivation is

@@ -74,14 +74,14 @@
 #![forbid(missing_docs)]
 
 use bouncycastle_core::errors::KDFError;
-use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token};
+use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token, label_kdf_output};
 use bouncycastle_core::kdf_params::KdfDescription;
-use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashAlgParams, HashOneShot, KDF};
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
+use bouncycastle_utils::min;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::{max, min};
 use core::marker::PhantomData;
 
 /// The largest hash output this crate's block buffer holds: 64 bytes, SHA-512's. A hash with a
@@ -226,23 +226,10 @@ impl<H: X963KDFParams> X963KDF<H> {
             return Err(KDFError::InvalidLength("the output buffer cannot hold keydatalen bytes"));
         }
 
-        // What the output can claim: the full-entropy keys' bytes count towards seeding, their
-        // strongest strength towards the output's.
-        let mut credited = 0usize;
-        let mut strength = SecurityStrength::None;
-        for key in keys {
-            // [`KDF`]'s rule: a full-entropy key with a strength credits its bytes; one with
-            // none (a `SharedSecret` whose producer stated nothing) credits nothing.
-            if key.is_full_entropy() && key.security_strength() != SecurityStrength::None {
-                credited = credited.saturating_add(key.key_len());
-                strength = *max(&strength, &key.security_strength());
-            }
-        }
-
         // Steps 3 to 5. K_i is keying material, so its block zeroizes on drop.
         let mut block = Secret::<[u8; MAX_HASH_OUTPUT_LEN]>::new();
         let blocks = key_data_len.div_ceil(H::OUTPUT_LEN);
-        let labelled = do_hazardous_operations(okm, |okm| {
+        let filled = do_hazardous_operations(okm, |okm| {
             let out = okm.ref_to_bytes_mut()?;
             let mut written = 0usize;
             // Step 3: Counter starts at 00000001; step 4: for i = 1 to ceil(keydatalen / hashlen).
@@ -261,15 +248,11 @@ impl<H: X963KDFParams> X963KDF<H> {
                 written += take;
                 // Step 4.2: increment Counter (the loop's).
             }
-            okm.set_key_len(key_data_len)?;
-            if credited >= H::OUTPUT_LEN / 2 {
-                okm.set_key_type(KeyType::CryptographicRandom)?;
-                let by_len = SecurityStrength::from_bytes(key_data_len);
-                okm.set_security_strength(*min(min(&strength, &H::MAX_SECURITY_STRENGTH), &by_len))
-            } else {
-                okm.set_key_type(KeyType::Unknown)?;
-                okm.set_security_strength(SecurityStrength::None)
-            }
+            Ok(())
+        });
+        // What the output can claim is the [`KDF`] trait's rule, applied once it is in place.
+        let labelled = filled.and_then(|()| {
+            label_kdf_output(keys, key_data_len, H::OUTPUT_LEN / 2, H::MAX_SECURITY_STRENGTH, okm)
         });
         // The blocks are in `okm` by now, so the `_out` rule's promise for the error path is kept
         // here, although no setter after the loop fails on a buffer that passed the checks above.
