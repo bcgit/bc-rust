@@ -13,4 +13,5 @@
 
 pub(crate) mod ctr_key_stream;
 pub mod ecb;
+pub mod gcm_siv;
 pub(crate) mod ofb_key_stream;

@@ -75,6 +75,7 @@ use crate::sbox::{inv_sbox, sbox};
 use crate::schedule::{expand, round_key};
 use crate::{AES128Params, AES192Params, AES256Params, AESParams};
 use bouncycastle_cipher::modes::ModeNames;
+use bouncycastle_cipher::modes::hazmat::gcm_siv::GcmSivPermutation;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -335,6 +336,15 @@ impl Algorithm for AES192Internal {
 impl Algorithm for AES256Internal {
     const ALG_NAME: &'static str = AES256Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+}
+
+// AES-GCM-SIV is defined for 16- and 32-byte keys (RFC 8452 Sections 4 and 6), so AES-192 does
+// not carry the marker and `AES192Key<GCM_SIV>` is not a type.
+impl GcmSivPermutation for AES128Internal {
+    const GCM_SIV_ALG_NAME: &'static str = "AES_GCM_SIV_128";
+}
+impl GcmSivPermutation for AES256Internal {
+    const GCM_SIV_ALG_NAME: &'static str = "AES_GCM_SIV_256";
 }
 
 // The `Algorithm` impls above name the permutation. Each mode over it is a different algorithm,

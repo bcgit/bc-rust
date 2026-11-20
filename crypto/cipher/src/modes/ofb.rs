@@ -129,6 +129,7 @@ pub struct OFB;
 impl<P: Clone + ModeNames> Mode<P> for OFB {
     type KeyState = P;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::OFB_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         perm

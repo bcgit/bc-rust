@@ -8,8 +8,8 @@
 //! * [`padded`] -- padded CBC through the key: the padding parameter selects the scheme.
 //! * [`stream`] -- CFB, CFB8, OFB and CTR through the key: any length, any chunking, a fresh IV,
 //!   and the four modes distinct.
-//! * [`wycheproof`] -- the Project Wycheproof CBC-PKCS5, CCM, GCM, CMAC and key-wrap sets, run
-//!   through the key at one key length per call.
+//! * [`wycheproof`] -- the Project Wycheproof CBC-PKCS5, CCM, GCM, GCM-SIV, CMAC and key-wrap
+//!   sets, run through the key at one key length per call.
 //!
 //! Sits beside `bouncycastle-core-test-framework` rather than inside it because it names the
 //! cipher crate's types, and that crate's own tests depend on the core framework. Only ever a

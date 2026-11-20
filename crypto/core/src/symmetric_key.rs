@@ -796,8 +796,9 @@ pub trait AeadInPlaceEncryptionKey<
     /// and the tag. The ciphertext is the same length as the plaintext it replaces.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails, or the mode's refusal of a
-    /// length it cannot take. After an error the contents of `buf` are unspecified.
+    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails, which leaves `buf` untouched,
+    /// or the mode's refusal of a length it cannot take, after which the contents of `buf` are
+    /// unspecified.
     fn encrypt_detached_inplace(
         &self,
         rng: &mut dyn RNG,

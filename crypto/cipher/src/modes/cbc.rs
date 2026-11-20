@@ -126,6 +126,7 @@ pub struct CBC<X>(core::marker::PhantomData<X>);
 impl<P: Clone + ModeNames, X> Mode<P> for CBC<X> {
     type KeyState = P;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::CBC_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         perm

@@ -6,8 +6,9 @@ use crate::Permutation;
 use crate::material::{mac_material, material, material_flipped, rng};
 use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
+use bouncycastle_cipher::modes::hazmat::gcm_siv::GcmSivPermutation;
 use bouncycastle_cipher::modes::{
-    Blocks, CBC, CCM_Packet, CFB, CFB8, CMAC, CTR, GCM, GMAC, KW, KWP, OFB,
+    Blocks, CBC, CCM_Packet, CFB, CFB8, CMAC, CTR, GCM, GCM_SIV, GMAC, KW, KWP, OFB,
 };
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
@@ -23,7 +24,7 @@ use bouncycastle_core::symmetric_key::{
 use bouncycastle_core::traits::{BlockCipherEncryptor, MACGenerator};
 use bouncycastle_core_test_framework::FailingRNG;
 use bouncycastle_core_test_framework::aead::{
-    TestFrameworkAEADCipher, TestFrameworkAEADTaggedLayout,
+    TestFrameworkAEADCipher, TestFrameworkAEADInPlace, TestFrameworkAEADTaggedLayout,
 };
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
@@ -183,6 +184,25 @@ pub fn aead_modes<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
         .is_err()
     );
     assert!(stale.iter().all(|&b| b == 0), "decrypt_detached_out must zeroize first");
+}
+
+/// The construction suite for the GCM-SIV key, against the name the permutation gives the mode.
+/// Apart from [`construction`] because only a permutation the mode is defined over has such a key.
+pub fn gcm_siv_construction<P, const KEY_LEN: usize>()
+where
+    P: Permutation<KEY_LEN> + GcmSivPermutation,
+{
+    TestFrameworkFromKeyMaterial::new()
+        .test::<KEY_LEN, BlockCipherKey<P, GCM_SIV>>(P::GCM_SIV_ALG_NAME, P::MAX_SECURITY_STRENGTH);
+}
+
+/// The in-place AEAD suite over the GCM-SIV key, which has no other role.
+pub fn gcm_siv_in_place<P, const KEY_LEN: usize>()
+where
+    P: Permutation<KEY_LEN> + GcmSivPermutation,
+{
+    TestFrameworkAEADInPlace::new()
+        .test_key::<KEY_LEN, 12, 16, _>(&make_key::<P, GCM_SIV, KEY_LEN>(), &mut rng());
 }
 
 /// The nonce is drawn per GCM encryption, so the same plaintext gives different ciphertext, and

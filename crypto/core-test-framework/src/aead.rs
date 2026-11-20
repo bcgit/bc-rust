@@ -1,6 +1,6 @@
 //! Shared conformance tests for [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] implementors.
 //!
-//! Two runners:
+//! Three runners:
 //!
 //! * [`TestFrameworkAEADCipher`] checks the whole AEAD contract -- it runs the
 //!   [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] suite first, then the AAD and tag
@@ -11,6 +11,9 @@
 //!   and under every chunking, which is where an implementor's own bookkeeping goes wrong. Every
 //!   encryption there is driven through a [`FixedSeedRNG`] so that the nonce is the same on every
 //!   path and streaming output can be compared byte for byte with one-shot output.
+//! * [`TestFrameworkAEADInPlace`] checks the in-place roles, [`AeadInPlaceEncryptionKey`] /
+//!   [`AeadInPlaceDecryptionKey`], and bounds on nothing else, so it is the suite for a key that
+//!   cannot stream. [`TestFrameworkAEADCipher`] runs it too.
 //!
 //! [`SymmetricCipherEncryptor`]: bouncycastle_core::traits::SymmetricCipherEncryptor
 //! [`SymmetricCipherDecryptor`]: bouncycastle_core::traits::SymmetricCipherDecryptor
@@ -565,15 +568,6 @@ impl TestFrameworkAEADCipher {
                 buf.iter().all(|&b| b == 0),
                 "the one-shot decrypt must zeroize the buffer when the tag check fails"
             );
-            let mut buf = tampered.clone();
-            match key.decrypt_detached_inplace(&nonce, aad, &mut buf, &tag) {
-                Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
-                other => panic!("a modified ciphertext must fail in place too, got {other:?}"),
-            };
-            assert!(
-                buf.iter().all(|&b| b == 0),
-                "the in-place decrypt must zeroize the buffer when the tag check fails"
-            );
         }
 
         let mut tampered_inline = ct.clone();
@@ -706,8 +700,8 @@ impl TestFrameworkAEADCipher {
         );
 
         // a worker held as `Box<dyn ..>` streams through the box and finishes through its
-        // `_boxed` finals, which consume the box: the detached pair, then the inline pair. Last
-        // in the suite, so that its nonce draws shift no earlier check's.
+        // `_boxed` finals, which consume the box: the detached pair, then the inline pair. After
+        // every check above, so that its nonce draws shift no earlier check's.
         let len = self.fixed_message_len.unwrap_or(max_len);
         let msg = &DUMMY_SEED[..len];
         let mut boxed_encryptor = || {
@@ -758,6 +752,9 @@ impl TestFrameworkAEADCipher {
         let (last, last_len) = dec.do_decrypt_final_boxed().unwrap();
         pt.extend_from_slice(&last[..last_len]);
         assert_eq!(pt, msg, "boxed decryptor, inline");
+
+        // the in-place roles' own contract, which has one home
+        TestFrameworkAEADInPlace { fixed_message_len: self.fixed_message_len }.test_key(key, rng);
     }
 
     /// The parts of the symmetric-cipher suite an AEAD pair cannot reach through
@@ -910,6 +907,199 @@ impl TestFrameworkAEADCipher {
                 pt.iter().all(|&b| b == 0),
                 "corrupted byte {flip}: the buffer must be zeroized"
             );
+        }
+    }
+}
+
+/// Instance of the test framework.
+pub struct TestFrameworkAEADInPlace {
+    /// The one message length the key accepts, if it accepts only one; `None` (the default) means
+    /// any length. Every other length is then checked to be refused.
+    pub fixed_message_len: Option<usize>,
+}
+
+impl Default for TestFrameworkAEADInPlace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TestFrameworkAEADInPlace {
+    /// A suite for a key that takes a message of any length.
+    pub fn new() -> Self {
+        Self { fixed_message_len: None }
+    }
+
+    /// The contract of [`AeadInPlaceEncryptionKey`] / [`AeadInPlaceDecryptionKey`], over those two
+    /// roles alone: a key needs no streaming worker to run it. `rng` supplies every nonce draw.
+    ///
+    /// Checks, in order:
+    /// * a round trip at every length up to a few times the tag length (and up to the fixed
+    ///   length, if there is one), with and without AAD, under a drawn nonce; the supplied-nonce
+    ///   form gives the same ciphertext and tag under that nonce;
+    /// * a length other than the fixed one is refused in both directions, and the refused
+    ///   decryption leaves its buffer untouched or zeroized;
+    /// * a changed tag, ciphertext (first, middle and last byte), AAD or nonce fails with
+    ///   [`SymmetricCipherError::AEADTagCheckFailed`] and leaves the buffer all zeros, at an
+    ///   empty message (which still authenticates its AAD) and at non-empty ones;
+    /// * when the nonce cannot be drawn the RNG's error is returned and the buffer still holds
+    ///   the plaintext;
+    /// * the nonces drawn across calls are distinct.
+    ///
+    /// Nothing here depends on what a repeated nonce does to the mode.
+    pub fn test_key<
+        const KEY_LEN: usize,
+        const NONCE_LEN: usize,
+        const TAG_LEN: usize,
+        K: AeadInPlaceEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN>
+            + AeadInPlaceDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN>,
+    >(
+        &self,
+        key: &K,
+        rng: &mut dyn RNG,
+    ) {
+        let aad: &[u8] = b"some associated data";
+        let max_len = (3 * TAG_LEN.max(1) + 5).max(self.fixed_message_len.unwrap_or(0));
+        assert!(max_len <= DUMMY_SEED.len(), "the fixed message length must fit the seed buffer");
+
+        // round trips, drawn and supplied nonce
+        for len in 0..=max_len {
+            let msg = &DUMMY_SEED[..len];
+            if let Some(fixed) = self.fixed_message_len
+                && fixed != len
+            {
+                let mut buf = msg.to_vec();
+                assert!(
+                    key.encrypt_detached_inplace(rng, aad, &mut buf).is_err(),
+                    "fixed length: a {len}-byte in-place encryption must be refused"
+                );
+                let mut buf = msg.to_vec();
+                assert!(
+                    key.encrypt_detached_inplace_nonce(&[0xA5; NONCE_LEN], aad, &mut buf).is_err(),
+                    "fixed length: a {len}-byte in-place encryption under a nonce must be refused"
+                );
+                let mut buf = msg.to_vec();
+                assert!(
+                    key.decrypt_detached_inplace(
+                        &[0xA5; NONCE_LEN], aad, &mut buf, &[0x5A; TAG_LEN]
+                    )
+                    .is_err(),
+                    "fixed length: a {len}-byte in-place decryption must be refused"
+                );
+                assert!(
+                    buf == msg || buf.iter().all(|&b| b == 0),
+                    "fixed length: a refused {len}-byte decryption must leave the buffer \
+                     untouched or zeroized"
+                );
+                continue;
+            }
+            for aad in [aad, &[]] {
+                let mut buf = msg.to_vec();
+                let (nonce, tag) = key.encrypt_detached_inplace(rng, aad, &mut buf).unwrap();
+                assert_eq!(buf.len(), len, "the ciphertext is the plaintext's length");
+                // Only assert the ciphertext differs from the plaintext once there is enough of
+                // it for an accidental match to be negligible rather than a 1-in-256 flake.
+                if len >= 8 {
+                    assert_ne!(
+                        &buf[..],
+                        msg,
+                        "len {len}: the ciphertext must not be the plaintext"
+                    );
+                }
+
+                let mut again = msg.to_vec();
+                let tag_again =
+                    key.encrypt_detached_inplace_nonce(&nonce, aad, &mut again).unwrap();
+                assert_eq!(
+                    (&again, tag_again),
+                    (&buf, tag),
+                    "len {len}: the supplied-nonce form must agree with the drawing one"
+                );
+
+                key.decrypt_detached_inplace(&nonce, aad, &mut buf, &tag).unwrap();
+                assert_eq!(&buf[..], msg, "len {len}: in-place round trip");
+            }
+        }
+
+        // tampering: each change must fail the tag check and leave no plaintext, and no
+        // ciphertext, behind
+        let refused =
+            |nonce: &[u8; NONCE_LEN], aad: &[u8], ct: &[u8], tag: &[u8; TAG_LEN], what| {
+                let mut buf = ct.to_vec();
+                match key.decrypt_detached_inplace(nonce, aad, &mut buf, tag) {
+                    Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
+                    other => panic!(
+                        "{what}, len {}: expected a failed tag check, got {other:?}",
+                        ct.len()
+                    ),
+                }
+                assert!(
+                    buf.iter().all(|&b| b == 0),
+                    "{what}, len {}: a failed tag check must leave the buffer zeroized",
+                    ct.len()
+                );
+            };
+        let tamper_lens = match self.fixed_message_len {
+            Some(fixed) => vec![fixed],
+            None => vec![0, 1, TAG_LEN + 1, max_len],
+        };
+        for len in tamper_lens {
+            let msg = &DUMMY_SEED[..len];
+            let mut ct = msg.to_vec();
+            let (nonce, tag) = key.encrypt_detached_inplace(rng, aad, &mut ct).unwrap();
+
+            for i in [0, TAG_LEN.saturating_sub(1)] {
+                if TAG_LEN == 0 {
+                    break;
+                }
+                let mut bad = tag;
+                bad[i] ^= 0x01;
+                refused(&nonce, aad, &ct, &bad, "a modified tag");
+            }
+            for i in [0, len / 2, len.saturating_sub(1)] {
+                if len == 0 {
+                    break;
+                }
+                let mut bad = ct.clone();
+                bad[i] ^= 0x80;
+                refused(&nonce, aad, &bad, &tag, "a modified ciphertext");
+            }
+            refused(&nonce, b"some associated dat\x00", &ct, &tag, "a modified AAD");
+            refused(&nonce, &[], &ct, &tag, "a dropped AAD");
+            for i in [0, NONCE_LEN.saturating_sub(1)] {
+                if NONCE_LEN == 0 {
+                    break;
+                }
+                let mut bad = nonce;
+                bad[i] ^= 0x01;
+                refused(&bad, aad, &ct, &tag, "a modified nonce");
+            }
+
+            // the message itself still opens
+            key.decrypt_detached_inplace(&nonce, aad, &mut ct, &tag).unwrap();
+            assert_eq!(&ct[..], msg, "len {len}: the untampered message must still decrypt");
+        }
+
+        // when the nonce cannot be drawn, nothing has been encrypted
+        let msg = &DUMMY_SEED[..self.fixed_message_len.unwrap_or(max_len)];
+        let mut buf = msg.to_vec();
+        assert!(
+            matches!(
+                key.encrypt_detached_inplace(&mut FailingRNG, aad, &mut buf),
+                Err(SymmetricCipherError::RNGError(_))
+            ),
+            "a failed nonce draw must be returned as the RNG's error"
+        );
+        assert_eq!(&buf[..], msg, "a failed nonce draw must leave the buffer untouched");
+
+        // encryptions under the same key must not reuse a nonce
+        if NONCE_LEN > 0 {
+            let mut seen = std::collections::BTreeSet::new();
+            for _ in 0..16 {
+                let mut buf = msg.to_vec();
+                let (nonce, _) = key.encrypt_detached_inplace(rng, aad, &mut buf).unwrap();
+                assert!(seen.insert(nonce), "a nonce repeated across encryptions");
+            }
         }
     }
 }

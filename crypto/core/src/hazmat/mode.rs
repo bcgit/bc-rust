@@ -52,6 +52,10 @@ pub trait Mode<P> {
     /// cipher mode, [`KeyType::MACKey`] for a MAC mode. The key's constructor checks it.
     const KEY_TYPE: KeyType;
 
+    /// The name of the algorithm this mode is over `P`, which a key bound to the mode reports
+    /// and which is also the name its workers carry.
+    const ALG_NAME: &'static str;
+
     /// Builds the per-key state from an already-keyed permutation.
     fn key_state(perm: P) -> Self::KeyState;
 }
@@ -199,8 +203,9 @@ pub trait AeadInPlaceEncryptMode<
     /// the nonce and the detached tag.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails, or the mode's own refusal of
-    /// a length it cannot take. After an error the contents of `buf` are unspecified.
+    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails, which leaves `buf` untouched,
+    /// or the mode's own refusal of a length it cannot take, after which the contents of `buf`
+    /// are unspecified.
     fn encrypt_detached_inplace(
         state: &Self::KeyState,
         rng: &mut dyn RNG,
