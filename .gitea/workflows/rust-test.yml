@@ -22,30 +22,40 @@ jobs:
       # The runner mounts its synced copies read-only at /bc-test-data and /wycheproof, so the
       # data is not transferred per build. The vector suites print a warning and pass when their
       # data is missing, and Docker mounts an empty directory for a missing host path, so check
-      # for the directories the loaders read rather than the mount points.
-      - name: Symlink test data alongside the checkout
+      # for the directory the loaders read rather than the mount point.
+      - name: Symlink bc-test-data alongside the checkout
         run: |
           test -d /bc-test-data/crypto || { echo "/bc-test-data/crypto not found"; exit 1; }
-          test -d /wycheproof/testvectors_v1 || { echo "/wycheproof/testvectors_v1 not found"; exit 1; }
           ln -sfnT /bc-test-data ../bc-test-data
-          ln -sfnT /wycheproof ../wycheproof
 
       # GitHub's workflow checks Wycheproof out at a fixed commit, so that a change upstream does
-      # not fail an unrelated pull request. A mount cannot be checked out here, so the runner's
-      # copy is required to be at that commit: keep WYCHEPROOF_COMMIT in step with the `ref` in
-      # .github/workflows/rust-test.yml, and move the runner's copy when it moves.
-      - name: Check the Wycheproof copy is the pinned commit
+      # not fail an unrelated pull request. The mount cannot be checked out, but a clone holds
+      # every commit it has fetched: the vectors of the pinned commit are read out of the
+      # runner's clone, wherever its HEAD is. Keep WYCHEPROOF_COMMIT in step with the `ref` in
+      # .github/workflows/rust-test.yml; the runner's clone needs a fetch only when the pin moves
+      # past what it holds.
+      - name: Extract the pinned Wycheproof vectors alongside the checkout
         env:
           WYCHEPROOF_COMMIT: 65ca494727a52944c204441c860b039e6786b99b
         run: |
           # The mount belongs to another user, which git refuses without safe.directory.
-          actual=$(git -c safe.directory=/wycheproof -C /wycheproof rev-parse HEAD) || {
-            echo "/wycheproof is not a git checkout, so its commit cannot be checked"; exit 1;
+          wy() { git -c safe.directory=/wycheproof -C /wycheproof "$@"; }
+          wy rev-parse --git-dir >/dev/null || {
+            echo "/wycheproof is not a git clone, so the pinned commit cannot be read from it"; exit 1;
           }
-          if [ "$actual" != "$WYCHEPROOF_COMMIT" ]; then
-            echo "/wycheproof is at $actual; the tests are pinned to $WYCHEPROOF_COMMIT"
-            exit 1
-          fi
+          wy cat-file -e "$WYCHEPROOF_COMMIT^{commit}" || {
+            echo "/wycheproof does not hold commit $WYCHEPROOF_COMMIT; fetch it on the runner"; exit 1;
+          }
+          # A link left by an earlier job is removed, not followed.
+          rm -rf ../wycheproof
+          mkdir ../wycheproof
+          # The loaders read testvectors_v1 only. Through a file, so that a failed archive is
+          # this step's failure and not hidden by a pipe.
+          tarball=$(mktemp)
+          wy archive --format=tar -o "$tarball" "$WYCHEPROOF_COMMIT" testvectors_v1
+          tar -xf "$tarball" -C ../wycheproof
+          rm -f "$tarball"
+          test -d ../wycheproof/testvectors_v1 || { echo "no testvectors_v1 in $WYCHEPROOF_COMMIT"; exit 1; }
 
       - name: Install Rust toolchain
         run: |
