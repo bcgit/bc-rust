@@ -29,6 +29,9 @@
 
 mod bits;
 mod curve25519;
+// No caller until X448 lands, when this allow goes.
+#[allow(dead_code)]
+mod curve448;
 pub mod ed25519;
 mod nat;
 mod wnaf;
