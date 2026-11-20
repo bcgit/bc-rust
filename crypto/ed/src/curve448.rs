@@ -429,9 +429,7 @@ impl FieldElement448 {
     }
 }
 
-// The operations Ed448 needs and X448 does not. They have no caller until the Ed448 port lands,
-// when this allow goes.
-#[allow(dead_code)]
+// The operations Ed448 needs and X448 does not.
 impl FieldElement448 {
     /// The element with the given limbs, least significant first; `const`, for curve constants.
     ///
@@ -600,9 +598,7 @@ impl NormalizedFieldElement448 {
     }
 }
 
-// The tests Ed448 needs on a canonical value; they have no caller until the Ed448 port lands
-// (`is_zero_var` apart), when this allow goes.
-#[allow(dead_code)]
+// The tests Ed448 needs on a canonical value.
 impl NormalizedFieldElement448 {
     /// Whether two values are equal. Variable time: both must be public.
     pub(crate) fn are_equal_var(lhs: &Self, rhs: &Self) -> bool {

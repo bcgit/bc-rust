@@ -4,4 +4,6 @@
 //! arrays. Nothing here is public yet; the key objects and the signature roles are built on
 //! `scheme`.
 
+mod point;
+mod precomp;
 mod scalar;
