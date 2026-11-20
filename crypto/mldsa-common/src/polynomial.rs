@@ -117,14 +117,6 @@ impl Polynomial {
         w
     }
 
-    /// Algorithm 38 LowBits(𝑟) applied to every coefficient, leaving `self` as it was.
-    #[must_use]
-    pub fn low_bits<P: MLDSAParamsBase>(&self) -> Self {
-        let mut w = *self;
-        w.low_bits_inplace::<P>();
-        w
-    }
-
     /// Tests whether any coefficient has absolute value at least `bound`.
     ///
     /// `bound` is a runtime argument rather than a const generic because every call site passes a

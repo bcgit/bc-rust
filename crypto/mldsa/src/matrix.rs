@@ -282,7 +282,7 @@ impl<const LEN: usize> VectorTrait for Vector<LEN> {
 
     fn low_bits<P: MLDSAParams>(&mut self) {
         for i in 0..LEN {
-            self[i] = self[i].low_bits::<P>();
+            self[i].low_bits_inplace::<P>();
         }
     }
 
