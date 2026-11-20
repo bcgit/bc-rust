@@ -1,7 +1,8 @@
-//! The `x448` subcommand: X448 key agreement (RFC 7748) through the agreement role. `agree`
-//! writes the raw shared secret for a KDF (`hkdf-* --ikm-file` and the others), as `x25519`
-//! does.
+//! The `x448` subcommand: X448 key agreement (RFC 7748) through the agreement role, and
+//! DHKEM(X448, HKDF-SHA512) (RFC 9180) through the KEM roles, on one key pair. `agree` writes
+//! the raw shared secret for a KDF (`hkdf-* --ikm-file` and the others), as `x25519` does.
 
+use crate::helpers::kem_helpers::{decaps_cmd, encaps_cmd};
 use crate::helpers::{
     SecretBytes, println_stdout, read_input_file, read_secret_file_or_stdin, write_bytes_or_hex,
     write_private_key, write_secret_bytes_or_hex,
@@ -9,7 +10,9 @@ use crate::helpers::{
 use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
-use bouncycastle::ed::x448::{X448PrivateKey, X448PublicKey, keygen_out};
+use bouncycastle::ed::x448::{
+    DHKEM_SS_LEN, POINT_LEN, SCALAR_LEN, X448PrivateKey, X448PublicKey, keygen_out,
+};
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
 use std::process::exit;
@@ -24,12 +27,17 @@ pub(crate) enum X448Action {
     CheckConsistency,
     /// The raw X448 shared secret from the private key and the peer's public key, for a KDF.
     Agree,
+    /// DHKEM encapsulation against the public key: the shared secret, and the ciphertext.
+    Encaps,
+    /// DHKEM decapsulation of the ciphertext with the private key.
+    Decaps,
 }
 
 pub(crate) fn x448_cmd(
     action: &X448Action,
     skfile: &Option<String>,
     pkfile: &Option<String>,
+    ctfile: &Option<String>,
     output_hex: bool,
 ) {
     match action {
@@ -69,6 +77,16 @@ pub(crate) fn x448_cmd(
                 exit(-1);
             });
             write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
+        }
+        X448Action::Encaps => {
+            encaps_cmd::<X448PublicKey, POINT_LEN, POINT_LEN, DHKEM_SS_LEN>(
+                pkfile, ctfile, output_hex, "X448",
+            );
+        }
+        X448Action::Decaps => {
+            decaps_cmd::<X448PrivateKey, SCALAR_LEN, POINT_LEN, DHKEM_SS_LEN>(
+                skfile, ctfile, output_hex, "X448",
+            );
         }
     }
 }

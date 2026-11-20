@@ -7151,17 +7151,22 @@ enum Subcommands {
         x: bool,
     },
 
-    /// The X448 key agreement algorithm (RFC 7748).
+    /// The X448 key agreement algorithm (RFC 7748), and the DHKEM(X448, HKDF-SHA512) key
+    /// encapsulation built on it (RFC 9180).
     X448 {
         action: x448_cmd::X448Action,
 
         #[arg(long)]
-        /// The private key file (binary, or hex under --hex-input) for pk-from-sk, check-consistency and agree; stdin if absent
+        /// The private key file (binary, or hex under --hex-input) for pk-from-sk, check-consistency, agree and decaps; stdin if absent where allowed
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (binary, or hex under --hex-input) for check-consistency and agree
+        /// The public key file (binary, or hex under --hex-input) for check-consistency, agree and encaps
         pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (binary, or hex under --hex-input): written by encaps, read by decaps.
+        ctfile: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -8833,8 +8838,8 @@ fn run() {
         Some(Subcommands::X25519 { action, skfile, pkfile, ctfile, x }) => {
             x25519_cmd::x25519_cmd(action, skfile, pkfile, ctfile, *x);
         }
-        Some(Subcommands::X448 { action, skfile, pkfile, x }) => {
-            x448_cmd::x448_cmd(action, skfile, pkfile, *x);
+        Some(Subcommands::X448 { action, skfile, pkfile, ctfile, x }) => {
+            x448_cmd::x448_cmd(action, skfile, pkfile, ctfile, *x);
         }
         None => {
             eprintln!("No command provided. See -h")
