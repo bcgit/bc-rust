@@ -37,6 +37,17 @@ PH_SK=833fe62409237b9d62ec77587520911e9a759cec1d19755b7da901b96dca3d42
 PH_PK=ec172b93ad5e563bf4932c70e1245034c35467ef2efd4d64ebf819683467e2bf
 PH_MSG=616263
 PH_SIG=98a70222f0b8121aa9d30f813d683f809e462b469c7ff87639499bb94e6dae4131f85042463c2a355a2003d062adf5aaa10b8c61e636062aaad11c2a26083406
+# `fails_silently MSG CMD...`: CMD must fail and write nothing to stdout. Not `expect_fail`,
+# which sends stdout to /dev/null and so cannot show that nothing was written.
+fails_silently() {
+    local msg=$1
+    shift
+    if "$@" >"$TMP/out" 2>"$LAST_STDERR"; then
+        fail "$msg (command succeeded: $*)"
+    fi
+    assert_size "$TMP/out" 0 "$msg: nothing on stdout"
+}
+
 # ---- known answers ------------------------------------------------------------------------
 
 # `kat CMD NAME SK PK MSG SIG`: the public key, the signature and its verification.
@@ -215,10 +226,9 @@ test_ed25519_takes_no_context() {
     # Ed25519ph takes one for signing and verification only.
     local action
     for action in keygen pk-from-sk check-consistency; do
-        expect_fail "ed25519ph $action with --ctxfile" \
-            "$BC_RUST" ed25519ph $action --skfile "$TMP/sk" --pkfile "$TMP/pk" --ctxfile "$TMP/ctx" </dev/null >"$TMP/out"
+        fails_silently "ed25519ph $action with --ctxfile" \
+            "$BC_RUST" ed25519ph $action --skfile "$TMP/sk" --pkfile "$TMP/pk" --ctxfile "$TMP/ctx" </dev/null
         assert_stderr_has "ctxfile"
-        assert_size "$TMP/out" 0 "ed25519ph $action with --ctxfile writes nothing"
     done
 }
 
@@ -274,13 +284,11 @@ test_missing_files_are_rejected() {
 
     # What signing reads besides the key is read before the key is loaded; a failure there
     # gives no signature.
-    expect_fail "ed25519ph sign with a --ctxfile that is not there" \
-        "$BC_RUST" --hex-input ed25519ph sign --skfile "$TMP/sk" --ctxfile "$TMP/no-such-file" </dev/null >"$TMP/out"
-    assert_size "$TMP/out" 0 "no signature without the context"
+    fails_silently "ed25519ph sign with a --ctxfile that is not there" \
+        "$BC_RUST" --hex-input ed25519ph sign --skfile "$TMP/sk" --ctxfile "$TMP/no-such-file" </dev/null
     printf 'not hex' >"$TMP/bad.ctx"
-    expect_fail "ed25519ph sign with a --ctxfile that is not hex" \
-        "$BC_RUST" --hex-input ed25519ph sign --skfile "$TMP/sk" --ctxfile "$TMP/bad.ctx" </dev/null >"$TMP/out"
-    assert_size "$TMP/out" 0 "no signature without the context"
+    fails_silently "ed25519ph sign with a --ctxfile that is not hex" \
+        "$BC_RUST" --hex-input ed25519ph sign --skfile "$TMP/sk" --ctxfile "$TMP/bad.ctx" </dev/null
 }
 
 run_all
