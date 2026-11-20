@@ -1,0 +1,61 @@
+name: Rust Tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # The runner mounts its synced copies read-only at /bc-test-data and /wycheproof, so the
+      # data is not transferred per build. The vector suites print a warning and pass when their
+      # data is missing, and Docker mounts an empty directory for a missing host path, so check
+      # for the directories the loaders read rather than the mount points.
+      - name: Symlink test data alongside the checkout
+        run: |
+          test -d /bc-test-data/crypto || { echo "/bc-test-data/crypto not found"; exit 1; }
+          test -d /wycheproof/testvectors_v1 || { echo "/wycheproof/testvectors_v1 not found"; exit 1; }
+          ln -sfnT /bc-test-data ../bc-test-data
+          ln -sfnT /wycheproof ../wycheproof
+
+      # GitHub's workflow checks Wycheproof out at a fixed commit, so that a change upstream does
+      # not fail an unrelated pull request. A mount cannot be checked out here, so the runner's
+      # copy is required to be at that commit: keep WYCHEPROOF_COMMIT in step with the `ref` in
+      # .github/workflows/rust-test.yml, and move the runner's copy when it moves.
+      - name: Check the Wycheproof copy is the pinned commit
+        env:
+          WYCHEPROOF_COMMIT: 65ca494727a52944c204441c860b039e6786b99b
+        run: |
+          # The mount belongs to another user, which git refuses without safe.directory.
+          actual=$(git -c safe.directory=/wycheproof -C /wycheproof rev-parse HEAD) || {
+            echo "/wycheproof is not a git checkout, so its commit cannot be checked"; exit 1;
+          }
+          if [ "$actual" != "$WYCHEPROOF_COMMIT" ]; then
+            echo "/wycheproof is at $actual; the tests are pinned to $WYCHEPROOF_COMMIT"
+            exit 1
+          fi
+
+      - name: Install Rust toolchain
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Run tests
+        run: cargo test --all
