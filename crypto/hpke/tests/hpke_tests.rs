@@ -2,12 +2,12 @@
 //!
 //! Known answers are the RFC's own vectors: `bc-test-data/crypto/hpke.txt` is the
 //! machine-readable set Appendix A cites as `[TestVectors]`. Every entry for `kem_id` 32
-//! (X25519), 16 (P-256) and 18 (P-521), in all four modes, with `kdf_id` 1 and 3 and every
+//! (X25519), 33 (X448), 16 (P-256) and 18 (P-521), in all four modes, with `kdf_id` 1 and 3 and every
 //! `aead_id`, is run from the recipient's side: the setup from `enc` and `skRm` (and `pkSm` in
 //! the authenticated modes), then every encryption in order (257 a suite, so the sequence
 //! number carries into its second byte) and the exports. That pins the key schedule, the nonces
 //! and the export. The sender cannot be run against a vector, its ephemeral key not being
-//! injectable; it is checked against the recipient, which the vectors pin. `kem_id` 33 is X448.
+//! injectable; it is checked against the recipient, which the vectors pin.
 //!
 //! Appendix A.1.1 and A.1.2 are also carried in this file, so that a known answer runs where
 //! `bc-test-data` is not checked out. The RFC has no vectors for P-384 or for HKDF-SHA384; those
@@ -24,6 +24,7 @@ use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_dhkem::HpkeKem;
 use bouncycastle_ec::{P256, P384, P521};
 use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
+use bouncycastle_ed::x448::{X448PrivateKey, X448PublicKey};
 use bouncycastle_ed::x25519::{X25519PrivateKey, X25519PublicKey};
 use bouncycastle_hex as hex;
 use bouncycastle_hpke::{
@@ -237,6 +238,14 @@ const EXPECTED: (usize, usize, usize) = (32, 24 * 257, 32 * 3);
 #[test]
 fn rfc_9180_vectors_x25519() {
     match run_vectors::<X25519PrivateKey, X25519PublicKey, 32, 32, 32>("32") {
+        Some(counts) => assert_eq!(counts, EXPECTED),
+        None => eprintln!("bc-test-data/crypto/hpke.txt not found; skipping"),
+    }
+}
+
+#[test]
+fn rfc_9180_vectors_x448() {
+    match run_vectors::<X448PrivateKey, X448PublicKey, 56, 56, 64>("33") {
         Some(counts) => assert_eq!(counts, EXPECTED),
         None => eprintln!("bc-test-data/crypto/hpke.txt not found; skipping"),
     }
