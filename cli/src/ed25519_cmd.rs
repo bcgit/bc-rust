@@ -52,6 +52,14 @@ pub(crate) fn ed25519_cmd(
     sigfile: &Option<String>,
     output_hex: bool,
 ) {
+    // A context is an input to signing and verification alone; accepting one elsewhere would
+    // suggest it had been used.
+    if let Ed25519Variant::Prehash { ctxfile: Some(_) } = variant
+        && !matches!(action, Ed25519Action::Sign | Ed25519Action::Verify)
+    {
+        eprintln!("Error: --ctxfile applies to sign and verify only.");
+        exit(-1);
+    }
     match action {
         Ed25519Action::Keygen => {
             // The private key is drawn straight into this key, never moved.

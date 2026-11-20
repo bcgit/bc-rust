@@ -134,14 +134,17 @@ test_sign_verify_round_trip_and_tampering() {
         flip_byte "$TMP/bad.sig" 0
         expect_fail "$cmd: a signature changed in R" \
             "$BC_RUST" $cmd verify --pkfile "$TMP/pk" --sigfile "$TMP/bad.sig" <"$TMP/msg"
+        assert_stderr_has "invalid"
         cp "$TMP/sig" "$TMP/bad.sig"
         flip_byte "$TMP/bad.sig" 32
         expect_fail "$cmd: a signature changed in S" \
             "$BC_RUST" $cmd verify --pkfile "$TMP/pk" --sigfile "$TMP/bad.sig" <"$TMP/msg"
+        assert_stderr_has "invalid"
 
         "$BC_RUST" ed25519 keygen | "$BC_RUST" ed25519 pk-from-sk >"$TMP/other.pk"
         expect_fail "$cmd: another key" \
             "$BC_RUST" $cmd verify --pkfile "$TMP/other.pk" --sigfile "$TMP/sig" <"$TMP/msg"
+        assert_stderr_has "invalid"
     done
 }
 
@@ -173,10 +176,12 @@ test_ed25519ph_context_is_bound() {
     assert_differs "$TMP/sig" "$TMP/sig-ctx" "the context changes the signature"
     expect_fail "a context the signer did not use must not verify" \
         "$BC_RUST" ed25519ph verify --pkfile "$TMP/pk" --sigfile "$TMP/sig" --ctxfile "$TMP/ctx" <"$TMP/msg"
+    assert_stderr_has "invalid"
     expect_ok "signature with context verifies with it" \
         "$BC_RUST" ed25519ph verify --pkfile "$TMP/pk" --sigfile "$TMP/sig-ctx" --ctxfile "$TMP/ctx" <"$TMP/msg" >/dev/null
     expect_fail "and not without it" \
         "$BC_RUST" ed25519ph verify --pkfile "$TMP/pk" --sigfile "$TMP/sig-ctx" <"$TMP/msg"
+    assert_stderr_has "invalid"
 }
 
 test_ed25519ph_context_length_limit() {
@@ -201,10 +206,20 @@ test_ed25519ph_context_length_limit() {
 # Ed25519 has no context, so the subcommand has no flag for one.
 test_ed25519_takes_no_context() {
     "$BC_RUST" ed25519 keygen >"$TMP/sk"
+    "$BC_RUST" ed25519 pk-from-sk --skfile "$TMP/sk" >"$TMP/pk"
     printf 'ctx' >"$TMP/ctx"
     expect_fail "ed25519 with --ctxfile" \
         "$BC_RUST" ed25519 sign --skfile "$TMP/sk" --ctxfile "$TMP/ctx" </dev/null
     assert_stderr_has "ctxfile"
+
+    # Ed25519ph takes one for signing and verification only.
+    local action
+    for action in keygen pk-from-sk check-consistency; do
+        expect_fail "ed25519ph $action with --ctxfile" \
+            "$BC_RUST" ed25519ph $action --skfile "$TMP/sk" --pkfile "$TMP/pk" --ctxfile "$TMP/ctx" </dev/null >"$TMP/out"
+        assert_stderr_has "ctxfile"
+        assert_size "$TMP/out" 0 "ed25519ph $action with --ctxfile writes nothing"
+    done
 }
 
 # ---- errors -------------------------------------------------------------------------------
