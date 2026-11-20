@@ -7,3 +7,4 @@
 mod point;
 mod precomp;
 mod scalar;
+mod scheme;
