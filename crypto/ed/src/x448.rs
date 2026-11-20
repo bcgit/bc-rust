@@ -1,7 +1,8 @@
 //! X448 (RFC 7748 Section 5), the Diffie-Hellman function over Curve448, on the key agreement
 //! roles: [`X448PrivateKey`] implements [`AgreementKey`] over `()` for the raw shared secret `K`
-//! of RFC 7748 Section 6.2 and over [`KdfParams`] of HKDF-SHA512 for a key derived from it. The
-//! module has the shape of [`crate::x25519`], without the KEM roles.
+//! of RFC 7748 Section 6.2 and over [`KdfParams`] of HKDF-SHA512 for a key derived from it, and
+//! the [`DecapsulatingKey`] role for DHKEM(X448, HKDF-SHA512) of RFC 9180 Section 4.1, whose
+//! [`EncapsulatingKey`] is [`X448PublicKey`]. The module has the shape of [`crate::x25519`].
 //!
 //! # Usage Examples
 //!
@@ -68,6 +69,27 @@
 //! # Ok::<(), bouncycastle_core::errors::KeyAgreementError>(())
 //! ```
 //!
+//! ## X448 as a KEM
+//!
+//! [`X448PublicKey`] and [`X448PrivateKey`] also implement [`EncapsulatingKey`] and
+//! [`DecapsulatingKey`], with `()` as the parameters, as DHKEM(X448, HKDF-SHA512) of RFC 9180
+//! Section 4.1. The ciphertext is a 56-byte ephemeral public key, and the 64-byte shared secret
+//! is already the output of a KDF, ready to use as a key.
+//!
+//! ```rust
+//! use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
+//! use bouncycastle_ed::x448::keygen;
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let (pk, sk) = keygen(&mut rng).unwrap();
+//!
+//! let (ss, ct) = pk.encaps(&mut rng, ())?;
+//! let ss1 = sk.decaps(&ct, ())?;
+//! assert_eq!(ss, ss1);
+//! # Ok::<(), bouncycastle_core::errors::KEMError>(())
+//! ```
+//!
 //! A public key is its 56 bytes, compared as bytes: the two encodings of one point (`u` and
 //! `u + p`, for `u` up to `2^224`) are two keys to [`PartialEq`]. A protocol that compares
 //! keys should compare canonical encodings.
@@ -97,18 +119,21 @@
 //! | `keygen_from_seed`             | 2936 B |
 //! | `X448PrivateKey::from_bytes`   | 2888 B |
 //! | `agree` on the private key     | 2856 B |
+//! | `encaps` on the public key     | 4568 B |
+//! | `decaps` on the private key    | 4232 B |
 //!
-//! Each runs one Montgomery ladder plus the field inversion, which use 1800 B below the entry
-//! point's own frame; the peak is the 2584 B frame that then overwrites that stack (see "What
-//! is wiped" below).
+//! The first three each run one Montgomery ladder plus the field inversion, which use 1800 B
+//! below the entry point's own frame; the peak is the 2584 B frame that then overwrites that
+//! stack (see "What is wiped" below). The KEM figures peak in HKDF-SHA512's HMAC and SHA-512
+//! compression, and the `encaps` figure includes the DRBG that draws the ephemeral key.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
 //! **A raw shared secret is not a key**. The agreement over `()` returns `K` as a
 //! [`KeyMaterial`] typed [`KeyType::SharedSecret`]: the 56-byte encoding of the u-coordinate of
 //! a point on curve448, which is not uniformly random. That type is accepted by the KDFs and by
-//! nothing that takes a key; the HKDF-SHA512 pairing is the derivation this module offers over
-//! it. Put both public keys into the KDF's info: several public keys give the same shared
+//! nothing that takes a key; the HKDF-SHA512 pairing and the DHKEM are the two derivations this
+//! module offers over it. Put both public keys into the KDF's info: several public keys give the same shared
 //! secret as any one of them (RFC 7748 Section 7, quoted in [`crate::x25519`]).
 //!
 //! An all-zero `K`, the output for a peer key of small order, is refused as
@@ -116,6 +141,13 @@
 //! sides MAY check, without leaking extra information about the value of K, whether the
 //! resulting shared K is the all-zero value and abort if so") and this module always performs
 //! it, in constant time, so the only thing it reveals about `K` is whether it is zero.
+//!
+//! **The private key `4 * order`.** Four times the order of the base point is a clamped
+//! scalar, so it is an X448 private key, and the agreement role computes with it as RFC 7748
+//! Section 5 says. Its public key is all zero and it contributes nothing against a point of
+//! the curve, so the DHKEM refuses it as a private key ([`KEMError::DecodingError`], and
+//! `DeriveKeyPair` fails on it), making the check RFC 9180 Section 7.1.2 recommends and says
+//! X448 does not need. A random key is that one with probability `2^-446`.
 //!
 //! **Strength.** RFC 7748 Section 7 puts curve448 at the "~224-bit security level".
 //! [`SecurityStrength`] has no such level, so X448 is classed at the next one down, 192 bits:
@@ -127,9 +159,10 @@
 //! cleared at the end of their lifetime; `agree_out` writes into the caller's buffer, and
 //! [`keygen_out`] and [`keygen_from_seed_out`] draw the scalar straight into a key the caller
 //! holds. A value returned by value is moved, and a move does not wipe its source: that holds
-//! for the key pairs of [`keygen`], [`keygen_from_seed`] and the trait's `from_bytes`, for the
-//! clamped scalar `encode` returns, and for the result of `core`'s by-value `agree`. Use the
-//! `_out` forms into a buffer or key you own where that matters.
+//! for the key pairs of [`keygen`], [`keygen_from_seed`], the trait's `from_bytes` and
+//! `DeriveKeyPair`, for the clamped scalar `encode` returns, and for the results of `core`'s
+//! by-value `agree`, `encaps` and `decaps`. Use the `_out` forms into a buffer or key you own
+//! where that matters.
 //!
 //! These wipes are made in the source, and a copy the compiler makes on its own is beyond them.
 //! A stack probe of this module (one release build, x86-64) found register spills left below
@@ -140,18 +173,31 @@
 //! stack once [`keygen_out`], [`keygen_from_seed_out`] or the raw `agree_out` has returned.
 //! That is a measurement of one build, not a guarantee: a compiler or target whose frames run
 //! deeper is not covered. The HKDF-SHA512 pairing leaves a copy of `K` in HKDF's own frames,
-//! which are that crate's.
+//! which are that crate's. After `encaps_out` and `decaps_out` the probe finds no key and no
+//! X448 output, and three of the eight 64-bit words of the KEM's shared secret in SHA-512's
+//! frames; what the KDF's frames keep is in `bouncycastle_dhkem`'s Security Considerations.
+//!
+//! A DHKEM private key is not forward secret (RFC 9180 Section 9.7.4, quoted in
+//! [`crate::x25519`]).
 //!
 //! On a 32-bit target every `i128` product of the field arithmetic is a call into the compiler's
 //! runtime (`__multi3`), so constant time there rests on that routine, not on this crate.
 
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
-use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError, KeyMaterialError, RNGError};
+use bouncycastle_core::errors::{
+    KEMError, KeyAgreementError, KeyDecodingError, KeyMaterialError, RNGError,
+};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kdf_params::KdfParams;
+use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorithm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, KeyAgreement, PrivateKey, PublicKey, RNG};
+use bouncycastle_core::traits::{
+    Algorithm, KEMDecapsulator, KEMEncapsulator, KeyAgreement, PrivateKey, PublicKey, RNG,
+};
+use bouncycastle_dhkem::{
+    AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEM, DHKEMParams, DeriveKeyPairForm, HpkeKem,
+};
 use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_sha2::SHA512;
 use bouncycastle_utils::ct::{Condition, ct_eq_bytes, ct_eq_zero_bytes};
@@ -483,6 +529,25 @@ impl X448PrivateKey {
     fn fill_pk(&mut self) {
         self.pk = scalar_mult_base(&self.k);
         self.filled = true;
+    }
+
+    /// Whether the scalar is a multiple of the group order, which is so exactly when the public
+    /// key of a filled key is all zero (the one such clamped scalar is `4 * order`). X448
+    /// itself computes with that key; the DHKEM refuses it ([`NOT_A_DHKEM_KEY`]). The public
+    /// key is public, so nothing secret is branched on unless the key is that one.
+    fn is_zero_mod_order(&self) -> bool {
+        self.filled && self.pk.0 == [0u8; POINT_LEN]
+    }
+
+    /// Whether the DHKEM takes this key as a private key: it is filled, and not `4 * order`.
+    fn check_dhkem_key(&self) -> Result<(), KEMError> {
+        if !self.filled {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
+        if self.is_zero_mod_order() {
+            return Err(KEMError::DecodingError(NOT_A_DHKEM_KEY));
+        }
+        Ok(())
     }
 
     /// The public key, `X448(k, 5)` (RFC 7748 Section 6.2).
@@ -843,4 +908,249 @@ fn scalar_mult_base(k: &[u8; SCALAR_LEN]) -> X448PublicKey {
     let mut out = [0u8; POINT_LEN];
     scalar_mult_into(k, &BASE_POINT, &mut out);
     X448PublicKey(out)
+}
+
+/*** DHKEM ***/
+
+// X448 as a KEM, through RFC 9180's DHKEM construction.
+
+/// The length of the shared secret from [`X448`]'s KEM: Nsecret for DHKEM(X448, HKDF-SHA512)
+/// (RFC 9180 Section 7.1, Table 2).
+pub const DHKEM_SS_LEN: usize = 64;
+
+/// The refusal of the private key `4 * order` by the DHKEM.
+///
+/// RFC 9180 Section 7.1.2: "implementors of DHKEMs SHOULD check that deserialized private keys
+/// are not equivalent to 0 (mod order), where order is the order of the DH group. Note that
+/// this property is trivially true for X25519 and X448 groups, since clamped values can never
+/// be 0 (mod order)." The note does not hold for X448: `4 * order` is below `2^448`, has bit
+/// 447 set and its two low bits clear, so it is a clamped value. The check is therefore made.
+const NOT_A_DHKEM_KEY: &str =
+    "An X448 private key equivalent to 0 mod the group order is not a DHKEM key";
+
+/// DHKEM(X448, HKDF-SHA512) of RFC 9180 Section 4.1. Nenc = Npk = Nsk = 56 (Section 7.1,
+/// Table 2) and Ndh = 56 (Section 4.1).
+type X448DHKEM = DHKEM<X448, POINT_LEN, SCALAR_LEN, POINT_LEN, DHKEM_SS_LEN>;
+
+/// DHKEM(X448, HKDF-SHA512): kem_id 0x0021, with Nenc = Npk = Nsk = 56 (RFC 9180 Section 7.1,
+/// Table 2).
+impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X448 {
+    type PublicKey = X448PublicKey;
+    type PrivateKey = X448PrivateKey;
+    type KDFHash = SHA512;
+    const KEM_ID: u16 = 0x0021;
+
+    fn with_generated_key_pair<R>(
+        rng: &mut dyn RNG,
+        f: impl FnOnce(&X448PublicKey, &X448PrivateKey) -> R,
+    ) -> Result<R, KEMError> {
+        // For X448, 56 random bytes are a private key (RFC 7748 Section 6.2). The key is
+        // generated in this frame and dropped here, so its scalar is wiped where it was drawn.
+        let mut sk = X448PrivateKey::zeroized();
+        // keygen_out fails only through the RNG.
+        let pk = keygen_out(rng, &mut sk).map_err(|e| match e {
+            KeyAgreementError::RNGError(e) => KEMError::RNGError(e),
+            _ => KEMError::GenericError("X448 key generation failed"),
+        })?;
+        Ok(f(&pk, &sk))
+    }
+
+    // RFC 9180 Section 7.1.3: "For X25519 and X448, the DeriveKeyPair() function applies a KDF
+    // to the input".
+    const DERIVE_KEY_PAIR: DeriveKeyPairForm = DeriveKeyPairForm::Expand;
+
+    // Every 56 bytes are an X448 private key (RFC 7748 Section 5); the one the DHKEM does not
+    // take is `None` (see NOT_A_DHKEM_KEY), which makes `DeriveKeyPair` fail on it.
+    fn private_key_from_bytes(sk: &[u8; SCALAR_LEN]) -> Option<X448PrivateKey> {
+        let mut key = X448PrivateKey::zeroized();
+        *key.k = *sk;
+        key.fill_pk();
+        if key.is_zero_mod_order() { None } else { Some(key) }
+    }
+
+    fn pk(sk: &X448PrivateKey) -> X448PublicKey {
+        sk.pk()
+    }
+
+    fn dh_into(
+        sk: &X448PrivateKey,
+        pk: &X448PublicKey,
+        out: &mut Secret<[u8; POINT_LEN]>,
+    ) -> Result<(), KeyAgreementError> {
+        // The group functions are reachable without a key's role (`DHKEM::decap_out`), so the
+        // keys the roles refuse are refused here too.
+        if !sk.filled {
+            zeroize_in_place(&mut **out);
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
+        if sk.is_zero_mod_order() {
+            zeroize_in_place(&mut **out);
+            return Err(KeyAgreementError::DecodingError(NOT_A_DHKEM_KEY));
+        }
+        // RFC 9180 Section 7.1.4: "recipients MUST check whether the Diffie-Hellman shared
+        // secret is the all-zero value and abort if so", which raw_shared_secret does in
+        // constant time, for the sender as well.
+        raw_shared_secret(sk, pk, out)
+    }
+
+    // RFC 9180 Section 7.1.1: for X448 "the SerializePublicKey() and DeserializePublicKey()
+    // functions are the identity function".
+    fn serialize_public_key(pk: &X448PublicKey) -> [u8; POINT_LEN] {
+        pk.0
+    }
+
+    fn deserialize_public_key(pkm: &[u8; POINT_LEN]) -> Result<X448PublicKey, KEMError> {
+        Ok(X448PublicKey(*pkm))
+    }
+}
+
+/// DHKEM(X448, HKDF-SHA512) of RFC 9180 Section 4.1 (`kem_id` 0x0021, Section 7.1): the KEM the
+/// X448 keys carry through [`EncapsulatingKey`] and [`DecapsulatingKey`], as distinct from the
+/// X448 function itself, [`X448`].
+#[allow(non_camel_case_types)]
+pub struct DHKEM_X448_HKDF_SHA512;
+
+impl Algorithm for DHKEM_X448_HKDF_SHA512 {
+    const ALG_NAME: &'static str = "DHKEM(X448, HKDF-SHA512)";
+    const MAX_SECURITY_STRENGTH: SecurityStrength = X448::MAX_SECURITY_STRENGTH;
+}
+
+impl KEMAlgorithm for DHKEM_X448_HKDF_SHA512 {}
+
+impl HpkeKem for DHKEM_X448_HKDF_SHA512 {
+    const KEM_ID: u16 = <X448 as DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN>>::KEM_ID;
+}
+
+/// The encapsulator an [`X448PublicKey`] hands out through [`EncapsulatingKey`]:
+/// DHKEM(X448, HKDF-SHA512) of RFC 9180 Section 4.1, where the ciphertext is an ephemeral
+/// public key (`enc`) and the shared secret is derived with HKDF-SHA512 from the X448 output
+/// and both public keys. It borrows the recipient's key.
+pub struct X448Encapsulator<'k> {
+    pk: &'k X448PublicKey,
+}
+
+impl Algorithm for X448Encapsulator<'_> {
+    const ALG_NAME: &'static str = DHKEM_X448_HKDF_SHA512::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = DHKEM_X448_HKDF_SHA512::MAX_SECURITY_STRENGTH;
+}
+
+impl KEMEncapsulator<POINT_LEN, DHKEM_SS_LEN> for X448Encapsulator<'_> {
+    /// `Encap(pkR)` (RFC 9180 Section 4.1), drawing the ephemeral key pair from `rng`.
+    ///
+    /// # Errors
+    ///
+    /// * [`KEMError::RNGError`] if `rng`'s security strength is below 192 bits.
+    /// * [`KEMError::InvalidPublicKey`] if the key gives an all-zero X448 output, the case the
+    ///   agreement role refuses as [`KeyAgreementError::AgreementFailed`].
+    fn encaps_out(
+        &self,
+        rng: &mut dyn RNG,
+        ct: &mut [u8; POINT_LEN],
+        ss: &mut KeyMaterial<DHKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ct.fill(0);
+        ss.zeroize();
+        X448DHKEM::encap_rng_out(self.pk, rng, ct, ss)
+    }
+}
+
+/// X448 public keys encapsulate as DHKEM(X448, HKDF-SHA512), with `()` as the parameters.
+impl EncapsulatingKey<(), POINT_LEN, DHKEM_SS_LEN> for X448PublicKey {
+    type Algorithm = DHKEM_X448_HKDF_SHA512;
+    type Encapsulator<'k> = X448Encapsulator<'k>;
+
+    fn create_encapsulator<'k>(&'k self, _params: ()) -> Result<X448Encapsulator<'k>, KEMError> {
+        Ok(X448Encapsulator { pk: self })
+    }
+}
+
+/// `AuthEncap(pkR, skS)` of DHKEM(X448, HKDF-SHA512) (RFC 9180 Section 4.1), on the recipient's
+/// public key: what HPKE's Auth and AuthPSK modes run over.
+impl AuthEncapsulatingKey<POINT_LEN, DHKEM_SS_LEN> for X448PublicKey {
+    type SenderPrivateKey = X448PrivateKey;
+
+    /// # Errors
+    ///
+    /// * [`KEMError::RNGError`] if `rng`'s security strength is below 192 bits.
+    /// * [`KEMError::InvalidPublicKey`] if the key gives an all-zero X448 output.
+    /// * [`KEMError::KeyMaterialError`] if `sk_s` has not been filled, and
+    ///   [`KEMError::DecodingError`] if it is the key `4 * order`.
+    fn auth_encaps_out(
+        &self,
+        rng: &mut dyn RNG,
+        sk_s: &X448PrivateKey,
+        enc: &mut [u8; POINT_LEN],
+        ss: &mut KeyMaterial<DHKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        enc.fill(0);
+        ss.zeroize();
+        sk_s.check_dhkem_key()?;
+        X448DHKEM::auth_encap_rng_out(self, sk_s, rng, enc, ss)
+    }
+}
+
+/// `AuthDecap(enc, skR, pkS)` of DHKEM(X448, HKDF-SHA512) (RFC 9180 Section 4.1), on the
+/// recipient's private key.
+impl AuthDecapsulatingKey<POINT_LEN, DHKEM_SS_LEN> for X448PrivateKey {
+    type SenderPublicKey = X448PublicKey;
+
+    /// # Errors
+    ///
+    /// * [`KEMError::DecapsulationFailed`] if `enc` gives an all-zero X448 output.
+    /// * [`KEMError::InvalidPublicKey`] if `pk_s` does.
+    /// * [`KEMError::KeyMaterialError`] if this key has not been filled, and
+    ///   [`KEMError::DecodingError`] if it is the key `4 * order`.
+    fn auth_decaps_out(
+        &self,
+        enc: &[u8; POINT_LEN],
+        pk_s: &X448PublicKey,
+        ss: &mut KeyMaterial<DHKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
+        self.check_dhkem_key()?;
+        X448DHKEM::auth_decap_out(enc, self, pk_s, ss)
+    }
+}
+
+/// The decapsulator an [`X448PrivateKey`] hands out through [`DecapsulatingKey`]:
+/// DHKEM(X448, HKDF-SHA512) `Decap` of RFC 9180 Section 4.1. It borrows the recipient's key.
+pub struct X448Decapsulator<'k> {
+    sk: &'k X448PrivateKey,
+}
+
+impl Algorithm for X448Decapsulator<'_> {
+    const ALG_NAME: &'static str = DHKEM_X448_HKDF_SHA512::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = DHKEM_X448_HKDF_SHA512::MAX_SECURITY_STRENGTH;
+}
+
+impl KEMDecapsulator<POINT_LEN, DHKEM_SS_LEN> for X448Decapsulator<'_> {
+    /// `Decap(enc, skR)` (RFC 9180 Section 4.1), with the ciphertext `ct` as `enc`.
+    ///
+    /// # Errors
+    ///
+    /// [`KEMError::DecapsulationFailed`] if `ct` gives an all-zero X448 output.
+    fn decaps_out(
+        &self,
+        ct: &[u8; POINT_LEN],
+        ss: &mut KeyMaterial<DHKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
+        X448DHKEM::decap_out(ct, self.sk, ss)
+    }
+}
+
+/// X448 private keys decapsulate as DHKEM(X448, HKDF-SHA512), with `()` as the parameters.
+impl DecapsulatingKey<(), POINT_LEN, DHKEM_SS_LEN> for X448PrivateKey {
+    type Algorithm = DHKEM_X448_HKDF_SHA512;
+    type Decapsulator<'k> = X448Decapsulator<'k>;
+
+    /// # Errors
+    ///
+    /// [`KEMError::KeyMaterialError`] if the key has not been filled, and
+    /// [`KEMError::DecodingError`] if it is the key `4 * order`, which the DHKEM does not take
+    /// (the module's Security Considerations).
+    fn create_decapsulator<'k>(&'k self, _params: ()) -> Result<X448Decapsulator<'k>, KEMError> {
+        self.check_dhkem_key()?;
+        Ok(X448Decapsulator { sk: self })
+    }
 }

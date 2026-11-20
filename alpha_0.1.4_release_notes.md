@@ -43,12 +43,15 @@
   `keygen` draws the key from the caller's RNG; checked against RFC 7748's vectors, RFC 9180 Appendix A.1.1, A.1.2, A.2.1, A.2.2, A.7.1 and A.7.2, and
   Wycheproof's X25519 set; the `x25519` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree, encaps
   and decaps.
-* X448 -- `bouncycastle-ed::x448`, the Diffie-Hellman function of RFC 7748 over Curve448, in the shape of X25519
-  without the KEM roles: `X448PrivateKey` implements `AgreementKey` over `()` for the raw shared secret and over
-  `KdfParams<HkdfDescription<SHA512>, LEN>` for a derived key (`X448_HKDF_SHA512`), with `keygen`, `keygen_out` and
-  the seed forms. It is classed at 192 bits, `SecurityStrength` having no 224-bit level. Checked against RFC 7748's
-  X448 vectors and Wycheproof's X448 set; the `x448` CLI subcommand covers keygen, pk-from-sk, check-consistency
-  and agree; with criterion benches and a stack harness in `mem_usage_benches`.
+* X448 -- `bouncycastle-ed::x448`, the Diffie-Hellman function of RFC 7748 over Curve448, in the shape of X25519:
+  `X448PrivateKey` implements `AgreementKey` over `()` for the raw shared secret and over
+  `KdfParams<HkdfDescription<SHA512>, LEN>` for a derived key (`X448_HKDF_SHA512`), and with `X448PublicKey` the KEM
+  roles as DHKEM(X448, HKDF-SHA512) of RFC 9180 Section 4.1 (`DHKEM_X448_HKDF_SHA512`, `kem_id` 0x0021), which makes
+  the keys HPKE keys; `keygen`, `keygen_out` and the seed forms. It is classed at 192 bits, `SecurityStrength` having
+  no 224-bit level. The DHKEM refuses the private key 4 x order, a clamped scalar that is 0 mod the group order.
+  Checked against RFC 7748's X448 vectors, Wycheproof's X448 set and the `kem_id` 33 entries of RFC 9180's vector
+  file, at the KEM and through HPKE; the `x448` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree,
+  encaps and decaps; with criterion benches and a stack harness in `mem_usage_benches`.
 * Ed25519 and Ed25519ph -- `bouncycastle-ed::ed25519`, the EdDSA signatures of RFC 8032 Section 5.1 (FIPS 186-5
   Section 7) on the signature roles: `Ed25519PrivateKey` and `Ed25519PublicKey` serve both algorithms, under the
   markers `Ed25519` (one-shot roles only, no context) and `Ed25519ph` (streaming and one-shot, with a context).

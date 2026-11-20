@@ -1,7 +1,11 @@
 use bouncycastle_core::agreement_key::AgreementKey;
+use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core_test_framework::DUMMY_SEED;
-use bouncycastle_ed::x448::{SCALAR_LEN, X448PrivateKey, X448PublicKey, keygen_from_seed};
+use bouncycastle_ed::x448::{
+    POINT_LEN, SCALAR_LEN, X448PrivateKey, X448PublicKey, keygen_from_seed,
+};
+use bouncycastle_rng::FixedSeedRNG;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -66,5 +70,55 @@ fn bench_x448_key_agreement(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_x448_keygen, bench_x448_key_agreement);
+fn bench_x448_encaps(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Encaps");
+
+    let keys = key_pairs();
+
+    // A fixed-output RNG per encapsulation, so that we're not measuring the time of the DRBG.
+    let mut ephemeral_seeds = [[0u8; SCALAR_LEN]; NUM_ELEMS];
+    for (i, seed) in ephemeral_seeds.iter_mut().enumerate() {
+        seed.fill(i as u8 + 1);
+    }
+
+    group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
+
+    group.bench_function("DHKEM(X448, HKDF-SHA512)", |b| {
+        b.iter(|| {
+            for i in 0..NUM_ELEMS {
+                let mut rng = FixedSeedRNG::new(ephemeral_seeds[i]);
+                _ = black_box(keys[i].0.encaps(&mut rng, ()));
+            }
+        })
+    });
+
+    group.finish();
+}
+
+fn bench_x448_decaps(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Decaps");
+
+    let keys = key_pairs();
+
+    // Set up the ciphertexts outside of the timing loop.
+    let mut rng = FixedSeedRNG::new(&DUMMY_SEED[..SCALAR_LEN]);
+    let cts: Vec<[u8; POINT_LEN]> =
+        keys.iter().map(|(pk, _sk)| pk.encaps(&mut rng, ()).unwrap().1).collect();
+
+    group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
+
+    group.bench_function("DHKEM(X448, HKDF-SHA512)", |b| {
+        b.iter(|| {
+            for i in 0..NUM_ELEMS {
+                _ = black_box(keys[i].1.decaps(&cts[i], ()));
+            }
+        })
+    });
+
+    group.finish();
+}
+
+criterion_group!(
+    benches, bench_x448_keygen, bench_x448_key_agreement, bench_x448_encaps, bench_x448_decaps,
+);
 criterion_main!(benches);
