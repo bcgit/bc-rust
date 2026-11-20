@@ -14,6 +14,7 @@ mod ecb_cmd;
 mod eccdh_cmd;
 mod ecdsa_cmd;
 mod ed25519_cmd;
+mod ed448_cmd;
 mod encoders_cmd;
 mod gcm_cmd;
 mod gcm_siv_cmd;
@@ -53,6 +54,7 @@ mod x448_cmd;
 use crate::blake2_cmd::BLAKE2Variant;
 use crate::eccdh_cmd::ECCDHAction;
 use crate::ecdsa_cmd::ECDSAAction;
+use crate::ed448_cmd::{Ed448Action, Ed448Variant};
 use crate::ed25519_cmd::{Ed25519Action, Ed25519Variant};
 use crate::hkdf_cmd::HKDFVariant;
 use crate::kbkdf_cmd::{
@@ -7282,6 +7284,63 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
+
+    /// The Ed448 signature algorithm (RFC 8032 Section 5.2), under an optional context.
+    /// Signatures are deterministic. The whole message is read from stdin and held before it is
+    /// signed or verified: Ed448 hashes it twice, so it cannot be streamed. See ed448ph for a
+    /// message too large to hold.
+    Ed448 {
+        action: Ed448Action,
+
+        #[arg(long)]
+        /// The file containing the context string (at most 255 bytes; raw bytes; hex with --hex-input) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (57 bytes; raw bytes; hex with --hex-input) for pk-from-sk, check-consistency and sign; stdin if absent, except for sign
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input) for check-consistency and verify
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (raw bytes; hex with --hex-input) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The Ed448ph signature algorithm (RFC 8032 Section 5.2), which signs the first 64 bytes of
+    /// SHAKE256 of the message, streamed from stdin, under an optional context. It uses the keys
+    /// of ed448, whose keygen, pk-from-sk and check-consistency are the same; the signatures of
+    /// the two do not verify as each other's. RFC 8032 Section 8.5 advises against the prehashed
+    /// variants: use ed448 where the message can be held.
+    Ed448ph {
+        action: Ed448Action,
+
+        #[arg(long)]
+        /// The file containing the context string (at most 255 bytes; raw bytes; hex with --hex-input) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (57 bytes; raw bytes; hex with --hex-input) for pk-from-sk, check-consistency and sign; stdin if absent, except for sign
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input) for check-consistency and verify
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (raw bytes; hex with --hex-input) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
 }
 
 fn main() {
@@ -8972,6 +9031,14 @@ fn run() {
         Some(Subcommands::Ed25519ph { action, ctxfile, skfile, pkfile, sigfile, x }) => {
             let variant = Ed25519Variant::Prehash { ctxfile };
             ed25519_cmd::ed25519_cmd(&variant, action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::Ed448 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            let variant = Ed448Variant::Pure;
+            ed448_cmd::ed448_cmd(&variant, action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::Ed448ph { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            let variant = Ed448Variant::Prehash;
+            ed448_cmd::ed448_cmd(&variant, action, ctxfile, skfile, pkfile, sigfile, *x);
         }
         Some(Subcommands::X25519 { action, skfile, pkfile, ctfile, x }) => {
             x25519_cmd::x25519_cmd(action, skfile, pkfile, ctfile, *x);
