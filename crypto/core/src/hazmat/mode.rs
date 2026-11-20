@@ -8,7 +8,11 @@
 //! must commit to the lengths before its first byte -- CCM, whose `B0` carries the payload length
 //! and whose AAD is length-prefixed -- implements [`AeadDeclaredEncryptMode`] /
 //! [`AeadDeclaredDecryptMode`] instead, whose constructors take the AAD and payload lengths and
-//! whose workers then need no buffer for either. The unauthenticated modes have the same two shapes
+//! whose workers then need no buffer for either. Both kinds also implement
+//! [`AeadInPlaceEncryptMode`] / [`AeadInPlaceDecryptMode`], the whole-message in-place one-shots,
+//! which name no worker and so are all a mode that cannot stream implements.
+//!
+//! The unauthenticated modes have the same two shapes
 //! with no tag: [`SymmetricEncryptMode`] / [`SymmetricDecryptMode`] for a mode that takes data of
 //! any length (padded CBC, CFB, CFB8, OFB, CTR), [`BlockEncryptMode`] / [`BlockDecryptMode`] for
 //! one that takes whole blocks (CBC with no padding layer), and [`EcbEncryptMode`] /
@@ -47,6 +51,10 @@ pub trait Mode<P> {
     /// The [`KeyType`] a key for this mode must carry: [`KeyType::SymmetricCipherKey`] for a
     /// cipher mode, [`KeyType::MACKey`] for a MAC mode. The key's constructor checks it.
     const KEY_TYPE: KeyType;
+
+    /// The name of the algorithm this mode is over `P`, which a key bound to the mode reports
+    /// and which is also the name its workers carry.
+    const ALG_NAME: &'static str;
 
     /// Builds the per-key state from an already-keyed permutation.
     fn key_state(perm: P) -> Self::KeyState;
@@ -89,38 +97,6 @@ pub trait AeadEncryptMode<
         state: &'k Self::KeyState,
         nonce: &[u8; NONCE_LEN],
     ) -> Self::Encryptor<'k>;
-
-    /// Encrypts `buf` in place from `state` under `aad` and a nonce drawn from `rng`, returning
-    /// the nonce and the detached tag. Provided by streaming `buf` through
-    /// [`encrypt_init`](Self::encrypt_init)'s encryptor a chunk at a time; a mode whose worker
-    /// runs in place natively overrides it.
-    ///
-    /// # Errors
-    /// As [`encrypt_init`](Self::encrypt_init), or any error of the encryptor's streaming methods.
-    fn encrypt_detached_inplace(
-        state: &Self::KeyState,
-        rng: &mut dyn RNG,
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        let (enc, nonce) = Self::encrypt_init(state, rng)?;
-        let tag = crate::provided::encrypt_detached_inplace(enc, aad, buf)?;
-        Ok((nonce, tag))
-    }
-
-    /// As [`encrypt_detached_inplace`](Self::encrypt_detached_inplace) under a nonce the caller
-    /// supplies, over [`encrypt_init_nonce`](Self::encrypt_init_nonce).
-    ///
-    /// # Errors
-    /// Any error of the encryptor's streaming methods.
-    fn encrypt_detached_inplace_nonce(
-        state: &Self::KeyState,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        crate::provided::encrypt_detached_inplace(Self::encrypt_init_nonce(state, nonce), aad, buf)
-    }
 }
 
 /// The decryption side of an AEAD mode over `P`: the mode's own constructor for its decryptor.
@@ -140,24 +116,6 @@ pub trait AeadDecryptMode<
     /// Begins the decryption of a message encrypted under `nonce` from `state`. Infallible: the
     /// state is already keyed and the nonce length is in the type.
     fn decrypt_init<'k>(state: &'k Self::KeyState, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k>;
-
-    /// Decrypts `buf` in place from `state` under `nonce` and `aad`, and checks `tag`. On any
-    /// error `buf` is left zeroized, since the plaintext was written into it before the tag could
-    /// be checked. Provided over [`decrypt_init`](Self::decrypt_init) as
-    /// [`AeadEncryptMode::encrypt_detached_inplace`] is over its constructor.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, or any error of
-    /// the decryptor's streaming methods.
-    fn decrypt_detached_inplace(
-        state: &Self::KeyState,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-        tag: &[u8; TAG_LEN],
-    ) -> Result<(), SymmetricCipherError> {
-        crate::provided::decrypt_detached_inplace(Self::decrypt_init(state, nonce), aad, buf, tag)
-    }
 }
 
 /// The encryption side of an AEAD mode over `P` whose worker must know the AAD and payload
@@ -200,39 +158,6 @@ pub trait AeadDeclaredEncryptMode<
         aad_len: usize,
         payload_len: usize,
     ) -> Result<Self::Encryptor<'k>, SymmetricCipherError>;
-
-    /// Encrypts `buf` in place from `state` under `aad` and a nonce drawn from `rng`, returning
-    /// the nonce and the detached tag. Provided by streaming `buf` through the encryptor a chunk
-    /// at a time; a mode whose worker runs in place natively overrides it.
-    ///
-    /// # Errors
-    /// As [`encrypt_init`](Self::encrypt_init), or any error of the encryptor's streaming methods.
-    fn encrypt_detached_inplace(
-        state: &Self::KeyState,
-        rng: &mut dyn RNG,
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        let (enc, nonce) = Self::encrypt_init(state, rng, aad.len(), buf.len())?;
-        let tag = crate::provided::encrypt_detached_inplace(enc, aad, buf)?;
-        Ok((nonce, tag))
-    }
-
-    /// As [`encrypt_detached_inplace`](Self::encrypt_detached_inplace) under a nonce the caller
-    /// supplies.
-    ///
-    /// # Errors
-    /// As [`encrypt_init_nonce`](Self::encrypt_init_nonce), or any error of the encryptor's
-    /// streaming methods.
-    fn encrypt_detached_inplace_nonce(
-        state: &Self::KeyState,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        let enc = Self::encrypt_init_nonce(state, nonce, aad.len(), buf.len())?;
-        crate::provided::encrypt_detached_inplace(enc, aad, buf)
-    }
 }
 
 /// The decryption side of an AEAD mode over `P` whose worker must know the AAD and payload
@@ -261,24 +186,70 @@ pub trait AeadDeclaredDecryptMode<
         aad_len: usize,
         payload_len: usize,
     ) -> Result<Self::Decryptor<'k>, SymmetricCipherError>;
+}
 
-    /// Decrypts `buf` in place from `state` under `nonce` and `aad`, and checks `tag`. On any
-    /// error after construction `buf` is left zeroized, since the plaintext was written into it
-    /// before the tag could be checked.
+/// The encryption side of an AEAD mode over `P` for a whole message in its own buffer, tag
+/// detached: what [`crate::symmetric_key::AeadInPlaceEncryptionKey`] forwards to. Every AEAD mode
+/// implements it, beside its streaming pair if it has one; a mode with a streaming worker can
+/// write it over [`encrypt_detached_inplace`](crate::symmetric_key::encrypt_detached_inplace).
+pub trait AeadInPlaceEncryptMode<
+    P,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+>: Mode<P>
+{
+    /// Encrypts `buf` in place from `state` under `aad` and a nonce drawn from `rng`, returning
+    /// the nonce and the detached tag.
     ///
     /// # Errors
-    /// As [`decrypt_init`](Self::decrypt_init), [`SymmetricCipherError::AEADTagCheckFailed`] if
-    /// the tag does not verify, or any error of the decryptor's streaming methods.
+    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails, which leaves `buf` untouched,
+    /// or the mode's own refusal of a length it cannot take, after which the contents of `buf`
+    /// are unspecified.
+    fn encrypt_detached_inplace(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError>;
+
+    /// As [`encrypt_detached_inplace`](Self::encrypt_detached_inplace) under a nonce the caller
+    /// supplies, who takes on the obligation that it never repeat under this key.
+    ///
+    /// # Errors
+    /// The mode's own refusal of a length it cannot take. After an error the contents of `buf`
+    /// are unspecified.
+    fn encrypt_detached_inplace_nonce(
+        state: &Self::KeyState,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError>;
+}
+
+/// The decryption side of an AEAD mode over `P` for a whole message in its own buffer; see
+/// [`AeadInPlaceEncryptMode`].
+pub trait AeadInPlaceDecryptMode<
+    P,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+>: Mode<P>
+{
+    /// Decrypts `buf` in place from `state` under `nonce` and `aad`, and checks `tag`. A failure
+    /// never leaves unauthenticated plaintext in `buf`: it is zeroized, or untouched if the
+    /// message was refused for its length before any of it was processed.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, or the mode's own
+    /// refusal of a length it cannot take.
     fn decrypt_detached_inplace(
         state: &Self::KeyState,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         buf: &mut [u8],
         tag: &[u8; TAG_LEN],
-    ) -> Result<(), SymmetricCipherError> {
-        let dec = Self::decrypt_init(state, nonce, aad.len(), buf.len())?;
-        crate::provided::decrypt_detached_inplace(dec, aad, buf, tag)
-    }
+    ) -> Result<(), SymmetricCipherError>;
 }
 
 /// The encryption side of an unauthenticated mode over `P` that takes data of any length: the

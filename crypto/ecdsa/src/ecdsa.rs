@@ -30,7 +30,9 @@ use crate::rfc6979;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
-    DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
+    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
+    OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, sign_out_with_signer,
+    verify_with_verifier,
 };
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, FinishToken, HashAlgParams, RNG, SignatureSigner, SignatureVerifier,
@@ -311,6 +313,23 @@ where
     }
 }
 
+impl<C, H: EcdsaHash, const SIG_LEN: usize> OneShotSigningKey<ECDSA<C, H>, SIG_LEN>
+    for ECDSAPrivateKey<C, H>
+where
+    C: Curve<Signature = [u8; SIG_LEN]>,
+{
+    fn sign_out(
+        &self,
+        rng: &mut dyn RNG,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer = SigningKey::<ECDSA<C, H>, SIG_LEN>::create_signer(self, rng, ctx);
+        sign_out_with_signer(signer, msg, output)
+    }
+}
+
 impl<C, H: EcdsaHash, const SIG_LEN: usize> DeterministicSigningKey<ECDSA<C, H>, SIG_LEN>
     for ECDSAPrivateKey<C, H>
 where
@@ -330,6 +349,23 @@ where
     }
 }
 
+impl<C, H: EcdsaHash, const SIG_LEN: usize> DeterministicOneShotSigningKey<ECDSA<C, H>, SIG_LEN>
+    for ECDSAPrivateKey<C, H>
+where
+    C: Curve<Signature = [u8; SIG_LEN]>,
+{
+    fn sign_deterministic_out(
+        &self,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let signer =
+            DeterministicSigningKey::<ECDSA<C, H>, SIG_LEN>::create_signer_deterministic(self, ctx);
+        sign_out_with_signer(signer, msg, output)
+    }
+}
+
 impl<C, H: EcdsaHash, const SIG_LEN: usize> VerifyingKey<ECDSA<C, H>, SIG_LEN>
     for ECDSAPublicKey<C, H>
 where
@@ -346,6 +382,17 @@ where
     ) -> Result<Self::Verifier<'k>, SignatureError> {
         const { check_hash_fits::<C, H>() };
         Ok(ECDSAVerifier { pk: self, hash: H::default() })
+    }
+}
+
+impl<C, H: EcdsaHash, const SIG_LEN: usize> OneShotVerifyingKey<ECDSA<C, H>, SIG_LEN>
+    for ECDSAPublicKey<C, H>
+where
+    C: Curve<Signature = [u8; SIG_LEN]>,
+{
+    fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
+        let verifier = VerifyingKey::<ECDSA<C, H>, SIG_LEN>::create_verifier(self, ctx)?;
+        verify_with_verifier(verifier, msg, sig)
     }
 }
 

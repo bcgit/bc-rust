@@ -7,7 +7,9 @@
 //! always passing `ctx = Some(id)`, plus a dedicated test that `ctx = None` is rejected.
 
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
-use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{
+    OneShotSigningKey, OneShotVerifyingKey, SigningKey, VerifyingKey,
+};
 use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 use bouncycastle_core_test_framework::DUMMY_SEED;

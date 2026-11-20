@@ -41,8 +41,10 @@
 //! the hash's OID go into the message representative (Algorithm 4, line 23), so a pure-message
 //! verifier rejects it. FIPS 204 requires the hash to carry at least the parameter set's strength
 //! (Section 5.4 and footnote 6), which is why SHA-256 pairs with ML-DSA-44 only; a weaker hash is
-//! refused when the signer is made. The named pairings of FIPS 204 are the [`HashMLDSA`] marker
-//! types below, which carry the pairing's name and OID.
+//! refused when the signer is made, unless it is named as
+//! [`hazmat::AnyStrength<H>`](crate::hazmat::AnyStrength), which opts out of that check and
+//! leaves the signature only as strong as the hash. The named pairings of FIPS 204 are the
+//! [`HashMLDSA`] marker types below, which carry the pairing's name and OID.
 
 use crate::mldsa::{MLDSA, MLDSA_RND_LEN, Rnd, draw_rnd};
 use crate::params::{
@@ -60,6 +62,7 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, FinishToken, RNG, SignatureSigner, SignatureVerifier,
 };
 use bouncycastle_mldsa_common::mu_builder::compute_mu_ph;
+use bouncycastle_mldsa_common::params::weaker_of;
 use core::marker::PhantomData;
 
 /// The buffer the pre-hash digest is finished into: 512 bits, the widest digest of a hash in
@@ -131,9 +134,12 @@ impl AlgorithmOID for HashMLDSA87_with_SHA512 {
 
 /*** The workers ***/
 
-/// FIPS 204 Section 5.4: the hash must give at least the parameter set's strength.
+/// FIPS 204 Section 5.4: the hash must give at least the parameter set's strength, unless the
+/// caller opted out by naming it as [`AnyStrength`](crate::hazmat::AnyStrength), which waives
+/// the rule.
 fn check_hash_strength<P: MLDSAParams, H: PreHash>() -> Result<(), SignatureError> {
-    if H::MAX_SECURITY_STRENGTH < P::MAX_SECURITY_STRENGTH {
+    if !H::PRE_HASH_STRENGTH_RULE.is_waived() && H::MAX_SECURITY_STRENGTH < P::MAX_SECURITY_STRENGTH
+    {
         return Err(SignatureError::PreHashTooWeak);
     }
     Ok(())
@@ -190,12 +196,14 @@ fn new_ph_signer<'k, P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>, H: PreHash>(
     Ok(signer)
 }
 
-/// The worker reports the ML-DSA parameter set it signs with; the hash is in its type.
+/// The worker reports the weaker of its parameter set and its pre-hash, which is the parameter
+/// set's unless the strength rule was waived (`hazmat::AnyStrength`).
 impl<P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>, H: PreHash> Algorithm
     for HashMLDSASigner<'_, P, SK, H>
 {
     const ALG_NAME: &'static str = P::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
+    const MAX_SECURITY_STRENGTH: SecurityStrength =
+        weaker_of(P::MAX_SECURITY_STRENGTH, H::MAX_SECURITY_STRENGTH);
 }
 
 impl<P: SignatureLen<SIG_LEN>, SK: MLDSAPrivateKeyTrait<P>, H: PreHash, const SIG_LEN: usize>
@@ -306,7 +314,8 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG
     Algorithm for HashMLDSAVerifier<'_, P, PK, H, SIG_LEN>
 {
     const ALG_NAME: &'static str = P::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
+    const MAX_SECURITY_STRENGTH: SecurityStrength =
+        weaker_of(P::MAX_SECURITY_STRENGTH, H::MAX_SECURITY_STRENGTH);
 }
 
 impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG_LEN: usize>

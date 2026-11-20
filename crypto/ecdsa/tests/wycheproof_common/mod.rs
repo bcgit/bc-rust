@@ -20,7 +20,7 @@
 
 #![allow(dead_code)]
 
-use bouncycastle_core::signature_key::VerifyingKey;
+use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use bouncycastle_core::traits::PublicKey;
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ecdsa::der;
@@ -107,7 +107,7 @@ where
 
             let result = pk.as_ref().and_then(|pk| match encoding {
                 Encoding::P1363 => {
-                    VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(pk, &msg, None, &sig).ok()
+                    OneShotVerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(pk, &msg, None, &sig).ok()
                 }
                 Encoding::Der => verify_der::<C, H, SIG_LEN>(pk, &msg, &sig),
             });
@@ -138,5 +138,5 @@ where
     let mut raw = [0u8; SIG_LEN];
     let (r, s) = raw.split_at_mut(SIG_LEN / 2);
     der::decode(sig, r, s)?;
-    VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(pk, msg, None, &raw).ok()
+    OneShotVerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(pk, msg, None, &raw).ok()
 }

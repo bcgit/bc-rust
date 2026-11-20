@@ -9,8 +9,9 @@ use crate::params::MLKEMParams;
 use bouncycastle_mlkem_common::aux_functions::{sample_ntt, sample_poly_CBD};
 use bouncycastle_mlkem_common::polynomial::Polynomial;
 
-pub(crate) fn expandA<P: MLKEMParams>(rho: &[u8; 32]) -> P::MatrixA {
-    let mut A_hat = P::MatrixA::new();
+// Into `A_hat`, a matrix the caller holds: a matrix returned by value is built in this frame and
+// copied to the caller's, and the stack carries both.
+pub(crate) fn expandA<P: MLKEMParams>(rho: &[u8; 32], A_hat: &mut P::MatrixA) {
     for i in 0..P::k {
         // 5: for (𝑗 ← 0; 𝑗 < 𝑘; 𝑗++)
         for j in 0..P::k {
@@ -19,22 +20,28 @@ pub(crate) fn expandA<P: MLKEMParams>(rho: &[u8; 32]) -> P::MatrixA {
             A_hat.set_elem(i, j, sample_ntt(rho, &[j as u8, i as u8]));
         }
     }
-
-    A_hat
 }
 
 /// Internal helper for keygen since both s_hat and e_hat have identical sampling code
-pub(crate) fn sample_vector_CBD<P: MLKEMParams>(b: &[u8; 32], mut n: u8, eta: i16) -> P::VecK {
+pub(crate) fn sample_vector_CBD<P: MLKEMParams>(b: &[u8; 32], n: u8, eta: i16) -> P::VecK {
     let mut v = P::VecK::new();
+    sample_vector_CBD_out::<P>(b, n, eta, &mut v);
+    v
+}
 
+/// [`sample_vector_CBD`] into `v`, a vector the caller holds.
+pub(crate) fn sample_vector_CBD_out<P: MLKEMParams>(
+    b: &[u8; 32],
+    mut n: u8,
+    eta: i16,
+    v: &mut P::VecK,
+) {
     for i in 0..P::k {
         v[i] = sample_poly_CBD(b, n, eta);
 
         // Alg 13: 10: 𝑁 ← 𝑁 + 1
         n += 1;
     }
-
-    v
 }
 
 pub(crate) fn pack_ciphertext<P: MLKEMParams, const CT_LEN: usize>(

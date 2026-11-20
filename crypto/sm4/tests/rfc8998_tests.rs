@@ -9,8 +9,7 @@
 use bouncycastle_cipher::modes::{CCM, GCM};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
-    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
-    FromKeyMaterial,
+    AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, FromKeyMaterial,
 };
 use bouncycastle_hex as hex;
 use bouncycastle_sm4::{KEY_LEN, SM4Key};

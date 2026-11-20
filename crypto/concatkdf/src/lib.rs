@@ -73,15 +73,15 @@
 #![forbid(missing_docs)]
 
 use bouncycastle_core::errors::KDFError;
-use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token};
+use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token, label_kdf_output};
 use bouncycastle_core::kdf_params::KdfDescription;
-use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashAlgParams, HashOneShot, KDF};
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+use bouncycastle_utils::min;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::{max, min};
 use core::marker::PhantomData;
 
 /// The largest hash output this crate's block buffer holds: 64 bytes, SHA-512's and SHA3-512's.
@@ -282,26 +282,13 @@ impl<H: ConcatKDFParams> ConcatKDF<H> {
             return Err(KDFError::InvalidLength("the output buffer cannot hold L bits"));
         }
 
-        // What the output can claim: the full-entropy keys' bytes count towards seeding, their
-        // strongest strength towards the output's.
-        let mut credited = 0usize;
-        let mut strength = SecurityStrength::None;
-        for key in keys {
-            // [`KDF`]'s rule: a full-entropy key with a strength credits its bytes; one with
-            // none (a `SharedSecret` whose producer stated nothing) credits nothing.
-            if key.is_full_entropy() && key.security_strength() != SecurityStrength::None {
-                credited = credited.saturating_add(key.key_len());
-                strength = *max(&strength, &key.security_strength());
-            }
-        }
-
         // Steps 3 to 8. K(i) is keying material, so its block zeroizes on drop. Each block is
         // written to `dkm` as it is made; nothing after the checks above can fail, so the whole
         // of DerivedKeyingMaterial exists before the caller can read any of it (Section 4.1's
         // note), and step 5's Result is `dkm` itself.
         let mut block = Secret::<[u8; MAX_HASH_OUTPUT_LEN]>::new();
         let reps = len.div_ceil(H::OUTPUT_LEN);
-        let labelled = do_hazardous_operations(dkm, |dkm| {
+        let filled = do_hazardous_operations(dkm, |dkm| {
             let out = dkm.ref_to_bytes_mut()?;
             let mut written = 0usize;
             // Step 3: counter = 0x00000000; step 6: for i = 1 to reps, step 6.1 incrementing it
@@ -321,15 +308,11 @@ impl<H: ConcatKDFParams> ConcatKDF<H> {
                 out[written..written + take].copy_from_slice(&block[..take]);
                 written += take;
             }
-            dkm.set_key_len(len)?;
-            if credited >= H::OUTPUT_LEN / 2 {
-                dkm.set_key_type(KeyType::CryptographicRandom)?;
-                let by_len = SecurityStrength::from_bytes(len);
-                dkm.set_security_strength(*min(min(&strength, &H::MAX_SECURITY_STRENGTH), &by_len))
-            } else {
-                dkm.set_key_type(KeyType::Unknown)?;
-                dkm.set_security_strength(SecurityStrength::None)
-            }
+            Ok(())
+        });
+        // What the output can claim is the [`KDF`] trait's rule, applied once it is in place.
+        let labelled = filled.and_then(|()| {
+            label_kdf_output(keys, len, H::OUTPUT_LEN / 2, H::MAX_SECURITY_STRENGTH, dkm)
         });
         // The blocks are in `dkm` by now, so the `_out` rule's promise for the error path is kept
         // here, although no setter after the loop fails on a buffer that passed the checks above.

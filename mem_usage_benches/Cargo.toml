@@ -32,6 +32,10 @@ name = "bench_ccm_mem_usage"
 path = "src/bench_ccm_mem_usage.rs"
 
 [[bin]]
+name = "bench_gcm_siv_mem_usage"
+path = "src/bench_gcm_siv_mem_usage.rs"
+
+[[bin]]
 name = "bench_eccdh_mem_usage"
 path = "src/bench_eccdh_mem_usage.rs"
 
@@ -80,8 +84,24 @@ name = "bench_aria_mem_usage"
 path = "src/bench_aria_mem_usage.rs"
 
 [[bin]]
+name = "bench_kbkdf_mem_usage"
+path = "src/bench_kbkdf_mem_usage.rs"
+
+[[bin]]
+name = "bench_pbkdf2_mem_usage"
+path = "src/bench_pbkdf2_mem_usage.rs"
+
+[[bin]]
+name = "bench_scrypt_mem_usage"
+path = "src/bench_scrypt_mem_usage.rs"
+
+[[bin]]
 name = "bench_sm3_mem_usage"
 path = "src/bench_sm3_mem_usage.rs"
+
+[[bin]]
+name = "bench_ripemd_mem_usage"
+path = "src/bench_ripemd_mem_usage.rs"
 
 [[bin]]
 name = "bench_chacha20_mem_usage"

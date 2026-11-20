@@ -73,6 +73,7 @@ pub struct CFB8;
 impl<P: Clone + ModeNames> Mode<P> for CFB8 {
     type KeyState = P;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::CFB8_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         perm

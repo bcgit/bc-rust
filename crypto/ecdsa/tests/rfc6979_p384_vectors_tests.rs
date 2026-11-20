@@ -4,7 +4,7 @@
 //! [`ECDSA<P384, H>`] signs them. The appendix's `k` is not asserted directly: it is the one
 //! value that gives this `r`, so the signature pins it.
 
-use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
+use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
 use bouncycastle_ec::P384;
 use bouncycastle_ecdsa::ecdsa::ECDSA;

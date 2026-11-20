@@ -50,7 +50,10 @@ mod mldsa_tests {
     use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+    use bouncycastle_core::signature_key::{
+        DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey, SigningKey,
+        VerifyingKey,
+    };
     use bouncycastle_core::traits::{
         Hash, PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier, Suspendable,
     };

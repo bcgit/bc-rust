@@ -279,4 +279,46 @@ test_hash_mldsa_pre_hash_choice() {
     expect_ok "hash-mldsa65 with shake256 verifies" "$BC_RUST" hash-mldsa65 verify --pkfile "$TMP/pk65" --sigfile "$TMP/sig65" --hash shake256 <"$TMP/msg" >/dev/null
 }
 
+# --allow-weak-hash (hazmat::AnyStrength): a --hash weaker than the parameter set, refused by
+# default on both sides (FIPS 204 Section 5.4), signs and verifies with the flag, hedged and
+# deterministic. The flag changes the policy only: where the hash is strong enough already, the
+# deterministic signature is the same with it and without, and each verifies as the other.
+test_hash_mldsa_allow_weak_hash() {
+    local cmd h
+    rng 500 >"$TMP/msg"
+    for cmd in hash-mldsa65 hash-mldsa87; do
+        "$BC_RUST" $cmd keygen >"$TMP/sk"
+        "$BC_RUST" $cmd pk-from-sk --skfile "$TMP/sk" >"$TMP/pk"
+        for h in sha256 shake128; do
+            expect_fail "$cmd refuses $h by default" "$BC_RUST" $cmd sign --skfile "$TMP/sk" --hash $h <"$TMP/msg"
+            assert_stderr_has "PreHashTooWeak"
+            "$BC_RUST" $cmd sign --skfile "$TMP/sk" --hash $h --allow-weak-hash <"$TMP/msg" >"$TMP/sig-$h"
+            expect_ok "$cmd with $h verifies with the flag" "$BC_RUST" $cmd verify --pkfile "$TMP/pk" --sigfile "$TMP/sig-$h" --hash $h --allow-weak-hash <"$TMP/msg" >/dev/null
+            expect_fail "$cmd verify refuses $h by default" "$BC_RUST" $cmd verify --pkfile "$TMP/pk" --sigfile "$TMP/sig-$h" --hash $h <"$TMP/msg"
+            assert_stderr_has "PreHashTooWeak"
+            expect_fail "another message must not verify" "$BC_RUST" $cmd verify --pkfile "$TMP/pk" --sigfile "$TMP/sig-$h" --hash $h --allow-weak-hash < <(printf 'another')
+            assert_stderr_has "invalid"
+            "$BC_RUST" $cmd sign --skfile "$TMP/sk" --hash $h --allow-weak-hash --deterministic <"$TMP/msg" >"$TMP/det1"
+            "$BC_RUST" $cmd sign --skfile "$TMP/sk" --hash $h --allow-weak-hash --deterministic <"$TMP/msg" >"$TMP/det2"
+            assert_same "$TMP/det1" "$TMP/det2" "deterministic signatures must repeat"
+            assert_differs "$TMP/det1" "$TMP/sig-$h" "the hedged signature must differ from the deterministic one"
+            expect_ok "the deterministic one verifies" "$BC_RUST" $cmd verify --pkfile "$TMP/pk" --sigfile "$TMP/det1" --hash $h --allow-weak-hash <"$TMP/msg" >/dev/null
+        done
+        expect_fail "a sha256 signature is not a shake128 one" "$BC_RUST" $cmd verify --pkfile "$TMP/pk" --sigfile "$TMP/sig-sha256" --hash shake128 --allow-weak-hash <"$TMP/msg"
+        assert_stderr_has "invalid"
+        "$BC_RUST" $cmd sign --skfile "$TMP/sk" --hash shake256 --deterministic <"$TMP/msg" >"$TMP/strong"
+        "$BC_RUST" $cmd sign --skfile "$TMP/sk" --hash shake256 --deterministic --allow-weak-hash <"$TMP/msg" >"$TMP/strong-flag"
+        assert_same "$TMP/strong" "$TMP/strong-flag" "the flag must not change a signature"
+        expect_ok "and the flag verifies a signature made without it" "$BC_RUST" $cmd verify --pkfile "$TMP/pk" --sigfile "$TMP/strong" --hash shake256 --allow-weak-hash <"$TMP/msg" >/dev/null
+    done
+    "$BC_RUST" mldsa44 keygen >"$TMP/sk"
+    "$BC_RUST" mldsa44 pk-from-sk --skfile "$TMP/sk" >"$TMP/pk"
+    "$BC_RUST" hash-mldsa44 sign --skfile "$TMP/sk" --hash sha256 --deterministic <"$TMP/msg" >"$TMP/strong"
+    "$BC_RUST" hash-mldsa44 sign --skfile "$TMP/sk" --hash sha256 --deterministic --allow-weak-hash <"$TMP/msg" >"$TMP/strong-flag"
+    assert_same "$TMP/strong" "$TMP/strong-flag" "the flag must not change a signature"
+    expect_ok "a signature made with the flag verifies without it" "$BC_RUST" hash-mldsa44 verify --pkfile "$TMP/pk" --sigfile "$TMP/strong-flag" --hash sha256 <"$TMP/msg" >/dev/null
+    expect_fail "the mldsa* commands have no such flag" "$BC_RUST" mldsa44 sign --skfile "$TMP/sk" --allow-weak-hash <"$TMP/msg"
+    assert_stderr_has "allow-weak-hash"
+}
+
 run_all

@@ -115,6 +115,7 @@ where
 {
     type KeyState = P;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::KWP_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         perm

@@ -5,18 +5,20 @@
 use bouncycastle_core::errors::{KeyMaterialError, MACError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
-    BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
-    EcbEncryptionKey, KeyExpansion, KeyUnwrapMode, KeyWrapMode, MacMode, Mode, NonceMacMode,
-    SymmetricDecryptMode, SymmetricEncryptMode, do_hazardous_operations,
+    AeadInPlaceDecryptMode, AeadInPlaceEncryptMode, BlockDecryptMode, BlockEncryptMode,
+    EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode, EcbEncryptionKey, KeyExpansion,
+    KeyUnwrapMode, KeyWrapMode, MacMode, Mode, NonceMacMode, SymmetricDecryptMode,
+    SymmetricEncryptMode, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
-    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey,
-    MacGenerationKey, MacVerificationKey, NonceMacGenerationKey, NonceMacVerificationKey,
-    SymmetricDecryptionKey, SymmetricEncryptionKey,
+    AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, BlockDecryptionKey, BlockEncryptionKey,
+    FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey, MacGenerationKey, MacVerificationKey,
+    NonceMacGenerationKey, NonceMacVerificationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
-use bouncycastle_core::traits::RNG;
+use bouncycastle_core::traits::{Algorithm, RNG};
 
 /// A block cipher key for the permutation `P` under the mode `M`: one type per cipher, key
 /// length and mode, so a key is bound to all three by the Rust type rather than by the length of
@@ -34,11 +36,13 @@ use bouncycastle_core::traits::RNG;
 /// over `P` in [`bouncycastle_core::hazmat`]: the symmetric pair for the stream modes and the
 /// padded block modes (`CFB`, `CFB8`, `OFB`, `CTR<N>` at any nonce length, `CBC<PKCS7>`,
 /// `CBC<NoPadding>`, `ECB<PKCS7>`, `ECB<NoPadding>`), the block pair for `CBC<Blocks>`, the
-/// `hazmat` ECB pair for `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, the MAC
-/// pair for `CMAC`, the key-wrap pair for `KW` and `KWP`, and for `GMAC`, whose tag is
-/// nonce-bound, the inherent [`create_generator`](Self::create_generator) /
-/// [`create_verifier`](Self::create_verifier) pair. A permutation that implements a mode's
-/// traits carries that mode's roles; there is no per-cipher opt-in.
+/// `hazmat` ECB pair for `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM` and `CCM_Packet` (each
+/// its streaming pair and the in-place pair) and the in-place pair alone for `GCM_SIV`, the MAC
+/// pair for `CMAC`, the key-wrap pair for `KW`
+/// and `KWP`, and for `GMAC`, whose tag is nonce-bound, the inherent
+/// [`create_generator`](Self::create_generator) / [`create_verifier`](Self::create_verifier)
+/// pair. A permutation that implements a mode's traits carries that mode's roles; there is no
+/// per-cipher opt-in, except that `GCM_SIV` exists over AES-128 and AES-256 alone.
 ///
 /// The only state is the mode's per-key state, which holds the expanded schedule in a `Secret`
 /// and so is zeroized on drop; the key has no `Debug` and no way to read the material back. A
@@ -62,6 +66,13 @@ use bouncycastle_core::traits::RNG;
 /// on its alias, plus what the mode keeps per key. The cost is paid per key, not per message.
 pub struct BlockCipherKey<P, M: Mode<P>> {
     state: M::KeyState,
+}
+
+/// A key is for one algorithm, the mode's over the permutation, and reports its name and the
+/// permutation's strength. This is where a mode with no worker, such as `GCM_SIV`, is named.
+impl<P: Algorithm, M: Mode<P>> Algorithm for BlockCipherKey<P, M> {
+    const ALG_NAME: &'static str = M::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
 impl<P, M: Mode<P>> Clone for BlockCipherKey<P, M> {
@@ -167,26 +178,6 @@ where
     fn create_encryptor_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor<'k> {
         M::encrypt_init_nonce(&self.state, nonce)
     }
-
-    // Forwarded rather than left to the trait's provided body so that a mode can override it:
-    // CCM's streaming worker is fixed-frame, and its in-place one-shot goes another way.
-    fn encrypt_detached_inplace(
-        &self,
-        rng: &mut dyn RNG,
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        M::encrypt_detached_inplace(&self.state, rng, aad, buf)
-    }
-
-    fn encrypt_detached_inplace_nonce(
-        &self,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        M::encrypt_detached_inplace_nonce(&self.state, nonce, aad, buf)
-    }
 }
 
 impl<
@@ -207,16 +198,6 @@ where
 
     fn create_decryptor<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
         M::decrypt_init(&self.state, nonce)
-    }
-
-    fn decrypt_detached_inplace(
-        &self,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-        tag: &[u8; TAG_LEN],
-    ) -> Result<(), SymmetricCipherError> {
-        M::decrypt_detached_inplace(&self.state, nonce, aad, buf, tag)
     }
 }
 
@@ -253,25 +234,6 @@ where
     ) -> Result<Self::Encryptor<'k>, SymmetricCipherError> {
         M::encrypt_init_nonce(&self.state, nonce, aad_len, payload_len)
     }
-
-    // Forwarded so that the mode's own in-place path is the one that runs.
-    fn encrypt_detached_inplace(
-        &self,
-        rng: &mut dyn RNG,
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        M::encrypt_detached_inplace(&self.state, rng, aad, buf)
-    }
-
-    fn encrypt_detached_inplace_nonce(
-        &self,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        M::encrypt_detached_inplace_nonce(&self.state, nonce, aad, buf)
-    }
 }
 
 impl<
@@ -298,7 +260,40 @@ where
     ) -> Result<Self::Decryptor<'k>, SymmetricCipherError> {
         M::decrypt_init(&self.state, nonce, aad_len, payload_len)
     }
+}
 
+// One impl of each in-place role, over the in-place mode traits: every AEAD mode implements
+// those, whichever streaming pair it has, so the plain and declared-length keys share it.
+
+impl<P, M, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
+    AeadInPlaceEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for BlockCipherKey<P, M>
+where
+    M: AeadInPlaceEncryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN>,
+{
+    fn encrypt_detached_inplace(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        M::encrypt_detached_inplace(&self.state, rng, aad, buf)
+    }
+
+    fn encrypt_detached_inplace_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        M::encrypt_detached_inplace_nonce(&self.state, nonce, aad, buf)
+    }
+}
+
+impl<P, M, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
+    AeadInPlaceDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for BlockCipherKey<P, M>
+where
+    M: AeadInPlaceDecryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN>,
+{
     fn decrypt_detached_inplace(
         &self,
         nonce: &[u8; NONCE_LEN],

@@ -37,6 +37,18 @@
 //! let (pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
 //! ```
 //!
+//! Into keys the caller holds, so that the private key is built where it will live and no copy
+//! of it is left behind by a move:
+//!
+//! ```rust
+//! use bouncycastle_mldsa::{MLDSA65, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSATrait};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! let mut pk = MLDSA65PublicKey::zeroized();
+//! let mut sk = MLDSA65PrivateKey::zeroized();
+//! MLDSA65::keygen_out(&mut HashDRBG_SHA512::new_from_os(), &mut pk, &mut sk).unwrap();
+//! ```
+//!
 //! A key stored as its seed is expanded with [`MLDSATrait::keygen_from_seed`] each time it is
 //! needed, so a caller that signs more than once should keep the expanded private key.
 //!
@@ -44,7 +56,7 @@
 //!
 //! ```rust
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::errors::SignatureError;
 //!
@@ -94,14 +106,16 @@
 //!
 //! | Operation             | ML-DSA-44 | ML-DSA-65 | ML-DSA-87 |
 //! |-----------------------|-----------|-----------|-----------|
-//! | KeyGen                | 58,712    | 88,264    | 133,320   |
-//! | Sign                  | 74,904    | 110,824   | 163,448   |
-//! | Verify                | 57,944    | 94,064    | 140,072   |
-//! | Sign, expanded key    | 87,192    | 135,400   | 212,600   |
-//! | Verify, expanded key  | 70,248    | 118,248   | 189,240   |
+//! | KeyGen                | 40,776    | 63,032    | 99,128    |
+//! | KeyGen, `keygen_out`  | 40,328    | 62,104    | 97,544    |
+//! | Sign                  | 75,400    | 111,976   | 165,912   |
+//! | Verify                | 57,832    | 88,056    | 133,144   |
+//! | Sign, expanded key    | 77,800    | 115,256   | 170,504   |
+//! | Verify, expanded key  | 59,144    | 89,992    | 139,192   |
 //!
 //! Values are in bytes and include the harness's own frames; the expanded-key rows include building the
-//! expanded key from the key it borrows.
+//! expanded key from the key it borrows. [`MLDSATrait::keygen_out`] writes into keys the caller holds,
+//! so no copy of the private key is left behind by a move.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -177,6 +191,7 @@ use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
 
 mod aux_functions;
 pub mod hash_mldsa;
+pub mod hazmat;
 mod matrix;
 pub mod mldsa;
 mod mldsa_keys;

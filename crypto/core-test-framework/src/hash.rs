@@ -87,6 +87,10 @@ impl TestFrameworkHash {
         /*** fn result_len() -> usize ***/
         assert_eq!(H::default().output_len(), H::OUTPUT_LEN);
 
+        // A hash function is held to a signature scheme's pre-hash strength rule; only a
+        // wrapper type made for the purpose waives it.
+        assert!(!H::PRE_HASH_STRENGTH_RULE.is_waived());
+
         /*** fn hash(data: &[u8]) -> Vec<u8> **/
         let output_vec = H::hash(input);
         assert_eq!(output_vec, expected_output);

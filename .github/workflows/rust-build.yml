@@ -24,3 +24,8 @@ jobs:
 
       - name: Build workspace
         run: cargo build --workspace --all-targets --all-features
+
+      # --all-features above never builds a crate with a default feature off. scrypt without
+      # `std` is its caller-supplied-memory configuration, and it once did not compile.
+      - name: Test bouncycastle-scrypt without std
+        run: cargo test -p bouncycastle-scrypt --no-default-features

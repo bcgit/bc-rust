@@ -14,6 +14,7 @@ use bouncycastle_cipher::{Decrypting, Encrypting};
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
+    AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey,
 };
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
@@ -59,7 +60,8 @@ pub const CCM_TAG_LEN: usize = 16;
 /// A message of any length goes through the other key, [`AES128Key`]`<CCM<NONCE_LEN, TAG_LEN>>`
 /// and friends: its [`AeadDeclaredEncryptionKey`] / [`AeadDeclaredDecryptionKey`] constructors take
 /// the AAD and payload lengths, so its workers hold nothing back, and its in-place one-shots
-/// take any length with no second buffer.
+/// ([`AeadInPlaceEncryptionKey`] / [`AeadInPlaceDecryptionKey`]) take any length with no second
+/// buffer.
 ///
 /// # The nonce and tag length are parametrizable
 ///
@@ -184,7 +186,7 @@ pub const CCM_TAG_LEN: usize = 16;
 /// use bouncycastle_aes::AES128Key;
 /// use bouncycastle_cipher::modes::CCM;
 /// use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-/// use bouncycastle_core::symmetric_key::{AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial};
+/// use bouncycastle_core::symmetric_key::{AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, FromKeyMaterial};
 ///
 /// let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .expect("a 16-byte symmetric cipher key");

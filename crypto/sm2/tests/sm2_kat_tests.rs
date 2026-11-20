@@ -28,7 +28,7 @@
 //! and the draft's published domain parameters) before being written here, so it rests on two
 //! independent derivations rather than on trusting either one.
 
-use bouncycastle_core::signature_key::VerifyingKey;
+use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey};
 

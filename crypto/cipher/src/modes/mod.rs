@@ -19,6 +19,7 @@
 //! | CTR | [`ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
 //! | ECB | [`hazmat`] | SP 800-38A Sec 6.1 | Electronic Codebook. **Not confidential for data**; interoperability and test vectors only |
 //! | GCM | [`gcm`] | SP 800-38D | **Authenticated**: 96-bit nonce, 96-128-bit tag, no padding; AAD before data |
+//! | GCM-SIV | [`gcm_siv`] | RFC 8452 | **Authenticated**, nonce misuse-resistant: AES-128 and AES-256 only, 96-bit nonce, 128-bit tag; whole message in place |
 //! | GMAC | [`gmac`] | SP 800-38D Sec 5.2 | A MAC, not a cipher: GCM with no plaintext, so the tag is bound to a 96-bit nonce |
 //! | OFB | [`ofb`] | SP 800-38A Sec 6.4 | Output Feedback. Keystream from the IV alone, serial in both directions |
 //! | KW | [`kw`] | SP 800-38F Sec 6.2 | Key Wrap (RFC 3394). **Authenticated**, deterministic, no IV; whole 8-byte semiblocks only |
@@ -55,7 +56,7 @@
 //! [Choosing between the modes](#choosing-between-the-modes).
 //!
 //! Each mode is also a **mode type** -- [`CBC`], [`CCM`], [`CCM_Packet`], [`CFB`], [`CFB8`],
-//! [`CTR`], [`GCM`], [`OFB`], [`hazmat::ecb::ECB`], the MACs [`CMAC`] and [`GMAC`], and the key
+//! [`CTR`], [`GCM`], [`GCM_SIV`], [`OFB`], [`hazmat::ecb::ECB`], the MACs [`CMAC`] and [`GMAC`], and the key
 //! wraps [`KW`], [`KWP`] and [`TKW`] -- the `M` a mode-bound key such as
 //! `bouncycastle_aes::AES128Key<M>` is parameterised by. The mode type implements the hazmat mode
 //! traits of [`bouncycastle_core::hazmat`], which is how a key hands out the mode's encryptors and
@@ -74,8 +75,9 @@
 //!
 //! They are written over `ToyBlockCipher`, a deliberately insecure stand-in with AES-128's key and
 //! block sizes, defined in hidden lines from this crate's `tests/common/toy_block_cipher.rs`, so
-//! that this module's documentation does not depend on any real cipher crate (which would be a
-//! dependency cycle: `bouncycastle-aes` and the like depend on this one). Substitute any
+//! that this module's documentation does not depend on any real cipher crate (`bouncycastle-aes`
+//! and the like depend on this one; it is a dev-dependency here for the unit tests of
+//! [`gcm_siv`] alone). Substitute any
 //! [`ElectronicCodeBook`] implementor, such as `bouncycastle_aes::hazmat::AES128Internal`; the
 //! `bouncycastle-aes` crate's aliases carry runnable examples over the real thing.
 //!
@@ -137,6 +139,10 @@
 //! length before it starts, so it suits a packet protocol whose frame is fixed or declared up
 //! front and cannot stream a message of unknown length the way GCM can.
 //!
+//! [`gcm_siv`] is authenticated too, and unlike the other two it survives a repeated nonce, which
+//! then reveals only that two messages were equal. It is the mode for a system that cannot
+//! guarantee unique nonces; it is defined over AES only and takes each message whole, in memory.
+//!
 //! ECB is not a candidate for data at all (below). Between the unauthenticated modes:
 //!
 //! The block cipher modes: [`cbc`], [`ctr`], [`cfb`], [`cfb8`] and [`ofb`], while they do provide
@@ -177,6 +183,7 @@ pub mod cfb8;
 pub mod cmac;
 pub mod ctr;
 pub mod gcm;
+pub mod gcm_siv;
 pub mod gmac;
 pub mod hazmat;
 mod iv;
@@ -188,6 +195,7 @@ pub mod kwp;
 #[path = "../../tests/modes/common/mod.rs"]
 pub(crate) mod modes_common;
 pub mod ofb;
+mod polyval;
 pub mod tkw;
 
 pub use cbc::{CBC, Cbc};
@@ -199,6 +207,7 @@ pub use cfb8::{CFB8, Cfb8};
 pub use cmac::{CMAC, Cmac, CmacKeyState};
 pub use ctr::{CTR, Ctr};
 pub use gcm::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
+pub use gcm_siv::{GCM_SIV, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN};
 pub use gmac::{GMAC, Gmac};
 pub use kw::{KW, KW_BLOCK_LEN, Kw, SEMIBLOCK_LEN};
 pub use kwp::{KWP, Kwp};

@@ -27,7 +27,7 @@
 //! is given, so signatures are not reproducible:
 //!
 //! ```
-//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_sm2::keys::keygen;
 //!

@@ -38,6 +38,8 @@ use bouncycastle_blake3::BLAKE3_NAME;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{AlgorithmInfo, FinishToken, Hash};
+use bouncycastle_ripemd as ripemd;
+use bouncycastle_ripemd::{RIPEMD128_NAME, RIPEMD160_NAME, RIPEMD256_NAME, RIPEMD320_NAME};
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha2::{
     SHA224_NAME, SHA256_NAME, SHA384_NAME, SHA512_224_NAME, SHA512_256_NAME, SHA512_NAME,
@@ -74,6 +76,14 @@ pub enum HashFactory {
     SHA3_512(sha3::SHA3_512),
     ///
     SM3(sm3::SM3),
+    /// Legacy; see the `bouncycastle-ripemd` crate docs.
+    RIPEMD128(ripemd::RIPEMD128),
+    /// Legacy; see the `bouncycastle-ripemd` crate docs.
+    RIPEMD160(ripemd::RIPEMD160),
+    /// Legacy; see the `bouncycastle-ripemd` crate docs.
+    RIPEMD256(ripemd::RIPEMD256),
+    /// Legacy; see the `bouncycastle-ripemd` crate docs.
+    RIPEMD320(ripemd::RIPEMD320),
     ///
     AsconHash256(ascon::AsconHash256),
     /// BLAKE2b with a 64-byte digest (RFC 7693), unkeyed. The keyed mode is in
@@ -121,6 +131,10 @@ impl AlgorithmFactory for HashFactory {
             SHA3_384_NAME => Ok(Self::SHA3_384(sha3::SHA3_384::new())),
             SHA3_512_NAME => Ok(Self::SHA3_512(sha3::SHA3_512::new())),
             SM3_NAME => Ok(Self::SM3(sm3::SM3::new())),
+            RIPEMD128_NAME => Ok(Self::RIPEMD128(ripemd::RIPEMD128::new())),
+            RIPEMD160_NAME => Ok(Self::RIPEMD160(ripemd::RIPEMD160::new())),
+            RIPEMD256_NAME => Ok(Self::RIPEMD256(ripemd::RIPEMD256::new())),
+            RIPEMD320_NAME => Ok(Self::RIPEMD320(ripemd::RIPEMD320::new())),
             ASCON_HASH256_NAME => Ok(Self::AsconHash256(ascon::AsconHash256::new())),
             BLAKE2B_512_NAME => Ok(Self::BLAKE2b_512(blake2::BLAKE2b_512::new())),
             BLAKE2S_256_NAME => Ok(Self::BLAKE2s_256(blake2::BLAKE2s_256::new())),
@@ -147,6 +161,10 @@ impl AlgorithmInfo for HashFactory {
             Self::SHA3_384(h) => h.alg_name(),
             Self::SHA3_512(h) => h.alg_name(),
             Self::SM3(h) => h.alg_name(),
+            Self::RIPEMD128(h) => h.alg_name(),
+            Self::RIPEMD160(h) => h.alg_name(),
+            Self::RIPEMD256(h) => h.alg_name(),
+            Self::RIPEMD320(h) => h.alg_name(),
             Self::AsconHash256(h) => h.alg_name(),
             Self::BLAKE2b_512(h) => h.alg_name(),
             Self::BLAKE2s_256(h) => h.alg_name(),
@@ -167,6 +185,10 @@ impl AlgorithmInfo for HashFactory {
             Self::SHA3_384(h) => h.max_security_strength(),
             Self::SHA3_512(h) => h.max_security_strength(),
             Self::SM3(h) => h.max_security_strength(),
+            Self::RIPEMD128(h) => h.max_security_strength(),
+            Self::RIPEMD160(h) => h.max_security_strength(),
+            Self::RIPEMD256(h) => h.max_security_strength(),
+            Self::RIPEMD320(h) => h.max_security_strength(),
             Self::AsconHash256(h) => h.max_security_strength(),
             Self::BLAKE2b_512(h) => h.max_security_strength(),
             Self::BLAKE2s_256(h) => h.max_security_strength(),
@@ -189,6 +211,10 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.block_bitlen(),
             Self::SHA3_512(h) => h.block_bitlen(),
             Self::SM3(h) => h.block_bitlen(),
+            Self::RIPEMD128(h) => h.block_bitlen(),
+            Self::RIPEMD160(h) => h.block_bitlen(),
+            Self::RIPEMD256(h) => h.block_bitlen(),
+            Self::RIPEMD320(h) => h.block_bitlen(),
             Self::AsconHash256(h) => h.block_bitlen(),
             Self::BLAKE2b_512(h) => h.block_bitlen(),
             Self::BLAKE2s_256(h) => h.block_bitlen(),
@@ -209,6 +235,10 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.output_len(),
             Self::SHA3_512(h) => h.output_len(),
             Self::SM3(h) => h.output_len(),
+            Self::RIPEMD128(h) => h.output_len(),
+            Self::RIPEMD160(h) => h.output_len(),
+            Self::RIPEMD256(h) => h.output_len(),
+            Self::RIPEMD320(h) => h.output_len(),
             Self::AsconHash256(h) => h.output_len(),
             Self::BLAKE2b_512(h) => h.output_len(),
             Self::BLAKE2s_256(h) => h.output_len(),
@@ -229,6 +259,10 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.do_update(data),
             Self::SHA3_512(h) => h.do_update(data),
             Self::SM3(h) => h.do_update(data),
+            Self::RIPEMD128(h) => h.do_update(data),
+            Self::RIPEMD160(h) => h.do_update(data),
+            Self::RIPEMD256(h) => h.do_update(data),
+            Self::RIPEMD320(h) => h.do_update(data),
             Self::AsconHash256(h) => h.do_update(data),
             Self::BLAKE2b_512(h) => h.do_update(data),
             Self::BLAKE2s_256(h) => h.do_update(data),
@@ -251,6 +285,10 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.finish_into(token, output),
             Self::SHA3_512(h) => h.finish_into(token, output),
             Self::SM3(h) => h.finish_into(token, output),
+            Self::RIPEMD128(h) => h.finish_into(token, output),
+            Self::RIPEMD160(h) => h.finish_into(token, output),
+            Self::RIPEMD256(h) => h.finish_into(token, output),
+            Self::RIPEMD320(h) => h.finish_into(token, output),
             Self::AsconHash256(h) => h.finish_into(token, output),
             Self::BLAKE2b_512(h) => h.finish_into(token, output),
             Self::BLAKE2s_256(h) => h.finish_into(token, output),
@@ -281,6 +319,10 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
             Self::SHA3_512(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
             Self::SM3(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::RIPEMD128(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::RIPEMD160(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::RIPEMD256(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
+            Self::RIPEMD320(h) => h.finish_partial_bits_into(token, partial_byte, num_bits, output),
             Self::AsconHash256(h) => {
                 h.finish_partial_bits_into(token, partial_byte, num_bits, output)
             }

@@ -15,6 +15,10 @@
   CBC, CFB, CFB8, OFB, CTR, GCM and CCM (RFC 8998's AEAD_SM4_GCM and AEAD_SM4_CCM), KW and KWP; the
   `sm4-{cbc,cfb,cfb8,ofb,ctr,gcm,ccm,kw,kwp}` CLI commands.
 * CHACHA20 -- ChaCha20, Poly1305 and ChaCha20-Poly1305 (RFC 8439).
+* RIPEMD -- `bouncycastle-ripemd`, the RIPEMD-128, RIPEMD-160, RIPEMD-256 and RIPEMD-320 hash functions of Dobbertin,
+  Bosselaers and Preneel, with bit-oriented messages and `Suspendable`; `HMAC_RIPEMD160` (RFC 2104);
+  `HashFactory` and `MACFactory` entries; the `ripemd*` and `hmac-ripemd160` CLI commands. Legacy functions,
+  below the library's smallest modelled strength, so all report `SecurityStrength::None`.
 * TDES -- three-key TDEA (NIST SP 800-67 Rev 2) as a constant-time, table-free bit-sliced engine under `hazmat`,
   with ECB, CBC, CFB64, CFB8, OFB and CTR (SP 800-38A Appendix E) and TDEA Key Wrap (SP 800-38F TKW) through the key
   role traits; two-key TDEA decrypts, unwraps and verifies CMAC tags only, which `BlockPermutation::DECRYPT_ONLY`
@@ -49,10 +53,24 @@
   for implementors of a DHKEM group. Checked against the RFC's machine-readable vectors for P-256 and P-521 (32
   sets each; P-521's key derivation is the first two-block `LabeledExpand`), and, for P-384, which the RFC defines
   but publishes no vectors for, against BC Java 1.84 in both directions.
+* PBKDF2 -- RFC 8018 Section 5.2 over HMAC (SHA-2, SHA-3), as `bouncycastle-pbkdf2`, on the `KDF` trait with the salt
+  and the iteration count on the instance; a key derived from a password is typed `Unknown`. The `pbkdf2` CLI command
+  reads the password from a file or stdin.
+* scrypt -- RFC 7914, as `bouncycastle-scrypt`: `SCrypt` over working memory the caller supplies
+  (`derive_with_memory_out`, `ScryptParams::work_len`), and on the `KDF` trait with the `std` feature, allocating up to
+  a limit. The `scrypt` CLI command takes `--log2-n`, `-r`, `-p` and `--max-memory`.
 * HPKE -- RFC 9180 Sections 5 and 6 in all four modes, as `bouncycastle-hpke`, on the X25519, P-256, P-384 and
   P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
   (Auth, AuthPSK) give contexts with `seal_out` / `open_out` and `export_out`; HKDF over SHA-256, SHA-384 or
   SHA-512 with AES-128-GCM, AES-256-GCM, ChaCha20Poly1305 or export-only. No CLI command yet.
+* AES-GCM-SIV -- the nonce misuse-resistant AEAD of RFC 8452, as `AES128Key<GCM_SIV>` and `AES256Key<GCM_SIV>`
+  (aliased `AES_GCM_SIV_128` and `AES_GCM_SIV_256`): whole-message in-place encryption and decryption with a
+  detached tag, a failed decryption leaving the buffer zeroized; the `aes128-gcm-siv` and `aes256-gcm-siv` CLI
+  commands, a `modes::gcm_siv` bench group and the `bench_gcm_siv_mem_usage` stack harness.
+* SP 800-108 -- key derivation using pseudorandom functions (NIST SP 800-108r1), as `bouncycastle-kbkdf`: the KDFs in
+  Counter, Feedback and Double-Pipeline Mode over HMAC (SHA-2, SHA-3) or CMAC (AES), and the KDF Using KMAC, on the
+  `KDF` trait; six parameterless instantiations in `KDFFactory`; the `kbkdf-counter`, `kbkdf-feedback`,
+  `kbkdf-double-pipeline`, `kbkdf-kmac128` and `kbkdf-kmac256` CLI commands.
 * `bouncycastle-dhkem` -- the generic DHKEM leaves `bouncycastle-hpke` for a crate of its own
   (`bouncycastle_hpke::dhkem::*` is now `bouncycastle_dhkem::*`), and gains `AuthEncap` and `AuthDecap`. Its
   `_out` functions return the number of bytes written.
@@ -93,6 +111,23 @@
 * The AEAD keys' one-shots that work in the caller's buffer are spelled `_inplace`, as QUALITY_AND_STYLE.md's suffix
   rule and every other in-place method already were: `encrypt_detached_inplace`, `encrypt_detached_inplace_nonce`
   and `decrypt_detached_inplace` on the AEAD key and mode traits (formerly `_in_place`).
+* The in-place AEAD one-shots move to a role pair of their own, `AeadInPlaceEncryptionKey` /
+  `AeadInPlaceDecryptionKey` (mode traits `AeadInPlaceEncryptMode` / `AeadInPlaceDecryptMode`), which names no worker
+  type and which every AEAD key implements; `AeadEncryptionKey`, `AeadDeclaredEncryptionKey` and their decrypting
+  halves no longer carry them. Callers import the new traits; behaviour is unchanged. The bodies over a streaming
+  worker are public as `core::symmetric_key::encrypt_detached_inplace` / `decrypt_detached_inplace`, for an AEAD key
+  outside `core` to implement the role with.
+* A block cipher key reports its algorithm: `Mode<P>` carries the mode's `ALG_NAME` over the permutation and
+  `BlockCipherKey<P, M>` implements `Algorithm` from it, so `AES128Key<GCM>` is `AES_GCM_128` and
+  `AES256Key<GCM_SIV>`, which has no worker to ask, is `AES_GCM_SIV_256`. `ALG_NAME` is a required item of the
+  hazmat trait `Mode<P>`, so a mode implemented outside the workspace must add one.
+* The signature one-shots over a whole message move to roles of their own, `OneShotSigningKey`,
+  `DeterministicOneShotSigningKey` and `OneShotVerifyingKey`, which name no worker type, so a scheme that cannot take
+  its message in pieces can implement them alone. Each is a supertrait of its streaming role (`SigningKey`,
+  `DeterministicSigningKey`, `VerifyingKey`), which keeps only its `create_*` constructor; every key implements the
+  one-shot role over its own worker with `core::signature_key::sign_out_with_signer` / `verify_with_verifier`, which
+  are public for a key outside `core` to do the same. Callers of `sign`, `sign_out`, `sign_deterministic`,
+  `sign_deterministic_out` and `verify` import the new traits; behaviour is unchanged.
 * Workers are finished where they sit, and a worker held as `Box<dyn ..>` can finish its message (#173). Each worker
   trait (`Hash`, the symmetric and AEAD encryptors and decryptors, `MACGenerator` / `MACVerifier`, `SignatureSigner` /
   `SignatureVerifier`) now has one required finishing method on `&mut self` (`finish_into`,
@@ -241,5 +276,10 @@
   on it.
 
 * Hidden stack copies removed from the `mldsa` and `mldsa-lowmemory` crates; `mldsa-lowmemory`'s memory table is re-measured.
+* `keygen_out` / `keygen_from_seed_out` on `MLDSATrait` and `MLKEMTrait` generate into keys made with `zeroized()` (ML-KEM into the private key alone, whose `pk()` is the public key), leaving no copy of the private key behind; an unfilled key does not sign, verify or decapsulate (`ActingOnZeroizedKey`).
+* ML-DSA and ML-KEM stack usage is lower (ML-DSA-87 KeyGen 133,320 to 99,128 bytes, expanded-key Verify 189,240 to 139,192; ML-KEM-1024 Encaps 41,816 to 32,040); both memory tables are re-measured.
 * `SampleNTT` and `RejBoundedPoly` squeeze whole SHAKE blocks (504 and 272 bytes); the ML-KEM memory tables are re-measured.
+* The ML-KEM stack harness measures encapsulation and decapsulation alone, on a key made beforehand; its Decaps rows had included a key generation. Both ML-KEM memory tables are re-measured (ML-KEM-1024 Decaps with an expanded key 50,648 to 37,624 bytes), and `mlkem`'s key generation has one assembly, which lowers its peak (ML-KEM-1024 KeyGen 24,376 to 22,248).
 * `bouncycastle-utils`: `ct_eq_bytes_mask` is renamed `ct_eq_bytes_condition`.
+* `core::hazmat::label_kdf_output` is the `KDF` trait's rule for typing derived keying material as one function; KBKDF, the Concat KDF, the X9.63 KDF and PBKDF2 call it where each had its own copy. No change in behaviour.
+* HashML-DSA can use a pre-hash weaker than the parameter set when the caller names it as `hazmat::AnyStrength<H>` (in `mldsa` and `mldsa-lowmemory`; `--allow-weak-hash` in the CLI), which lowers the signature's strength to the hash's; the default still refuses it. The ACVP pre-hash vectors, which pair every hash with every parameter set, now run. `HashAlgParams` gains `PRE_HASH_STRENGTH_RULE`, which a hash function leaves at its default.

@@ -13,8 +13,8 @@
 //! # Usage Examples
 //!
 //! CCM must know the payload length before it starts (Sec 3). A key bound to [`CCM`] takes the
-//! lengths per message through the AEAD *declared-length* role pair, and its in-place one-shots take any
-//! length with no second buffer; a key bound to [`CCM_Packet`] fixes them in the type, as the
+//! lengths per message through the AEAD *declared-length* role pair, and the in-place role pair's
+//! one-shots take any length with no second buffer; a key bound to [`CCM_Packet`] fixes them in the type, as the
 //! [`CcmPacketEncryptor`] / [`CcmPacketDecryptor`] streams it hands out do: `DATA_LEN` bytes of payload
 //! exactly, up to `AAD_LEN` of AAD. The nonce is drawn unless a `_nonce` form is used; CCM needs
 //! it unique, not random (Sec 5.3), so a caller with a counter supplies its own. The AAD is
@@ -27,7 +27,7 @@
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::errors::SymmetricCipherError;
-//! use bouncycastle_core::hazmat::{AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
+//! use bouncycastle_core::hazmat::{AeadInPlaceDecryptMode, AeadInPlaceEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_cipher::modes::CCM;
 //!
@@ -102,10 +102,12 @@ use crate::stream::{KeyStreamPolicy, StreamCipher};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
-    BlockPermutation, ElectronicCodeBook, KeyStream, Mode, finish_token,
+    AeadInPlaceDecryptMode, AeadInPlaceEncryptMode, BlockPermutation, ElectronicCodeBook,
+    KeyStream, Mode, finish_token,
 };
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{decrypt_detached_inplace, encrypt_detached_inplace};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, RNG, StreamCipherDecryptor,
     StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -1681,14 +1683,14 @@ where
 }
 
 // The mode impls are generic over the permutation: `Mode<P>` needs no `KEY_LEN`, since CCM keeps
-// nothing per key but the schedule, and the declared-length mode traits carry what else they need. The
-// in-place one-shots override the provided bodies to run `Ccm` directly over the buffer.
+// nothing per key but the schedule, and the declared-length mode traits carry what else they need.
 
 impl<P: Clone + ModeNames, const NONCE_LEN: usize, const TAG_LEN: usize> Mode<P>
     for CCM<NONCE_LEN, TAG_LEN>
 {
     type KeyState = P;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::CCM_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         perm
@@ -1723,18 +1725,6 @@ where
     ) -> Result<Self::Encryptor<'k>, SymmetricCipherError> {
         Ok(CcmEncryptor(Ccm::from_perm_with_lengths(state, nonce, aad_len, payload_len)?))
     }
-
-    fn encrypt_detached_inplace_nonce(
-        state: &Self::KeyState,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        let mut ccm =
-            Ccm::<P, Encrypting, 16, NONCE_LEN, TAG_LEN>::from_perm(state, nonce, aad, buf.len())?;
-        ccm.do_encrypt_inplace(buf)?;
-        ccm.finish_tag(&finish_token())
-    }
 }
 
 impl<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
@@ -1759,7 +1749,51 @@ where
             tag_len: 0,
         })
     }
+}
 
+// The lengths CCM must declare are the buffers' own. The drawing form goes through the streaming
+// encryptor; the other two run `Ccm` directly over the buffer.
+
+impl<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
+    AeadInPlaceEncryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN> for CCM<NONCE_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    fn encrypt_detached_inplace(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        let (enc, nonce) = <Self as AeadDeclaredEncryptMode<
+            P,
+            KEY_LEN,
+            NONCE_LEN,
+            TAG_LEN,
+            TAG_LEN,
+        >>::encrypt_init(state, rng, aad.len(), buf.len())?;
+        let tag = encrypt_detached_inplace(enc, aad, buf)?;
+        Ok((nonce, tag))
+    }
+
+    fn encrypt_detached_inplace_nonce(
+        state: &Self::KeyState,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        let mut ccm =
+            Ccm::<P, Encrypting, 16, NONCE_LEN, TAG_LEN>::from_perm(state, nonce, aad, buf.len())?;
+        ccm.do_encrypt_inplace(buf)?;
+        ccm.finish_tag(&finish_token())
+    }
+}
+
+impl<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
+    AeadInPlaceDecryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN> for CCM<NONCE_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
     /// `buf` is untouched if the lengths are refused, and zeroized on any error after that: the
     /// plaintext is in it before the tag is checked.
     fn decrypt_detached_inplace(
@@ -1804,6 +1838,7 @@ impl<
 {
     type KeyState = P;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::CCM_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         perm
@@ -1861,6 +1896,74 @@ where
 
     fn decrypt_init<'k>(state: &'k Self::KeyState, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
         CcmPacketDecryptor::from_perm(state, nonce)
+    }
+}
+
+// Over the fixed-frame workers, so these take the frame length as the other one-shots do.
+
+impl<
+    P,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+> AeadInPlaceEncryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN>
+    for CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    fn encrypt_detached_inplace(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        let (enc, nonce) =
+            CcmPacketEncryptor::<P, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::from_perm(
+                state, rng,
+            )?;
+        let tag = encrypt_detached_inplace(enc, aad, buf)?;
+        Ok((nonce, tag))
+    }
+
+    fn encrypt_detached_inplace_nonce(
+        state: &Self::KeyState,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        let enc =
+            CcmPacketEncryptor::<P, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::from_perm_nonce(
+                state, nonce,
+            );
+        encrypt_detached_inplace(enc, aad, buf)
+    }
+}
+
+impl<
+    P,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+> AeadInPlaceDecryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN>
+    for CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    fn decrypt_detached_inplace(
+        state: &Self::KeyState,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        let dec = CcmPacketDecryptor::<P, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::from_perm(
+            state, nonce,
+        );
+        decrypt_detached_inplace(dec, aad, buf, tag)
     }
 }
 

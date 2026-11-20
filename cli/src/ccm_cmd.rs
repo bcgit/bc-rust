@@ -56,7 +56,7 @@ use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::symmetric_key::{
-    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial,
+    AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, FromKeyMaterial,
 };
 
 use crate::helpers;
