@@ -15,6 +15,7 @@ mod eccdh_cmd;
 mod ecdsa_cmd;
 mod encoders_cmd;
 mod gcm_cmd;
+mod gcm_siv_cmd;
 mod helpers;
 mod hkdf_cmd;
 mod kbkdf_cmd;
@@ -62,6 +63,7 @@ use crate::sha2_cmd::SHA2Variant;
 use crate::sha3_cmd::{SHA3Variant, Strength};
 use crate::sm2_cmd::SM2Action;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::{AES_GCM_SIV_128, AES_GCM_SIV_256};
 use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
 use bouncycastle::camellia::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal,
@@ -549,6 +551,71 @@ enum Subcommands {
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in GCM-SIV mode (RFC 8452): nonce misuse-resistant authenticated encryption of
+    /// stdin to stdout.
+    ///
+    /// The framing is `aes128-gcm`'s. On `encrypt`, a fresh 12-byte nonce is generated and written
+    /// as the FIRST 12 BYTES of the output, the ciphertext follows, and the 16-byte tag is written
+    /// last; `decrypt` reads the nonce back from the first 12 bytes of input.
+    ///
+    /// With `--nonce` (hex) or `--nonce-file` (raw bytes; hex with --hex-input), the nonce is
+    /// supplied instead: `encrypt` uses it and writes ONLY `ciphertext || tag`, and `decrypt`
+    /// reads ONLY that from stdin. A repeated nonce under one key reveals only whether two
+    /// messages with the same AAD were equal, but RFC 8452 Section 9 still recommends random
+    /// nonces and against a fixed one; the default takes care of that.
+    ///
+    /// `--aad` (hex) or `--aad-file` (raw bytes; hex with --hex-input) supply the additional
+    /// authenticated data, which is covered by the tag but not encrypted; if neither is given,
+    /// AAD is empty.
+    ///
+    /// LIKE `aes128-ccm`, THIS COMMAND DOES NOT STREAM: it reads all of stdin before doing any
+    /// work, so memory use is proportional to the input. That is inherent to the mode: the tag is
+    /// computed over the whole plaintext and is needed to produce the first ciphertext byte. On
+    /// `decrypt` NO plaintext is written until the tag has verified, so a non-zero exit leaves
+    /// nothing to discard. For large inputs use `aes128-gcm`, which streams.
+    ///
+    /// Input may be any length. There is no AES-192 form: RFC 8452 defines none.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_GCM_SIV {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long, visible_alias = "iv")]
+        nonce: Option<String>,
+
+        /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input).
+        /// If both nonce and nonce_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "iv-file")]
+        nonce_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
         #[arg(long)]
@@ -1550,6 +1617,49 @@ enum Subcommands {
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in GCM-SIV mode (RFC 8452), nonce misuse-resistant authenticated encryption of
+    /// stdin to stdout.
+    ///
+    /// See `aes128-gcm-siv` for the nonce/tag framing, the AAD flags, the non-streaming note and
+    /// the warnings; only the key length differs.
+    AES256_GCM_SIV {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long, visible_alias = "iv")]
+        nonce: Option<String>,
+
+        /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input).
+        /// If both nonce and nonce_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "iv-file")]
+        nonce_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
         #[arg(long)]
@@ -7168,6 +7278,20 @@ fn run() {
                 direction, key, key_file, iv, iv_file, aad, aad_file, *x, "AES-128",
             );
         }
+        Some(Subcommands::AES128_GCM_SIV {
+            direction,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            gcm_siv_cmd::gcm_siv_cmd::<AES_GCM_SIV_128, 16>(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *x, "AES-128",
+            );
+        }
         Some(Subcommands::AES192_CBC { direction, key, key_file, iv, iv_file, x }) => {
             cbc_cmd::cbc_cmd::<AES192Internal, 24>(
                 direction, key, key_file, iv, iv_file, *x, "AES-192",
@@ -7280,6 +7404,20 @@ fn run() {
         }) => {
             gcm_cmd::gcm_cmd::<AES256Internal, 32>(
                 direction, key, key_file, iv, iv_file, aad, aad_file, *x, "AES-256",
+            );
+        }
+        Some(Subcommands::AES256_GCM_SIV {
+            direction,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            gcm_siv_cmd::gcm_siv_cmd::<AES_GCM_SIV_256, 32>(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *x, "AES-256",
             );
         }
         Some(Subcommands::AsconAEAD128 {

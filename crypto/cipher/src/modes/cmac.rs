@@ -96,6 +96,7 @@ where
 {
     type KeyState = CmacKeyState<P, BLOCK_LEN>;
     const KEY_TYPE: KeyType = KeyType::MACKey;
+    const ALG_NAME: &'static str = P::CMAC_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         CmacKeyState::new(perm)
