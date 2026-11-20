@@ -18,6 +18,7 @@
 //! # Usage Examples
 //!
 //! See the [`x25519`] module for X25519 key generation and sample Alice-and-Bob key agreement schemes,
+//! the [`x448`] module for the same over Curve448,
 //! and the [`ed25519`] module for Ed25519 and Ed25519ph key generation, signing and verification.
 //!
 //! The crate's own source is `no_std`, but its dependencies are not yet (`bouncycastle-core`'s
@@ -29,10 +30,9 @@
 
 mod bits;
 mod curve25519;
-// No caller until X448 lands, when this allow goes.
-#[allow(dead_code)]
 mod curve448;
 pub mod ed25519;
 mod nat;
 mod wnaf;
 pub mod x25519;
+pub mod x448;

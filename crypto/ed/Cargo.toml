@@ -21,5 +21,9 @@ name = "x25519_benches"
 harness = false
 
 [[bench]]
+name = "x448_benches"
+harness = false
+
+[[bench]]
 name = "ed25519_benches"
 harness = false
