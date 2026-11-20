@@ -1,9 +1,10 @@
 //! The KDF Using KMAC, SP 800-108r1 Section 4.4.
 
 use crate::prf::sealed;
-use crate::{k_in_into, k_in_len, label_output};
+use crate::{k_in_into, k_in_len};
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hazmat::label_kdf_output;
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -155,7 +156,8 @@ impl<'l, PARAMS: KmacKdfParams> KDF_KMAC<'l, PARAMS> {
         // bytes.
         let max_strength = PARAMS::MAX_SECURITY_STRENGTH;
         let seed_len = max_strength.as_int() as usize / 8;
-        let labelled = filled.and_then(|()| label_output(keys, len, seed_len, max_strength, dkm));
+        let labelled =
+            filled.and_then(|()| label_kdf_output(keys, len, seed_len, max_strength, dkm));
         if labelled.is_err() {
             dkm.zeroize();
         }

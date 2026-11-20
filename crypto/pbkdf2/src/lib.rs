@@ -85,7 +85,7 @@
 #![forbid(missing_docs)]
 
 use bouncycastle_core::errors::KDFError;
-use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token};
+use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token, label_kdf_output};
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -96,7 +96,6 @@ use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_utils::const_str::ConstStr;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::{max, min};
 use core::marker::PhantomData;
 use core::num::NonZeroU32;
 
@@ -247,34 +246,16 @@ impl<'s, H: HMACParams> PBKDF2<'s, H> {
             return Err(KDFError::InvalidLength("the output buffer cannot hold dkLen bytes"));
         }
 
-        // What the output can claim: the full-entropy keys' bytes count towards seeding, their
-        // strongest strength towards the output's. A password, typed `Unknown`, credits nothing.
-        let mut credited = 0usize;
-        let mut strength = SecurityStrength::None;
-        for key in keys {
-            if key.is_full_entropy() && key.security_strength() != SecurityStrength::None {
-                credited = credited.saturating_add(key.key_len());
-                strength = *max(&strength, &key.security_strength());
-            }
-        }
-
         let key = Self::prf_key(keys)?;
         // Each block is written to `dk` as it is finished; nothing after the checks above fails.
-        let labelled = do_hazardous_operations(dk, |dk| {
+        let filled = do_hazardous_operations(dk, |dk| {
             let out = dk.ref_to_bytes_mut()?;
             Self::fill(&key, self.salt, self.iterations, &mut out[..len]);
-            dk.set_key_len(len)?;
-            if credited >= h_len / 2 {
-                dk.set_key_type(KeyType::CryptographicRandom)?;
-                let by_len = SecurityStrength::from_bytes(len);
-                dk.set_security_strength(*min(
-                    min(&strength, &H::HMAC_MAX_SECURITY_STRENGTH),
-                    &by_len,
-                ))
-            } else {
-                dk.set_key_type(KeyType::Unknown)?;
-                dk.set_security_strength(SecurityStrength::None)
-            }
+            Ok(())
+        });
+        // What the output can claim is the [`KDF`] trait's rule, applied once it is in place.
+        let labelled = filled.and_then(|()| {
+            label_kdf_output(keys, len, h_len / 2, H::HMAC_MAX_SECURITY_STRENGTH, dk)
         });
         if labelled.is_err() {
             dk.zeroize();
