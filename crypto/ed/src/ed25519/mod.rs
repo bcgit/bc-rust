@@ -157,8 +157,9 @@
 //! [`Ed25519PrivateKey::from_bytes_out`], `clone_from` and `encode_out` into a key or buffer you
 //! own where that matters. Signing also overwrites the stack its last step used, where the
 //! compiler otherwise leaves limbs of the scalar it held in registers; a scan of the dead stack
-//! after each signing call finds none of the key in a release build for x86-64, the one build
-//! scanned.
+//! after each signing call finds none of the key in release builds for x86-64 and arm64, the
+//! two scanned. SHA-512 is outside that: its load of the block that holds the private key can
+//! leave words of it on the stack, seen as one word after `from_bytes_out` in the arm64 build.
 //!
 //! Each fixed-base multiplication checks that its result is a point of the curve before
 //! anything is released, and a failure is reported as an error; no input causes one.

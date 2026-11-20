@@ -207,8 +207,10 @@ impl Ed25519PrivateKey {
     }
 
     /// Decodes the 32 octets of a private key into `sk`, a key you hold: they are copied
-    /// straight into the key, which is expanded where it sits, so no copy is staged on the
-    /// way, where the trait's [`from_bytes`](PrivateKey::from_bytes) moves the key it returns.
+    /// straight into the key, which is expanded where it sits, so this crate stages no copy
+    /// on the way, where the trait's [`from_bytes`](PrivateKey::from_bytes) moves the key it
+    /// returns. The SHA-512 that expands the key may still leave part of it behind (the
+    /// module's Security Considerations).
     /// `sk` is zeroized first and left so on every error.
     ///
     /// # Errors
