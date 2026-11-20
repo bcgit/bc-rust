@@ -94,8 +94,28 @@
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //! [`Ed448PublicKey`] holds the decoded point; [`Ed448PrivateKey`] holds the private key, the
-//! scalar and prefix derived from it, and the encoded public key. Per-call stack usage has not
-//! been measured yet.
+//! scalar and prefix derived from it, and the encoded public key.
+//!
+//! Per-call stack usage, measured as the deepest frame chain from the `measure` wrapper of
+//! `mem_usage_benches`' ed448 harness down, the wrapper's own frame included, in the release
+//! build (x86-64 Linux, rustc 1.97.0-nightly, return addresses included):
+//!
+//! | Entry point                        | Stack   |
+//! |------------------------------------|---------|
+//! | `keygen`                           | 5640 B  |
+//! | `keygen_out`                       | 5048 B  |
+//! | `Ed448PrivateKey::from_bytes`      | 5032 B  |
+//! | `Ed448PrivateKey::from_bytes_out`  | 4360 B  |
+//! | `Ed448PublicKey::from_bytes`       | 7232 B  |
+//! | `Ed448PrivateKey::pk`              | 3136 B  |
+//! | Ed448 sign                         | 6296 B  |
+//! | Ed448 verify                       | 10864 B |
+//! | Ed448ph sign                       | 8024 B  |
+//! | Ed448ph verify                     | 12896 B |
+//!
+//! The key generation figures leave out the RNG. The Ed448ph figures are for the streaming
+//! signer and verifier, and include the worker: a SHAKE256 state and the context. Key expansion
+//! and signing include the 4096 bytes of stack they overwrite after hashing a secret.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -150,11 +170,19 @@
 //! not wipe its source: that holds for the key pair of [`keygen`], for the trait's `from_bytes`,
 //! for `clone` and for the array `encode` returns. Use [`keygen_out`],
 //! [`Ed448PrivateKey::from_bytes_out`], `clone_from` and `encode_out` into a key or buffer you
-//! own where that matters. Signing also overwrites the stack its last step used, where the
-//! compiler otherwise leaves limbs of the scalar it held in registers. Two things are outside
-//! that. Key expansion and signing each take 114 octets of SHAKE256, which moves a sponge that
-//! has absorbed the private key or the prefix; the sponge is wiped where it ends up, and what
-//! the move left is not. And no scan of the dead stack has been run on this module yet.
+//! own where that matters.
+//!
+//! Two computations leave secrets on the stack that no `Secret` reaches, and each runs in a
+//! frame of its own whose stack is overwritten afterwards. One is the last step of signing,
+//! where the compiler spills limbs of the scalar it held in registers. The other is every
+//! SHAKE256 over the private key or the prefix: SHAKE256 yields its 114 octets only by moving
+//! the sponge, and before this was done the moved-from copies left the private key and whole
+//! Keccak states of the prefix's hash behind. With both in place, a scan of the dead stack
+//! after each operation finds none of the private key, the scalar, the prefix, the digests,
+//! the nonce `r`, `r + k s` or those Keccak states after `keygen_out`, `from_bytes_out`,
+//! `clone_from`, `encode_out`, `pk`, `==`, `keypair_consistency_check` and every form of
+//! signing, in the release build for x86-64 Linux (rustc 1.97.0-nightly), the one build
+//! scanned. The by-value forms leave what a move leaves, as above.
 //!
 //! Each fixed-base multiplication checks that its result is a point of the curve before
 //! anything is released, and a failure is reported as an error; no input causes one.

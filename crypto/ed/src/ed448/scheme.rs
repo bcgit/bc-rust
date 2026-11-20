@@ -49,12 +49,47 @@ fn computation_fault() -> SignatureError {
 }
 
 /// Ends absorbing and writes the 114 octets of `SHAKE256(x, 114)` to `digest`.
-///
-/// The sponge is moved into its squeezing form, which is wiped when it drops; the move itself
-/// is the compiler's, and a copy it leaves behind is not reached.
 fn squeeze_digest(hash: SHAKE256, digest: &mut [u8; DIGEST_LEN]) {
     let mut squeezer = hash.into_squeezer();
     squeezer.do_output_out(digest);
+}
+
+/// `SHAKE256(parts[0] || parts[1] || .., 114)` for an input that holds a secret, the private
+/// key or the prefix.
+///
+/// SHAKE256 gives more than 64 octets only through `into_squeezer`, which takes the sponge by
+/// value, and a sponge that is moved leaves its old bytes where they were: a release build
+/// was seen to leave the private key (still in the sponge's input buffer) and whole Keccak
+/// states of the prefix's hash, from which the prefix can be computed back, on the dead stack
+/// that way. So the hash is made, moved and dropped inside a frame of its own, and the stack
+/// that frame used is overwritten afterwards, as `scalar::calculate_S` does for its own spills.
+fn secret_digest(parts: &[&[u8]], digest: &mut [u8; DIGEST_LEN]) {
+    secret_digest_in_own_frame(parts, digest);
+    wipe_stack_below();
+}
+
+/// The computation of [`secret_digest`]. Never inlined, so that every copy of the sponge lies
+/// below its caller's frame, where [`wipe_stack_below`] reaches it.
+#[inline(never)]
+fn secret_digest_in_own_frame(parts: &[&[u8]], digest: &mut [u8; DIGEST_LEN]) {
+    let mut hash = SHAKE256::new();
+    for part in parts {
+        hash.do_update(part);
+    }
+    squeeze_digest(hash, digest);
+}
+
+/// How much stack [`wipe_stack_below`] overwrites, in 64-bit words: more than
+/// [`secret_digest_in_own_frame`] and everything it calls use, with room for a compiler that
+/// lays the frames out less tightly or keeps more copies of the sponge.
+const WIPED_STACK_WORDS: usize = 512;
+
+/// Overwrites the stack that the previous call made from the caller's frame used, by taking a
+/// frame of its own over the same memory and wiping it. Never inlined: the frame is the point.
+#[inline(never)]
+fn wipe_stack_below() {
+    let mut scratch = Secret::<[u64; WIPED_STACK_WORDS]>::new();
+    core::hint::black_box(&mut *scratch);
 }
 
 /// The private key after RFC 8032 Section 5.2.6, step 1, with its public key: the secret
@@ -112,9 +147,7 @@ impl ExpandedKey {
         // a 114-octet large buffer, denoted h. Only the lower 57 bytes are used for
         // generating the public key."
         let mut h = Secret::<[u8; DIGEST_LEN]>::new();
-        let mut hash = SHAKE256::new();
-        hash.do_update(sk);
-        squeeze_digest(hash, &mut h);
+        secret_digest(&[sk], &mut h);
         self.s.copy_from_slice(&h[..57]);
         // Section 5.2.6, step 1: "Let prefix denote the second half of the hash digest,
         // h[57],...,h[113]."
@@ -258,11 +291,9 @@ fn sign_core(
     // Step 2: "Compute SHAKE256(dom4(F, C) || prefix || PH(M), 114) [..] Interpret the
     // 114-octet digest as a little-endian integer r."
     let mut r_digest = Secret::<[u8; DIGEST_LEN]>::new();
-    let mut hash = SHAKE256::new();
-    absorb_dom4(&mut hash, F, context);
-    hash.do_update(&*key.prefix);
-    hash.do_update(PH_M);
-    squeeze_digest(hash, &mut r_digest);
+    // dom4(F, C), as `absorb_dom4` has it; the context has passed `check_context`.
+    let dom4_octets = [F, context.len() as u8];
+    secret_digest(&[DOM4_PREFIX, &dom4_octets, context, &*key.prefix, PH_M], &mut r_digest);
 
     // Step 3: "Compute the point [r]B. For efficiency, do this by first reducing r modulo L,
     // the group order of B. Let the string R be the encoding of this point."

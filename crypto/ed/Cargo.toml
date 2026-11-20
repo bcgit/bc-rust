@@ -28,3 +28,7 @@ harness = false
 [[bench]]
 name = "ed25519_benches"
 harness = false
+
+[[bench]]
+name = "ed448_benches"
+harness = false

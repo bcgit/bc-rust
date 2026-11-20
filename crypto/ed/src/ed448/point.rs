@@ -2397,6 +2397,13 @@ mod tests {
             ([0, 0, 0, top, 0, 0, 1 << 61], [3, 0, 0, 0], [1_u64, 0, 0, 0]),
             // nb's low half and np do
             ([0, 0, 0, top, 0, 0, 0], [0, 0, 0, top], [1, 0, 0, 0]),
+            // nb's high half and np do, and nothing else is there: bit 225 + 220 of nb and bit
+            // 220 of np, each the digit 1 at position 220
+            ([0, 0, 0, 0, 0, 0, 1 << 61], [0, 0, 0, top], [1, 0, 0, 0]),
+            // np and nq do
+            ([0; 7], [0, 0, 0, top], [0, 0, 0, top]),
+            // nb's low half and nq do
+            ([0, 0, 0, top, 0, 0, 0], [1, 0, 0, 0], [0, 0, 0, top]),
             // only nq has a digit, at position 0
             ([0; 7], [0; 4], [1, 0, 0, 0]),
             // nothing has one

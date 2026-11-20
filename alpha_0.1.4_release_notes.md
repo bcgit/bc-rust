@@ -66,7 +66,9 @@
   to 255 octets, which is where Ed448 differs from Ed25519. Verification is cofactored, a decoded public key is
   validated in full, and the one private key whose public key would be the neutral element is refused. Classed at
   192 bits, `SecurityStrength` having no 224-bit level. Checked against RFC 8032 Sections 7.4 and 7.5 and
-  Wycheproof's Ed448 set. No CLI subcommand, benches or stack harness yet.
+  Wycheproof's Ed448 set; the `ed448` and `ed448ph` CLI subcommands cover keygen, pk-from-sk, check-consistency,
+  sign and verify, each under an optional `--ctxfile`, `ed448ph` streaming the message; with criterion benches and
+  a stack harness in `mem_usage_benches`.
 * DHKEM over P-256, P-384 and P-521 -- RFC 9180 Section 4.1's DHKEM(P-256, HKDF-SHA256), DHKEM(P-384, HKDF-SHA384)
   and DHKEM(P-521, HKDF-SHA512) (`kem_id` 0x0010 to 0x0012) on the ECC CDH keys: `ECCDHPublicKey<C>` and
   `ECCDHPrivateKey<C>` over `P256`, `P384` and `P521` carry the KEM roles with `()` as the parameters, under the
