@@ -1,0 +1,38 @@
+name: Rust Build
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Build workspace
+        run: cargo build --workspace --all-targets --all-features
+
+      # --all-features above never builds a crate with a default feature off. scrypt without
+      # `std` is its caller-supplied-memory configuration, and it once did not compile.
+      - name: Test bouncycastle-scrypt without std
+        run: cargo test -p bouncycastle-scrypt --no-default-features
