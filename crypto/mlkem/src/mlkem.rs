@@ -230,28 +230,10 @@ impl<P: MLKEMParams> MLKEM<P> {
     pub(crate) fn keygen_internal(
         seed: &KeyMaterial<64>,
     ) -> Result<(MLKEMPublicKey<P>, MLKEMPrivateKey<P>), KEMError> {
-        Self::check_seed(seed)?;
-        let (d, z_bytes) = seed.ref_to_bytes().split_at(32);
-        let d: &[u8; 32] = d.try_into().expect("the seed is 64 bytes");
-
-        // 1: (ekPKE, dkPKE) ← K-PKE.KeyGen(𝑑)
-        let mut pk = MLKEMPublicKey::<P>::zeroized();
-        let mut s_hat = Secret::<P::VecK>::new();
-        Self::pke_keygen_out(d, &mut pk, &mut s_hat);
-
-        // 2: ek ← ekPKE ▷ KEM encaps key is just the PKE encryption key
-        // 3: dk ← (dkPKE‖ek‖H(ek)‖𝑧) ▷ KEM decaps key includes PKE decryption key
-        // 4: return (ek, dk)
-        let pk_hash = pk.compute_hash();
-
-        let mut z = Secret::<[u8; 32]>::new();
-        z.copy_from_slice(z_bytes);
-
-        let mut seed_d = Secret::<[u8; 32]>::new();
-        seed_d.copy_from_slice(d);
-        // The keys are assembled in the value returned, which the compiler builds in the
-        // caller's slot; filling a pair made beforehand costs the caller a second private key.
-        Ok((pk.clone(), MLKEMPrivateKey { s_hat, ek: pk, pk_hash, z, seed_d: Some(seed_d) }))
+        // One assembly, shared with `keygen_internal_out`.
+        let mut sk = MLKEMPrivateKey::<P>::zeroized();
+        Self::keygen_internal_out(seed, &mut sk)?;
+        Ok((sk.ek.clone(), sk))
     }
 
     /// The seed checks of [`keygen_internal`](Self::keygen_internal).

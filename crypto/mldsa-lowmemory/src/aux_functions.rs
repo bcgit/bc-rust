@@ -116,7 +116,7 @@ pub(crate) fn hint_get(h: &HintRow, i: usize) -> u8 {
 /// Sets coefficient `i`'s hint bit and leaves the others as they are: the function that fills a
 /// row clears it first.
 #[inline(always)]
-pub(crate) fn hint_set(h: &mut HintRow, i: usize) {
+fn hint_set(h: &mut HintRow, i: usize) {
     debug_assert!(i < N);
     h[i / 8] |= 1 << (i % 8);
 }

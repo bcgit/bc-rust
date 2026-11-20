@@ -126,15 +126,14 @@ pub use kmac::{
 use prf::MAX_PRF_OUTPUT_LEN;
 pub use prf::{PRF_CMAC, PRF_CMAC_AES128, PRF_CMAC_AES192, PRF_CMAC_AES256, PRF_HMAC, Prf};
 
-use bouncycastle_core::errors::{KDFError, KeyMaterialError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
-use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::errors::KDFError;
+use bouncycastle_core::hazmat::{do_hazardous_operations, label_kdf_output};
+use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_sha3::{SHA3_256, SHA3_512};
+use bouncycastle_utils::min;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::{max, min};
 
 /// `r`, "the length of the binary representation of the counter i" (SP 800-108r1 Section 4),
 /// in whole bytes. The counter takes the values `1` to `2^r - 1`.
@@ -296,8 +295,8 @@ pub(crate) fn derive_blocks_out<P: Prf, K: KeyMaterialTrait + ?Sized>(
         }
         Ok(())
     });
-    let labelled =
-        filled.and_then(|()| label_output(keys, len, P::SEED_LEN, P::MAX_SECURITY_STRENGTH, dkm));
+    let labelled = filled
+        .and_then(|()| label_kdf_output(keys, len, P::SEED_LEN, P::MAX_SECURITY_STRENGTH, dkm));
     if labelled.is_err() {
         dkm.zeroize();
     }
@@ -366,38 +365,6 @@ pub fn fixed_input_out(
 /// and four bytes of `[L]2`.
 pub fn fixed_input_out_len(label: &[u8], context: &[u8]) -> usize {
     label.len() + 1 + context.len() + 4
-}
-
-/// Types the derived keying material in `dkm`, `len` bytes of it, by the
-/// [`KDF`](bouncycastle_core::traits::KDF) trait's rule: `CryptographicRandom` when the
-/// full-entropy keys with a strength carry at least `seed_len` bytes between them, at the least
-/// of the strongest key's strength, `max_strength` and the length's, and otherwise `Unknown`.
-pub(crate) fn label_output<K: KeyMaterialTrait + ?Sized>(
-    keys: &[&K],
-    len: usize,
-    seed_len: usize,
-    max_strength: SecurityStrength,
-    dkm: &mut (impl KeyMaterialTrait + ?Sized),
-) -> Result<(), KeyMaterialError> {
-    let mut credited = 0usize;
-    let mut strength = SecurityStrength::None;
-    for key in keys {
-        if key.is_full_entropy() && key.security_strength() != SecurityStrength::None {
-            credited = credited.saturating_add(key.key_len());
-            strength = *max(&strength, &key.security_strength());
-        }
-    }
-    do_hazardous_operations(dkm, |dkm| {
-        dkm.set_key_len(len)?;
-        if credited >= seed_len {
-            dkm.set_key_type(KeyType::CryptographicRandom)?;
-            let by_len = SecurityStrength::from_bytes(len);
-            dkm.set_security_strength(*min(min(&strength, &max_strength), &by_len))
-        } else {
-            dkm.set_key_type(KeyType::Unknown)?;
-            dkm.set_security_strength(SecurityStrength::None)
-        }
-    })
 }
 
 // Names exist for the instantiations `bouncycastle-factory` registers, which are these six; the
