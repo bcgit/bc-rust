@@ -31,6 +31,13 @@ pub const CONTEXT_MAX_LEN: usize = 255;
 /// Octets in a digest `SHAKE256(x, 114)` (RFC 8032 Section 5.2, Table 2).
 const DIGEST_LEN: usize = 114;
 
+/// The encoding of the neutral element, (0, 1) (RFC 8032 Section 5.2.2).
+const NEUTRAL_ELEMENT: [u8; PUBLIC_KEY_LEN] = {
+    let mut encoding = [0; PUBLIC_KEY_LEN];
+    encoding[0] = 1;
+    encoding
+};
+
 /// The fixed part of `dom4` (RFC 8032 Section 2), "in ASCII (8 octets)".
 const DOM4_PREFIX: &[u8; 8] = b"SigEd448";
 
@@ -94,8 +101,12 @@ impl ExpandedKey {
     }
 
     /// Fills `self` from the private key `sk` (RFC 8032 Section 5.2.5, steps 1 to 4).
-    /// Constant time; the digest is wiped on return. The only error is the multiplication
-    /// failing its own result check, when `self` is left unfilled.
+    /// Constant time; the digest is wiped on return.
+    ///
+    /// The errors, on either of which `self` is left unfilled: `ComputationFault` if the
+    /// multiplication fails its own result check, which no input causes, and `KeyGenError`
+    /// for a private key whose public key is the neutral element (see
+    /// [`Self::fill_public_key`]).
     pub(crate) fn expand(&mut self, sk: &[u8; PRIVATE_KEY_LEN]) -> Result<(), SignatureError> {
         // Step 1: "Hash the 57-byte private key using SHAKE256(x, 114), storing the digest in
         // a 114-octet large buffer, denoted h. Only the lower 57 bytes are used for
@@ -116,14 +127,31 @@ impl ExpandedKey {
         self.s[56] = 0;
         self.s[55] |= 0x80;
 
-        // Steps 3 and 4: "Interpret the buffer as the little-endian integer, forming a
-        // secret scalar s. Perform a known-base-point scalar multiplication [s]B." "The
-        // public key A is the encoding of the point [s]B."
+        self.fill_public_key()
+    }
+
+    /// RFC 8032 Section 5.2.5, steps 3 and 4, for the scalar already in `self.s`: "Interpret
+    /// the buffer as the little-endian integer, forming a secret scalar s. Perform a
+    /// known-base-point scalar multiplication [s]B." "The public key A is the encoding of the
+    /// point [s]B."
+    ///
+    /// A key whose `A` is the neutral element is refused, which the RFC does not ask for. A
+    /// pruned Ed448 scalar is a multiple of 4 from `2^447` up to `2^448`, and `4 L` is one:
+    /// the one private scalar that is a multiple of L, under which anyone can sign. (Ed25519
+    /// has none: `8 L` is above `2^255`.) A private key that prunes to it is a SHAKE256
+    /// preimage, and none is known. The test is on the public key, which is public.
+    fn fill_public_key(&mut self) -> Result<(), SignatureError> {
         // The multiplication wants a scalar below 2^448, which clearing the last octet made
         // it.
         if point::scalar_mult_base_encoded(&self.s, &mut self.A).is_err() {
             self.clear();
             return Err(computation_fault());
+        }
+        if self.A == NEUTRAL_ELEMENT {
+            self.clear();
+            return Err(SignatureError::KeyGenError(
+                "Ed448: the private key's public key is the neutral element",
+            ));
         }
         Ok(())
     }
@@ -135,11 +163,7 @@ impl ExpandedKey {
 
     /// The public key as a point, or `None` for an unfilled key. Costs a square root, and no
     /// scalar multiplication: see [`PublicPoint::decode_base_multiple_var`], which takes `A`
-    /// as the checked encoding of `[s]B`.
-    ///
-    /// Also `None` for the private keys whose pruned scalar is `4 L`, the one multiple of L a
-    /// pruned scalar can be, whose public key is the neutral element. Finding one is finding
-    /// a SHAKE256 preimage, so none is known.
+    /// as the checked encoding of `[s]B`, not the neutral element.
     pub(crate) fn public_point(&self) -> Option<PublicPoint> {
         if !self.is_filled() {
             return None;
@@ -586,6 +610,12 @@ mod tests {
     const GENERATED_SK: &str = concat!(
         "6c82a562cb808d10d632be89c8513ebf6c929f34ddfa8c9f63c9960ef6e348a3528c8a3fcc2f044e",
         "39a3fc5b94492f8f032e7549a20098f95b",
+    );
+
+    /// Its public key.
+    const GENERATED_PK: &str = concat!(
+        "5fd7449b59b461fd2ce787ec616ad46a1da1342485a70e1f8a0ea75d80e96778edf124769b46c706",
+        "1bd6783df1e50f6cd1fa1abeafe8256180",
     );
 
     // (whether Ed448ph, context, signature on "abc"), by the Python library of RFC 8032
@@ -1966,6 +1996,45 @@ mod tests {
         assert!(copy.is_filled());
     }
 
+    /// The one pruned scalar that is a multiple of L, 4 L, has the neutral element for its
+    /// public key and is refused, the key left unfilled; its neighbours 4 L - 4 and 4 L + 4
+    /// are ordinary keys. No private key is known to prune to 4 L, so the scalar is put in
+    /// place directly and the public key derived from there.
+    #[test]
+    fn the_scalar_4l_is_refused() {
+        // 4 L, by adding L to itself twice over.
+        let mut four_l = order();
+        for _ in 0..2 {
+            let mut carry = 0_u16;
+            for octet in &mut four_l {
+                carry += 2 * *octet as u16;
+                *octet = carry as u8;
+                carry >>= 8;
+            }
+            assert_eq!(carry, 0);
+        }
+        // It is a pruned scalar: a multiple of 4 with bit 447 set and nothing above.
+        assert_eq!((four_l[0] & 0x03, four_l[55] & 0x80, four_l[56]), (0, 0x80, 0));
+
+        let mut key = ExpandedKey::zeroized();
+        key.s.copy_from_slice(&four_l);
+        key.prefix.fill(0x11);
+        assert!(matches!(key.fill_public_key(), Err(SignatureError::KeyGenError(_))));
+        assert!(!key.is_filled());
+        assert_eq!((*key.s, *key.prefix, key.A), ([0; 57], [0; 57], [0; 57]));
+
+        for (neighbour, name) in [(four_l[0] - 4, "4 L - 4"), (four_l[0] + 4, "4 L + 4")] {
+            let mut key = ExpandedKey::zeroized();
+            key.s.copy_from_slice(&four_l);
+            key.s[0] = neighbour;
+            assert_eq!(key.fill_public_key(), Ok(()), "{name}");
+            assert!(key.is_filled() && key.public_point().is_some(), "{name}");
+            assert_ne!(key.A, NEUTRAL_ELEMENT, "{name}");
+        }
+        assert_eq!(NEUTRAL_ELEMENT[0], 1);
+        assert_eq!(NEUTRAL_ELEMENT[1..], [0; 56]);
+    }
+
     /// Any one bit changed in the signature, the message, the context or the key makes
     /// verification fail, as does the right signature under the other algorithm.
     #[test]
@@ -2026,6 +2095,7 @@ mod tests {
         let (key, public) = key_pair(&octets(GENERATED_SK));
         let point = PublicPoint::decode_var(&public).unwrap();
         let prehash = shake256_64(b"abc");
+        assert_eq!(public, octets::<PUBLIC_KEY_LEN>(GENERATED_PK));
 
         let mut lengths = Vec::new();
         for (ph, context, sig) in CONTEXT_KATS {
