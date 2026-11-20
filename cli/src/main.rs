@@ -47,6 +47,7 @@ mod tdes_ecb_cmd;
 mod tdes_ofb_cmd;
 mod tdes_tkw_cmd;
 mod x25519_cmd;
+mod x448_cmd;
 
 use crate::blake2_cmd::BLAKE2Variant;
 use crate::eccdh_cmd::ECCDHAction;
@@ -7149,6 +7150,23 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
+
+    /// The X448 key agreement algorithm (RFC 7748).
+    X448 {
+        action: x448_cmd::X448Action,
+
+        #[arg(long)]
+        /// The private key file (binary, or hex under --hex-input) for pk-from-sk, check-consistency and agree; stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (binary, or hex under --hex-input) for check-consistency and agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
 }
 
 fn main() {
@@ -8814,6 +8832,9 @@ fn run() {
         }
         Some(Subcommands::X25519 { action, skfile, pkfile, ctfile, x }) => {
             x25519_cmd::x25519_cmd(action, skfile, pkfile, ctfile, *x);
+        }
+        Some(Subcommands::X448 { action, skfile, pkfile, x }) => {
+            x448_cmd::x448_cmd(action, skfile, pkfile, *x);
         }
         None => {
             eprintln!("No command provided. See -h")

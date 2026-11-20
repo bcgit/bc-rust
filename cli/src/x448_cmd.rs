@@ -1,0 +1,109 @@
+//! The `x448` subcommand: X448 key agreement (RFC 7748) through the agreement role. `agree`
+//! writes the raw shared secret for a KDF (`hkdf-* --ikm-file` and the others), as `x25519`
+//! does.
+
+use crate::helpers::{
+    SecretBytes, println_stdout, read_input_file, read_secret_file_or_stdin, write_bytes_or_hex,
+    write_private_key, write_secret_bytes_or_hex,
+};
+use bouncycastle::core::agreement_key::AgreementKey;
+use bouncycastle::core::key_material::KeyMaterialTrait;
+use bouncycastle::core::traits::{PrivateKey, PublicKey};
+use bouncycastle::ed::x448::{X448PrivateKey, X448PublicKey, keygen_out};
+use bouncycastle::rng::HashDRBG_SHA512;
+use clap::ValueEnum;
+use std::process::exit;
+
+#[derive(ValueEnum, Clone, Debug)]
+pub(crate) enum X448Action {
+    /// Generate a private key (56 bytes) to stdout.
+    Keygen,
+    /// Derive the public key from the private key.
+    PkFromSk,
+    /// Check that a public key matches a private key.
+    CheckConsistency,
+    /// The raw X448 shared secret from the private key and the peer's public key, for a KDF.
+    Agree,
+}
+
+pub(crate) fn x448_cmd(
+    action: &X448Action,
+    skfile: &Option<String>,
+    pkfile: &Option<String>,
+    output_hex: bool,
+) {
+    match action {
+        X448Action::Keygen => {
+            // The scalar is drawn straight into this key, never moved.
+            let mut sk = X448PrivateKey::zeroized();
+            keygen_out(&mut HashDRBG_SHA512::new_from_os(), &mut sk).unwrap_or_else(|e| {
+                eprintln!("Error: key generation failed: {e:?}");
+                exit(-1);
+            });
+            write_private_key(&sk, output_hex);
+        }
+        X448Action::PkFromSk => {
+            let pk = load_sk(skfile).pk();
+            write_bytes_or_hex(&pk.encode(), output_hex);
+        }
+        X448Action::CheckConsistency => {
+            let pk = parse_pk(&read_pkfile(pkfile));
+            // The private key is dropped, and so wiped, before either branch exits.
+            let matches = load_sk(skfile).pk() == pk;
+            if matches {
+                println_stdout("SUCCESS: pk and sk match.");
+            } else {
+                eprintln!("FAILURE: pk and sk do not match.");
+                exit(-1);
+            }
+        }
+        X448Action::Agree => {
+            let pk = parse_pk(&read_pkfile(pkfile));
+            // `exit` runs no destructors, so the key is dropped before the result is looked at.
+            let z = {
+                let sk = load_sk(skfile);
+                sk.agree(&pk, ())
+            };
+            let z = z.unwrap_or_else(|e| {
+                eprintln!("Error: key agreement failed: {e:?}");
+                exit(-1);
+            });
+            write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
+        }
+    }
+}
+
+fn read_pkfile(pkfile: &Option<String>) -> Vec<u8> {
+    match pkfile {
+        Some(f) => read_input_file(f),
+        None => {
+            eprintln!("Error: no pkfile provided.");
+            exit(-1);
+        }
+    }
+}
+
+/// The private key in `--skfile`, or on stdin.
+fn load_sk(skfile: &Option<String>) -> X448PrivateKey {
+    parse_sk(|| read_secret_file_or_stdin(skfile))
+}
+
+/// The private key that the bytes `read` returns encode. The bytes go out of scope, and so are
+/// wiped, before a failure exits.
+fn parse_sk(read: impl FnOnce() -> SecretBytes) -> X448PrivateKey {
+    let parsed = {
+        let bytes = read();
+        X448PrivateKey::from_bytes(bytes.ref_to_bytes())
+    };
+    parsed.unwrap_or_else(|_| {
+        eprintln!("Error: couldn't parse the input as a 56-byte X448 private key.");
+        exit(-1);
+    })
+}
+
+fn parse_pk(bytes: &[u8]) -> X448PublicKey {
+    X448PublicKey::from_bytes(bytes).unwrap_or_else(|_| {
+        eprintln!("Error: couldn't parse the input as a 56-byte X448 public key.");
+        exit(-1);
+    })
+}
