@@ -60,6 +60,13 @@
   and 7.3, Wycheproof's Ed25519 set and the vectors of "Taming the many EdDSAs"; the `ed25519` and `ed25519ph` CLI
   subcommands cover keygen, pk-from-sk, check-consistency, sign and verify, `ed25519ph` streaming the message under
   an optional `--ctxfile`; with criterion benches and a stack harness in `mem_usage_benches`.
+* Ed448 and Ed448ph -- `bouncycastle-ed::ed448`, the EdDSA signatures of RFC 8032 Section 5.2 (FIPS 186-5 Section 7)
+  on the signature roles, in the shape of Ed25519's: `Ed448PrivateKey` and `Ed448PublicKey` serve both algorithms,
+  under the markers `Ed448` (one-shot roles only) and `Ed448ph` (streaming and one-shot). Both take a context of up
+  to 255 octets, which is where Ed448 differs from Ed25519. Verification is cofactored, a decoded public key is
+  validated in full, and the one private key whose public key would be the neutral element is refused. Classed at
+  192 bits, `SecurityStrength` having no 224-bit level. Checked against RFC 8032 Sections 7.4 and 7.5 and
+  Wycheproof's Ed448 set. No CLI subcommand, benches or stack harness yet.
 * DHKEM over P-256, P-384 and P-521 -- RFC 9180 Section 4.1's DHKEM(P-256, HKDF-SHA256), DHKEM(P-384, HKDF-SHA384)
   and DHKEM(P-521, HKDF-SHA512) (`kem_id` 0x0010 to 0x0012) on the ECC CDH keys: `ECCDHPublicKey<C>` and
   `ECCDHPrivateKey<C>` over `P256`, `P384` and `P521` carry the KEM roles with `()` as the parameters, under the
