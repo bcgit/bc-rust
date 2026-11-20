@@ -271,6 +271,16 @@ test_missing_files_are_rejected() {
     assert_stderr_has "sigfile"
     expect_fail "check-consistency without --pkfile" "$BC_RUST" --hex-input ed25519 check-consistency <"$TMP/sk"
     assert_stderr_has "pkfile"
+
+    # What signing reads besides the key is read before the key is loaded; a failure there
+    # gives no signature.
+    expect_fail "ed25519ph sign with a --ctxfile that is not there" \
+        "$BC_RUST" --hex-input ed25519ph sign --skfile "$TMP/sk" --ctxfile "$TMP/no-such-file" </dev/null >"$TMP/out"
+    assert_size "$TMP/out" 0 "no signature without the context"
+    printf 'not hex' >"$TMP/bad.ctx"
+    expect_fail "ed25519ph sign with a --ctxfile that is not hex" \
+        "$BC_RUST" --hex-input ed25519ph sign --skfile "$TMP/sk" --ctxfile "$TMP/bad.ctx" </dev/null >"$TMP/out"
+    assert_size "$TMP/out" 0 "no signature without the context"
 }
 
 run_all

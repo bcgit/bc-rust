@@ -6,8 +6,8 @@
 //! verifies. Ed25519ph signs the SHA-512 digest of the message, so `ed25519ph` streams it.
 
 use crate::helpers::{
-    SecretBytes, println_stdout, read_input_file, read_secret_file, read_secret_file_or_stdin,
-    read_stdin_all, stream_stdin, write_bytes_or_hex, write_private_key,
+    CHUNK_LEN, SecretBytes, println_stdout, read_input_file, read_secret_file,
+    read_secret_file_or_stdin, read_stdin_all, stream_stdin, write_bytes_or_hex, write_private_key,
 };
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
@@ -21,6 +21,7 @@ use bouncycastle::ed::ed25519::{
 };
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
+use std::io::Read;
 use std::process::exit;
 
 #[derive(ValueEnum, Clone, Debug)]
@@ -94,14 +95,24 @@ pub(crate) fn ed25519_cmd(
             }
         }
         Ed25519Action::Sign => {
+            // The helpers that read a file or all of stdin end the process themselves on a
+            // failure, and `exit` runs no destructors: so what they read is read first, while
+            // there is no key to leave unwiped.
+            let input = match variant {
+                Ed25519Variant::Pure => SignInput::Message(read_stdin_all()),
+                Ed25519Variant::Prehash { ctxfile } => SignInput::Context(read_ctx(ctxfile)),
+            };
             // As above: the key is dropped before the result is looked at.
             let sig = {
                 let mut sk = Ed25519PrivateKey::zeroized();
                 load_sk(|| require_secret(skfile, "skfile"), &mut sk);
-                sign(variant, &sk)
+                sign(&input, &sk)
             };
             let sig = sig.unwrap_or_else(|e| {
-                eprintln!("Error: signing failed: {e:?}");
+                match e {
+                    SignFailure::Stdin(e) => eprintln!("Error: failed to read from stdin: {e}"),
+                    SignFailure::Signature(e) => eprintln!("Error: signing failed: {e:?}"),
+                }
                 exit(-1);
             });
             write_bytes_or_hex(&sig, output_hex);
@@ -119,21 +130,40 @@ pub(crate) fn ed25519_cmd(
     }
 }
 
-/// The signature over stdin: the whole of it at once for Ed25519, in chunks for Ed25519ph.
-fn sign(
-    variant: &Ed25519Variant,
-    sk: &Ed25519PrivateKey,
-) -> Result<[u8; SIGNATURE_LEN], SignatureError> {
-    match variant {
-        Ed25519Variant::Pure => {
-            let msg = read_stdin_all();
-            DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(sk, &msg, None)
+/// What signing needs besides the key, read before the key is loaded: the whole message for
+/// Ed25519, and for Ed25519ph the context, its message being streamed.
+enum SignInput {
+    Message(Vec<u8>),
+    Context(Vec<u8>),
+}
+
+/// Why [`sign`] gave no signature. Returned, not exited on, so that the caller's key is dropped
+/// first.
+enum SignFailure {
+    Stdin(std::io::Error),
+    Signature(SignatureError),
+}
+
+/// The signature: over the message already read for Ed25519, and over stdin in chunks for
+/// Ed25519ph. Nothing here ends the process, the private key being alive throughout.
+fn sign(input: &SignInput, sk: &Ed25519PrivateKey) -> Result<[u8; SIGNATURE_LEN], SignFailure> {
+    match input {
+        SignInput::Message(msg) => {
+            DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(sk, msg, None)
+                .map_err(SignFailure::Signature)
         }
-        Ed25519Variant::Prehash { ctxfile } => {
-            let ctx = read_ctx(ctxfile);
-            let mut signer = sk.create_signer_deterministic(Some(&ctx))?;
-            stream_stdin(|chunk| signer.do_update(chunk));
-            signer.do_final()
+        SignInput::Context(ctx) => {
+            let mut signer =
+                sk.create_signer_deterministic(Some(ctx)).map_err(SignFailure::Signature)?;
+            let mut stdin = std::io::stdin();
+            let mut buf = [0u8; CHUNK_LEN];
+            loop {
+                match stdin.read(&mut buf).map_err(SignFailure::Stdin)? {
+                    0 => break,
+                    n => signer.do_update(&buf[..n]),
+                }
+            }
+            signer.do_final().map_err(SignFailure::Signature)
         }
     }
 }
