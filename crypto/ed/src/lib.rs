@@ -32,6 +32,10 @@ mod bits;
 mod curve25519;
 mod curve448;
 pub mod ed25519;
+// The Ed448 core has no caller until the key objects and signature roles are built on it,
+// when this allow goes.
+#[allow(dead_code)]
+mod ed448;
 mod nat;
 mod wnaf;
 pub mod x25519;
