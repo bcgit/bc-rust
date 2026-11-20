@@ -462,9 +462,10 @@ Six workflows under `.github/workflows/`, all triggered by pull requests:
 
 The gitea origin has its own copies of the five pull-request checks under `.gitea/workflows/`
 (there is no Pages job). They differ from the GitHub ones in two ways: the toolchain is installed
-with `rustup` in a shell step, and the test job reads its vectors from the runner's read-only
-`/bc-test-data` and `/wycheproof` mounts, failing if either is missing or if the Wycheproof copy
-is not at the pinned commit. The pin is therefore written twice, as `ref:` in
-`.github/workflows/rust-test.yml` and as `WYCHEPROOF_COMMIT` in `.gitea/workflows/rust-test.yml`:
-change both together, and the runner's copy with them. A change to one platform's workflow
+with `rustup` in a shell step, and the test job takes its vectors from the runner's read-only
+`/bc-test-data` and `/wycheproof` mounts, failing if either is missing. Wycheproof's are read out
+of the mounted clone at the pinned commit (`git archive`), wherever the clone's `HEAD` is, so the
+runner's clone needs a fetch only when the pin moves past what it holds. The pin is therefore
+written twice, as `ref:` in `.github/workflows/rust-test.yml` and as `WYCHEPROOF_COMMIT` in
+`.gitea/workflows/rust-test.yml`: change both together. A change to one platform's workflow
 usually wants the same change in the other's.
