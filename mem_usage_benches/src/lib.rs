@@ -31,3 +31,4 @@ mod bench_sm3_mem_usage;
 mod bench_sm4_mem_usage;
 mod bench_tdes_mem_usage;
 mod bench_x25519_mem_usage;
+mod bench_x448_mem_usage;

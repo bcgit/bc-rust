@@ -60,6 +60,10 @@ name = "bench_x25519_mem_usage"
 path = "src/bench_x25519_mem_usage.rs"
 
 [[bin]]
+name = "bench_x448_mem_usage"
+path = "src/bench_x448_mem_usage.rs"
+
+[[bin]]
 name = "bench_ed25519_mem_usage"
 path = "src/bench_ed25519_mem_usage.rs"
 
