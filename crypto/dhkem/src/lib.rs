@@ -19,6 +19,7 @@
 //! | DHKEM(P-384, HKDF-SHA384)  | 0x0011 | `bouncycastle_eccdh`'s keys over `P384`                        |
 //! | DHKEM(P-521, HKDF-SHA512)  | 0x0012 | `bouncycastle_eccdh`'s keys over `P521`                        |
 //! | DHKEM(X25519, HKDF-SHA256) | 0x0020 | `bouncycastle_ed::x25519::{X25519PublicKey, X25519PrivateKey}` |
+//! | DHKEM(X448, HKDF-SHA512)   | 0x0021 | `bouncycastle_ed::x448::{X448PublicKey, X448PrivateKey}`       |
 //!
 //! Both forms of RFC 9180 Section 7.1.3's `DeriveKeyPair` are implemented
 //! ([`DeriveKeyPairForm`]): the expand form of X25519 and X448, and the rejection
@@ -63,8 +64,8 @@
 //! and no heap allocation. A call's working memory is on the stack: the DH output (Ndh bytes),
 //! one PRK and one HKDF-Expand block, each sized for the largest hash of RFC 9180 Section 7.2
 //! (64 bytes), and the HMAC states of the extract and the expand. The per-call stack figures
-//! are in the Memory Usage tables of the groups' crates, `bouncycastle_ed::x25519` and
-//! `bouncycastle_eccdh`.
+//! are in the Memory Usage tables of the groups' crates, `bouncycastle_ed::x25519`,
+//! `bouncycastle_ed::x448` and `bouncycastle_eccdh`.
 //!
 //! # 🚨 Security Considerations 🚨
 //!

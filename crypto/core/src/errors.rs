@@ -190,6 +190,10 @@ pub enum SignatureError {
     RejectionLimitExceeded,
     /// The pre-hash is weaker than the parameter set (FIPS 204 Section 5.4 for HashML-DSA).
     PreHashTooWeak,
+    /// A value the algorithm computed failed the check the algorithm makes on its own results
+    /// before releasing them, such as a point that is not on the curve. No input causes it: it
+    /// means a fault in the computation, and nothing was written.
+    ComputationFault,
     ///
     EncodingError(&'static str),
     ///

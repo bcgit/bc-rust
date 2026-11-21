@@ -43,6 +43,34 @@
   `keygen` draws the key from the caller's RNG; checked against RFC 7748's vectors, RFC 9180 Appendix A.1.1, A.1.2, A.2.1, A.2.2, A.7.1 and A.7.2, and
   Wycheproof's X25519 set; the `x25519` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree, encaps
   and decaps.
+* X448 -- `bouncycastle-ed::x448`, the Diffie-Hellman function of RFC 7748 over Curve448, in the shape of X25519:
+  `X448PrivateKey` implements `AgreementKey` over `()` for the raw shared secret and over
+  `KdfParams<HkdfDescription<SHA512>, LEN>` for a derived key (`X448_HKDF_SHA512`), and with `X448PublicKey` the KEM
+  roles as DHKEM(X448, HKDF-SHA512) of RFC 9180 Section 4.1 (`DHKEM_X448_HKDF_SHA512`, `kem_id` 0x0021), which makes
+  the keys HPKE keys; `keygen`, `keygen_out` and the seed forms. It is classed at 192 bits, `SecurityStrength` having
+  no 224-bit level. The DHKEM refuses the private key 4 x order, a clamped scalar that is 0 mod the group order.
+  Checked against RFC 7748's X448 vectors, Wycheproof's X448 set and the `kem_id` 33 entries of RFC 9180's vector
+  file, at the KEM and through HPKE; the `x448` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree,
+  encaps and decaps; with criterion benches and a stack harness in `mem_usage_benches`.
+* Ed25519 and Ed25519ph -- `bouncycastle-ed::ed25519`, the EdDSA signatures of RFC 8032 Section 5.1 (FIPS 186-5
+  Section 7) on the signature roles: `Ed25519PrivateKey` and `Ed25519PublicKey` serve both algorithms, under the
+  markers `Ed25519` (one-shot roles only, no context) and `Ed25519ph` (streaming and one-shot, with a context).
+  Verification is cofactored, and a decoded public key is validated in full, so one outside the prime-order subgroup
+  is refused. `keygen` and `keygen_out` draw the key from the caller's RNG; checked against RFC 8032 Sections 7.1
+  and 7.3, Wycheproof's Ed25519 set and the vectors of "Taming the many EdDSAs"; the `ed25519` and `ed25519ph` CLI
+  subcommands cover keygen, pk-from-sk, check-consistency, sign and verify, `ed25519ph` streaming the message under
+  an optional `--ctxfile`; with criterion benches and a stack harness in `mem_usage_benches`. The markers `Ed25519`
+  and `Ed448` carry `id-Ed25519` and `id-Ed448` (RFC 8410); the pre-hash forms have no identifier. `core` gains
+  `SignatureError::ComputationFault`, for a computed point that fails its own check.
+* Ed448 and Ed448ph -- `bouncycastle-ed::ed448`, the EdDSA signatures of RFC 8032 Section 5.2 (FIPS 186-5 Section 7)
+  on the signature roles, in the shape of Ed25519's: `Ed448PrivateKey` and `Ed448PublicKey` serve both algorithms,
+  under the markers `Ed448` (one-shot roles only) and `Ed448ph` (streaming and one-shot). Both take a context of up
+  to 255 octets, which is where Ed448 differs from Ed25519. Verification is cofactored, a decoded public key is
+  validated in full, and the one private key whose public key would be the neutral element is refused. Classed at
+  192 bits, `SecurityStrength` having no 224-bit level. Checked against RFC 8032 Sections 7.4 and 7.5 and
+  Wycheproof's Ed448 set; the `ed448` and `ed448ph` CLI subcommands cover keygen, pk-from-sk, check-consistency,
+  sign and verify, each under an optional `--ctxfile`, `ed448ph` streaming the message; with criterion benches and
+  a stack harness in `mem_usage_benches`.
 * DHKEM over P-256, P-384 and P-521 -- RFC 9180 Section 4.1's DHKEM(P-256, HKDF-SHA256), DHKEM(P-384, HKDF-SHA384)
   and DHKEM(P-521, HKDF-SHA512) (`kem_id` 0x0010 to 0x0012) on the ECC CDH keys: `ECCDHPublicKey<C>` and
   `ECCDHPrivateKey<C>` over `P256`, `P384` and `P521` carry the KEM roles with `()` as the parameters, under the
@@ -59,8 +87,8 @@
 * scrypt -- RFC 7914, as `bouncycastle-scrypt`: `SCrypt` over working memory the caller supplies
   (`derive_with_memory_out`, `ScryptParams::work_len`), and on the `KDF` trait with the `std` feature, allocating up to
   a limit. The `scrypt` CLI command takes `--log2-n`, `-r`, `-p` and `--max-memory`.
-* HPKE -- RFC 9180 Sections 5 and 6 in all four modes, as `bouncycastle-hpke`, on the X25519, P-256, P-384 and
-  P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
+* HPKE -- RFC 9180 Sections 5 and 6 in all four modes, as `bouncycastle-hpke`, on the X25519, X448, P-256, P-384
+  and P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
   (Auth, AuthPSK) give contexts with `seal_out` / `open_out` and `export_out`; HKDF over SHA-256, SHA-384 or
   SHA-512 with AES-128-GCM, AES-256-GCM, ChaCha20Poly1305 or export-only. No CLI command yet.
 * AES-GCM-SIV -- the nonce misuse-resistant AEAD of RFC 8452, as `AES128Key<GCM_SIV>` and `AES256Key<GCM_SIV>`
