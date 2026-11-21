@@ -8,9 +8,9 @@
 //! The KEM is the key's: every key with the
 //! [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) or
 //! [`DecapsulatingKey`](bouncycastle_core::kem_key::DecapsulatingKey) role over `()` whose
-//! algorithm is a [`bouncycastle_dhkem::HpkeKem`] is an HPKE key: X25519's
-//! (`bouncycastle_ed::x25519`) and the ECC CDH keys over P-256, P-384 and P-521
-//! (`bouncycastle_eccdh`), each through `bouncycastle-dhkem`'s generic DHKEM.
+//! algorithm is a [`bouncycastle_dhkem::HpkeKem`] is an HPKE key: X25519's and X448's
+//! (`bouncycastle_ed::x25519`, `bouncycastle_ed::x448`) and the ECC CDH keys over P-256, P-384
+//! and P-521 (`bouncycastle_eccdh`), each through `bouncycastle-dhkem`'s generic DHKEM.
 //!
 //! The Base and PSK modes are [`HpkeSender`] and [`HpkeRecipient`]. The Auth and AuthPSK modes
 //! (RFC 9180 Sections 5.1.3 and 5.1.4), in which the sender also uses a key pair of its own

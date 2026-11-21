@@ -17,7 +17,10 @@
 //!
 //! # Usage Examples
 //!
-//! See the [`x25519`] module for X25519 key generation and sample Alice-and-Bob key agreement schemes.
+//! See the [`x25519`] module for X25519 key generation and sample Alice-and-Bob key agreement schemes,
+//! the [`x448`] module for the same over Curve448,
+//! and the [`ed25519`] and [`ed448`] modules for the EdDSA signatures: Ed25519 and Ed25519ph, Ed448 and
+//! Ed448ph, with key generation, signing and verification.
 //!
 //! The crate's own source is `no_std`, but its dependencies are not yet (`bouncycastle-core`'s
 //! `Vec` returns and the `std` uses in `hmac` and `hkdf`), so a bare-metal build waits on them.
@@ -26,5 +29,12 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+mod bits;
 mod curve25519;
+mod curve448;
+pub mod ed25519;
+pub mod ed448;
+mod nat;
+mod wnaf;
 pub mod x25519;
+pub mod x448;

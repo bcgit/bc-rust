@@ -8,6 +8,7 @@ bouncycastle-core.workspace = true
 bouncycastle-hkdf.workspace = true
 bouncycastle-dhkem.workspace = true
 bouncycastle-sha2.workspace = true
+bouncycastle-sha3.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
@@ -18,4 +19,16 @@ criterion.workspace = true
 
 [[bench]]
 name = "x25519_benches"
+harness = false
+
+[[bench]]
+name = "x448_benches"
+harness = false
+
+[[bench]]
+name = "ed25519_benches"
+harness = false
+
+[[bench]]
+name = "ed448_benches"
 harness = false
