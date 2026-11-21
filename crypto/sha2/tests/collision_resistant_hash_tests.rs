@@ -14,9 +14,15 @@ fn the_named_hashes_carry_the_marker() {
     test_collision_resistant_hash::<SHA512_256>();
 }
 
-/// The marker is not generic over `t`: a short truncation reports no strength and has none.
+/// SHA-512/t carries the marker where it reports a strength, from 224 bits up, and not below.
 #[test]
-fn another_truncation_does_not() {
-    assert_not_collision_resistant_hash!(SHA512t<96>);
+fn sha512t_carries_the_marker_from_224_bits_up() {
+    test_collision_resistant_hash::<SHA512t<232>>();
+    test_collision_resistant_hash::<SHA512t<376>>();
+    test_collision_resistant_hash::<SHA512t<392>>();
+    test_collision_resistant_hash::<SHA512t<504>>();
+    assert_not_collision_resistant_hash!(SHA512t<216>);
     assert_not_collision_resistant_hash!(SHA512t<160>);
+    assert_not_collision_resistant_hash!(SHA512t<96>);
+    assert_not_collision_resistant_hash!(SHA512t<8>);
 }
