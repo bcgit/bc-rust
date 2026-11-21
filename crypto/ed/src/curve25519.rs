@@ -22,7 +22,9 @@ const M51: i64 = (1 << 51) - 1;
 /// # Mathematical operations implemented
 /// Addition and subtraction (lazily reduced), multiplication, squaring and multiplication by a
 /// small constant, inversion, a constant-time swap, decoding from 32 bytes and, through
-/// [`Self::normalize`], the canonical form that encodes. Everything is constant time. The limbs
+/// [`Self::normalize`], the canonical form that encodes; for Ed25519, negation, a carry pass, a
+/// constant-time move and negation, and the square root of a ratio. Everything is constant time
+/// except what is named `_var`, which takes public input only. The limbs
 /// are wiped with volatile stores when a value is dropped, so every intermediate of the ladder
 /// and the inversion is cleared at the end of its lifetime (QUALITY_AND_STYLE.md's rule for a
 /// local computed from a secret); what the compiler kept in registers or spilled itself is not
@@ -230,7 +232,8 @@ impl FieldElement25519 {
     ///
     /// Total on every input whose limbs lie in `[-2^53, 2^53]`, which covers everything the
     /// arithmetic here produces: [`Self::reduce_products`] leaves limb 0 in `[0, 2^51)` and the
-    /// others in `(-2^9, 2^51 + 2^9)`, [`Self::decode_255`] leaves all five in `[0, 2^51)`, and
+    /// others in `(-2^9, 2^51 + 2^9)` for reduced operands (lazily reduced ones widen that
+    /// slightly, still far inside the bound), [`Self::decode_255`] leaves all five in `[0, 2^51)`, and
     /// one lazy [`Self::add`] or [`Self::sub`] of two such values stays well inside the bound.
     ///
     /// Four carry passes of [`Self::reduce`]. With `V` the value and `x4 >> 51` the top limb's
@@ -430,14 +433,126 @@ impl FieldElement25519 {
     }
 }
 
+// The operations Ed25519 needs and X25519 does not.
+impl FieldElement25519 {
+    /// The element with the given limbs, least significant first; `const`, for curve constants.
+    ///
+    /// The limbs are taken as they are, so they must already be inside the bound of whatever
+    /// consumes the value; a constant written with every limb in `[0, 2^51)` always is.
+    pub(crate) const fn new(limbs: [i64; 5]) -> Self {
+        Self(limbs)
+    }
+
+    /// One carry pass: the bits of each limb above the low 51 move into the next limb, and those
+    /// of the top limb into limb 0 scaled by 19. The value mod p is unchanged; the result is not
+    /// normalized.
+    ///
+    /// This brings limbs widened by a run of lazy [`Self::add`] / [`Self::sub`] back near 51
+    /// bits ahead of a [`Self::mul`] or [`Self::sqr`]. For input limbs of magnitude below `2^57`
+    /// each carry is in `[-64, 64)`, so limb 0 comes out in `(-2^11, 2^51 + 2^11)` and the
+    /// others in `[-64, 2^51 + 64)`. Constant time.
+    pub(crate) fn carry(&self) -> Self {
+        let [x0, x1, x2, x3, x4] = self.0;
+        Self([
+            (x0 & M51) + (x4 >> 51) * 19,
+            (x1 & M51) + (x0 >> 51),
+            (x2 & M51) + (x1 >> 51),
+            (x3 & M51) + (x2 >> 51),
+            (x4 & M51) + (x3 >> 51),
+        ])
+    }
+
+    /// Sets `self` to `x` if `cond` is true and leaves it unchanged otherwise.
+    ///
+    /// Constant time, as [`Self::cswap`]: every limb is rewritten through a masked select
+    /// whichever way `cond` goes. This is the step of a table lookup that passes over every
+    /// entry.
+    pub(crate) fn cmov(&mut self, cond: Condition<i64>, x: &Self) {
+        cond.mov(x.0[0], &mut self.0[0]);
+        cond.mov(x.0[1], &mut self.0[1]);
+        cond.mov(x.0[2], &mut self.0[2]);
+        cond.mov(x.0[3], &mut self.0[3]);
+        cond.mov(x.0[4], &mut self.0[4]);
+    }
+
+    /// Replaces `self` with its negation ([`Self::negate`]) if `cond` is true and leaves it
+    /// unchanged otherwise. Constant time: every limb goes through a masked negation whichever
+    /// way `cond` goes.
+    pub(crate) fn cnegate(&mut self, cond: Condition<i64>) {
+        self.0[0] = cond.negate(self.0[0]);
+        self.0[1] = cond.negate(self.0[1]);
+        self.0[2] = cond.negate(self.0[2]);
+        self.0[3] = cond.negate(self.0[3]);
+        self.0[4] = cond.negate(self.0[4]);
+    }
+
+    /// The additive inverse, limb by limb. Lazily reduced like [`Self::sub`]: limb magnitudes
+    /// are unchanged and the result is congruent to `-self` mod p but not normalized. Constant
+    /// time.
+    pub(crate) fn negate(&self) -> Self {
+        let [x0, x1, x2, x3, x4] = self.0;
+        Self([-x0, -x1, -x2, -x3, -x4])
+    }
+
+    /// A square root of `u / v`, or `None` when `u / v` is not a square: the x-coordinate
+    /// recovery of RFC 8032 Section 5.1.3, steps 2 and 3. The result is not normalized and
+    /// either root may come back, so the caller chooses between `x` and `-x` (step 4).
+    ///
+    /// `u` and `v` may be lazily reduced, up to one [`Self::add`] or [`Self::sub`] of reduced
+    /// values. The RFC's `v` is never zero; for `v == 0` this returns `Some(0)` when `u` is zero
+    /// too and `None` otherwise.
+    ///
+    /// Variable time: which of the three outcomes occurs is branched on, so `u` and `v` must be
+    /// public, as the coordinates of a point being decoded are.
+    pub(crate) fn sqrt_ratio_var(u: &Self, v: &Self) -> Option<Self> {
+        /// `2^((p-1)/4)`, a square root of -1 (RFC 8032 Section 5.1.3, step 3.2), in canonical
+        /// limbs. The `sqrt_m1_is_two_to_the_p_minus_1_over_4` unit test recomputes it.
+        const SQRT_M1: FieldElement25519 = FieldElement25519::new([
+            0x61B274A0EA0B0, 0x0D5A5FC8F189D, 0x7EF5E9CBD0C60, 0x78595A6804C9E, 0x2B8324804FC1D,
+        ]);
+
+        // Step 2: the candidate root x = (u/v)^((p+3)/8) = u v^3 (u v^7)^((p-5)/8), "using a
+        // single modular powering for both the inversion of v and the square root".
+        let uv = u.mul(v);
+        let v2 = v.sqr();
+        let uv3 = v2.mul(&uv);
+        let uv7 = v2.sqr().mul(&uv3);
+        let mut uv7_cubed = Self::zero(); // the chain's other output, not needed here
+        let mut w = Self::zero();
+        uv7.pow_p_sub5_div8(&mut uv7_cubed, &mut w);
+        let x = w.mul(&uv3);
+
+        let vx2 = x.sqr().mul(v);
+        // Step 3.1: "If v x^2 = u (mod p), x is a square root."
+        if vx2.sub(u).normalize().is_zero_var() {
+            return Some(x);
+        }
+        // Step 3.2: "If v x^2 = -u (mod p), set x <-- x * 2^((p-1)/4), which is a square root."
+        if vx2.add(u).normalize().is_zero_var() {
+            return Some(x.mul(&SQRT_M1));
+        }
+        // Step 3.3: "Otherwise, no square root exists for modulo p".
+        None
+    }
+}
+
 /// A [`FieldElement25519`] in canonical form: every limb in `[0, 2^51)` and the value in `[0, p)`.
 /// The only constructor is [`FieldElement25519::normalize`].
 ///
-// TODO -- impl Deref<Target = FieldElement25519> once a caller needs to continue arithmetic on a
-//          normalized value (e.g. Ed25519 point decompression).
+/// It dereferences to [`FieldElement25519`], so arithmetic continues on a normalized value (the
+/// x-coordinate of a decoded Ed25519 point, a table entry) without a conversion; the result of
+/// any such operation is a [`FieldElement25519`] again.
 #[derive(Clone)]
 #[must_use]
 pub(crate) struct NormalizedFieldElement25519(FieldElement25519);
+
+impl core::ops::Deref for NormalizedFieldElement25519 {
+    type Target = FieldElement25519;
+
+    fn deref(&self) -> &FieldElement25519 {
+        &self.0
+    }
+}
 
 impl NormalizedFieldElement25519 {
     /// Debug-only check of the invariant this type carries: every limb in `[0, 2^51)` and the
@@ -507,6 +622,36 @@ impl NormalizedFieldElement25519 {
         let z2 = (x2 >> 26 | x3 << 25) as u64;
         let z3 = (x3 >> 39 | x4 << 12) as u64;
         [z0, z1, z2, z3]
+    }
+}
+
+// The tests Ed25519 needs on a canonical value.
+impl NormalizedFieldElement25519 {
+    /// Whether two values are equal. Variable time: both must be public.
+    pub(crate) fn are_equal_var(lhs: &Self, rhs: &Self) -> bool {
+        lhs.debug_check_range();
+        rhs.debug_check_range();
+        lhs.0.0 == rhs.0.0
+    }
+
+    /// TRUE iff the value is zero, as a mask. Constant time.
+    pub(crate) fn is_zero(&self) -> Condition<i64> {
+        self.debug_check_range();
+        let [x0, x1, x2, x3, x4] = self.0.0;
+        Condition::<i64>::is_zero(x0 | x1 | x2 | x3 | x4)
+    }
+
+    /// Whether the value is zero. Variable time: the value must be public.
+    pub(crate) fn is_zero_var(&self) -> bool {
+        self.debug_check_range();
+        self.0.0 == [0; 5]
+    }
+
+    /// The least significant bit of the value, which is what an Ed25519 point encoding keeps of
+    /// the x-coordinate (RFC 8032 Section 5.1.2). Constant time.
+    pub(crate) fn parity(&self) -> u8 {
+        self.debug_check_range();
+        (self.0.0[0] & 1) as u8
     }
 }
 
@@ -728,5 +873,679 @@ mod tests {
                 assert!(limb > -(1 << 9) && limb < (1 << 51) + (1 << 9), "{:?}", x.0);
             }
         }
+    }
+
+    // Known answers for the operations Ed25519 needs, from the prototype this crate's field was
+    // ported from (bc-rust-nursery, crates/curve25519): each operation run there on the values
+    // around p and on pseudo-random values (splitmix64, fixed seed), and the results encoded
+    // canonically, as 32 little-endian bytes in hexadecimal. Regenerate with the scratch program
+    // that printed the two tables (`kat-gen field`, not in this repository), which depends on
+    // the prototype's crates by path.
+
+    /// One row: `a` as given to `decode_255`, and the prototype's answers for it, with `b` the
+    /// next row's `a`.
+    struct FieldKat {
+        a: &'static str,
+        canonical: &'static str,
+        mul: &'static str,
+        sqr: &'static str,
+        add: &'static str,
+        sub: &'static str,
+        negate: &'static str,
+        inv: &'static str,
+        sqrt_ratio: Option<&'static str>,
+        is_zero: bool,
+        parity: u8,
+        equals_b: bool,
+    }
+
+    /// One row: a representation with limbs outside `[0, 2^51)`, the limbs the prototype's
+    /// `carry` makes of it, and its square and its product with the next row.
+    struct WideKat {
+        limbs: [i64; 5],
+        carry: [i64; 5],
+        sqr: Option<&'static str>,
+        mul: Option<&'static str>,
+    }
+
+    // 23 cases; b is the next case's a, cyclically.
+    const FIELD_KATS: [FieldKat; 23] = [
+        FieldKat {
+            a: "0000000000000000000000000000000000000000000000000000000000000000",
+            canonical: "0000000000000000000000000000000000000000000000000000000000000000",
+            mul: "0000000000000000000000000000000000000000000000000000000000000000",
+            sqr: "0000000000000000000000000000000000000000000000000000000000000000",
+            add: "0100000000000000000000000000000000000000000000000000000000000000",
+            sub: "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            negate: "0000000000000000000000000000000000000000000000000000000000000000",
+            inv: "0000000000000000000000000000000000000000000000000000000000000000",
+            sqrt_ratio: Some("0000000000000000000000000000000000000000000000000000000000000000"),
+            is_zero: true,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "0100000000000000000000000000000000000000000000000000000000000000",
+            canonical: "0100000000000000000000000000000000000000000000000000000000000000",
+            mul: "0200000000000000000000000000000000000000000000000000000000000000",
+            sqr: "0100000000000000000000000000000000000000000000000000000000000000",
+            add: "0300000000000000000000000000000000000000000000000000000000000000",
+            sub: "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            negate: "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            inv: "0100000000000000000000000000000000000000000000000000000000000000",
+            sqrt_ratio: None,
+            is_zero: false,
+            parity: 1,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "0200000000000000000000000000000000000000000000000000000000000000",
+            canonical: "0200000000000000000000000000000000000000000000000000000000000000",
+            mul: "ebffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            sqr: "0400000000000000000000000000000000000000000000000000000000000000",
+            add: "0100000000000000000000000000000000000000000000000000000000000000",
+            sub: "0300000000000000000000000000000000000000000000000000000000000000",
+            negate: "ebffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            inv: "f7ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3f",
+            sqrt_ratio: None,
+            is_zero: false,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            canonical: "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            mul: "0000000000000000000000000000000000000000000000000000000000000000",
+            sqr: "0100000000000000000000000000000000000000000000000000000000000000",
+            add: "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            sub: "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            negate: "0100000000000000000000000000000000000000000000000000000000000000",
+            inv: "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            sqrt_ratio: None,
+            is_zero: false,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            canonical: "0000000000000000000000000000000000000000000000000000000000000000",
+            mul: "0000000000000000000000000000000000000000000000000000000000000000",
+            sqr: "0000000000000000000000000000000000000000000000000000000000000000",
+            add: "0100000000000000000000000000000000000000000000000000000000000000",
+            sub: "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            negate: "0000000000000000000000000000000000000000000000000000000000000000",
+            inv: "0000000000000000000000000000000000000000000000000000000000000000",
+            sqrt_ratio: Some("0000000000000000000000000000000000000000000000000000000000000000"),
+            is_zero: true,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            canonical: "0100000000000000000000000000000000000000000000000000000000000000",
+            mul: "0100000000000000000000000000000000000000000000000000000000000000",
+            sqr: "0100000000000000000000000000000000000000000000000000000000000000",
+            add: "0200000000000000000000000000000000000000000000000000000000000000",
+            sub: "0000000000000000000000000000000000000000000000000000000000000000",
+            negate: "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            inv: "0100000000000000000000000000000000000000000000000000000000000000",
+            sqrt_ratio: Some("0100000000000000000000000000000000000000000000000000000000000000"),
+            is_zero: false,
+            parity: 1,
+            equals_b: true,
+        },
+        FieldKat {
+            a: "0100000000000000000000000000000000000000000000000000000000000000",
+            canonical: "0100000000000000000000000000000000000000000000000000000000000000",
+            mul: "1200000000000000000000000000000000000000000000000000000000000000",
+            sqr: "0100000000000000000000000000000000000000000000000000000000000000",
+            add: "1300000000000000000000000000000000000000000000000000000000000000",
+            sub: "dcffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            negate: "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            inv: "0100000000000000000000000000000000000000000000000000000000000000",
+            sqrt_ratio: None,
+            is_zero: false,
+            parity: 1,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            canonical: "1200000000000000000000000000000000000000000000000000000000000000",
+            mul: "5601000000000000000000000000000000000000000000000000000000000000",
+            sqr: "4401000000000000000000000000000000000000000000000000000000000000",
+            add: "2500000000000000000000000000000000000000000000000000000000000000",
+            sub: "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            negate: "dbffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            inv: "89e3388ee3388ee3388ee3388ee3388ee3388ee3388ee3388ee3388ee3388e23",
+            sqrt_ratio: Some("f5ffffffffffffffffffffffffffffffaea1bc86f21aca6b28afa1bc86f21a4a"),
+            is_zero: false,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "1300000000000000000000000000000000000000000000000000000000000000",
+            canonical: "1300000000000000000000000000000000000000000000000000000000000000",
+            mul: "ab00000000000000000000000000000000000000000000000000000000000040",
+            sqr: "6901000000000000000000000000000000000000000000000000000000000000",
+            add: "1300000000000000000000000000000000000000000000000000000000000040",
+            sub: "0000000000000000000000000000000000000000000000000000000000000040",
+            negate: "daffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            inv: "14ca6b28afa1bc86f21aca6b28afa1bc86f21aca6b28afa1bc86f21aca6b282f",
+            sqrt_ratio: None,
+            is_zero: false,
+            parity: 1,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "0000000000000000000000000000000000000000000000000000000000000040",
+            canonical: "0000000000000000000000000000000000000000000000000000000000000040",
+            mul: "2600000000000000000000000000000000000000000000000000000000000000",
+            sqr: "4c00000000000000000000000000000000000000000000000000000000000060",
+            add: "0400000000000000000000000000000000000000000000000000000000000040",
+            sub: "fcffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3f",
+            negate: "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3f",
+            inv: "2894d7505e43790de53594d7505e43790de53594d7505e43790de53594d7505e",
+            sqrt_ratio: Some("edffffffffffffffffffffffffffffbfffffffffffffffffffffffffffffff7f"),
+            is_zero: false,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "0400000000000000000000000000000000000000000000000000000000000000",
+            canonical: "0400000000000000000000000000000000000000000000000000000000000000",
+            mul: "16a2615d2fae86d31c2784aa993f7298d11c76b61ac84de7de8a4f958340cb78",
+            sqr: "1000000000000000000000000000000000000000000000000000000000000000",
+            add: "806858d78babe134c709a16ae68f1c6634879dad0672d3b9b7e253e520d0325e",
+            sub: "7597a72874541ecb38f65e951970e399cb786252f98d2c46481dac1adf2fcd21",
+            negate: "e9ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+            inv: "f2ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff5f",
+            sqrt_ratio: None,
+            is_zero: false,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "7c6858d78babe134c709a16ae68f1c6634879dad0672d3b9b7e253e520d0325e",
+            canonical: "7c6858d78babe134c709a16ae68f1c6634879dad0672d3b9b7e253e520d0325e",
+            mul: "09b9c7283af0bcc8a08aeb655e41a8ae6660a3eda1baf0c22ce1e6727a5a8e15",
+            sqr: "349a7b1dc72d70a596d35bf0546ed1f2774d69a4824c543fe5721f42cafdd624",
+            add: "e1be821c5aaf8322496dc3e677681e7c946f8f8d6901e17095e75d1e81e8033f",
+            sub: "17122e92bda73f4745a67eee54b71a50d49eabcda3e2c502dadd49acc0b7617d",
+            negate: "7197a72874541ecb38f65e951970e399cb786252f98d2c46481dac1adf2fcd21",
+            inv: "5451f75d4862b2e230ffb18bf827c832cae912b94c14daba66ad8115b89bce7e",
+            sqrt_ratio: None,
+            is_zero: false,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "52562a45ce03a2ed8163227c91d8011660e8f1df628f0db7dd040a396018d160",
+            canonical: "52562a45ce03a2ed8163227c91d8011660e8f1df628f0db7dd040a396018d160",
+            mul: "9dc4d2c384d8d6fc12f85f5644d25abca441b11e0fd2d05722e4fcbdea73895e",
+            sqr: "cde2a13b3056807c4565b49356c3e50a2f882c0a51be4358ef9eeeec5e206518",
+            add: "f18c6bd1633c569d0c26887dabb73918ace236a62824a8c52368e81572834271",
+            sub: "b31fe9b838cbed3df7a0bc7a77f9c91314eeac199dfa72a897a12b5c4ead5f50",
+            negate: "9ba9d5ba31fc5d127e9cdd836e27fee99f170e209d70f24822fbf5c69fe72e1f",
+            inv: "83032cdd3cbe1441c603737df9221f32d7c5b4bfe1f2dd32b0c2fad644e4052a",
+            sqrt_ratio: Some("e180f996c6eaead7cf2faf82b1e384b42add957038b6efca1b05eb9ae1165f5b"),
+            is_zero: false,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "9f36418c9538b4af8ac265011adf37024cfa44c6c5949a0e4663dedc116b7110",
+            canonical: "9f36418c9538b4af8ac265011adf37024cfa44c6c5949a0e4663dedc116b7110",
+            mul: "0f58211d0a819bedb7ad8fe5777b44198841d39a51a67f22c370bcf4791c123f",
+            sqr: "e9f6e8d3e936fca4c0c3b6e87a5a7170997f8d86fc5b54c5b523433bdd841f46",
+            add: "059d715a6d35503ce6cca51e05ddbb0907cc8feed6f0096c2bc7d25c7510b72a",
+            sub: "26d010bebd3b18232fb825e42ee1b3fa9028fa9db4382bb160ffe95caec52b76",
+            negate: "4ec9be736ac74b50753d9afee520c8fdb305bb393a6b65f1b99c2123ee948e6f",
+            inv: "f57ad23ecf74dc5b0275ad2bed133c1ba18c54a635e8c09284408330a2574e57",
+            sqrt_ratio: Some("91c0027476947a07899d9da306629d80ac431fdaed3793bb5e95e83bd0817b7c"),
+            is_zero: false,
+            parity: 1,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "666630ced7fc9b8c5b0a401debfd8307bbd14a28115c6f5de563f47f63a5451a",
+            canonical: "666630ced7fc9b8c5b0a401debfd8307bbd14a28115c6f5de563f47f63a5451a",
+            mul: "2ba9db8063637acb5545b7fc423a43bfbeb98abc260e070e9937d084976da60f",
+            sqr: "79e174c889425c2a97ac46231a65527c5435276f2db32ee5b18828ef8f1eae2b",
+            add: "a8daa8f925d4213cc84df21decc4c6e09461793b800906022a2df51b117a6008",
+            sub: "24f2b7a2892516ddeec68d1cea36412ee1411c15a2aed8b8a09af3e3b5d02a2c",
+            negate: "8799cf3128036473a4f5bfe214027cf8442eb5d7eea390a21a9c0b809c5aba65",
+            inv: "920570459df2841c82eb0e5d7f3fe1fe4ef8fcab3bcd9e70bfd228573e42af7b",
+            sqrt_ratio: Some("61018289aaa5809683207995a0de15cdfd2aa32f7bd7931cc477ec0c977a363f"),
+            is_zero: false,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "2f74782b4ed785af6c43b20001c742d9d98f2e136fad96a444c9009cadd41a6e",
+            canonical: "2f74782b4ed785af6c43b20001c742d9d98f2e136fad96a444c9009cadd41a6e",
+            mul: "b1dc62d4343952c292a890c4d2ab89c428e683eaba0a9c59b094e99ef3b99020",
+            sqr: "a1a35fd1f740eceff79d50ffb0d04e10015515bf941e44155bce7efa9170d314",
+            add: "7d63299893a5e037c964577b4efff6804c605e6599ffc4bf4832f64cc700bc05",
+            sub: "f484c7be08092b2710220d86b38e8e3167bffec0445b688940600beb93a87956",
+            negate: "be8b87d4b1287a5093bc4dfffe38bd262670d1ec9052695bbb36ff63522be511",
+            inv: "c935db0266cb26cf3d47c07113ef3f91ee2716a7eb978e4eb5f30ef3423d6e4f",
+            sqrt_ratio: None,
+            is_zero: false,
+            parity: 1,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "3befb06c45ce5a885c21a57a4d38b4a772d02f522a522e1b0469f5b0192ca117",
+            canonical: "3befb06c45ce5a885c21a57a4d38b4a772d02f522a522e1b0469f5b0192ca117",
+            mul: "0e852e86285d18cc32261d8fdf346c1141236c5b150ac01d8967e805ef13ba58",
+            sqr: "33fa435fba411cc38bb25b0e46b795ad720dd9d0f4c3ac35065f6c11f72bb766",
+            add: "7c6178cadc4c3f842e5798d17d99c1932fa475d5f4d985d6b925bbdc791d7e73",
+            sub: "e77ce90eae4f768c8aebb1231dd7a6bbb5fce9ce5fcad65f4eac2f85b93ac43b",
+            negate: "b2104f93ba31a577a3de5a85b2c74b588d2fd0add5add1e4fb960a4fe6d35e68",
+            inv: "6af2a661816f852d1dc3d8e2f42ae1d95b86d98ecac4d2c35d0914df850a624c",
+            sqrt_ratio: Some("ffd6098380ca6b39bb3ce348e2574e9c51be8e6a0932e359ab47b630ecf29617"),
+            is_zero: false,
+            parity: 1,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "4172c75d977ee4fbd135f35630610decbcd34583ca8757bbb5bcc52b60f1dc5b",
+            canonical: "4172c75d977ee4fbd135f35630610decbcd34583ca8757bbb5bcc52b60f1dc5b",
+            mul: "06347133f7a919180681401297c4bfa6a8bf24242415bb7905496971ba5dfe4e",
+            sqr: "9b161552151e99c31dedebde9b3f97062d1f9044b16a9936fb4aec5894426e5c",
+            add: "c2c0da36e0a028059879f4a7d3adff88fe7881dbace8745eb0392f1b84b55458",
+            sub: "c023b4844e5ca0f20bf2f1058d141b4f7b2e0a2be8263a18bb3f5c3c3c2d655f",
+            negate: "ac8d38a268811b042eca0ca9cf9ef213432cba7c3578a8444a433ad49f0e2324",
+            inv: "57a66663a862efcd819b83df5c18bb0d25647259f9d5cbd02cfd53634a97e152",
+            sqrt_ratio: Some("60b288bb52e2a509059dcc11bdca59f2e0d50d361e11d6e7ffe21033aa7b4279"),
+            is_zero: false,
+            parity: 1,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "6e4e13d948224409c6430151a34cf29c41a53b58e2601da3fa7c69ef23c4777c",
+            canonical: "6e4e13d948224409c6430151a34cf29c41a53b58e2601da3fa7c69ef23c4777c",
+            mul: "6e00b1fa04fedc04de1278e50bbb93daae995bb8b6cfd01db2f5a7c2e306c27b",
+            sqr: "34f77585d816f70908c417283ae0489ed4ef606c6ba24d583f8d64067fa56329",
+            add: "948ead4a19671bbddf976abfb17959b32d7e86cc92a1e7edb8832e228494cb1a",
+            sub: "5b0e796778dd6c55acef97e2941f8b8655ccf0e3312053583c76a4bcc3f3235e",
+            negate: "7fb1ec26b7ddbbf639bcfeae5cb30d63be5ac4a71d9fe25c05839610dc3b8803",
+            inv: "943015461e9d42b9b6ea46c13e3c22cc527dffa256290233419d424a40889054",
+            sqrt_ratio: Some("25e60ef0540c474d962c5b2f4477e5365086fb5d6e59c5553efde5ac73d91122"),
+            is_zero: false,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "13409a71d044d7b31954696e0e2d6716ecd84a74b040ca4abe06c53260d0531e",
+            canonical: "13409a71d044d7b31954696e0e2d6716ecd84a74b040ca4abe06c53260d0531e",
+            mul: "e676247df0134884cb840503275ad072f378a06be360127e193f309b45a44179",
+            sqr: "3346dae1a822ddfb18c7dff86e7cae8ba3583cf4d15b2c1a34307f5c21d8a360",
+            add: "3170cc9b62aded35572e9fed44f79bfa1a18a1c8ce60de39df8fecfb61ac653a",
+            sub: "f50f68473edcc031dc7933efd7623232bd99f41f9220b65b9d7d9d695ef44102",
+            negate: "dabf658e2fbb284ce6ab9691f1d298e91327b58b4fbf35b541f93acd9f2fac61",
+            inv: "336ccd1e2eb0fc974e6f637bb6896f9d831560f350d43b2a34a987e9a8fc642e",
+            sqrt_ratio: Some("dd9d94c0da63e87ad1b56d0819f260ceb8015a380fd181cffd78233d80b7e21e"),
+            is_zero: false,
+            parity: 1,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "1e30322a926816823dda357f36ca34e42e3f56541e2014ef208927c901dc111c",
+            canonical: "1e30322a926816823dda357f36ca34e42e3f56541e2014ef208927c901dc111c",
+            mul: "c100875983af8d7ad0df81b5338d2c637aa5c45ef11fddcc4b3437d5782fb755",
+            sqr: "433a97a527554c7098eddceef432200a9b66288affa1b13c906e12b44fe71108",
+            add: "3cd286d59801b309f3b5760027666c09213fabcb57d821880f47ae2ca4cb7b45",
+            sub: "ed8ddd7e8bcf79fa87fef4fd452efdbe3c3f01dde467065632cba0655feca772",
+            negate: "cfcfcdd56d97e97dc225ca80c935cb1bd1c0a9abe1dfeb10df76d836fe23ee63",
+            inv: "560ed06f414990e69620eb914e4c94dd07a7211fa40a68b7ae447041c5b8cb21",
+            sqrt_ratio: None,
+            is_zero: false,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "1ea254ab06999c87b5db4081f09b3725f2ff547739b80d99eebd8663a2ef6929",
+            canonical: "1ea254ab06999c87b5db4081f09b3725f2ff547739b80d99eebd8663a2ef6929",
+            mul: "51bfd3d436e344b34d71accc9b37e0f996dbcb736f03aded6c6992eb2cfc3057",
+            sqr: "b44bd13d5758f7653a8eb084229ddc4a4367c1956539d7b5aacfe69dbf481662",
+            add: "385b415da7cde52579e31061a13321a42f52a16c3945ec24c1c66315e84c3745",
+            sub: "04e967f9656453e9f1d370a13f044ea6b4ad0882392b2f0d1cb5a9b15c929c0d",
+            negate: "cf5dab54f96663784a24bf7e0f64c8da0d00ab88c647f2661142799c5d109656",
+            inv: "9cc5881946f5fd59d390e4e7a9907f2765ae53fdd02a27e51736572e00828726",
+            sqrt_ratio: Some("269fcd80d3d7f677aca069b896de96beabb1644a307d03c502cb01922bb33f53"),
+            is_zero: false,
+            parity: 0,
+            equals_b: false,
+        },
+        FieldKat {
+            a: "1ab9ecb1a034499ec307d0dfb097e97e3d524cf5ff8cde8bd208ddb1455dcd1b",
+            canonical: "1ab9ecb1a034499ec307d0dfb097e97e3d524cf5ff8cde8bd208ddb1455dcd1b",
+            mul: "0000000000000000000000000000000000000000000000000000000000000000",
+            sqr: "af76921367a475a35fd55eec6deacf04cb2b95675cb59064cd702e2ad612456c",
+            add: "1ab9ecb1a034499ec307d0dfb097e97e3d524cf5ff8cde8bd208ddb1455dcd1b",
+            sub: "1ab9ecb1a034499ec307d0dfb097e97e3d524cf5ff8cde8bd208ddb1455dcd1b",
+            negate: "d346134e5fcbb6613cf82f204f681681c2adb30a007321742df7224ebaa23264",
+            inv: "e44e41b21345c026287c20d40d159218cd07afd031e811dfc0ef0364251aa858",
+            sqrt_ratio: None,
+            is_zero: false,
+            parity: 0,
+            equals_b: false,
+        },
+    ];
+
+    // 12 cases; the multiplier is the next case's limbs, cyclically. The last case is
+    // outside the magnitude mul and sqr accept, so it has a carry answer only.
+    const WIDE_KATS: [WideKat; 12] = [
+        WideKat {
+            limbs: [
+                2251799813685247, 2251799813685247, 2251799813685247, 2251799813685247,
+                2251799813685247,
+            ],
+            carry: [
+                2251799813685247, 2251799813685247, 2251799813685247, 2251799813685247,
+                2251799813685247,
+            ],
+            sqr: Some("4401000000000000000000000000000000000000000000000000000000000000"),
+            mul: Some("5625000000009020010000008004090000000024480000000020410200000000"),
+        },
+        WideKat {
+            limbs: [
+                2251799813685760, 2251799813685760, 2251799813685760, 2251799813685760,
+                2251799813685760,
+            ],
+            carry: [531, 513, 513, 513, 513],
+            sqr: Some("b57d35010000f8a26907000040133b290000007648b900000090c24501000000"),
+            mul: Some("ed41cbfeffffff2f9bf8ffffff7fe2d6ffffffff5b47ffffffff1fbdfeffff7f"),
+        },
+        WideKat {
+            limbs: [-512, -512, -512, -512, -512],
+            carry: [
+                2251799813684717, 2251799813684735, 2251799813684735, 2251799813684735,
+                2251799813684735,
+            ],
+            sqr: Some("000034010000000060070000000000290000000000b800000000004001000000"),
+            mul: Some("ed83feffffffff5ff6ffffffffffc4ffffffffffb7feffffffff3ffaffffff7f"),
+        },
+        WideKat {
+            limbs: [
+                4503599627370496, 4503599627370496, 4503599627370496, 4503599627370496,
+                4503599627370496,
+            ],
+            carry: [38, 2, 2, 2, 2],
+            sqr: Some("d40600000000e00b00000000004d0000000000d80100000000400a0000000000"),
+            mul: Some("19f9ffffffff1ff4ffffffffffb2ffffffffff27feffffffffbff5ffffffff7f"),
+        },
+        WideKat {
+            limbs: [
+                -4503599627370496, -4503599627370496, -4503599627370496, -4503599627370496,
+                -4503599627370496,
+            ],
+            carry: [-38, -2, -2, -2, -2],
+            sqr: Some("d40600000000e00b00000000004d0000000000d80100000000400a0000000000"),
+            mul: Some("2600000000001000000000008000000000000004000000000020000000000000"),
+        },
+        WideKat {
+            limbs: [-1, 0, 0, 0, 0],
+            carry: [2251799813685247, -1, 0, 0, 0],
+            sqr: Some("0100000000000000000000000000000000000000000000000000000000000000"),
+            mul: Some("daffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+        },
+        WideKat {
+            limbs: [0, 0, 0, 0, 2251799813685248],
+            carry: [19, 0, 0, 0, 0],
+            sqr: Some("6901000000000000000000000000000000000000000000000000000000000000"),
+            mul: Some("edffffffffffffffffffffffffffffffffffffffffffffffffcffeffffffff7f"),
+        },
+        WideKat {
+            limbs: [0, 0, 0, 0, -1],
+            carry: [-19, 0, 0, 0, 2251799813685247],
+            sqr: Some("0000000000000000000000000000000000000026000000000000000000000000"),
+            mul: Some("0000000000000000000000000000000000000000000000000030000000000000"),
+        },
+        WideKat {
+            limbs: [2251799813685226, -1, 0, 0, 2251799813685248],
+            carry: [2251799813685245, 2251799813685247, -1, 0, 0],
+            sqr: Some("0900000000000000000000000000000000000000000000000000000000000000"),
+            mul: Some("97ffffffffff77000000000080f8ffffffffff17000000000030000000000000"),
+        },
+        WideKat {
+            limbs: [4503599627370493, -2251799813685255, 2251799813685259, -5, 4503599627370495],
+            carry: [2251799813685264, 2251799813685242, 9, 2251799813685244, 2251799813685246],
+            sqr: Some("97ffffffffffaff2ffffffff3fdb00000000002efdffffffff5f040000000000"),
+            mul: None,
+        },
+        WideKat {
+            limbs: [
+                6071069917077903, -1859891319704212, 2768537711524340, -1385333551277580,
+                1870173626231450,
+            ],
+            carry: [
+                1567470289707407, 391908493981038, 516737897839091, 866466262407669,
+                1870173626231449,
+            ],
+            sqr: None,
+            mul: None,
+        },
+        WideKat {
+            limbs: [
+                72057594037927941, -72057594037927927, 36028797018963967, -36028797018963968,
+                72057594037927859,
+            ],
+            carry: [594, 41, 2251799813685215, 15, 2251799813685155],
+            sqr: None,
+            mul: None,
+        },
+    ];
+
+    fn bytes32(hex: &str) -> [u8; 32] {
+        bouncycastle_hex::decode(hex).unwrap().try_into().unwrap()
+    }
+
+    /// The canonical encoding of a value.
+    fn canonical(x: &FieldElement25519) -> [u8; 32] {
+        let mut bytes = [0xFF_u8; 32];
+        x.normalize().encode_255(&mut bytes);
+        bytes
+    }
+
+    fn kat_inputs() -> impl Iterator<Item = FieldElement25519> {
+        FIELD_KATS.iter().map(|kat| FieldElement25519::decode_255(&bytes32(kat.a)))
+    }
+
+    /// `x^e` for the exponent whose bits, from bit `top` down to bit `low.len()`, are all ones
+    /// and whose remaining low bits are `low`, most significant first: plain square-and-multiply,
+    /// sharing nothing with `pow_p_sub5_div8`.
+    fn pow_ones_then(x: &FieldElement25519, top: usize, low: &[u8]) -> FieldElement25519 {
+        let mut acc = FieldElement25519::one();
+        for bit in (0..=top).rev() {
+            acc = acc.sqr();
+            if bit >= low.len() || low[low.len() - 1 - bit] == 1 {
+                acc = acc.mul(x);
+            }
+        }
+        acc
+    }
+
+    #[test]
+    fn field_operations_match_the_prototype() {
+        let inputs: [FieldElement25519; FIELD_KATS.len()] =
+            core::array::from_fn(|i| FieldElement25519::decode_255(&bytes32(FIELD_KATS[i].a)));
+        for (i, kat) in FIELD_KATS.iter().enumerate() {
+            let (a, b) = (&inputs[i], &inputs[(i + 1) % inputs.len()]);
+            assert_eq!(canonical(a), bytes32(kat.canonical), "canonical {i}");
+            assert_eq!(canonical(&a.mul(b)), bytes32(kat.mul), "mul {i}");
+            assert_eq!(canonical(&a.sqr()), bytes32(kat.sqr), "sqr {i}");
+            assert_eq!(canonical(&a.add(b)), bytes32(kat.add), "add {i}");
+            assert_eq!(canonical(&a.sub(b)), bytes32(kat.sub), "sub {i}");
+            let (sum, difference) = a.sum_and_difference(b);
+            assert_eq!(canonical(&sum), bytes32(kat.add), "sum {i}");
+            assert_eq!(canonical(&difference), bytes32(kat.sub), "difference {i}");
+            assert_eq!(canonical(&a.negate()), bytes32(kat.negate), "negate {i}");
+            assert_eq!(canonical(&a.inv()), bytes32(kat.inv), "inv {i}");
+            let root = FieldElement25519::sqrt_ratio_var(a, b);
+            assert_eq!(root.as_ref().map(canonical), kat.sqrt_ratio.map(bytes32), "sqrt {i}");
+
+            let (a_n, b_n) = (a.normalize(), b.normalize());
+            assert_eq!(a_n.is_zero().to_bool(), kat.is_zero, "is_zero {i}");
+            assert_eq!(a_n.is_zero_var(), kat.is_zero, "is_zero_var {i}");
+            assert_eq!(a_n.parity(), kat.parity, "parity {i}");
+            let equal = NormalizedFieldElement25519::are_equal_var(&a_n, &b_n);
+            assert_eq!(equal, kat.equals_b, "are_equal_var {i}");
+        }
+    }
+
+    #[test]
+    fn wide_representations_match_the_prototype() {
+        for (i, kat) in WIDE_KATS.iter().enumerate() {
+            let a = FieldElement25519::new(kat.limbs);
+            let b = FieldElement25519::new(WIDE_KATS[(i + 1) % WIDE_KATS.len()].limbs);
+            assert_eq!(a.carry().0, kat.carry, "carry {i}");
+            if let Some(sqr) = kat.sqr {
+                assert_eq!(canonical(&a.sqr()), bytes32(sqr), "sqr {i}");
+                // The carry pass changes the representation, not the value.
+                assert_eq!(canonical(&a.carry()), canonical(&a), "carry value {i}");
+            }
+            if let Some(mul) = kat.mul {
+                assert_eq!(canonical(&a.mul(&b)), bytes32(mul), "mul {i}");
+            }
+        }
+    }
+
+    /// `new` is usable in a constant and keeps the limbs as given.
+    #[test]
+    fn new_keeps_the_limbs() {
+        const KNOWN: FieldElement25519 = FieldElement25519::new(KNOWN_LIMBS);
+        assert_eq!(KNOWN.0, KNOWN_LIMBS);
+    }
+
+    /// `-(-x) = x` limb for limb, `x + (-x) = 0`, and `x * inv(x) = 1` unless `x` is zero, when
+    /// the inverse is zero too.
+    #[test]
+    fn negate_and_inv_are_the_inverses() {
+        for (i, x) in kat_inputs().enumerate() {
+            assert_eq!(x.negate().negate().0, x.0, "{i}");
+            assert_eq!(x.add(&x.negate()).normalize().0.0, [0; 5], "{i}");
+            let expected = if x.normalize().is_zero_var() { [0; 5] } else { [1, 0, 0, 0, 0] };
+            assert_eq!(x.mul(&x.inv()).normalize().0.0, expected, "{i}");
+        }
+    }
+
+    /// Normalizing a normalized value changes nothing.
+    #[test]
+    fn normalize_is_idempotent() {
+        for (i, x) in kat_inputs().enumerate() {
+            let n = x.normalize();
+            assert_eq!(n.normalize().0.0, n.0.0, "{i}");
+        }
+    }
+
+    /// A normalized value dereferences to its own limbs, and arithmetic goes on from there.
+    #[test]
+    fn a_normalized_value_dereferences_to_the_field_element() {
+        let x = FieldElement25519(KNOWN_LIMBS);
+        let n = x.normalize();
+        let as_field: &FieldElement25519 = &n;
+        assert_eq!(as_field.0, KNOWN_LIMBS);
+        assert_eq!(n.sqr().normalize().0.0, x.sqr().normalize().0.0);
+    }
+
+    /// `cmov` copies every limb when told to and none when not.
+    #[test]
+    fn cmov_moves_on_the_condition_only() {
+        let source = FieldElement25519([11, 12, 13, 14, 15]);
+        let mut a = FieldElement25519(KNOWN_LIMBS);
+        a.cmov(Condition::<i64>::from_bool_const::<false>(), &source);
+        assert_eq!(a.0, KNOWN_LIMBS);
+        a.cmov(Condition::<i64>::from_bool_const::<true>(), &source);
+        assert_eq!(a.0, [11, 12, 13, 14, 15]);
+    }
+
+    /// `cnegate` negates every limb when told to and none when not.
+    #[test]
+    fn cnegate_negates_on_the_condition_only() {
+        let mut a = FieldElement25519([11, -12, 13, -14, 15]);
+        a.cnegate(Condition::<i64>::from_bool_const::<false>());
+        assert_eq!(a.0, [11, -12, 13, -14, 15]);
+        a.cnegate(Condition::<i64>::from_bool_const::<true>());
+        assert_eq!(a.0, [-11, 12, -13, 14, -15]);
+        // And as a field operation it agrees with negate.
+        let mut x = FieldElement25519(KNOWN_LIMBS);
+        x.cnegate(Condition::<i64>::from_bool_const::<true>());
+        assert_eq!(x.0, FieldElement25519(KNOWN_LIMBS).negate().0);
+    }
+
+    /// The zero test, the equality test and the parity each look at every limb they should: a
+    /// value that is non-zero in one limb only, and one whose limbs cancel under XOR.
+    #[test]
+    fn zero_equality_and_parity_tests_see_every_limb() {
+        let n = |limbs: [i64; 5]| NormalizedFieldElement25519(FieldElement25519(limbs));
+        let zero = n([0; 5]);
+        assert!(zero.is_zero().to_bool());
+        assert!(zero.is_zero_var());
+        assert!(NormalizedFieldElement25519::are_equal_var(&zero, &n([0; 5])));
+        for limb in 0..5 {
+            let mut limbs = [0; 5];
+            limbs[limb] = 7;
+            assert!(!n(limbs).is_zero().to_bool(), "limb {limb}");
+            assert!(!n(limbs).is_zero_var(), "limb {limb}");
+            assert!(!NormalizedFieldElement25519::are_equal_var(&zero, &n(limbs)), "limb {limb}");
+            assert!(NormalizedFieldElement25519::are_equal_var(&n(limbs), &n(limbs)));
+            for other in 0..limb {
+                limbs[other] = 7;
+                assert!(!n(limbs).is_zero().to_bool(), "limbs {other} and {limb}");
+                assert!(!n(limbs).is_zero_var(), "limbs {other} and {limb}");
+                limbs[other] = 0;
+            }
+        }
+        assert_eq!(n([2, 1, 1, 1, 1]).parity(), 0);
+        assert_eq!(n([3, 0, 0, 0, 0]).parity(), 1);
+        // p - 1 is even.
+        assert_eq!(n([M51 - 19, M51, M51, M51, M51]).parity(), 0);
+    }
+
+    /// The constant behind step 3.2 of RFC 8032 Section 5.1.3: `sqrt_ratio_var(-1, 1)` takes
+    /// that step with the candidate root 1, so it returns the constant itself, which must be
+    /// `2^((p-1)/4)` and square to -1.
+    #[test]
+    fn sqrt_m1_is_two_to_the_p_minus_1_over_4() {
+        let one = FieldElement25519::one();
+        let sqrt_m1 = FieldElement25519::sqrt_ratio_var(&one.negate(), &one).unwrap();
+        // (p - 1) / 4 = 2^253 - 5: bits 252 down to 3 set, then 011.
+        let two = FieldElement25519([2, 0, 0, 0, 0]);
+        assert_eq!(canonical(&sqrt_m1), canonical(&pow_ones_then(&two, 252, &[0, 1, 1])));
+        assert_eq!(canonical(&sqrt_m1.sqr()), canonical(&one.negate()));
+    }
+
+    /// Over every ordered pair of the known-answer inputs: a reported root satisfies
+    /// `v * x^2 = u`, and a root is reported exactly when Euler's criterion says `u / v` is a
+    /// square. `u / v` is a square iff `u * v` is (they differ by `v^2`), and
+    /// `(u * v)^((p-1)/2)` is 0 or 1 for a square and -1 otherwise.
+    #[test]
+    fn sqrt_ratio_var_agrees_with_eulers_criterion() {
+        let inputs: [FieldElement25519; FIELD_KATS.len()] =
+            core::array::from_fn(|i| FieldElement25519::decode_255(&bytes32(FIELD_KATS[i].a)));
+        let minus_one = canonical(&FieldElement25519::one().negate());
+        let (mut roots, mut non_squares) = (0, 0);
+        for u in &inputs {
+            for v in &inputs {
+                let root = FieldElement25519::sqrt_ratio_var(u, v);
+                if let Some(x) = &root {
+                    assert_eq!(canonical(&x.sqr().mul(v)), canonical(u));
+                    roots += 1;
+                }
+                let has_root = if v.normalize().is_zero_var() {
+                    u.normalize().is_zero_var()
+                } else {
+                    // (p - 1) / 2 = 2^254 - 10: bits 253 down to 4 set, then 0110.
+                    let euler = canonical(&pow_ones_then(&u.mul(v), 253, &[0, 1, 1, 0]));
+                    non_squares += usize::from(euler == minus_one);
+                    euler != minus_one
+                };
+                assert_eq!(root.is_some(), has_root);
+            }
+        }
+        // Both outcomes occur, many times over.
+        assert!(roots > 100 && non_squares > 100, "{roots} roots, {non_squares} non-squares");
     }
 }
