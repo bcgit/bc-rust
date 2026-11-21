@@ -50,6 +50,7 @@ mod tdes_ofb_cmd;
 mod tdes_tkw_cmd;
 mod x25519_cmd;
 mod x448_cmd;
+mod xts_cmd;
 
 use crate::blake2_cmd::BLAKE2Variant;
 use crate::eccdh_cmd::ECCDHAction;
@@ -3779,6 +3780,85 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// XTS-AES-128 (NIST SP 800-38E; IEEE Std 1619-2007), for storage: streams stdin to stdout one
+    /// data unit at a time.
+    ///
+    /// The input is a sequence of data units of `--data-unit-len` bytes -- 512, 1024, 2048 or 4096,
+    /// the usual sector sizes -- and must be a whole number of them; the output is exactly as long
+    /// as the input, with nothing prepended. The first data unit is processed under `--tweak` and
+    /// each one after it under the tweak before it plus one, read as a 128-bit little-endian
+    /// integer. For sectors numbered from n, `--tweak` is n in 16 little-endian bytes: sector 1 is
+    /// 01000000000000000000000000000000. `decrypt` needs the same `--tweak` and `--data-unit-len`.
+    ///
+    /// The key is 32 bytes, Key_1 | Key_2: two AES-128 keys, the first for the data and the second
+    /// for the tweak, which must differ (FIPS 140-3 IG C.I) and should be generated independently.
+    ///
+    /// WARNING: XTS provides confidentiality only, and is for data at rest, not in transit. Nothing
+    /// detects a modified ciphertext, which decrypts to unpredictable data rather than to an error,
+    /// or an old one, which decrypts to the old data, and the same data under the same key and
+    /// tweak always encrypts the same way. Give every data unit under a key its own tweak.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_XTS {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte XTS key, Key_1 | Key_2, in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte XTS key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte tweak of the first data unit, in hex. See above.
+        #[arg(long)]
+        tweak: String,
+
+        /// The length of a data unit in bytes: 512, 1024, 2048 or 4096.
+        #[arg(long)]
+        data_unit_len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// XTS-AES-256 (NIST SP 800-38E; IEEE Std 1619-2007), for storage: streams stdin to stdout one
+    /// data unit at a time.
+    ///
+    /// See `aes128-xts` for the data units, the tweak and the warnings; only the key differs: 64
+    /// bytes, Key_1 | Key_2, two AES-256 keys.
+    AES256_XTS {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 64-byte XTS key, Key_1 | Key_2, in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 64-byte XTS key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte tweak of the first data unit, in hex. See `aes128-xts`.
+        #[arg(long)]
+        tweak: String,
+
+        /// The length of a data unit in bytes: 512, 1024, 2048 or 4096.
+        #[arg(long)]
+        data_unit_len: usize,
 
         #[arg(short)]
         /// Output in hex format.
@@ -8265,6 +8345,16 @@ fn run() {
         }
         Some(Subcommands::AES256_KWP { direction, key, key_file, x }) => {
             kw_cmd::kwp_cmd::<AES256Internal, 32>(direction, key, key_file, *x, "AES-256");
+        }
+        Some(Subcommands::AES128_XTS { direction, key, key_file, tweak, data_unit_len, x }) => {
+            xts_cmd::xts_cmd::<AES128Internal, 32>(
+                direction, key, key_file, tweak, *data_unit_len, *x, "XTS-AES-128",
+            );
+        }
+        Some(Subcommands::AES256_XTS { direction, key, key_file, tweak, data_unit_len, x }) => {
+            xts_cmd::xts_cmd::<AES256Internal, 64>(
+                direction, key, key_file, tweak, *data_unit_len, *x, "XTS-AES-256",
+            );
         }
         Some(Subcommands::CAMELLIA128_KW { direction, key, key_file, x }) => {
             kw_cmd::kw_cmd::<Camellia128Internal, 16>(direction, key, key_file, *x, "Camellia-128");

@@ -25,8 +25,9 @@
 //! | KW | [`kw`] | SP 800-38F Sec 6.2 | Key Wrap (RFC 3394). **Authenticated**, deterministic, no IV; whole 8-byte semiblocks only |
 //! | KWP | [`kwp`] | SP 800-38F Sec 6.3 | Key Wrap with Padding (RFC 5649). As KW, for data of any length |
 //! | TKW | [`tkw`] | SP 800-38F Sec 7 | TDEA Key Wrap: KW at 64-bit blocks and 32-bit semiblocks. **Legacy only** |
+//! | XTS | [`xts`] | SP 800-38E (IEEE Std 1619-2007) | XEX with ciphertext stealing, for storage: one data unit at a time under a tweak, no expansion |
 //!
-//! They divide three ways, plus the key-wrap trio.
+//! They divide three ways, plus the key-wrap trio and XTS.
 //!
 //! **ECB and CBC are block ciphers** ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]): whole
 //! blocks in, whole blocks out, and arbitrary-length data needs the padding layer.
@@ -47,6 +48,10 @@
 //! small, non-repeating secret) under a key encryption key. SP 800-38F Sec 3.1 approves them for
 //! general data as well, but they are deterministic, so for data that may repeat an AEAD is the
 //! better fit (see the [`kw`] security notes).
+//!
+//! **XTS is a storage mode** ([`XTSKey`]): it encrypts one fixed-length data unit, such as a disk
+//! sector, in place under a tweak naming its position, and its ciphertext is no longer than the
+//! plaintext. It is unauthenticated and has no streaming API; see the [`xts`] security notes.
 //!
 //! CBC, CFB, CFB8, OFB and CTR all generate their own init data, or take the caller's through the
 //! key's `_nonce` forms: an IV for the first four, a nonce for CTR, which is shorter than a block
@@ -197,6 +202,7 @@ pub(crate) mod modes_common;
 pub mod ofb;
 mod polyval;
 pub mod tkw;
+pub mod xts;
 
 pub use cbc::{CBC, Cbc};
 pub use ccm::{
@@ -213,6 +219,7 @@ pub use kw::{KW, KW_BLOCK_LEN, Kw, SEMIBLOCK_LEN};
 pub use kwp::{KWP, Kwp};
 pub use ofb::{OFB, Ofb};
 pub use tkw::{TKW, TKW_BLOCK_LEN, TKW_SEMIBLOCK_LEN, Tkw};
+pub use xts::{XTS_MAX_DATA_UNIT_LEN, XTS_MIN_DATA_UNIT_LEN, XTS_TWEAK_LEN, XTSKey};
 
 /// Selects the whole-block form of a mode that also has a padded form: `CBC<Blocks>` is a key
 /// for the block-aligned [`Cbc`] itself, on the block key path, where `CBC<PKCS7>` is one for

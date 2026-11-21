@@ -28,6 +28,9 @@
   bytes for TKW).
 * AES Key Wrap -- AES_KW and AES_KWP (NIST SP 800-38F; RFC 3394 / RFC 5649) over any 128-bit block permutation,
   with the `KeyWrapper` / `KeyUnwrapper` core traits and the `aes*-kw` / `aes*-kwp` CLI commands.
+* AES-XTS -- XTS-AES-128 and XTS-AES-256 (NIST SP 800-38E; IEEE Std 1619-2007) for storage, as `XTS_AES_128<N>` /
+  `XTS_AES_256<N>` over `bouncycastle_cipher::modes::XTSKey`, with the data-unit length `N` checked at compile time;
+  the `aes128-xts` / `aes256-xts` CLI commands.
 * ECDSA -- FIPS 186-5 signatures over P-256, P-384, P-521, secp256k1, brainpoolP256r1, brainpoolP384r1 and
   brainpoolP512r1, with the RFC 6979 deterministic variant, through the `SigningKey` / `DeterministicSigningKey` /
   `VerifyingKey` core roles; the `ecdsa-*` CLI commands.

@@ -86,3 +86,7 @@ path = "tests/modes/ofb_tests.rs"
 [[test]]
 name = "symmetric_cipher_api_tests"
 path = "tests/modes/symmetric_cipher_api_tests.rs"
+
+[[test]]
+name = "xts_tests"
+path = "tests/modes/xts_tests.rs"
