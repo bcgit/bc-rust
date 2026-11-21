@@ -46,7 +46,7 @@ pub fn get_test_data(filename: &str) -> String {
 /// curve's `sign_rng` draws its DRBG bytes and reduces them per FIPS 186-5 Appendix A.4.1
 /// (`x mod (n-1)`, then `+ 1`), so an RNG returning `k - 1` -- which is `< n - 1`, making the
 /// reduction the identity -- produces exactly `k`, through the public API and with no test-only
-/// hook in the crate. Only `next_bytes_out`/`next_bytes` are meaningful; nothing in the signing
+/// hook in the crate. Only `next_bytes_out` is meaningful; nothing in the signing
 /// path calls the rest.
 pub struct FixedBytesRng {
     value_be: Vec<u8>,
@@ -65,12 +65,6 @@ impl RNG for FixedBytesRng {
 
     fn next_int(&mut self) -> Result<u32, RNGError> {
         unimplemented!("FixedBytesRng only serves next_bytes_out")
-    }
-
-    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
-        let mut out = vec![0u8; len];
-        self.next_bytes_out(&mut out)?;
-        Ok(out)
     }
 
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {

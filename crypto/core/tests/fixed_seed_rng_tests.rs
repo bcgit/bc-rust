@@ -8,20 +8,26 @@ use bouncycastle_core::traits::RNG;
 
 const SEED: [u8; 5] = [0x01, 0x02, 0x03, 0x04, 0x05];
 
+fn draw<const N: usize>(rng: &mut dyn RNG) -> [u8; N] {
+    let mut out = [0u8; N];
+    assert_eq!(rng.next_bytes_out(&mut out).unwrap(), N);
+    out
+}
+
 #[test]
 fn the_stream_is_the_seed_repeated() {
     let mut rng = FixedSeedRNG::new(SEED);
     let mut out = [0xAAu8; 12];
     assert_eq!(rng.next_bytes_out(&mut out).unwrap(), 12);
     assert_eq!(out, [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2]);
-    assert_eq!(rng.next_bytes(0).unwrap(), Vec::<u8>::new());
+    assert_eq!(rng.next_bytes_out(&mut []).unwrap(), 0);
 }
 
 /// Each method takes up where the last one stopped.
 #[test]
 fn every_method_draws_from_one_cursor() {
     let mut rng = FixedSeedRNG::new(&SEED[..]);
-    assert_eq!(rng.next_bytes(2).unwrap(), [1, 2]);
+    assert_eq!(draw(&mut rng), [1, 2]);
     assert_eq!(rng.next_int().unwrap(), u32::from_le_bytes([3, 4, 5, 1]));
     let mut out = [0u8; 3];
     rng.next_bytes_out(&mut out).unwrap();
@@ -30,13 +36,13 @@ fn every_method_draws_from_one_cursor() {
     assert_eq!(rng.fill_keymaterial_out(&mut key).unwrap(), 32);
     assert_eq!(&key.ref_to_bytes()[..7], [5, 1, 2, 3, 4, 5, 1]);
     // 41 bytes drawn so far: the next is the second of the seed.
-    assert_eq!(rng.next_bytes(1).unwrap(), [2]);
+    assert_eq!(draw(&mut rng), [2]);
 }
 
 #[test]
 fn two_instances_over_one_seed_agree() {
     let (mut a, mut b) = (FixedSeedRNG::new(SEED), FixedSeedRNG::new(SEED));
-    assert_eq!(a.next_bytes(17).unwrap(), b.next_bytes(17).unwrap());
+    assert_eq!(draw::<17>(&mut a), draw::<17>(&mut b));
     assert_eq!(a.next_int().unwrap(), b.next_int().unwrap());
 }
 
@@ -64,7 +70,7 @@ fn the_reported_strength_is_256_bits_until_set() {
 fn added_seed_material_changes_nothing() {
     let mut rng = FixedSeedRNG::new(SEED);
     rng.add_seed_keymaterial(&KeyMaterial256::from_bytes(&[0xFFu8; 32]).unwrap()).unwrap();
-    assert_eq!(rng.next_bytes(5).unwrap(), SEED);
+    assert_eq!(draw(&mut rng), SEED);
 }
 
 #[test]

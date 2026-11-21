@@ -260,9 +260,6 @@ fn a_failed_keygen_leaves_the_key_unfilled() {
         fn next_int(&mut self) -> Result<u32, RNGError> {
             Err(RNGError::GenericError("dry"))
         }
-        fn next_bytes(&mut self, _: usize) -> Result<Vec<u8>, RNGError> {
-            Err(RNGError::GenericError("dry"))
-        }
         fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
             // Leaves something behind, as a failing source might.
             out.fill(0xEE);

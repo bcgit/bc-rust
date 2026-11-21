@@ -9,7 +9,8 @@
 //! use bouncycastle_core::traits::RNG;
 //! use bouncycastle_rng as rng;
 //!
-//! let random_bytes = rng::DefaultRNG::default().next_bytes(32);
+//! let mut random_bytes = [0u8; 32];
+//! rng::DefaultRNG::default().next_bytes_out(&mut random_bytes).unwrap();
 //! ```
 //! This is secure because `::default()` seeds the RNG from the OS, configured for general use.
 //!

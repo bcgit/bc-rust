@@ -13,7 +13,7 @@ use crate::traits::RNG;
 ///
 /// The stream is the given bytes repeated indefinitely. A single internal cursor is shared across
 /// every [`RNG`] method, so each byte handed out — whether through [`RNG::next_bytes_out`],
-/// [`RNG::next_bytes`], [`RNG::next_int`], or [`RNG::fill_keymaterial_out`] — advances the same
+/// [`RNG::next_int`] or [`RNG::fill_keymaterial_out`] — advances the same
 /// stream. Two instances built from the same bytes therefore emit identical streams, which is
 /// what makes RNG-driven operations reproducible (and comparable against their seed/`m`-driven
 /// internal counterparts) in tests.
@@ -69,14 +69,6 @@ impl<B: AsRef<[u8]>> RNG for FixedSeedRNG<B> {
             *slot = self.next_byte();
         }
         Ok(u32::from_le_bytes(buf))
-    }
-
-    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
-        let mut out = vec![0u8; len];
-        for slot in out.iter_mut() {
-            *slot = self.next_byte();
-        }
-        Ok(out)
     }
 
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {

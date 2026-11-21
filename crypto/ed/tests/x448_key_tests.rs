@@ -373,9 +373,6 @@ impl bouncycastle_core::traits::RNG for HalfWrittenRNG {
     fn next_int(&mut self) -> Result<u32, RNGError> {
         Err(RNGError::GenericError("HalfWrittenRNG"))
     }
-    fn next_bytes(&mut self, _: usize) -> Result<Vec<u8>, RNGError> {
-        Err(RNGError::GenericError("HalfWrittenRNG"))
-    }
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
         let half = out.len() / 2;
         out[..half].fill(0xA5);
