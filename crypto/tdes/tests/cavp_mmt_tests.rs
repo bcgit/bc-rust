@@ -37,6 +37,7 @@
 //! rule is defined by SP 800-20, and implementing it is a separate piece of work from the engine.
 
 use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, OFB};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -48,7 +49,6 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
-use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_tdes::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key};
 

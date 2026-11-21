@@ -4,12 +4,12 @@
 
 use crate::DUMMY_SEED;
 use bouncycastle_core::errors::{KeyMaterialError, MACError, SymmetricCipherError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, FromKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{AlgorithmInfo, MACGenerator};
-use bouncycastle_rng::FixedSeedRNG;
 
 /// Instance of the test framework.
 pub struct TestFrameworkFromKeyMaterial {

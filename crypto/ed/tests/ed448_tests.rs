@@ -2,6 +2,7 @@
 //! particular to the two algorithms.
 
 use bouncycastle_core::errors::{KeyMaterialError, SignatureError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
@@ -11,7 +12,6 @@ use bouncycastle_ed::ed448::{
     CONTEXT_MAX_LEN, ED448_NAME, ED448PH_NAME, Ed448, Ed448PrivateKey, Ed448PublicKey, Ed448ph,
     SIGNATURE_LEN, keygen,
 };
-use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_sha3::SHAKE256;
 
 const MSG: &[u8] = b"The quick brown fox jumped over the lazy dog";

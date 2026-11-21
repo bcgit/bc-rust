@@ -1,5 +1,6 @@
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError, KeyMaterialError, RNGError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
@@ -9,7 +10,7 @@ use bouncycastle_ed::x448::{
     keygen, keygen_from_seed, keygen_from_seed_out, keygen_out,
 };
 use bouncycastle_hex as hex;
-use bouncycastle_rng::{DefaultRNG, FixedSeedRNG};
+use bouncycastle_rng::DefaultRNG;
 
 /// RFC 7748 Section 6.2: Alice's private key a and public key X448(a, 5), lifted from the text
 /// of the RFC by a script, in the two lines of 56 hexadecimal digits the RFC prints.

@@ -6,6 +6,7 @@
 #![allow(dead_code)] // each test file calls the functions it needs
 
 use bouncycastle_core::errors::{KeyDecodingError, RNGError, SignatureError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
@@ -19,7 +20,7 @@ use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
 use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
 use bouncycastle_ecdsa::keys_common::DerivePublicKey;
-use bouncycastle_rng::{DefaultRNG, FixedSeedRNG};
+use bouncycastle_rng::DefaultRNG;
 
 fn keygen_default<C: Curve, H: EcdsaHash + CollisionResistantHash>()
 -> Result<(ECDSAPublicKey<C, H>, ECDSAPrivateKey<C, H>), SignatureError> {

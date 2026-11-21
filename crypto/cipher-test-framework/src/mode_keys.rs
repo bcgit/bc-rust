@@ -12,6 +12,7 @@ use bouncycastle_cipher::modes::{
 };
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{EcbEncryptionKey, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -33,7 +34,6 @@ use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
-use bouncycastle_rng::FixedSeedRNG;
 
 /// A 32-byte frame for the fixed-frame CCM key, within the framework's seed buffer.
 type Packet = CCM_Packet<12, 16, 64, 32>;

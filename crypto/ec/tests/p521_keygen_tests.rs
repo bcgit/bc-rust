@@ -2,6 +2,7 @@
 //! the scalar in range and the point `[d]G` checked through the variable-base multiplier.
 
 use bouncycastle_core::errors::RNGError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_ec::hazmat::p521::P521FieldElement;
 use bouncycastle_ec::hazmat::p521_domain::{G_X_LIMBS, G_Y_LIMBS};
@@ -10,7 +11,6 @@ use bouncycastle_ec::hazmat::p521_mul::multiply_point;
 use bouncycastle_ec::hazmat::p521_point::P521JacobianPoint;
 use bouncycastle_ec::hazmat::p521_scalar::N_LIMBS;
 use bouncycastle_ec::hazmat::p521_sec1::be_bytes_from_limbs;
-use bouncycastle_rng::FixedSeedRNG;
 
 /// `N + 64` bits, the key agreement crate's draw.
 const DRBG_LEN: usize = 74;

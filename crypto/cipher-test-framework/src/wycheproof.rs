@@ -16,6 +16,7 @@ use bouncycastle_cipher::modes::{
 };
 use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -27,7 +28,6 @@ use bouncycastle_core::traits::{
     MACGenerator, MACVerifier, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-use bouncycastle_rng::FixedSeedRNG;
 use core::ops::Add;
 
 const BLOCK_LEN: usize = 16;

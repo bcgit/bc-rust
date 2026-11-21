@@ -17,6 +17,7 @@ use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_cipher::modes::{Blocks, CBC, Cbc, ModeNames};
 use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{
     BlockPermutation, EcbDecryptionKey, EcbEncryptionKey, KeyExpansion,
 };
@@ -29,7 +30,6 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
-use bouncycastle_rng::FixedSeedRNG;
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 type ToyEcb<'k, Dir> = Ecb<'k, Toy, Dir, TOY_LEN>;

@@ -6,13 +6,13 @@ use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256, AES128Key, AES1
 use bouncycastle_cipher::Encrypting;
 use bouncycastle_cipher::modes::{CMAC, CmacKeyState};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{KeyExpansion, MacMode, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{MACGenerator, MACVerifier};
 use bouncycastle_hex as hex;
-use bouncycastle_rng::FixedSeedRNG;
 
 fn mac_key<const N: usize>(fill: u8) -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&[fill; N], KeyType::MACKey).expect("a MAC key")

@@ -2,6 +2,7 @@
 //! encoding and decoding, and the full validation of a decoded public key.
 
 use bouncycastle_core::errors::{KeyDecodingError, KeyMaterialError, RNGError, SignatureError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
@@ -11,7 +12,6 @@ use bouncycastle_ed::ed448::{
     Ed448, Ed448PrivateKey, Ed448PublicKey, PRIVATE_KEY_LEN, PUBLIC_KEY_LEN, keygen, keygen_out,
     keypair_consistency_check,
 };
-use bouncycastle_rng::FixedSeedRNG;
 
 const ZEROIZED: SignatureError =
     SignatureError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey);

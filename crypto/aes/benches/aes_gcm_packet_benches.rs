@@ -17,12 +17,12 @@
 use bouncycastle_aes::{AES_GCM_256, AES256Key};
 use bouncycastle_cipher::modes::GCM;
 use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_rng::HashDRBG_SHA512;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;

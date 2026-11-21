@@ -2,6 +2,7 @@
 //! Appendix A.1 vectors and the core-test-framework KEM suites.
 
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, KeyMaterialError, RNGError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -15,7 +16,7 @@ use bouncycastle_ed::x25519::{
     X25519PublicKey, keygen, keygen_from_seed,
 };
 use bouncycastle_hex as hex;
-use bouncycastle_rng::{DefaultRNG, FixedSeedRNG, HashDRBG_SHA512};
+use bouncycastle_rng::{DefaultRNG, HashDRBG_SHA512};
 use bouncycastle_utils::secret::Secret;
 
 type X25519DHKEM = DHKEM<X25519, POINT_LEN, SCALAR_LEN, POINT_LEN, DHKEM_SS_LEN>;

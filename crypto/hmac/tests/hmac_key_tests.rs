@@ -2,13 +2,13 @@
 //! out producing exactly what RFC 2104's formula gives from the same material.
 
 use bouncycastle_core::errors::{KeyMaterialError, MACError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{Hash, MACGenerator, MACVerifier, RNG};
 use bouncycastle_hmac::hazmat::{finish_out, inner_state};
 use bouncycastle_hmac::{HMACParams, HmacKey};
-use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_sha2::{SHA224, SHA256, SHA512};
 use bouncycastle_sha3::SHA3_256;
 

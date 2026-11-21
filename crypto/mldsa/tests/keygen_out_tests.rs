@@ -2,6 +2,7 @@
 //! a key that was never filled.
 
 use bouncycastle_core::errors::{KeyMaterialError, RNGError, SignatureError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
@@ -17,7 +18,6 @@ use bouncycastle_mldsa::{
     MLDSA87_SIG_LEN, MLDSA87PrivateKey, MLDSA87PrivateKeyExpanded, MLDSA87PublicKey,
     MLDSA87PublicKeyExpanded, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait,
 };
-use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_sha2::SHA512;
 
 const ZEROIZED: SignatureError =

@@ -18,6 +18,7 @@
 #![allow(dead_code)]
 
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -30,7 +31,6 @@ use bouncycastle_mldsa::{
     MLDSA87, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait,
     MLDSATrait,
 };
-use bouncycastle_rng::FixedSeedRNG;
 
 #[test]
 fn mldsa_44_sign_noseed_test() {
