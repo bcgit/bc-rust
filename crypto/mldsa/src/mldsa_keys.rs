@@ -6,6 +6,7 @@ use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
 use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
 use crate::params::{PrivateKeyLen, PublicKeyLen, SignatureLen};
 use bouncycastle_core::errors::{KeyDecodingError, KeyMaterialError, SignatureError};
+use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, RNG, XOF, XOFSqueezer};
 use bouncycastle_mldsa_common::aux_functions::{
@@ -484,7 +485,7 @@ impl<P: MLDSAParams> MLDSAPrivateKey<P> {
             h.do_update(seed.ref_to_bytes());
             h.do_update(&(P::k as u8).to_le_bytes());
             h.do_update(&(P::l as u8).to_le_bytes());
-            let mut h = h.into_squeezer();
+            let mut h = h.finish_squeezer(&finish_token());
             // 𝜌 is what marks the public key as filled; nothing below this line can fail, and a
             // step that could would have to clear `pk` before returning.
             let bytes_written = h.do_output_out(&mut pk.rho);

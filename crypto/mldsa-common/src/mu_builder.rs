@@ -3,7 +3,7 @@
 use crate::{H, MLDSA_MU_LEN, MLDSA_TR_LEN};
 use bouncycastle_core::errors::{SignatureError, SuspendableError};
 use bouncycastle_core::hazmat::finish_token;
-use bouncycastle_core::traits::{FinishToken, Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{FinishToken, Hash, Suspendable};
 use bouncycastle_sha3::SUSPENDED_SHA3_STATE_LEN;
 
 /// Implements parts of Algorithm 2 and Line 6 of Algorithm 7 of FIPS 204: the message
@@ -132,7 +132,8 @@ pub fn compute_mu_ph(
     h.do_update(ph);
 
     let mut mu = [0u8; MLDSA_MU_LEN];
-    let bytes_written = h.into_squeezer().do_output_out(&mut mu);
+    // H is SHAKE256, whose Hash output is its first 64 bytes, as in `MuBuilder::finish`.
+    let bytes_written = h.finish_into(&finish_token(), &mut mu);
     debug_assert_eq!(bytes_written, MLDSA_MU_LEN);
 
     Ok(mu)

@@ -194,7 +194,18 @@
 //! * SHAKE is an XOF, not a hash: `SHAKE128(m, 32)` is a prefix of `SHAKE128(m, 64)`. If the output
 //!   length must be bound to the digest, include it in the message (FIPS 202 Appendix A.2).
 //! * The sponge state and queue are held in [`bouncycastle_utils::secret::Secret`] and zeroized on
-//!   drop.
+//!   drop, where the value then is. [`XOF::into_squeezer`] moves the sponge, and a move wipes
+//!   nothing: a copy of the state, from which what was absorbed can be computed back, may stay
+//!   on the stack. A SHAKE, cSHAKE or KMACXOF that has absorbed a secret is finished with
+//!   `finish_squeezer` instead ([`SHAKEInternal::finish_squeezer`]), which lends out the squeezer
+//!   where the sponge sits. Those three have it; TupleHashXOF and ParallelHashXOF do not, nor,
+//!   outside this crate, do Ascon's XOFs or BLAKE3. A value finished that way is to be dropped:
+//!   giving it more input, or finishing it any other way, panics.
+//! * The Keccak-f permutation spills lanes of the state to its stack frame, and those are the
+//!   message, the key or the output of whatever is hashed, so it runs in a frame of its own
+//!   that is overwritten after every call. The overwrite is sized for an optimised build
+//!   (checked on x86-64 and aarch64): an unoptimised build's larger frame is not covered. It
+//!   costs 3 to 4% of hashing time on x86-64 and 336 bytes of stack below the caller.
 //! * KMAC's security rests on its key and output lengths (SP 800-185 Sec 8.4): the key check is
 //!   [`kmac::KMACKeyInternal::with_params`]'s, with `with_params_allow_weak` as the bypass, and
 //!   the output length is the key type's const parameter, with a length shorter than 8 bytes the
@@ -253,11 +264,11 @@ pub use keccak::{KeccakSize, SUSPENDED_SHA3_STATE_LEN};
 
 pub use sha3::SHA3Internal;
 
-pub use shake::{SHAKEInternal, SHAKESqueezer};
+pub use shake::{SHAKEBorrowedSqueezer, SHAKEInternal, SHAKESqueezer};
 
 pub use cshake::{
-    CSHAKE128, CSHAKE256, CSHAKEInternal, CSHAKESqueezer, SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN,
-    SUSPENDED_CSHAKE_STATE_LEN,
+    CSHAKE128, CSHAKE256, CSHAKEBorrowedSqueezer, CSHAKEInternal, CSHAKESqueezer,
+    SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN, SUSPENDED_CSHAKE_STATE_LEN,
 };
 
 /// Public type for SHA3_224.

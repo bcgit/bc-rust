@@ -12,6 +12,7 @@ use crate::params::{
 };
 use crate::polynomial::Polynomial;
 use crate::{G, H, N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, d, q};
+use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 
@@ -412,7 +413,7 @@ pub fn sample_in_ball<P: MLDSAParamsBase>(rho: &P::SigCTilde) -> Polynomial {
     let mut h = H::new();
     h.do_update(rho.as_ref());
     let mut s = [0u8; 8];
-    let mut h = h.into_squeezer();
+    let mut h = h.finish_squeezer(&finish_token());
     h.do_output_out(&mut s);
 
     // 5: ℎ ← BytesToBits(𝑠)
@@ -530,7 +531,7 @@ pub fn rej_bounded_poly<P: MLDSAParamsBase>(rho: &[u8; 64], nonce: &[u8; 2]) -> 
     // with nothing stranded in the sponge's output queue, and it covers the whole polynomial in a
     // single squeeze almost always.
     let mut z_arr = [0u8; 272];
-    let mut h = h.into_squeezer();
+    let mut h = h.finish_squeezer(&finish_token());
     h.do_output_out(&mut z_arr);
     let mut idx: usize = 0;
 
@@ -574,7 +575,7 @@ pub fn expand_mask_poly<P: MLDSAParamsBase>(rho: &[u8; 64], nonce: u16) -> Polyn
     h.do_update(rho);
     h.do_update(&nonce.to_le_bytes());
     let mut v = <P::PolyZPacked as ZeroizablePrimitive>::ZEROED;
-    let mut h = h.into_squeezer();
+    let mut h = h.finish_squeezer(&finish_token());
     h.do_output_out(v.as_mut());
 
     // 5: 𝐲[𝑟] ← BitUnpack(𝑣, 𝛾1 − 1, 𝛾1)

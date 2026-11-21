@@ -4,6 +4,7 @@
 //! cloned alongside this repo at "../bc-test-data" (same convention as the sha2/sha3 crates), under
 //! `crypto/sp800-185/`. If it is not present the tests print a warning and pass vacuously.
 
+use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
@@ -76,11 +77,15 @@ fn nist_sp800_185_sample_values() {
             128 => {
                 let mut c = CSHAKE128::new(v.n.as_bytes(), v.s.as_bytes());
                 c.do_update(&v.msg);
+                let in_place = c.clone().finish_squeezer(&finish_token()).do_output(want);
+                assert_eq!(in_place, v.output, "COUNT {i}: finish_squeezer");
                 c.into_squeezer().do_output(want)
             }
             256 => {
                 let mut c = CSHAKE256::new(v.n.as_bytes(), v.s.as_bytes());
                 c.do_update(&v.msg);
+                let in_place = c.clone().finish_squeezer(&finish_token()).do_output(want);
+                assert_eq!(in_place, v.output, "COUNT {i}: finish_squeezer");
                 c.into_squeezer().do_output(want)
             }
             other => panic!("COUNT {i}: unexpected strength {other}"),

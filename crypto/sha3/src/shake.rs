@@ -1,7 +1,7 @@
 use crate::SHAKEParams;
 use crate::keccak::{
-    KeccakInternal, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN, deserialize_sha3_family_state,
-    serialize_sha3_family_state,
+    INPUT_AFTER_FINISH, KeccakInternal, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN,
+    deserialize_sha3_family_state, serialize_sha3_family_state,
 };
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -77,8 +77,8 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
     /// the `KECCAK[c](... || X || 00, L)` branch), so the suffix cannot be baked in here. Crate
     /// internal: callers outside pick a function, and the function picks its own separator.
     ///
-    /// Infallible for the same reason [`Hash::do_update`] is: a `SHAKEInternal` still in use has
-    /// never squeezed, so the queue is byte-aligned and `absorb_bits` cannot reject it.
+    /// Panics, as [`Hash::do_update`] does, on a value that has been finished already; otherwise
+    /// the queue is byte-aligned and `absorb_bits` cannot reject it.
     pub(crate) fn into_squeezer_with_suffix(
         mut self,
         suffix: u8,
@@ -91,14 +91,12 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
     /// [`Self::into_squeezer_with_suffix`] where the sponge sits: it is squeezing afterwards, and
     /// [`Self::squeeze_internal_out`] reads from it.
     pub(crate) fn end_absorbing_with_suffix(&mut self, suffix: u8, num_bits: usize) {
-        self.keccak
-            .absorb_bits(suffix, num_bits)
-            .expect("a sponge that has not squeezed can absorb a domain separator");
+        self.keccak.absorb_bits(suffix, num_bits).expect(INPUT_AFTER_FINISH);
     }
 
     /// Produces the next bytes of the output stream, applying the SHAKE "1111" domain separator
     /// (FIPS 202 s. 6.2) on the first call unless absorbing has already been ended. Reached only
-    /// through [`SHAKESqueezer`] and the in-place finals, so the caller cannot interleave this
+    /// through the squeezer types and the in-place finals, so the caller cannot interleave this
     /// with absorbing.
     pub(crate) fn squeeze_internal_out(&mut self, output: &mut [u8]) -> usize {
         output.fill(0);
@@ -106,6 +104,78 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
             self.keccak.absorb_bits(0x0F, 4).expect("four bits is a whole partial byte");
         }
         self.keccak.squeeze(output)
+    }
+}
+
+impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
+    /// Ends the input phase where the sponge sits and lends out its squeezing half:
+    /// [`XOF::into_squeezer`] without the move, for a sponge that has absorbed a secret.
+    ///
+    /// The squeezer borrows this value, so nothing is absorbed while it is alive, and it produces
+    /// the stream [`XOF::into_squeezer`] would. Afterwards the value has begun producing output:
+    /// the caller lets it drop, as after a hash final, which is what the token stands for (see
+    /// [`FinishToken`]). A second call continues the same stream; anything else that would
+    /// absorb or finish again ([`Hash::do_update`], the hash finals, [`XOF::into_squeezer`],
+    /// [`XOF::xof`]) panics, in every build, and produces nothing.
+    pub fn finish_squeezer(&mut self, _token: &FinishToken) -> SHAKEBorrowedSqueezer<'_, PARAMS> {
+        // The SHAKE domain separator, "1111" (FIPS 202 s. 6.2).
+        self.finish_squeezer_with_suffix(0x0F, 4)
+    }
+
+    /// As [`finish_squeezer`](Self::finish_squeezer), with a final partial byte of input, under
+    /// the convention of [`XOF::into_squeezer_partial_bits`].
+    ///
+    /// # Errors
+    /// [`HashError::InvalidLength`] if `num_bits` is not in `0..=7`, and
+    /// [`HashError::InvalidState`] if output has begun and `num_bits` is not 0 (an error where
+    /// the other misuses of a finished sponge panic, this function being fallible already). The
+    /// sponge is unchanged in either case.
+    pub fn finish_squeezer_partial_bits(
+        &mut self,
+        _token: &FinishToken,
+        partial_byte: u8,
+        num_bits: usize,
+    ) -> Result<SHAKEBorrowedSqueezer<'_, PARAMS>, HashError> {
+        // The SHAKE domain separator, "1111" (FIPS 202 s. 6.2).
+        self.finish_squeezer_partial_bits_with_suffix(partial_byte, num_bits, 0x0F, 4)
+    }
+
+    /// [`Self::finish_squeezer`] with a caller-chosen domain separator, for cSHAKE; see
+    /// [`Self::into_squeezer_with_suffix`].
+    pub(crate) fn finish_squeezer_with_suffix(
+        &mut self,
+        suffix: u8,
+        num_bits: usize,
+    ) -> SHAKEBorrowedSqueezer<'_, PARAMS> {
+        // A sponge that is already squeezing has its separator in: the squeezer goes on from
+        // where the last one stopped.
+        if !self.keccak.squeezing {
+            self.end_absorbing_with_suffix(suffix, num_bits);
+        }
+        SHAKEBorrowedSqueezer { shake: self }
+    }
+
+    /// [`Self::finish_squeezer_partial_bits`] with a caller-chosen domain separator, for cSHAKE.
+    pub(crate) fn finish_squeezer_partial_bits_with_suffix(
+        &mut self,
+        partial_byte: u8,
+        num_bits: usize,
+        suffix: u8,
+        suffix_bits: usize,
+    ) -> Result<SHAKEBorrowedSqueezer<'_, PARAMS>, HashError> {
+        if num_bits > 7 {
+            return Err(HashError::InvalidLength("num_bits must be in the range [0,7]"));
+        }
+        if self.keccak.squeezing {
+            if num_bits != 0 {
+                return Err(HashError::InvalidState("input bits after output has begun"));
+            }
+        } else {
+            self.end_absorbing_partial_bits_with_suffix(
+                partial_byte, num_bits, suffix, suffix_bits,
+            )?;
+        }
+        Ok(SHAKEBorrowedSqueezer { shake: self })
     }
 }
 
@@ -134,9 +204,8 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHAKEInterna
         let rate = PARAMS::SIZE.rate_bits();
         let keccak = deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 
-        // A SHAKEInternal accepts input, so it must never be rebuilt in the squeezing phase --
-        // that is the invariant `Hash::do_update` relies on. A suspended squeezing sponge is a
-        // SHAKESqueezer; resume it as one.
+        // A SHAKEInternal is resumed to take input, so not in the squeezing phase. A suspended
+        // squeezing sponge is a SHAKESqueezer; resume it as one.
         if keccak.squeezing {
             // InvalidData rather than a new variant: for this type the phase byte is simply wrong.
             return Err(SuspendableError::InvalidData);
@@ -175,6 +244,55 @@ impl<PARAMS: SHAKEParams> SHAKESqueezer<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOFSqueezer for SHAKESqueezer<PARAMS> {
+    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
+        let mut out = vec![0u8; num_bytes];
+        self.do_output_out(&mut out);
+        out
+    }
+
+    fn do_output_out(&mut self, output: &mut [u8]) -> usize {
+        self.shake.squeeze_internal_out(output)
+    }
+}
+
+/// The squeezing half of a SHAKE or cSHAKE that stays where it is: what
+/// [`SHAKEInternal::finish_squeezer`] lends out. It produces the stream [`SHAKESqueezer`] would,
+/// and holds the sponge mutably for as long as it lives, so that absorbing between two reads is
+/// a compile error (and once it is gone the sponge is finished: input to it panics):
+///
+/// ```compile_fail,E0499
+/// use bouncycastle_core::hazmat::finish_token;
+/// use bouncycastle_core::traits::{Hash, XOFSqueezer};
+/// use bouncycastle_sha3::SHAKE128;
+///
+/// let mut shake = SHAKE128::new();
+/// shake.do_update(b"abc");
+/// let mut out = shake.finish_squeezer(&finish_token());
+/// let _ = out.do_output(32);
+/// shake.do_update(b"more");   // `shake` is still borrowed by `out`
+/// let _ = out.do_output(32);
+/// ```
+///
+/// The same value used correctly:
+///
+/// ```
+/// use bouncycastle_core::hazmat::finish_token;
+/// use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
+/// use bouncycastle_sha3::SHAKE128;
+///
+/// let mut shake = SHAKE128::new();
+/// shake.do_update(b"abc");
+/// let expected = shake.clone().into_squeezer().do_output(64);
+/// let mut out = shake.finish_squeezer(&finish_token());
+/// let mut stream = out.do_output(32);
+/// stream.extend(out.do_output(32));
+/// assert_eq!(stream, expected);
+/// ```
+pub struct SHAKEBorrowedSqueezer<'s, PARAMS: SHAKEParams> {
+    shake: &'s mut SHAKEInternal<PARAMS>,
+}
+
+impl<PARAMS: SHAKEParams> XOFSqueezer for SHAKEBorrowedSqueezer<'_, PARAMS> {
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
         let mut out = vec![0u8; num_bytes];
         self.do_output_out(&mut out);
@@ -235,18 +353,17 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         (PARAMS::SIZE as usize) / 4
     }
 
-    /// Infallible.
-    ///
     /// Absorbing after squeezing has begun would be wrong -- FIPS 202 defines SHAKE as a single
     /// function of the whole message, so re-absorbing would be an unapproved duplex. Producing
-    /// output goes through [`XOF::into_squeezer`], which consumes the value, or through a hash
-    /// final, whose in-place core is called as the value is dropped (see
-    /// [`FinishToken`](bouncycastle_core::traits::FinishToken)). A `SHAKEInternal` still in use
-    /// has therefore never squeezed.
+    /// output goes through [`XOF::into_squeezer`], which consumes the value, or through a final
+    /// that takes a [`FinishToken`](bouncycastle_core::traits::FinishToken) and leaves the
+    /// value to be dropped.
+    ///
+    /// # Panics
+    /// If the value has been finished through such a token ([`Hash::finish_into`],
+    /// [`finish_squeezer`](Self::finish_squeezer)) and is given input all the same.
     fn do_update(&mut self, data: &[u8]) {
-        // Pins the invariant the doc above argues for, so a future change that lets a squeezing
-        // SHAKE escape fails the test suite rather than silently corrupting the sponge.
-        debug_assert!(!self.keccak.squeezing, "a reachable SHAKEInternal has never squeezed");
+        // `absorb` refuses a sponge that has been finished, in every build.
         self.keccak.absorb(data);
     }
 
@@ -385,9 +502,9 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
             final_input >>= 8;
         }
 
-        // Infallible: this value has never squeezed, the queue is byte-aligned here, and final_bits
-        // is in 0..=7 by construction.
-        self.keccak.absorb_bits(final_input as u8, final_bits).expect("Absorb failed.");
+        // The queue is byte-aligned here and final_bits is in 0..=7 by construction, so the one
+        // refusal left is of a sponge that has been finished already.
+        self.keccak.absorb_bits(final_input as u8, final_bits).expect(INPUT_AFTER_FINISH);
         Ok(())
     }
 }

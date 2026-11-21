@@ -34,12 +34,12 @@ use crate::params::{
     PrivateKeyLen,
 };
 use bouncycastle_core::errors::{KEMError, RNGError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorithm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, XOF, XOFSqueezer,
+    Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, XOFSqueezer,
 };
 use bouncycastle_mlkem_common::aux_functions::sample_poly_CBD;
 use bouncycastle_mlkem_common::polynomial::Polynomial;
@@ -373,7 +373,7 @@ impl<P: MLKEMParams> MLKEM<P> {
             let mut j = J::new();
             j.do_update(dk.z());
             j.do_update(c);
-            let mut j = j.into_squeezer();
+            let mut j = j.finish_squeezer(&finish_token());
             let bytes_written = j.do_output_out(&mut *K_bar);
             debug_assert_eq!(bytes_written, MLKEM_SS_LEN);
 

@@ -48,7 +48,7 @@
 //! of memory footprint, performance and readability. Pull requests are welcome if, for example,
 //! a polynomial that does not need to exist has been missed.
 //!
-//! All this combined gives roughly a half to three quarters of the peak stack of the un-optimized implementation
+//! All this combined gives roughly a half to five sixths of the peak stack of the un-optimized implementation
 //! in the `bouncycastle_mlkem` crate for encapsulation and decapsulation, at a cost in throughput that is largest
 //! for decapsulation; the table below has both.
 //!
@@ -94,18 +94,18 @@
 //!
 //! | Algorithm                  | Peak stack memory (kB) | Throughput (Kops/s) |
 //! |----------------------------|------------------------|-------------------|
-//! | MLKEM512_lowmemory/KeyGen  | 7.7 (12.4)             | 50.1 (48.7)       |
-//! | MLKEM768_lowmemory/KeyGen  | 7.7 (16.3)             | 28.3 (28.8)       |
-//! | MLKEM1024_lowmemory/KeyGen | 8.1 (22.2)             | 16.9 (18.1)       |
-//! | MLKEM512_lowmemory/Encaps  | 12.0 (16.6)            | 37.8 (43.7)       |
-//! | MLKEM768_lowmemory/Encaps  | 14.0 (23.6)            | 22.3 (26.0)       |
-//! | MLKEM1024_lowmemory/Encaps | 16.8 (31.6)            | 14.2 (15.6)       |
-//! | MLKEM512_lowmemory/Decaps  | 12.1 (16.2)            | 13.4 (31.6)       |
-//! | MLKEM768_lowmemory/Decaps  | 13.8 (23.2)            | 7.8 (21.0)        |
-//! | MLKEM1024_lowmemory/Decaps | 16.0 (32.8)            | 4.9 (13.6)        |
+//! | MLKEM512_lowmemory/KeyGen  | 7.7 (12.7)             | 50.1 (48.7)       |
+//! | MLKEM768_lowmemory/KeyGen  | 7.7 (16.7)             | 28.3 (28.8)       |
+//! | MLKEM1024_lowmemory/KeyGen | 8.4 (22.6)             | 16.9 (18.1)       |
+//! | MLKEM512_lowmemory/Encaps  | 12.3 (16.9)            | 37.8 (43.7)       |
+//! | MLKEM768_lowmemory/Encaps  | 14.4 (23.9)            | 22.3 (26.0)       |
+//! | MLKEM1024_lowmemory/Encaps | 17.1 (32.0)            | 14.2 (15.6)       |
+//! | MLKEM512_lowmemory/Decaps  | 12.4 (14.7)            | 13.4 (31.6)       |
+//! | MLKEM768_lowmemory/Decaps  | 14.2 (20.9)            | 7.8 (21.0)        |
+//! | MLKEM1024_lowmemory/Decaps | 16.4 (31.0)            | 4.9 (13.6)        |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the `bouncycastle_mlkem` crate.
-//! Memory figures were measured with `mem_usage_benches/bench_mlkem_mem_usage` under massif on 2026-11-20;
+//! Memory figures were measured with `mem_usage_benches/bench_mlkem_mem_usage` under massif on 2026-11-21;
 //! throughput figures come from the crates' criterion benches on a developer machine when the crate was
 //! written and have not been re-measured since (decapsulation here has since lost one of its two key
 //! generations, roughly a 30% speed-up).
