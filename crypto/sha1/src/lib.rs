@@ -70,8 +70,11 @@
 //!   collisions are practical, so it must not be used where an attacker gains from two messages
 //!   with one digest: signatures, certificates, commitments, content addressing of untrusted
 //!   data. Its [`MAX_SECURITY_STRENGTH`](Algorithm::MAX_SECURITY_STRENGTH) is
-//!   [`SecurityStrength::None`] for that reason, which the library's signature schemes and
-//!   strength checks will refuse.
+//!   [`SecurityStrength::None`] for that reason, and it does not carry
+//!   [`CollisionResistantHash`](bouncycastle_core::traits::CollisionResistantHash), which the
+//!   library's signing roles require: a signature over SHA-1 verifies and is not generated,
+//!   unless the caller names the hash as
+//!   [`WithoutCollisionResistance<SHA1>`](bouncycastle_core::hazmat::WithoutCollisionResistance).
 //! * Uses that do not rest on collision resistance, such as MGF1 and the label hash of RSA-OAEP,
 //!   are not broken by the collision attacks, but offer no reason to choose SHA-1 over SHA-2
 //!   where the choice is open.
