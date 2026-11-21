@@ -222,7 +222,7 @@
 #![forbid(missing_docs)]
 
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, CollisionResistantHash, HashAlgParams};
 
 // imports needed for docs
 #[allow(unused_imports)]
@@ -506,3 +506,14 @@ impl<PARAMS: SHAKEParams> HashAlgParams for SHAKEInternal<PARAMS> {
     const OUTPUT_LEN: usize = (PARAMS::SIZE as usize) / 4;
     const BLOCK_LEN: usize = PARAMS::SIZE.rate_bits() / 8;
 }
+
+/*** Collision resistance ***/
+// SHA-3, and SHAKE as the fixed-length digest above. The SP 800-185 functions (cSHAKE, KMAC,
+// TupleHash, ParallelHash) take their parameters and output length at run time and are not given
+// the marker.
+impl CollisionResistantHash for SHA3_224 {}
+impl CollisionResistantHash for SHA3_256 {}
+impl CollisionResistantHash for SHA3_384 {}
+impl CollisionResistantHash for SHA3_512 {}
+impl CollisionResistantHash for SHAKE128 {}
+impl CollisionResistantHash for SHAKE256 {}

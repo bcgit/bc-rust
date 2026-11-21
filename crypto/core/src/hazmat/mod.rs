@@ -19,6 +19,7 @@ mod kdf_output;
 mod key_stream;
 mod mode;
 mod pre_hash_strength;
+mod without_collision_resistance;
 
 pub use ecb_key::{EcbDecryptionKey, EcbEncryptionKey};
 pub use electronic_code_book::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
@@ -33,3 +34,4 @@ pub use mode::{
     SymmetricDecryptMode, SymmetricEncryptMode,
 };
 pub use pre_hash_strength::waive_pre_hash_strength_rule;
+pub use without_collision_resistance::WithoutCollisionResistance;

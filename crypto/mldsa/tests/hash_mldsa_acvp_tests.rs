@@ -14,7 +14,9 @@ use bouncycastle_core::signature_key::{
     DeterministicPreHashSigningKey, PreHash, PreHashSigningKey, PreHashVerifyingKey,
     SignatureAlgorithm,
 };
-use bouncycastle_core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
+use bouncycastle_core::traits::{
+    CollisionResistantHash, PrivateKey, PublicKey, SignatureSigner, SignatureVerifier,
+};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa::hazmat::AnyStrength;
@@ -135,7 +137,7 @@ where
     A: SignatureAlgorithm,
     PK: PreHashVerifyingKey<A, SIG_LEN>,
     SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash,
+    H: PreHash + CollisionResistantHash,
 {
     let (msg, ctx, expected) = (rec.hex("message"), rec.hex("context"), rec.hex("signature"));
     let ctx = Some(ctx.as_slice());
@@ -172,7 +174,7 @@ fn sign_is_refused<A, SK, H, const SIG_LEN: usize>(rec: &Record, sk: &SK)
 where
     A: SignatureAlgorithm,
     SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash,
+    H: PreHash + CollisionResistantHash,
 {
     let ph = H::hash(&rec.hex("message"));
     let mut rng = FixedSeedRNG::new([0u8; 32]);
@@ -201,7 +203,7 @@ fn sig_gen_with<A, PK, SK, H, const SK_LEN: usize, const SIG_LEN: usize>(
     SK: PrivateKey<SK_LEN>
         + PreHashSigningKey<A, SIG_LEN>
         + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash,
+    H: PreHash + CollisionResistantHash,
 {
     let sk = SK::from_bytes(&rec.hex("sk")).unwrap();
     let pk = pk_of(&sk);

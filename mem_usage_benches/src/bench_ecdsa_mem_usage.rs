@@ -27,7 +27,7 @@
 use bouncycastle::core::signature_key::{
     DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
 };
-use bouncycastle::core::traits::{PrivateKey, PublicKey};
+use bouncycastle::core::traits::{CollisionResistantHash, PrivateKey, PublicKey};
 use bouncycastle::ec::curve::Curve;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle::ecdsa::ecdsa::EcdsaHash;
@@ -85,7 +85,7 @@ where
 fn keygen_bench<C, H, const PK_LEN: usize>(name: &str)
 where
     C: Curve<PkUncompressed = [u8; PK_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     eprintln!("ECDSA {name}/KeyGen");
 
@@ -96,7 +96,7 @@ where
 fn sign_bench<C, H, const SK_LEN: usize, const SIG_LEN: usize>(name: &str)
 where
     C: Curve<ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     eprintln!("ECDSA {name}/Sign");
 
@@ -108,7 +108,7 @@ where
 fn sign_deterministic_bench<C, H, const SK_LEN: usize, const SIG_LEN: usize>(name: &str)
 where
     C: Curve<ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     eprintln!("ECDetDSA {name}/Sign");
 
@@ -120,7 +120,7 @@ where
 fn verify_bench<C, H, const PK_LEN: usize, const SK_LEN: usize, const SIG_LEN: usize>(name: &str)
 where
     C: Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     eprintln!("ECDSA {name}/Verify");
 

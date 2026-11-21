@@ -131,7 +131,7 @@ pub use self::blake3::{
     SUSPENDED_BLAKE3_STATE_LEN,
 };
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, HashAlgParams};
+use bouncycastle_core::traits::{Algorithm, CollisionResistantHash, HashAlgParams};
 
 /*** Imports needed for docs ***/
 #[allow(unused_imports)]
@@ -173,3 +173,7 @@ impl HashAlgParams for BLAKE3 {
     const OUTPUT_LEN: usize = 32;
     const BLOCK_LEN: usize = 64;
 }
+
+/// The default-length hash; [`BLAKE3DeriveKey`], whose function depends on its context, does not
+/// carry the marker.
+impl CollisionResistantHash for BLAKE3 {}
