@@ -147,7 +147,7 @@ use self::sha256::{SHA224_H0, SHA256_H0};
 pub use self::sha512::SHA512Internal;
 use self::sha512::{SHA384_H0, SHA512_H0, sha512t_h0};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, CollisionResistantHash, HashAlgParams};
 
 /*** Imports needed for docs ***/
 #[allow(unused_imports)]
@@ -487,6 +487,26 @@ impl AlgorithmOID for SHA512_256 {
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x06];
 }
+
+/*** Collision resistance ***/
+impl CollisionResistantHash for SHA224 {}
+impl CollisionResistantHash for SHA256 {}
+impl CollisionResistantHash for SHA384 {}
+impl CollisionResistantHash for SHA512 {}
+
+// SHA-512/t carries the marker where it reports a strength, which is for t of 224 and up. One
+// impl per t, since stable Rust cannot bound a const parameter: every multiple of 8 from 224
+// below 512, less 384, which FIPS 180-4 s. 5.3.6 excludes.
+macro_rules! sha512t_collision_resistant {
+    ($($t:literal)*) => {$(
+        impl CollisionResistantHash for SHA512t<$t> {}
+        const _: () = assert!($t >= 224 && $t / 8 == <SHA512t<$t> as HashAlgParams>::OUTPUT_LEN);
+    )*};
+}
+sha512t_collision_resistant!(
+    224 232 240 248 256 264 272 280 288 296 304 312 320 328 336 344 352 360 368 376
+    392 400 408 416 424 432 440 448 456 464 472 480 488 496 504
+);
 
 pub use sha256::SUSPENDED_SHA256_STATE_LEN;
 pub use sha512::SUSPENDED_SHA512_STATE_LEN;

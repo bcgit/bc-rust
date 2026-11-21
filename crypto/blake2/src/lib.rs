@@ -117,7 +117,7 @@ pub use self::blake2s::{
     BLAKE2s_256, BLAKE2s_256_MAC, BLAKE2s_256_MACKey, SUSPENDED_BLAKE2S_256_STATE_LEN,
 };
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, CollisionResistantHash, HashAlgParams};
 
 /*** Imports needed for docs ***/
 #[allow(unused_imports)]
@@ -169,6 +169,9 @@ impl HashAlgParams for BLAKE2s_256 {
     const OUTPUT_LEN: usize = 32;
     const BLOCK_LEN: usize = 64;
 }
+
+impl CollisionResistantHash for BLAKE2b_512 {}
+impl CollisionResistantHash for BLAKE2s_256 {}
 
 /// RFC 7693 s. 4: id-blake2b512 OBJECT IDENTIFIER ::= { blake2b 16 }, under
 /// hashAlgs = 1.3.6.1.4.1.1722.12.2 and blake2b = { hashAlgs 1 }.

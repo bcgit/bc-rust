@@ -79,3 +79,36 @@ fn any_strength_is_the_hash_it_wraps() {
     is_the_hash_it_wraps::<SHAKE128>();
     is_the_hash_it_wraps::<SHAKE256>();
 }
+
+fn carries_the_marker<H: bouncycastle_core::traits::CollisionResistantHash>() {}
+
+/// The wrapper waives the strength rule and nothing else: it is a `CollisionResistantHash`
+/// where the hash it wraps is, and not otherwise, so that it alone does not let a hash without
+/// the marker sign. With `hazmat::WithoutCollisionResistance`, in either order, it carries both.
+#[test]
+fn any_strength_passes_collision_resistance_through() {
+    use bouncycastle_core::hazmat::WithoutCollisionResistance;
+    use bouncycastle_core_test_framework::assert_not_collision_resistant_hash;
+    use bouncycastle_ripemd::RIPEMD160;
+
+    carries_the_marker::<AnyStrength<SHA224>>();
+    carries_the_marker::<AnyStrength<SHAKE128>>();
+    assert_not_collision_resistant_hash!(AnyStrength<RIPEMD160>);
+    assert_not_collision_resistant_hash!(AnyStrength<AnyStrength<RIPEMD160>>);
+
+    type Inside = AnyStrength<WithoutCollisionResistance<RIPEMD160>>;
+    type Outside = WithoutCollisionResistance<AnyStrength<RIPEMD160>>;
+    carries_the_marker::<Inside>();
+    carries_the_marker::<Outside>();
+    assert!(Inside::PRE_HASH_STRENGTH_RULE.is_waived());
+    assert!(Outside::PRE_HASH_STRENGTH_RULE.is_waived());
+    assert!(!WithoutCollisionResistance::<RIPEMD160>::PRE_HASH_STRENGTH_RULE.is_waived());
+    for (name, oid_der, digest) in [
+        (Inside::ALG_NAME, Inside::OID_DER, Inside::hash(b"abc")),
+        (Outside::ALG_NAME, Outside::OID_DER, Outside::hash(b"abc")),
+    ] {
+        assert_eq!(name, "RIPEMD160");
+        assert_eq!(oid_der, RIPEMD160::OID_DER);
+        assert_eq!(digest, RIPEMD160::hash(b"abc"));
+    }
+}

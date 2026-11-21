@@ -15,6 +15,7 @@ bouncycastle-utils.workspace = true
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-mldsa.workspace = true
 bouncycastle-hex.workspace = true
+bouncycastle-ripemd.workspace = true
 bouncycastle-rng.workspace = true
 criterion.workspace = true
 

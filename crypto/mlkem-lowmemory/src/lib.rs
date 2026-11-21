@@ -18,8 +18,8 @@
 //! For ML-KEM-768, it is expected to use 6 kb of RAM just for holding expanded key material, and then
 //! the `.encaps()` and `.decaps()` operations are expected to require several multiples of that as variables for holding
 //! intermediate values as the computation proceeds.
-//! A well-written but not memory-optimized ML-KEM-768 can be expected to consume approximately 40 kb of RAM
-//! at the widest point of the `.decaps()` operation.
+//! A well-written but not memory-optimized ML-KEM-768 consumes over 20 kb of stack at the widest point of the
+//! `.decaps()` operation; the `bouncycastle_mlkem` crate's figure is in the table below.
 //!
 //! This crate does better.
 //!
@@ -48,8 +48,9 @@
 //! of memory footprint, performance and readability. Pull requests are welcome if, for example,
 //! a polynomial that does not need to exist has been missed.
 //!
-//! All this combined gives approximately *half the peak memory* of the un-optimized implementation in the
-//! `bouncycastle_mlkem` crate, at a cost in throughput that is largest for decapsulation; the table below has both.
+//! All this combined gives roughly a half to five sixths of the peak stack of the un-optimized implementation
+//! in the `bouncycastle_mlkem` crate for encapsulation and decapsulation, at a cost in throughput that is largest
+//! for decapsulation; the table below has both.
 //!
 //! # Memory Usage
 //!
@@ -88,23 +89,23 @@
 //! reflect the fact that this is a `no_std` rust application and therefore the cryptographic functions use no heap memory.
 //! The measurement has a floor of 7.7 kB: a do-nothing HelloWorld rust application in the same harness
 //! (`bench_do_nothing`) peaks at 7,680 bytes, reached in process start-up before `main` runs, so no row can read
-//! lower, and the two KeyGen rows that read 7.7 are at that floor. The Decaps benches derive their key from a seed
-//! inside the run, so those rows include a key generation.
+//! lower, and the two KeyGen rows that read 7.7 are at that floor. The Encaps and Decaps rows are the operation
+//! alone, on a key the caller already holds.
 //!
 //! | Algorithm                  | Peak stack memory (kB) | Throughput (Kops/s) |
 //! |----------------------------|------------------------|-------------------|
-//! | MLKEM512_lowmemory/KeyGen  | 7.7 (13.6)             | 50.1 (48.7)       |
-//! | MLKEM768_lowmemory/KeyGen  | 7.7 (19.7)             | 28.3 (28.8)       |
-//! | MLKEM1024_lowmemory/KeyGen | 8.1 (28.8)             | 16.9 (18.1)       |
-//! | MLKEM512_lowmemory/Encaps  | 11.0 (18.6)            | 37.8 (43.7)       |
-//! | MLKEM768_lowmemory/Encaps  | 13.1 (29.8)            | 22.3 (26.0)       |
-//! | MLKEM1024_lowmemory/Encaps | 15.7 (41.8)            | 14.2 (15.6)       |
-//! | MLKEM512_lowmemory/Decaps  | 12.2 (19.2)            | 13.4 (31.6)       |
-//! | MLKEM768_lowmemory/Decaps  | 14.0 (30.1)            | 7.8 (21.0)        |
-//! | MLKEM1024_lowmemory/Decaps | 16.1 (41.7)            | 4.9 (13.6)        |
+//! | MLKEM512_lowmemory/KeyGen  | 7.7 (12.7)             | 50.1 (48.7)       |
+//! | MLKEM768_lowmemory/KeyGen  | 7.7 (16.7)             | 28.3 (28.8)       |
+//! | MLKEM1024_lowmemory/KeyGen | 8.4 (22.6)             | 16.9 (18.1)       |
+//! | MLKEM512_lowmemory/Encaps  | 12.3 (16.9)            | 37.8 (43.7)       |
+//! | MLKEM768_lowmemory/Encaps  | 14.4 (23.9)            | 22.3 (26.0)       |
+//! | MLKEM1024_lowmemory/Encaps | 17.1 (32.0)            | 14.2 (15.6)       |
+//! | MLKEM512_lowmemory/Decaps  | 12.4 (14.7)            | 13.4 (31.6)       |
+//! | MLKEM768_lowmemory/Decaps  | 14.2 (20.9)            | 7.8 (21.0)        |
+//! | MLKEM1024_lowmemory/Decaps | 16.4 (31.0)            | 4.9 (13.6)        |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the `bouncycastle_mlkem` crate.
-//! Memory figures were measured with `mem_usage_benches/bench_mlkem_mem_usage` under massif on 2026-11-18;
+//! Memory figures were measured with `mem_usage_benches/bench_mlkem_mem_usage` under massif on 2026-11-21;
 //! throughput figures come from the crates' criterion benches on a developer machine when the crate was
 //! written and have not been re-measured since (decapsulation here has since lost one of its two key
 //! generations, roughly a 30% speed-up).

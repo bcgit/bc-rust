@@ -383,6 +383,7 @@ use crate::params::{
 };
 use crate::{MLDSAPublicKey, MLDSASeedPrivateKey};
 use bouncycastle_core::errors::{RNGError, SignatureError};
+use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
@@ -391,7 +392,7 @@ use bouncycastle_core::signature_key::{
     verify_with_verifier,
 };
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, FinishToken, Hash, RNG, SignatureSigner, SignatureVerifier, XOF,
+    Algorithm, AlgorithmOID, FinishToken, Hash, RNG, SignatureSigner, SignatureVerifier,
     XOFSqueezer,
 };
 use bouncycastle_mldsa_common::aux_functions::{bitpack_gamma1_out, sample_in_ball};
@@ -592,7 +593,7 @@ pub(crate) fn sign_internal<
         h.do_update(rnd);
         h.do_update(mu);
         let mut rho_p_p: Secret<[u8; 64]> = Secret::new();
-        let mut h = h.into_squeezer();
+        let mut h = h.finish_squeezer(&finish_token());
         h.do_output_out(&mut *rho_p_p);
 
         rho_p_p
@@ -628,7 +629,7 @@ pub(crate) fn sign_internal<
                 hash.do_update(w.w1_encode::<P>().as_ref());
             }
             let mut sig_val_c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
-            let mut hash = hash.into_squeezer();
+            let mut hash = hash.finish_squeezer(&finish_token());
             hash.do_output_out(sig_val_c_tilde.as_mut());
             sig_val_c_tilde
         };
@@ -798,7 +799,7 @@ pub(crate) fn verify_internal<
     }
 
     let mut c_tilde_p = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
-    let mut hash = hash.into_squeezer();
+    let mut hash = hash.finish_squeezer(&finish_token());
     hash.do_output_out(c_tilde_p.as_mut());
 
     // Verification is also done in constant time

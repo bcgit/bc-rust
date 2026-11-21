@@ -1,7 +1,7 @@
 //! cSHAKE, the customizable SHAKE of NIST SP 800-185 Sec 3.
 
-use crate::keccak::SHA3_FAMILY_STATE_LEN;
-use crate::shake::{SHAKEInternal, SHAKESqueezer};
+use crate::keccak::{INPUT_AFTER_FINISH, SHA3_FAMILY_STATE_LEN};
+use crate::shake::{SHAKEBorrowedSqueezer, SHAKEInternal, SHAKESqueezer};
 use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -63,6 +63,11 @@ pub struct CSHAKEInternal<PARAMS: SHAKEParams> {
     shake: SHAKEInternal<PARAMS>,
     /// False when `N` and `S` are both empty, in which case this is plain SHAKE.
     customized: bool,
+    /// Set when an SP 800-185 function built on this lends out its squeezer before the sponge
+    /// is padded (the `right_encode(L)` waits for the first read): the value is finished from
+    /// then on, and [`Hash::do_update`] refuses it as it refuses a padded sponge. Not part of
+    /// the suspended state.
+    lent: bool,
 }
 
 impl<PARAMS: SHAKEParams> Algorithm for CSHAKEInternal<PARAMS> {
@@ -84,7 +89,7 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
             // Sec 3.3: bytepad(encode_string(N) || encode_string(S), rate).
             absorb_bytepad(&mut shake, &[n, s]);
         }
-        Self { shake, customized }
+        Self { shake, customized, lent: false }
     }
 }
 
@@ -171,7 +176,7 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
     }
 
     /// The reverse of [`Self::write_tagged`]. A sponge that has begun squeezing is refused: a
-    /// cSHAKE a caller can hold is still absorbing, and the squeezing half is a [`SHAKESqueezer`]
+    /// cSHAKE is resumed to take input, and the squeezing half is a [`SHAKESqueezer`]
     /// or a [`CSHAKESqueezer`], which resume their own states.
     pub(crate) fn read_tagged(state: &[u8], tag: u8) -> Result<Self, SuspendableError> {
         let (family, rest) = state.split_at(SHA3_FAMILY_STATE_LEN);
@@ -186,7 +191,7 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
             _ => return Err(SuspendableError::InvalidData),
         };
         debug_assert!(r.is_done());
-        Ok(Self { shake, customized })
+        Ok(Self { shake, customized, lent: false })
     }
 
     /// [`Self::read_tagged`] for the functions built on cSHAKE, whose `N` is never empty: a state
@@ -241,7 +246,11 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
         self.shake.output_len()
     }
 
+    /// # Panics
+    /// If the value has been finished through a [`FinishToken`] ([`Hash::finish_into`],
+    /// `finish_squeezer`) and is given input all the same.
     fn do_update(&mut self, data: &[u8]) {
+        self.assert_not_lent();
         self.shake.do_update(data);
     }
 
@@ -299,6 +308,54 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
         let (buf, len) = right_encode(length_bits);
         self.do_update(&buf[..len]);
         self.finish_out(output)
+    }
+}
+
+impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
+    /// Ends the input phase where the sponge sits and lends out its squeezing half:
+    /// [`XOF::into_squeezer`] without the move. See [`SHAKEInternal::finish_squeezer`].
+    pub fn finish_squeezer(&mut self, _token: &FinishToken) -> SHAKEBorrowedSqueezer<'_, PARAMS> {
+        let (suffix, bits) = self.suffix();
+        self.shake.finish_squeezer_with_suffix(suffix, bits)
+    }
+
+    /// As [`finish_squeezer`](Self::finish_squeezer), with a final partial byte of input; see
+    /// [`SHAKEInternal::finish_squeezer_partial_bits`].
+    ///
+    /// # Errors
+    /// [`HashError::InvalidLength`] if `num_bits` is not in `0..=7`, and
+    /// [`HashError::InvalidState`] if output has begun and `num_bits` is not 0.
+    pub fn finish_squeezer_partial_bits(
+        &mut self,
+        _token: &FinishToken,
+        partial_byte: u8,
+        num_bits: usize,
+    ) -> Result<SHAKEBorrowedSqueezer<'_, PARAMS>, HashError> {
+        let (suffix, bits) = self.suffix();
+        self.shake.finish_squeezer_partial_bits_with_suffix(partial_byte, num_bits, suffix, bits)
+    }
+
+    /// The squeezing half of an SP 800-185 function whose `right_encode(L)` is still to choose,
+    /// where the sponge sits: [`CSHAKESqueezer`] without the move.
+    ///
+    /// The sponge cannot be padded here, the length encoding being the first read's to choose,
+    /// so the value is marked finished instead: input and the other finals are refused from
+    /// this call on, whether or not anything is read.
+    pub(crate) fn finish_squeezer_unbound(&mut self) -> CSHAKEBorrowedSqueezer<'_, PARAMS> {
+        self.lent = true;
+        CSHAKEBorrowedSqueezer { cshake: self }
+    }
+
+    /// Panics if this value has lent out its squeezer or begun producing output: it is
+    /// finished, and takes no more input and no other final.
+    pub(crate) fn assert_not_finished(&self) {
+        self.assert_not_lent();
+        assert!(!self.shake.is_squeezing(), "{}", INPUT_AFTER_FINISH);
+    }
+
+    /// Panics if this value has lent out its squeezer.
+    pub(crate) fn assert_not_lent(&self) {
+        assert!(!self.lent, "{}", INPUT_AFTER_FINISH);
     }
 }
 
@@ -475,7 +532,7 @@ impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for CSHAKESqueezer<PARAMS
         let phase = if shake.is_squeezing() {
             Phase::Squeezing(SHAKESqueezer::from_squeezing(shake))
         } else {
-            Phase::Unbound(CSHAKEInternal { shake, customized: true })
+            Phase::Unbound(CSHAKEInternal { shake, customized: true, lent: false })
         };
         Ok(Self { phase })
     }
@@ -516,6 +573,54 @@ impl<PARAMS: SHAKEParams> XOFSqueezer for CSHAKESqueezer<PARAMS> {
     /// The last read, so if it is also the first, `L` is its length in bits and this is the
     /// fixed-length function of s. 4.3, 5.3 or 6.3. After a [`XOFSqueezer::do_output`] the encoding
     /// is already in the sponge and this just continues that stream.
+    fn do_output_final_out(mut self, output: &mut [u8]) -> usize {
+        self.read((output.len() as u64) * 8, output)
+    }
+}
+
+/// The squeezing phase of KMACXOF that stays where it is: what
+/// [`KMACXOFInternal::finish_squeezer`](crate::kmac::KMACXOFInternal::finish_squeezer) lends
+/// out. It reads as [`CSHAKESqueezer`] does: the first read chooses `right_encode(L)`, 0 for
+/// [`XOFSqueezer::do_output`] and the length for [`XOFSqueezer::do_output_final`].
+pub struct CSHAKEBorrowedSqueezer<'s, PARAMS: SHAKEParams> {
+    cshake: &'s mut CSHAKEInternal<PARAMS>,
+}
+
+impl<PARAMS: SHAKEParams> CSHAKEBorrowedSqueezer<'_, PARAMS> {
+    /// [`CSHAKESqueezer::read`] on the borrowed sponge, whose own phase says whether the
+    /// encoding is in.
+    fn read(&mut self, length_bits: u64, output: &mut [u8]) -> usize {
+        if !self.cshake.shake.is_squeezing() {
+            let (buf, len) = right_encode(length_bits);
+            // Past the cSHAKE's own `do_update`, which refuses a value that has lent this out.
+            self.cshake.shake.do_update(&buf[..len]);
+            let (suffix, bits) = self.cshake.suffix();
+            self.cshake.shake.end_absorbing_with_suffix(suffix, bits);
+        }
+        self.cshake.shake.squeeze_internal_out(output)
+    }
+}
+
+impl<PARAMS: SHAKEParams> XOFSqueezer for CSHAKEBorrowedSqueezer<'_, PARAMS> {
+    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
+        let mut out = vec![0u8; num_bytes];
+        self.do_output_out(&mut out);
+        out
+    }
+
+    /// Reading as a XOF, so `right_encode(0)` if this is the first read (s. 4.3.1).
+    fn do_output_out(&mut self, output: &mut [u8]) -> usize {
+        self.read(0, output)
+    }
+
+    fn do_output_final(self, num_bytes: usize) -> Vec<u8> {
+        let mut out = vec![0u8; num_bytes];
+        self.do_output_final_out(&mut out);
+        out
+    }
+
+    /// The last read, so if it is also the first, `L` is its length in bits and this is the
+    /// fixed-length function of s. 4.3.
     fn do_output_final_out(mut self, output: &mut [u8]) -> usize {
         self.read((output.len() as u64) * 8, output)
     }

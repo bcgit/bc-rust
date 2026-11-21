@@ -36,10 +36,24 @@ impl KeccakState {
         Self::permute(self);
     }
 
-    /// KECCAK-p[1600, 24], FIPS 202 Algorithm 7, which Sec 3.4 names KECCAK-f[1600]: the round
-    /// function `Rnd = iota(chi(pi(rho(theta(A)))))` of Sec 3.3 for `ir = 0..24`, on the lanes
-    /// unrolled into locals. `aNN` is lane `(x, y) = (NN mod 5, NN / 5)`.
+    /// KECCAK-p[1600, 24], FIPS 202 Algorithm 7, which Sec 3.4 names KECCAK-f[1600].
+    ///
+    /// The permutation holds its 25 lanes in locals, more than a 64-bit target has registers
+    /// for, so lanes of the state it was given and of the one it returns are spilled to its
+    /// stack frame (14 of the 25 output lanes in an x86-64 release build), and those are the
+    /// message, the key or the output of whatever is being hashed. So it runs in a frame of its
+    /// own and the stack that frame used is overwritten afterwards.
     pub fn permute(a: &mut Self) {
+        Self::permute_in_own_frame(a);
+        wipe_stack_below();
+    }
+
+    /// The computation of [`Self::permute`]: the round function
+    /// `Rnd = iota(chi(pi(rho(theta(A)))))` of Sec 3.3 for `ir = 0..24`, on the lanes unrolled
+    /// into locals. `aNN` is lane `(x, y) = (NN mod 5, NN / 5)`. Never inlined, so that its
+    /// spills lie below its caller's frame, where [`wipe_stack_below`] reaches them.
+    #[inline(never)]
+    fn permute_in_own_frame(a: &mut Self) {
         let [
             mut a00,
             mut a01,
@@ -190,6 +204,25 @@ impl KeccakState {
     }
 }
 
+/// How much stack [`wipe_stack_below`] overwrites, in 64-bit words: more than
+/// [`KeccakState::permute_in_own_frame`], which calls nothing, uses (464 bytes with its return
+/// address in the x86-64 release build), with room for a compiler that lays the frame out less
+/// tightly. An unoptimised build's frame (1936 bytes on x86-64) is not covered. It is paid for on every permutation, in time and in stack depth.
+const WIPED_STACK_WORDS: usize = 96;
+
+/// Overwrites the stack that the previous call made from the caller's frame used, by taking a
+/// frame of its own over the same memory and wiping it. Never inlined: the frame is the point.
+#[inline(never)]
+fn wipe_stack_below() {
+    let mut scratch = Secret::<[u64; WIPED_STACK_WORDS]>::new();
+    core::hint::black_box(&mut *scratch);
+}
+
+/// What a sponge panics with when it is given input, or finished any other way, after it was
+/// finished.
+pub(crate) const INPUT_AFTER_FINISH: &str =
+    "the sponge has been finished: it takes no more input and no other final";
+
 // This is pub(crate) so that the SerializableState handlers can unpack it.
 #[derive(Clone)]
 pub(crate) struct KeccakInternal {
@@ -248,18 +281,16 @@ impl KeccakInternal {
     /// then we'll have to add proper error-handling here.
     ///
     /// ## No absorbing after squeezing
-    /// The prohibition on absorbing more input after squeezing is only technically enforced
-    /// for SHAKE and not for KECCAK (and only because FIPS 202 Section 6.2 places a four-bit suffix
-    /// "1111" after the last byte of input). There is a debug_assert to catch this, but we could
-    /// in theory expose the Keccak primitive externally in the future and relax this restriction,
-    /// but some more careful reading of FIPS 202 and some thinking about error and security handling
-    /// would need to be done.
+    /// Enforced here, in every build: a sponge that has been padded takes no more input, and
+    /// this panics rather than write into the queue the output is read from. The consuming
+    /// finals make that unreachable by type; the finals that take `&mut self` (`finish_into`,
+    /// `finish_squeezer`) leave a value behind that a caller could still feed, and without
+    /// this check a release build would hand back zeros or repeated output for it.
     pub(super) fn absorb(&mut self, data: &[u8]) {
-        // Debug-only backstops for the two contract preconditions; see the doc comment above. Both are
-        // enforced for real by the SHA3 / SHAKE callers within these crates, so these asserts
-        // _should_ be unreachable.
+        assert!(!self.squeezing, "{}", INPUT_AFTER_FINISH);
+        // A debug-only backstop for the other precondition: a queue is unaligned only inside
+        // `absorb_bits`, which pads and switches to squeezing before it returns.
         debug_assert!(self.bits_in_queue & 7 == 0, "attempt to absorb with odd length queue");
-        debug_assert!(!self.squeezing, "attempt to absorb while squeezing");
 
         let rate_bytes = self.rate >> 3;
         let mut in_queue = self.bits_in_queue >> 3;

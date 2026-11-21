@@ -22,6 +22,7 @@
 //! * [`AES_CMAC_128`], a MAC rather than a cipher
 //! * [`AES_CTR_128`]
 //! * [`AES_GCM_128`]
+//! * [`AES_GCM_SIV_128`], a key rather than a worker: the mode takes whole messages only
 //! * [`AES_GMAC_128`], a nonce-based MAC rather than a cipher
 //! * [`AES_KW_128`] and [`AES_KWP_128`], key wraps rather than ciphers
 //! * [`AES_OFB_128`]
@@ -194,6 +195,7 @@ mod cfb8;
 mod cmac;
 mod ctr;
 mod gcm;
+mod gcm_siv;
 mod gmac;
 pub mod hazmat;
 mod key;
@@ -287,6 +289,7 @@ pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use cmac::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256, GCM_NONCE_LEN};
+pub use gcm_siv::{AES_GCM_SIV_128, AES_GCM_SIV_256, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN};
 pub use gmac::{AES_GMAC_128, AES_GMAC_192, AES_GMAC_256};
 pub use key::{AES128Key, AES192Key, AES256Key};
 pub use kw::{AES_KW_128, AES_KW_192, AES_KW_256, AES_KWP_128, AES_KWP_192, AES_KWP_256};

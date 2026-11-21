@@ -32,6 +32,10 @@ name = "bench_ccm_mem_usage"
 path = "src/bench_ccm_mem_usage.rs"
 
 [[bin]]
+name = "bench_gcm_siv_mem_usage"
+path = "src/bench_gcm_siv_mem_usage.rs"
+
+[[bin]]
 name = "bench_eccdh_mem_usage"
 path = "src/bench_eccdh_mem_usage.rs"
 
@@ -58,6 +62,18 @@ path = "src/bench_hpke_mem_usage.rs"
 [[bin]]
 name = "bench_x25519_mem_usage"
 path = "src/bench_x25519_mem_usage.rs"
+
+[[bin]]
+name = "bench_x448_mem_usage"
+path = "src/bench_x448_mem_usage.rs"
+
+[[bin]]
+name = "bench_ed25519_mem_usage"
+path = "src/bench_ed25519_mem_usage.rs"
+
+[[bin]]
+name = "bench_ed448_mem_usage"
+path = "src/bench_ed448_mem_usage.rs"
 
 [[bin]]
 name = "bench_blake2_mem_usage"

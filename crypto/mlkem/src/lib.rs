@@ -174,24 +174,26 @@
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //!
 //! Peak stack usage of each operation, measured with `mem_usage_benches/bench_mlkem_mem_usage` under
-//! `valgrind --tool=massif --stacks=yes` on 2026-11-18 (release build, one call, unexpanded keys; the Decaps benches
-//! derive their key from a seed inside the run, so those rows include a key generation):
+//! `valgrind --tool=massif --stacks=yes` on 2026-11-21 (release build, one call; the Encaps and
+//! Decaps rows are the operation alone, on a key the caller already holds, the encoded inputs being statics):
 //!
 //! | Operation | ML-KEM-512 | ML-KEM-768 | ML-KEM-1024 |
 //! |-----------|------------|------------|-------------|
-//! | KeyGen    | 13,208 | 17,816 | 24,376 |
-//! | KeyGen, `keygen_out` | 9,496 | 13,592 | 18,712 |
-//! | Encaps    | 16,776 | 23,944 | 32,040 |
-//! | Decaps    | 18,376 | 24,888 | 31,912 |
-//! | Encaps, expanded key | 16,616 | 23,640 | 32,408 |
-//! | Decaps, expanded key | 22,952 | 32,744 | 50,648 |
+//! | KeyGen    | 12,696 | 16,664 | 22,584 |
+//! | KeyGen, `keygen_out` | 9,832 | 13,928 | 19,048 |
+//! | Encaps    | 16,920 | 23,896 | 31,960 |
+//! | Decaps    | 14,712 | 20,920 | 30,952 |
+//! | Encaps, expanded key | 16,856 | 23,896 | 32,808 |
+//! | Decaps, expanded key | 16,904 | 26,696 | 37,624 |
 //!
 //! [`MLKEMTrait::keygen_out`] writes into a private key the caller holds, so no copy of it is left
 //! behind by a move. The expanded-key rows include building the expanded key.
 //!
 //! Values are in bytes and include the harness's own frames. A do-nothing run of the same harness
 //! (`bench_do_nothing`) peaks at 7,680 bytes, reached in process start-up before `main` runs, so no
-//! row can read lower.
+//! row can read lower. A row can move by a kilobyte or more with what else the binary contains, since
+//! the compiler inlines differently: the Decaps rows read 1.7 to 5.2 kB lower in a binary that also
+//! generates keys.
 //!
 //! # 🚨 Security Considerations 🚨
 //!

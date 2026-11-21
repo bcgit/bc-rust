@@ -125,11 +125,11 @@
 //!
 //! | Entry point                     | Stack  |
 //! |---------------------------------|--------|
-//! | `keygen_from_seed`              | 1816 B |
-//! | `X25519PrivateKey::from_bytes`  | 1800 B |
-//! | `agree` on the private key      | 1848 B |
-//! | `encaps` on the public key      | 2840 B |
-//! | `decaps` on the private key     | 2152 B |
+//! | `keygen_from_seed`              | 1288 B |
+//! | `X25519PrivateKey::from_bytes`  | 1272 B |
+//! | `agree` on the private key      | 1320 B |
+//! | `encaps` on the public key      | 2824 B |
+//! | `decaps` on the private key     | 2536 B |
 //!
 //! Key generation, decoding a private key, and key agreement each run one Montgomery ladder plus
 //! the field inversion: the chain is the in-place scalar multiplication, the ladder and a field

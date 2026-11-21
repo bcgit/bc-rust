@@ -3,13 +3,14 @@
 //! entry point; a pairing it allows gives the same signature either way.
 
 use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     DeterministicPreHashSigningKey, PreHash, PreHashSigningKey, PreHashVerifyingKey,
     SignatureAlgorithm,
 };
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmInfo, AlgorithmOID, HashAlgParams, HashOneShot, SignatureSigner,
-    SignatureVerifier,
+    Algorithm, AlgorithmInfo, AlgorithmOID, CollisionResistantHash, HashAlgParams, HashOneShot,
+    SignatureSigner, SignatureVerifier,
 };
 use bouncycastle_mldsa_lowmemory::hazmat::AnyStrength;
 use bouncycastle_mldsa_lowmemory::{
@@ -63,7 +64,7 @@ where
     A: SignatureAlgorithm,
     PK: PreHashVerifyingKey<A, SIG_LEN>,
     SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash,
+    H: PreHash + CollisionResistantHash,
 {
     let ph = H::hash(MSG);
     // 32 bytes is one draw of rnd, so the two hedged signers below draw the same one.
@@ -117,7 +118,7 @@ where
     A: SignatureAlgorithm,
     PK: PreHashVerifyingKey<A, SIG_LEN>,
     SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash,
+    H: PreHash + CollisionResistantHash,
 {
     assert!(H::MAX_SECURITY_STRENGTH < A::MAX_SECURITY_STRENGTH, "the pairing is a weak one");
     let ph = H::hash(MSG);
@@ -154,7 +155,7 @@ where
     A: SignatureAlgorithm,
     PK: PreHashVerifyingKey<A, SIG_LEN>,
     SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash,
+    H: PreHash + CollisionResistantHash,
 {
     assert!(H::MAX_SECURITY_STRENGTH >= A::MAX_SECURITY_STRENGTH, "the pairing is a strong one");
     let (det, hedged) = every_entry_point::<A, PK, SK, H, SIG_LEN>(pk, sk);
@@ -252,4 +253,60 @@ fn the_signature_carries_the_wrapped_hash() {
         pk.verify_ph::<AnyStrength<SHA256>>(&ph, CTX, &sig),
         Err(SignatureError::LengthError(_))
     ));
+}
+
+/// RIPEMD-160 has neither the parameter set's strength nor `CollisionResistantHash`. Verifying
+/// needs the strength waiver alone; signing needs `hazmat::WithoutCollisionResistance` as well,
+/// inside `AnyStrength` or around it, and either way the signature is the one over RIPEMD-160:
+/// the same bytes, carrying its OID. That `AnyStrength<RIPEMD160>` does not sign is a
+/// `compile_fail` doctest on `HashMLDSASigner`.
+#[test]
+fn a_hash_without_collision_resistance_verifies_and_signs_only_when_named() {
+    use bouncycastle_core::hazmat::WithoutCollisionResistance;
+    use bouncycastle_ripemd::RIPEMD160;
+    type Inside = AnyStrength<WithoutCollisionResistance<RIPEMD160>>;
+    type Outside = WithoutCollisionResistance<AnyStrength<RIPEMD160>>;
+
+    let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
+    let (det, hedged) = every_entry_point::<MLDSA44, _, _, Inside, MLDSA44_SIG_LEN>(&pk, &sk);
+    let (det_outside, hedged_outside) =
+        every_entry_point::<MLDSA44, _, _, Outside, MLDSA44_SIG_LEN>(&pk, &sk);
+    assert_eq!(det_outside, det);
+    assert_eq!(hedged_outside, hedged);
+
+    // the known answer: ML-DSA over mu = H(tr || 0x01 || |ctx| || ctx || OID || PH_M, 64) with
+    // RIPEMD-160's OID (FIPS 204 Algorithm 4, line 23, and Algorithm 7, line 6)
+    let ctx = CTX.unwrap();
+    let ph = RIPEMD160::hash(MSG);
+    let mut tr_m_prime = pk.compute_tr().to_vec();
+    tr_m_prime.extend_from_slice(&[0x01, ctx.len() as u8]);
+    tr_m_prime.extend_from_slice(ctx);
+    tr_m_prime.extend_from_slice(RIPEMD160::OID_DER);
+    tr_m_prime.extend_from_slice(&ph);
+    let mu: [u8; 64] = SHAKE256::hash(&tr_m_prime).try_into().unwrap();
+    let by_mu: [u8; MLDSA44_SIG_LEN] = sk.sign_mu_deterministic(&mu).unwrap();
+    assert_eq!(det, by_mu);
+
+    // verifying asks for the strength waiver only
+    pk.verify_ph::<AnyStrength<RIPEMD160>>(&ph, CTX, &det).unwrap();
+    let mut verifier = pk.create_ph_verifier::<AnyStrength<RIPEMD160>>(CTX).unwrap();
+    assert_eq!(verifier.max_security_strength(), SecurityStrength::None);
+    verifier.do_update(MSG);
+    verifier.do_verify_final(&hedged).unwrap();
+
+    // and neither wrapper stands in for the other: the strength rule still refuses the bare
+    // hash, and the collision-resistance wrapper alone
+    assert_eq!(pk.verify_ph::<RIPEMD160>(&ph, CTX, &det), Err(SignatureError::PreHashTooWeak));
+    assert_eq!(
+        sk.sign_ph_deterministic::<WithoutCollisionResistance<RIPEMD160>>(&ph, CTX),
+        Err(SignatureError::PreHashTooWeak)
+    );
+
+    // over a hash that has the marker the wrapper changes nothing
+    let (det_bare, _) = every_entry_point::<MLDSA44, _, _, SHA512, MLDSA44_SIG_LEN>(&pk, &sk);
+    let (det_wrapped, _) =
+        every_entry_point::<MLDSA44, _, _, WithoutCollisionResistance<SHA512>, MLDSA44_SIG_LEN>(
+            &pk, &sk,
+        );
+    assert_eq!(det_wrapped, det_bare);
 }

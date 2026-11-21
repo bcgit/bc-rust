@@ -46,6 +46,34 @@
   `keygen` draws the key from the caller's RNG; checked against RFC 7748's vectors, RFC 9180 Appendix A.1.1, A.1.2, A.2.1, A.2.2, A.7.1 and A.7.2, and
   Wycheproof's X25519 set; the `x25519` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree, encaps
   and decaps.
+* X448 -- `bouncycastle-ed::x448`, the Diffie-Hellman function of RFC 7748 over Curve448, in the shape of X25519:
+  `X448PrivateKey` implements `AgreementKey` over `()` for the raw shared secret and over
+  `KdfParams<HkdfDescription<SHA512>, LEN>` for a derived key (`X448_HKDF_SHA512`), and with `X448PublicKey` the KEM
+  roles as DHKEM(X448, HKDF-SHA512) of RFC 9180 Section 4.1 (`DHKEM_X448_HKDF_SHA512`, `kem_id` 0x0021), which makes
+  the keys HPKE keys; `keygen`, `keygen_out` and the seed forms. It is classed at 192 bits, `SecurityStrength` having
+  no 224-bit level. The DHKEM refuses the private key 4 x order, a clamped scalar that is 0 mod the group order.
+  Checked against RFC 7748's X448 vectors, Wycheproof's X448 set and the `kem_id` 33 entries of RFC 9180's vector
+  file, at the KEM and through HPKE; the `x448` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree,
+  encaps and decaps; with criterion benches and a stack harness in `mem_usage_benches`.
+* Ed25519 and Ed25519ph -- `bouncycastle-ed::ed25519`, the EdDSA signatures of RFC 8032 Section 5.1 (FIPS 186-5
+  Section 7) on the signature roles: `Ed25519PrivateKey` and `Ed25519PublicKey` serve both algorithms, under the
+  markers `Ed25519` (one-shot roles only, no context) and `Ed25519ph` (streaming and one-shot, with a context).
+  Verification is cofactored, and a decoded public key is validated in full, so one outside the prime-order subgroup
+  is refused. `keygen` and `keygen_out` draw the key from the caller's RNG; checked against RFC 8032 Sections 7.1
+  and 7.3, Wycheproof's Ed25519 set and the vectors of "Taming the many EdDSAs"; the `ed25519` and `ed25519ph` CLI
+  subcommands cover keygen, pk-from-sk, check-consistency, sign and verify, `ed25519ph` streaming the message under
+  an optional `--ctxfile`; with criterion benches and a stack harness in `mem_usage_benches`. The markers `Ed25519`
+  and `Ed448` carry `id-Ed25519` and `id-Ed448` (RFC 8410); the pre-hash forms have no identifier. `core` gains
+  `SignatureError::ComputationFault`, for a computed point that fails its own check.
+* Ed448 and Ed448ph -- `bouncycastle-ed::ed448`, the EdDSA signatures of RFC 8032 Section 5.2 (FIPS 186-5 Section 7)
+  on the signature roles, in the shape of Ed25519's: `Ed448PrivateKey` and `Ed448PublicKey` serve both algorithms,
+  under the markers `Ed448` (one-shot roles only) and `Ed448ph` (streaming and one-shot). Both take a context of up
+  to 255 octets, which is where Ed448 differs from Ed25519. Verification is cofactored, a decoded public key is
+  validated in full, and the one private key whose public key would be the neutral element is refused. Classed at
+  192 bits, `SecurityStrength` having no 224-bit level. Checked against RFC 8032 Sections 7.4 and 7.5 and
+  Wycheproof's Ed448 set; the `ed448` and `ed448ph` CLI subcommands cover keygen, pk-from-sk, check-consistency,
+  sign and verify, each under an optional `--ctxfile`, `ed448ph` streaming the message; with criterion benches and
+  a stack harness in `mem_usage_benches`.
 * DHKEM over P-256, P-384 and P-521 -- RFC 9180 Section 4.1's DHKEM(P-256, HKDF-SHA256), DHKEM(P-384, HKDF-SHA384)
   and DHKEM(P-521, HKDF-SHA512) (`kem_id` 0x0010 to 0x0012) on the ECC CDH keys: `ECCDHPublicKey<C>` and
   `ECCDHPrivateKey<C>` over `P256`, `P384` and `P521` carry the KEM roles with `()` as the parameters, under the
@@ -62,10 +90,14 @@
 * scrypt -- RFC 7914, as `bouncycastle-scrypt`: `SCrypt` over working memory the caller supplies
   (`derive_with_memory_out`, `ScryptParams::work_len`), and on the `KDF` trait with the `std` feature, allocating up to
   a limit. The `scrypt` CLI command takes `--log2-n`, `-r`, `-p` and `--max-memory`.
-* HPKE -- RFC 9180 Sections 5 and 6 in all four modes, as `bouncycastle-hpke`, on the X25519, P-256, P-384 and
-  P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
+* HPKE -- RFC 9180 Sections 5 and 6 in all four modes, as `bouncycastle-hpke`, on the X25519, X448, P-256, P-384
+  and P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
   (Auth, AuthPSK) give contexts with `seal_out` / `open_out` and `export_out`; HKDF over SHA-256, SHA-384 or
   SHA-512 with AES-128-GCM, AES-256-GCM, ChaCha20Poly1305 or export-only. No CLI command yet.
+* AES-GCM-SIV -- the nonce misuse-resistant AEAD of RFC 8452, as `AES128Key<GCM_SIV>` and `AES256Key<GCM_SIV>`
+  (aliased `AES_GCM_SIV_128` and `AES_GCM_SIV_256`): whole-message in-place encryption and decryption with a
+  detached tag, a failed decryption leaving the buffer zeroized; the `aes128-gcm-siv` and `aes256-gcm-siv` CLI
+  commands, a `modes::gcm_siv` bench group and the `bench_gcm_siv_mem_usage` stack harness.
 * SP 800-108 -- key derivation using pseudorandom functions (NIST SP 800-108r1), as `bouncycastle-kbkdf`: the KDFs in
   Counter, Feedback and Double-Pipeline Mode over HMAC (SHA-2, SHA-3) or CMAC (AES), and the KDF Using KMAC, on the
   `KDF` trait; six parameterless instantiations in `KDFFactory`; the `kbkdf-counter`, `kbkdf-feedback`,
@@ -116,6 +148,10 @@
   halves no longer carry them. Callers import the new traits; behaviour is unchanged. The bodies over a streaming
   worker are public as `core::symmetric_key::encrypt_detached_inplace` / `decrypt_detached_inplace`, for an AEAD key
   outside `core` to implement the role with.
+* A block cipher key reports its algorithm: `Mode<P>` carries the mode's `ALG_NAME` over the permutation and
+  `BlockCipherKey<P, M>` implements `Algorithm` from it, so `AES128Key<GCM>` is `AES_GCM_128` and
+  `AES256Key<GCM_SIV>`, which has no worker to ask, is `AES_GCM_SIV_256`. `ALG_NAME` is a required item of the
+  hazmat trait `Mode<P>`, so a mode implemented outside the workspace must add one.
 * The signature one-shots over a whole message move to roles of their own, `OneShotSigningKey`,
   `DeterministicOneShotSigningKey` and `OneShotVerifyingKey`, which name no worker type, so a scheme that cannot take
   its message in pieces can implement them alone. Each is a supertrait of its streaming role (`SigningKey`,
@@ -274,5 +310,10 @@
 * `keygen_out` / `keygen_from_seed_out` on `MLDSATrait` and `MLKEMTrait` generate into keys made with `zeroized()` (ML-KEM into the private key alone, whose `pk()` is the public key), leaving no copy of the private key behind; an unfilled key does not sign, verify or decapsulate (`ActingOnZeroizedKey`).
 * ML-DSA and ML-KEM stack usage is lower (ML-DSA-87 KeyGen 133,320 to 99,128 bytes, expanded-key Verify 189,240 to 139,192; ML-KEM-1024 Encaps 41,816 to 32,040); both memory tables are re-measured.
 * `SampleNTT` and `RejBoundedPoly` squeeze whole SHAKE blocks (504 and 272 bytes); the ML-KEM memory tables are re-measured.
+* The ML-KEM stack harness measures encapsulation and decapsulation alone, on a key made beforehand; its Decaps rows had included a key generation. Both ML-KEM memory tables are re-measured (ML-KEM-1024 Decaps with an expanded key 50,648 to 37,624 bytes), and `mlkem`'s key generation has one assembly, which lowers its peak (ML-KEM-1024 KeyGen 24,376 to 22,248).
 * `bouncycastle-utils`: `ct_eq_bytes_mask` is renamed `ct_eq_bytes_condition`.
+* `core::hazmat::label_kdf_output` is the `KDF` trait's rule for typing derived keying material as one function; KBKDF, the Concat KDF, the X9.63 KDF and PBKDF2 call it where each had its own copy. No change in behaviour.
 * HashML-DSA can use a pre-hash weaker than the parameter set when the caller names it as `hazmat::AnyStrength<H>` (in `mldsa` and `mldsa-lowmemory`; `--allow-weak-hash` in the CLI), which lowers the signature's strength to the hash's; the default still refuses it. The ACVP pre-hash vectors, which pair every hash with every parameter set, now run. `HashAlgParams` gains `PRE_HASH_STRENGTH_RULE`, which a hash function leaves at its default.
+* `bouncycastle-sha3`: `finish_squeezer` on SHAKE, cSHAKE and KMACXOF ends the input where the sponge sits and lends out its squeezer, for a sponge that has absorbed a secret: `XOF::into_squeezer` moves the sponge, and a release build was seen to leave copies of it on the stack (Ed448's private key, KMAC's keyed state in the KMAC KDF, the state of ML-KEM's implicit-rejection hash). ML-DSA, ML-KEM, the KMAC KDF and Ed448 finish their secret hashes that way.
+* `bouncycastle-sha3` overwrites the stack frame of each Keccak-f permutation after it: the permutation spills lanes of the state there (14 of the 25 output lanes on x86-64), which a scan found on the dead stack after the KMAC KDF, ML-DSA and Ed448. The overwrite is sized for an optimised build (checked on x86-64 and aarch64), and an unoptimised build's larger frame is not covered. It costs 3 to 4% of SHA-3 time and 336 bytes of stack; the ML-DSA, ML-KEM, KBKDF, PBKDF2 and Ed448 memory tables are re-measured.
+* A signature is generated only over a hash that carries the new marker `core::traits::CollisionResistantHash`, required by ECDSA's signing roles and key-pair generation and by the pre-hash signing roles (HashML-DSA), and not by verification. The SHA-2, SHA-3, SHAKE, SM3, BLAKE2, BLAKE3 and Ascon-Hash256 hashes carry it; the RIPEMD functions do not, so `ECDSA<C, RIPEMD160>` now verifies and no longer signs, and `AnyStrength<RIPEMD160>` no longer signs. `core::hazmat::WithoutCollisionResistance<H>` opts back in: the same algorithm and the same signature bytes.

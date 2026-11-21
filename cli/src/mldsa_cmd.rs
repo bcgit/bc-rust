@@ -17,7 +17,9 @@ use bouncycastle::core::signature_key::{
     DeterministicPreHashSigningKey, DeterministicSigningKey, PreHash, PreHashSigningKey,
     PreHashVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
-use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier};
+use bouncycastle::core::traits::{
+    CollisionResistantHash, PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier,
+};
 use bouncycastle::mldsa::hazmat::AnyStrength;
 use bouncycastle::mldsa::{
     MLDSA_MU_LEN, MLDSA_SEED_LEN, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN,
@@ -408,7 +410,7 @@ fn sign_ph<A, SK, H, const SIG_LEN: usize>(
 ) where
     A: SignatureAlgorithm,
     SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash,
+    H: PreHash + CollisionResistantHash,
 {
     if deterministic {
         let s = sk.create_ph_signer_deterministic::<H>(ctx);

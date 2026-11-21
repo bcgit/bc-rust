@@ -636,6 +636,26 @@ pub trait HashOneShot: Hash + Default {
     }
 }
 
+/// A hash function whose collision resistance stands: no practical way is known of finding two
+/// inputs with the same digest.
+///
+/// A signature is made over a digest of the message, so whoever can find two messages with one
+/// digest can have one of them signed and present the signature with the other. The signing roles
+/// of the schemes that take their hash from the caller (ECDSA, HashML-DSA) therefore require this
+/// marker of the hash, and a hash without it cannot be used to produce a signature. The verifying
+/// roles do not require it, so a signature made over such a hash can still be checked; neither do
+/// MACs or KDFs, which do not rest on collision resistance.
+///
+/// Implemented by each hash in the library that has a fixed digest length, takes no key or
+/// parameter, and reports a security strength ([`Algorithm::MAX_SECURITY_STRENGTH`] other than
+/// `SecurityStrength::None`); not by a type whose function or output length is chosen at run
+/// time. A caller who must sign with a hash that lacks the marker names it as
+/// [`hazmat::WithoutCollisionResistance<H>`](crate::hazmat::WithoutCollisionResistance).
+///
+/// The marker governs the roles that take the hash as a type. An interface that takes a value
+/// the caller hashed elsewhere (ML-DSA's external mu) is outside its reach.
+pub trait CollisionResistantHash: Hash {}
+
 /// Standard parameters for a hash function.
 pub trait HashAlgParams: Algorithm {
     /// The fixed output length of the hash function.
@@ -674,7 +694,8 @@ pub const KDF_ONE_SHOT_MAX_LEN: usize = 1024;
 /// passed twice in `ikms` counts twice, which is the caller's to avoid. `fixed_info` is context
 /// and credits nothing. A [`KeyType::Zeroized`] or [`KeyType::Unknown`] input is derived from
 /// and yields `Unknown` output rather than an error, since a KDF cannot tell such bytes from
-/// random ones.
+/// random ones. [`crate::hazmat::label_kdf_output`] is the rule as code, for an implementation
+/// to call.
 ///
 /// An instance holds only what it was made from (an HKDF's salt): one that has also absorbed
 /// input through a streaming API is refused by the derivations. A zero-length derivation is

@@ -13,8 +13,11 @@ mod ctr_cmd;
 mod ecb_cmd;
 mod eccdh_cmd;
 mod ecdsa_cmd;
+mod ed25519_cmd;
+mod ed448_cmd;
 mod encoders_cmd;
 mod gcm_cmd;
+mod gcm_siv_cmd;
 mod helpers;
 mod hkdf_cmd;
 mod kbkdf_cmd;
@@ -46,11 +49,14 @@ mod tdes_ecb_cmd;
 mod tdes_ofb_cmd;
 mod tdes_tkw_cmd;
 mod x25519_cmd;
+mod x448_cmd;
 mod xts_cmd;
 
 use crate::blake2_cmd::BLAKE2Variant;
 use crate::eccdh_cmd::ECCDHAction;
 use crate::ecdsa_cmd::ECDSAAction;
+use crate::ed448_cmd::{Ed448Action, Ed448Variant};
+use crate::ed25519_cmd::{Ed25519Action, Ed25519Variant};
 use crate::hkdf_cmd::HKDFVariant;
 use crate::kbkdf_cmd::{
     CounterPositionArg, IterationCounterPositionArg, KbkdfKmac, KbkdfPrf, KdfInputs,
@@ -63,6 +69,7 @@ use crate::sha2_cmd::SHA2Variant;
 use crate::sha3_cmd::{SHA3Variant, Strength};
 use crate::sm2_cmd::SM2Action;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::{AES_GCM_SIV_128, AES_GCM_SIV_256};
 use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
 use bouncycastle::camellia::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal,
@@ -550,6 +557,71 @@ enum Subcommands {
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in GCM-SIV mode (RFC 8452): nonce misuse-resistant authenticated encryption of
+    /// stdin to stdout.
+    ///
+    /// The framing is `aes128-gcm`'s. On `encrypt`, a fresh 12-byte nonce is generated and written
+    /// as the FIRST 12 BYTES of the output, the ciphertext follows, and the 16-byte tag is written
+    /// last; `decrypt` reads the nonce back from the first 12 bytes of input.
+    ///
+    /// With `--nonce` (hex) or `--nonce-file` (raw bytes; hex with --hex-input), the nonce is
+    /// supplied instead: `encrypt` uses it and writes ONLY `ciphertext || tag`, and `decrypt`
+    /// reads ONLY that from stdin. A repeated nonce under one key reveals only whether two
+    /// messages with the same AAD were equal, but RFC 8452 Section 9 still recommends random
+    /// nonces and against a fixed one; the default takes care of that.
+    ///
+    /// `--aad` (hex) or `--aad-file` (raw bytes; hex with --hex-input) supply the additional
+    /// authenticated data, which is covered by the tag but not encrypted; if neither is given,
+    /// AAD is empty.
+    ///
+    /// LIKE `aes128-ccm`, THIS COMMAND DOES NOT STREAM: it reads all of stdin before doing any
+    /// work, so memory use is proportional to the input. That is inherent to the mode: the tag is
+    /// computed over the whole plaintext and is needed to produce the first ciphertext byte. On
+    /// `decrypt` NO plaintext is written until the tag has verified, so a non-zero exit leaves
+    /// nothing to discard. For large inputs use `aes128-gcm`, which streams.
+    ///
+    /// Input may be any length. There is no AES-192 form: RFC 8452 defines none.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_GCM_SIV {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long, visible_alias = "iv")]
+        nonce: Option<String>,
+
+        /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input).
+        /// If both nonce and nonce_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "iv-file")]
+        nonce_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
         #[arg(long)]
@@ -1551,6 +1623,49 @@ enum Subcommands {
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in GCM-SIV mode (RFC 8452), nonce misuse-resistant authenticated encryption of
+    /// stdin to stdout.
+    ///
+    /// See `aes128-gcm-siv` for the nonce/tag framing, the AAD flags, the non-streaming note and
+    /// the warnings; only the key length differs.
+    AES256_GCM_SIV {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long, visible_alias = "iv")]
+        nonce: Option<String>,
+
+        /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input).
+        /// If both nonce and nonce_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "iv-file")]
+        nonce_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
         #[arg(long)]
@@ -7153,6 +7268,59 @@ enum Subcommands {
         x: bool,
     },
 
+    /// The Ed25519 signature algorithm (RFC 8032 Section 5.1). Signatures are deterministic, and
+    /// there is no context. The whole message is read from stdin and held before it is signed or
+    /// verified: Ed25519 hashes it twice, so it cannot be streamed. See ed25519ph for a message
+    /// too large to hold.
+    Ed25519 {
+        action: Ed25519Action,
+
+        #[arg(long)]
+        /// The private key file (32 bytes; raw bytes; hex with --hex-input) for pk-from-sk, check-consistency and sign; stdin if absent, except for sign
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input) for check-consistency and verify
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (raw bytes; hex with --hex-input) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The Ed25519ph signature algorithm (RFC 8032 Section 5.1), which signs the SHA-512 digest
+    /// of the message, streamed from stdin, under an optional context. It uses the keys of
+    /// ed25519, whose keygen, pk-from-sk and check-consistency are the same; the signatures of
+    /// the two do not verify as each other's. RFC 8032 Section 8.5 advises against the prehashed
+    /// variants: use ed25519 where the message can be held.
+    Ed25519ph {
+        action: Ed25519Action,
+
+        #[arg(long)]
+        /// The file containing the context string (at most 255 bytes; raw bytes; hex with --hex-input) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (32 bytes; raw bytes; hex with --hex-input) for pk-from-sk, check-consistency and sign; stdin if absent, except for sign
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input) for check-consistency and verify
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (raw bytes; hex with --hex-input) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The X25519 key agreement algorithm (RFC 7748), and the DHKEM(X25519, HKDF-SHA256) key
     /// encapsulation built on it (RFC 9180).
     X25519 {
@@ -7169,6 +7337,85 @@ enum Subcommands {
         #[arg(long)]
         /// The ciphertext file (binary, or hex under --hex-input): written by encaps, read by decaps.
         ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The X448 key agreement algorithm (RFC 7748), and the DHKEM(X448, HKDF-SHA512) key
+    /// encapsulation built on it (RFC 9180).
+    X448 {
+        action: x448_cmd::X448Action,
+
+        #[arg(long)]
+        /// The private key file (binary, or hex under --hex-input) for pk-from-sk, check-consistency, agree and decaps; stdin if absent where allowed
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (binary, or hex under --hex-input) for check-consistency, agree and encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext file (binary, or hex under --hex-input): written by encaps, read by decaps.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The Ed448 signature algorithm (RFC 8032 Section 5.2), under an optional context.
+    /// Signatures are deterministic. The whole message is read from stdin and held before it is
+    /// signed or verified: Ed448 hashes it twice, so it cannot be streamed. See ed448ph for a
+    /// message too large to hold.
+    Ed448 {
+        action: Ed448Action,
+
+        #[arg(long)]
+        /// The file containing the context string (at most 255 bytes; raw bytes; hex with --hex-input) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (57 bytes; raw bytes; hex with --hex-input) for pk-from-sk, check-consistency and sign; stdin if absent, except for sign
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input) for check-consistency and verify
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (raw bytes; hex with --hex-input) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The Ed448ph signature algorithm (RFC 8032 Section 5.2), which signs the first 64 bytes of
+    /// SHAKE256 of the message, streamed from stdin, under an optional context. It uses the keys
+    /// of ed448, whose keygen, pk-from-sk and check-consistency are the same; the signatures of
+    /// the two do not verify as each other's. RFC 8032 Section 8.5 advises against the prehashed
+    /// variants: use ed448 where the message can be held.
+    Ed448ph {
+        action: Ed448Action,
+
+        #[arg(long)]
+        /// The file containing the context string (at most 255 bytes; raw bytes; hex with --hex-input) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (57 bytes; raw bytes; hex with --hex-input) for pk-from-sk, check-consistency and sign; stdin if absent, except for sign
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input) for check-consistency and verify
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (raw bytes; hex with --hex-input) for verifying
+        sigfile: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -7246,6 +7493,20 @@ fn run() {
         }) => {
             gcm_cmd::gcm_cmd::<AES128Internal, 16>(
                 direction, key, key_file, iv, iv_file, aad, aad_file, *x, "AES-128",
+            );
+        }
+        Some(Subcommands::AES128_GCM_SIV {
+            direction,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            gcm_siv_cmd::gcm_siv_cmd::<AES_GCM_SIV_128, 16>(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *x, "AES-128",
             );
         }
         Some(Subcommands::AES192_CBC { direction, key, key_file, iv, iv_file, x }) => {
@@ -7360,6 +7621,20 @@ fn run() {
         }) => {
             gcm_cmd::gcm_cmd::<AES256Internal, 32>(
                 direction, key, key_file, iv, iv_file, aad, aad_file, *x, "AES-256",
+            );
+        }
+        Some(Subcommands::AES256_GCM_SIV {
+            direction,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            gcm_siv_cmd::gcm_siv_cmd::<AES_GCM_SIV_256, 32>(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *x, "AES-256",
             );
         }
         Some(Subcommands::AsconAEAD128 {
@@ -8840,8 +9115,26 @@ fn run() {
         Some(Subcommands::HMAC_SHA3_512 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA3_512, key, key_file, verify, *x)
         }
+        Some(Subcommands::Ed25519 { action, skfile, pkfile, sigfile, x }) => {
+            ed25519_cmd::ed25519_cmd(&Ed25519Variant::Pure, action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::Ed25519ph { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            let variant = Ed25519Variant::Prehash { ctxfile };
+            ed25519_cmd::ed25519_cmd(&variant, action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::Ed448 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            let variant = Ed448Variant::Pure;
+            ed448_cmd::ed448_cmd(&variant, action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::Ed448ph { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            let variant = Ed448Variant::Prehash;
+            ed448_cmd::ed448_cmd(&variant, action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
         Some(Subcommands::X25519 { action, skfile, pkfile, ctfile, x }) => {
             x25519_cmd::x25519_cmd(action, skfile, pkfile, ctfile, *x);
+        }
+        Some(Subcommands::X448 { action, skfile, pkfile, ctfile, x }) => {
+            x448_cmd::x448_cmd(action, skfile, pkfile, ctfile, *x);
         }
         None => {
             eprintln!("No command provided. See -h")

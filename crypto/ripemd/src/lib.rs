@@ -87,6 +87,11 @@
 //!   both below the smallest strength this library models, and the designers guarantee the 256-
 //!   and 320-bit extensions only the security level of the function each extends. All four
 //!   therefore report [`Algorithm::MAX_SECURITY_STRENGTH`] as [`SecurityStrength::None`].
+//! * **None of them signs without the hazmat wrapper.** They do not carry
+//!   [`CollisionResistantHash`](bouncycastle_core::traits::CollisionResistantHash), which the
+//!   library's signing roles require, so ECDSA over RIPEMD-160 verifies and does not sign. A
+//!   caller who must make such a signature names the hash as
+//!   [`WithoutCollisionResistance<RIPEMD160>`](bouncycastle_core::hazmat::WithoutCollisionResistance).
 //! * All four are Merkle-Damgard constructions and so are subject to length extension:
 //!   `H(k || m)` is not a secure MAC. Use HMAC ([`ripemd::hmac`](crate::hmac)) for keyed hashing.
 //! * The chaining variable and input buffer are held in [`bouncycastle_utils::secret::Secret`] and

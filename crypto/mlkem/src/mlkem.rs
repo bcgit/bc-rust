@@ -137,12 +137,12 @@ use crate::params::{
 };
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::errors::RNGError;
-use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorithm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, XOF, XOFSqueezer,
+    Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, XOFSqueezer,
 };
 use bouncycastle_mlkem_common::aux_functions::sample_poly_CBD;
 use bouncycastle_mlkem_common::polynomial::Polynomial;
@@ -230,28 +230,10 @@ impl<P: MLKEMParams> MLKEM<P> {
     pub(crate) fn keygen_internal(
         seed: &KeyMaterial<64>,
     ) -> Result<(MLKEMPublicKey<P>, MLKEMPrivateKey<P>), KEMError> {
-        Self::check_seed(seed)?;
-        let (d, z_bytes) = seed.ref_to_bytes().split_at(32);
-        let d: &[u8; 32] = d.try_into().expect("the seed is 64 bytes");
-
-        // 1: (ekPKE, dkPKE) ← K-PKE.KeyGen(𝑑)
-        let mut pk = MLKEMPublicKey::<P>::zeroized();
-        let mut s_hat = Secret::<P::VecK>::new();
-        Self::pke_keygen_out(d, &mut pk, &mut s_hat);
-
-        // 2: ek ← ekPKE ▷ KEM encaps key is just the PKE encryption key
-        // 3: dk ← (dkPKE‖ek‖H(ek)‖𝑧) ▷ KEM decaps key includes PKE decryption key
-        // 4: return (ek, dk)
-        let pk_hash = pk.compute_hash();
-
-        let mut z = Secret::<[u8; 32]>::new();
-        z.copy_from_slice(z_bytes);
-
-        let mut seed_d = Secret::<[u8; 32]>::new();
-        seed_d.copy_from_slice(d);
-        // The keys are assembled in the value returned, which the compiler builds in the
-        // caller's slot; filling a pair made beforehand costs the caller a second private key.
-        Ok((pk.clone(), MLKEMPrivateKey { s_hat, ek: pk, pk_hash, z, seed_d: Some(seed_d) }))
+        // One assembly, shared with `keygen_internal_out`.
+        let mut sk = MLKEMPrivateKey::<P>::zeroized();
+        Self::keygen_internal_out(seed, &mut sk)?;
+        Ok((sk.ek.clone(), sk))
     }
 
     /// The seed checks of [`keygen_internal`](Self::keygen_internal).
@@ -599,7 +581,7 @@ impl<P: MLKEMParams> MLKEM<P> {
             j.do_update(dk.z().as_ref());
             j.do_update(c);
             let mut buf = Secret::<[u8; MLKEM_SS_LEN]>::new();
-            let mut j = j.into_squeezer();
+            let mut j = j.finish_squeezer(&finish_token());
             let bytes_written = j.do_output_out(&mut *buf);
             debug_assert_eq!(bytes_written, MLKEM_SS_LEN);
 

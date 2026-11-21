@@ -224,6 +224,7 @@ where
 {
     type KeyState = GcmKeyState<P>;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::GCM_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         GcmKeyState::new(perm)
@@ -822,15 +823,15 @@ where
     }
 }
 
-mod ghash {
+pub(super) mod ghash {
     //! GHASH: the universal hash function GCM builds its authentication on (NIST SP 800-38D Sec 6.3,
     //! 6.4), and the GF(2^128) multiplication it is defined over.
     //!
     //! This is the only new cryptographic code GCM needs; everything else in this file is
     //! plumbing around this and [`crate::modes::Ctr`].
     //!
-    //! It is a private submodule of GCM, not a top-level Hash function, because it is only used by
-    //! the GCM block cipher mode, and not as a standalone hash function.
+    //! It is a submodule of GCM, not a top-level Hash function, because it is not used as a
+    //! standalone hash function: GCM uses it, and POLYVAL (`modes::polyval`) borrows [`mul`].
     //!
     //! # Field element representation
     //!
@@ -849,7 +850,7 @@ mod ghash {
     use bouncycastle_utils::secret::Secret;
 
     /// A block of `GF(2^128)`, in the two-`u64` form described in the module docs.
-    type Block = [u64; 2];
+    pub(crate) type Block = [u64; 2];
 
     /// `R = 11100001 || 0^120` (Sec 6.3): first byte `0xE1`, the rest zero. Used only by
     /// [`mul_reference`]: [`mul`] folds the same constant into its own reduction step directly, as

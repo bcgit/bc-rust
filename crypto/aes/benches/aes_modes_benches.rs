@@ -21,11 +21,18 @@
 //! GF(2^128) multiply, one per block. The AAD-only measurement is GMAC (Sec 5.2), which is that
 //! multiply with no cipher calls at all beyond the two for `H` and `J0`.
 //!
+//! The `modes::gcm_siv` groups are AES-GCM-SIV (RFC 8452) at 64 bytes and at 16 KiB. Every message
+//! derives its own keys, four block encryptions (AES-128) or six (AES-256) and a key expansion
+//! (Section 4), which the 64-byte figures show against GCM's on the same message; at 16 KiB the
+//! comparison is `modes::gcm`'s.
+//!
 //! The cipher works in place, so each measurement runs on a fresh copy of the data made in
 //! criterion's untimed setup (`iter_batched`); the copy is not part of the timing.
 
 use bouncycastle_aes::hazmat::AES128Internal;
-use bouncycastle_aes::{AES128Key, AES256Key};
+use bouncycastle_aes::{
+    AES_GCM_SIV_128, AES_GCM_SIV_256, AES128Key, AES256Key, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN,
+};
 use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_cipher::modes::{
     Blocks, CBC, CCM, CCM_Packet, CFB, CFB8, CMAC, CTR, Cfb, Cfb8, Ctr, GCM, GCM_NONCE_LEN, GMAC,
@@ -35,9 +42,9 @@ use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::{AeadInPlaceEncryptMode, EcbEncryptionKey, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
-    AeadEncryptionKey, BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey,
-    KeyWrappingKey, MacGenerationKey, NonceMacGenerationKey, SymmetricDecryptionKey,
-    SymmetricEncryptionKey,
+    AeadEncryptionKey, AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, BlockDecryptionKey,
+    BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey, MacGenerationKey,
+    NonceMacGenerationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, MACGenerator, StreamCipherDecryptor,
@@ -566,6 +573,74 @@ fn bench_gcm_aes256(c: &mut Criterion) {
     group.finish();
 }
 
+/// One in-place encryption of `LEN` bytes under a supplied nonce, and for GCM-SIV the decryption
+/// of the result, as `"<what> encrypt <size>"` and `"<what> decrypt <size>"`.
+fn bench_in_place<K, const KEY_LEN: usize, const LEN: usize>(
+    group: &mut criterion::BenchmarkGroup<criterion::measurement::WallTime>,
+    key: &K,
+    what: &str,
+    size: &str,
+    decrypt: bool,
+) where
+    K: AeadInPlaceEncryptionKey<KEY_LEN, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN>
+        + AeadInPlaceDecryptionKey<KEY_LEN, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN>,
+{
+    let nonce = [0x24u8; GCM_SIV_NONCE_LEN];
+    let no_aad: [u8; 0] = [];
+    let plaintext = [0xA5u8; LEN];
+    group.throughput(Throughput::Bytes(LEN as u64));
+
+    group.bench_function(format!("{what} encrypt {size}"), |b| {
+        b.iter_batched_ref(
+            || plaintext,
+            |buf| {
+                black_box(
+                    black_box(key).encrypt_detached_inplace_nonce(&nonce, &no_aad, buf).unwrap(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    if decrypt {
+        let mut ciphertext = plaintext;
+        let tag = key.encrypt_detached_inplace_nonce(&nonce, &no_aad, &mut ciphertext).unwrap();
+        group.bench_function(format!("{what} decrypt {size}"), |b| {
+            b.iter_batched_ref(
+                || ciphertext,
+                |buf| {
+                    black_box(key)
+                        .decrypt_detached_inplace(&nonce, &no_aad, buf, black_box(&tag))
+                        .unwrap()
+                },
+                BatchSize::LargeInput,
+            )
+        });
+    }
+}
+
+/// AES-GCM-SIV in place at 64 bytes, where the per-message key derivation and key expansion are
+/// half the work or more, and at 16 KiB, where they are not; see the module docs. The GCM arm is
+/// the same 64 bytes through GCM's in-place one-shot, for the ratio; GCM at 16 KiB is
+/// `modes::gcm`'s figure.
+fn bench_gcm_siv(c: &mut Criterion) {
+    let mut group = c.benchmark_group("modes::gcm_siv::AES_128");
+    let siv = AES_GCM_SIV_128::from_key_material(&key::<16>()).unwrap();
+    let gcm = Aes128GcmKey::from_key_material(&key::<16>()).unwrap();
+    bench_in_place::<_, 16, 64>(&mut group, &siv, "GCM-SIV", "64B", true);
+    bench_in_place::<_, 16, 64>(&mut group, &gcm, "GCM", "64B", false);
+    bench_in_place::<_, 16, DATA_LEN>(&mut group, &siv, "GCM-SIV", "16KiB", true);
+    group.finish();
+
+    let mut group = c.benchmark_group("modes::gcm_siv::AES_256");
+    let siv = AES_GCM_SIV_256::from_key_material(&key::<32>()).unwrap();
+    let gcm = Aes256GcmKey::from_key_material(&key::<32>()).unwrap();
+    bench_in_place::<_, 32, 64>(&mut group, &siv, "GCM-SIV", "64B", true);
+    bench_in_place::<_, 32, 64>(&mut group, &gcm, "GCM", "64B", false);
+    bench_in_place::<_, 32, DATA_LEN>(&mut group, &siv, "GCM-SIV", "16KiB", true);
+    group.finish();
+}
+
 /// CMAC is serial like CBC encryption (SP 800-38B Sec 6.2 step 6 chains every block), so it
 /// should come out close to `modes::cbc::AES_128` encryption. Building the key once skips the
 /// per-tag key expansion and subkey derivation, one block encryption, which is invisible at 16
@@ -690,6 +765,7 @@ fn bench_kw_aes128(c: &mut Criterion) {
 criterion_group!(
     benches, bench_aes128cbc, bench_cfb_aes128, bench_cfb8_aes128, bench_ctr_aes128,
     bench_ofb_aes128, bench_ecb_aes128, bench_ccm_aes128, bench_ccm_one_shot_pair,
-    bench_gcm_aes128, bench_gcm_aes256, bench_init, bench_cmac, bench_gmac, bench_kw_aes128
+    bench_gcm_aes128, bench_gcm_aes256, bench_gcm_siv, bench_init, bench_cmac, bench_gmac,
+    bench_kw_aes128
 );
 criterion_main!(benches);

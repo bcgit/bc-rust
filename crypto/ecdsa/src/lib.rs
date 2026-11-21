@@ -171,9 +171,9 @@
 //!
 //! Seven curves, P-256, P-384, P-521, secp256k1, brainpoolP256r1, brainpoolP384r1 and
 //! brainpoolP512r1, under any hash that implements [`EcdsaHash`](ecdsa::EcdsaHash):
-//! the SHA-2 family, SHA-3 and SM3; the SHAKE pairings of FIPS 186-5 (an XOF in place of the
-//! hash) are not implemented. The conventional pairing of each curve has an alias and is what the
-//! CLI offers. Tested against the CAVP SigGen and SigVer sets for P-256, P-384 and P-521 under
+//! the SHA-2 family, SHA-3 and SM3, and RIPEMD-160 for verification only; the SHAKE pairings of
+//! FIPS 186-5 (an XOF in place of the hash) are not implemented. The conventional pairing of
+//! each curve has an alias and is what the CLI offers. Tested against the CAVP SigGen and SigVer sets for P-256, P-384 and P-521 under
 //! SHA-224, SHA-256, SHA-384 and SHA-512, RFC 6979's Appendix A.2.5 to A.2.7 under the same
 //! hashes, and the Wycheproof files for every curve and hash here, SHA-3 included. SM2 is a
 //! different signature algorithm rather than another ECDSA curve, and lives in
@@ -244,6 +244,10 @@
 //!   accepts any pairing and reports the lesser of the two strengths, so that a signature made
 //!   with a weaker hash can be verified and so that the choice is visible, not refused. Signing
 //!   below the curve's strength (P-384 with SHA-256, say) is outside FIPS 186-5.
+//! - **A hash whose collision resistance is broken verifies and does not sign.** Signing and
+//!   key-pair generation require
+//!   [`CollisionResistantHash`](bouncycastle_core::traits::CollisionResistantHash), which
+//!   RIPEMD-160 lacks; see [`ECDSA`](ecdsa::ECDSA) for the hazmat wrapper that opts back in.
 //! - **`ctx` is accepted but ignored.** ECDSA (FIPS 186-5, SEC 1) has no context-string input;
 //!   the key traits' `ctx` parameter is accepted for trait conformance and silently discarded. A
 //!   caller relying on `ctx` to bind a signature to an application context gets no such binding

@@ -442,7 +442,11 @@ Six workflows under `.github/workflows/`, all triggered by pull requests:
 - `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then
   `cargo test -p bouncycastle-scrypt --no-default-features`, since `--all-features` never
   builds a crate with a default feature off.
-- `rust-test.yml`: `cargo test --all` on stable.
+- `rust-test.yml`: `cargo test --all` on stable, with `bcgit/bc-test-data` and `C2SP/wycheproof`
+  checked out beside the repository. Wycheproof is pinned to a commit (`ref:` in the workflow), so
+  that a change upstream does not fail an unrelated PR: a vector suite that is strict about the
+  flags and result classes it knows needs the clone it was written against. Keep the local
+  `../wycheproof` at the same commit, and move the pin on purpose.
 - `rust-style.yml`: `cargo fmt --all --check` on **nightly** rustfmt, so format before every commit.
 - `rust-docs.yml`: `cargo doc --all` on stable.
 - `aes-ct-asm.yml`: `dev_scripts/check_aes_ct_asm.sh` on **nightly** with `rust-src`: builds
@@ -455,3 +459,13 @@ Six workflows under `.github/workflows/`, all triggered by pull requests:
 
 `cargo test --all` is the workspace run, so a failing test does block a PR; what CI does not run is
 `cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.
+
+The gitea origin has its own copies of the five pull-request checks under `.gitea/workflows/`
+(there is no Pages job). They differ from the GitHub ones in two ways: the toolchain is installed
+with `rustup` in a shell step, and the test job takes its vectors from the runner's read-only
+`/bc-test-data` and `/wycheproof` mounts, failing if either is missing. Wycheproof's are read out
+of the mounted clone at the pinned commit (`git archive`), wherever the clone's `HEAD` is, so the
+runner's clone needs a fetch only when the pin moves past what it holds. The pin is therefore
+written twice, as `ref:` in `.github/workflows/rust-test.yml` and as `WYCHEPROOF_COMMIT` in
+`.gitea/workflows/rust-test.yml`: change both together. A change to one platform's workflow
+usually wants the same change in the other's.
