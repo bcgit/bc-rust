@@ -1,0 +1,18 @@
+# The EME-OAEP decoding, out of line, for `../check_oaep_ct.sh` to read the assembly of and to
+# run under memcheck. Its own workspace, so the root `cargo build --workspace` never builds it.
+[package]
+name = "oaep_ct_harness"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bouncycastle-utils = { path = "../../crypto/utils" }
+# eme_oaep.rs names two traits of bouncycastle-core, which is not yet no_std; the stub supplies
+# them under that name so the file builds for the bare-metal targets.
+bouncycastle-core = { package = "oaep_ct_stub_core", path = "stub_core" }
+
+[profile.release]
+debug = 1
+
+[workspace]

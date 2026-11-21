@@ -102,6 +102,18 @@
 * `bouncycastle-dhkem` -- the generic DHKEM leaves `bouncycastle-hpke` for a crate of its own
   (`bouncycastle_hpke::dhkem::*` is now `bouncycastle_dhkem::*`), and gains `AuthEncap` and `AuthDecap`. Its
   `_out` functions return the number of bytes written.
+* SHA-1 -- `bouncycastle-sha1`, FIPS 180-4's SHA-1 on the `Hash` traits, for interoperation with what already
+  uses it (an older peer's RSA-OAEP hash or MGF1, a fingerprint): not collision resistant, so it is credited with
+  no security strength (`SecurityStrength::None`) and is reached only by name; `HashFactory` "SHA1" and the
+  `sha1` CLI command. Checked against NIST's CAVP SHAVS vectors and RFC 3174's.
+  It does not carry `CollisionResistantHash`, so the RSA signature schemes verify over it and do not sign, short of
+  `hazmat::WithoutCollisionResistance<SHA1>`.
+* RSAES-OAEP -- RFC 8017 Section 7.1 key transport on the RSA key-establishment keys, under `OaepParams<H, M, LEN>`
+  (label hash, MGF1 hash, label): as a KEM that draws the key (KTS-OAEP-basic, SP 800-56B Rev. 2) and, through
+  the new `core::key_transport_key` roles, for a key the caller holds; the `rsa-oaep-<size>` CLI commands. The hashes
+  are RFC 8017's seven (SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, SHA-512/256), a sealed trait
+  `OaepHash`. `dev_scripts/check_oaep_ct.sh`, run on pull requests, puts the decoding under memcheck with the encoded
+  message undefined and reads its Cortex-M0 and RISC-V 32I assembly.
 
 ## Minor features / bug fixes
 
