@@ -9,7 +9,8 @@ use bouncycastle_core::signature_key::{
     SignatureAlgorithm, SigningKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{
-    AlgorithmInfo, PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier,
+    AlgorithmInfo, CollisionResistantHash, PrivateKey, PublicKey, RNG, SignatureSigner,
+    SignatureVerifier,
 };
 use bouncycastle_rng::FixedSeedRNG;
 
@@ -462,7 +463,7 @@ impl TestFrameworkSignature {
         A: SignatureAlgorithm,
         PK: PreHashVerifyingKey<A, SIG_LEN>,
         SK: PreHashSigningKey<A, SIG_LEN>,
-        H: PreHash,
+        H: PreHash + CollisionResistantHash,
         const SIG_LEN: usize,
     >(
         &self,
@@ -536,7 +537,7 @@ impl TestFrameworkSignature {
         A: SignatureAlgorithm,
         PK: PreHashVerifyingKey<A, SIG_LEN>,
         SK: DeterministicPreHashSigningKey<A, SIG_LEN>,
-        H: PreHash,
+        H: PreHash + CollisionResistantHash,
         const SIG_LEN: usize,
     >(
         &self,

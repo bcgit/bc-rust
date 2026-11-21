@@ -80,18 +80,18 @@
 //!
 //! | Algorithm                 | Peak stack memory usage (kB) | Throughput (ops/s)  |
 //! |---------------------------|-----------------------------|---------------------|
-//! | MLDSA44_lowmemory/KeyGen  | 11.7 (58.7)                 | 11,800     (11,300) |
-//! | MLDSA65_lowmemory/KeyGen  | 12.6 (88.3)                 | 5,500      (7,000)  |
-//! | MLDSA87_lowmemory/KeyGen  | 14.9 (133.3)                | 3,300      (4,200)  |
-//! | MLDSA44_lowmemory/Sign    | 19.7 (74.9)                 | 850        (4,000)  |
-//! | MLDSA65_lowmemory/Sign    | 23.0 (110.8)                | 580        (2,900)  |
-//! | MLDSA87_lowmemory/Sign    | 27.0 (163.4)                | 315        (2,000)  |
-//! | MLDSA44_lowmemory/Verify  | 16.3 (57.9)                 | 10,100     (14,000) |
-//! | MLDSA65_lowmemory/Verify  | 17.8 (94.1)                 | 6,300      (8,400)  |
-//! | MLDSA87_lowmemory/Verify  | 19.8 (140.1)                | 3,500      (5,000)  |
+//! | MLDSA44_lowmemory/KeyGen  | 12.0 (40.8)                 | 11,800     (11,300) |
+//! | MLDSA65_lowmemory/KeyGen  | 12.9 (63.8)                 | 5,500      (7,000)  |
+//! | MLDSA87_lowmemory/KeyGen  | 15.3 (99.5)                 | 3,300      (4,200)  |
+//! | MLDSA44_lowmemory/Sign    | 20.0 (76.2)                 | 850        (4,000)  |
+//! | MLDSA65_lowmemory/Sign    | 23.3 (112.7)                | 580        (2,900)  |
+//! | MLDSA87_lowmemory/Sign    | 27.3 (165.9)                | 315        (2,000)  |
+//! | MLDSA44_lowmemory/Verify  | 16.6 (58.6)                 | 10,100     (14,000) |
+//! | MLDSA65_lowmemory/Verify  | 18.2 (88.8)                 | 6,300      (8,400)  |
+//! | MLDSA87_lowmemory/Verify  | 20.1 (133.2)                | 3,500      (5,000)  |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mldsa] crate.
-//! The memory figures were measured on 2026-11-18 with `mem_usage_benches/src/bench_mldsa_mem_usage.rs`
+//! The memory figures were measured on 2026-11-21 with `mem_usage_benches/src/bench_mldsa_mem_usage.rs`
 //! under `valgrind --tool=massif --heap=no --stacks=yes`; the method is the one the
 //! `bouncycastle_mlkem_lowmemory` crate docs describe. The throughput figures come from this crate's
 //! criterion benches, run on a developer workstation when the crate was written and not re-measured

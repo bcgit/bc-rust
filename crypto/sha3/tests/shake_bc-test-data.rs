@@ -26,7 +26,8 @@
 //!    `Outputlen = minoutbytes + (rightmost 16 bits of Output as big-endian integer) mod
 //!    (maxoutbytes - minoutbytes + 1)` bytes; report `Output`/`Outputlen` per COUNT.
 
-use bouncycastle_core::traits::{XOF, XOFSqueezer};
+use bouncycastle_core::hazmat::finish_token;
+use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
@@ -100,7 +101,37 @@ fn shake_bits<X: XOF + Default>(msg: &[u8], len_bits: usize, out_bits: usize) ->
     out
 }
 
-fn run_shake_msg_file<X: XOF + Default>(orientation: &str, filename: &str) {
+/// [`shake_bits`] through `finish_squeezer`, which ends the input where the sponge sits.
+macro_rules! shake_bits_in_place {
+    ($name:ident, $xof:ty) => {
+        fn $name(msg: &[u8], len_bits: usize, out_bits: usize) -> Vec<u8> {
+            let mut x = <$xof>::default();
+            let (whole, partial) = (len_bits / 8, len_bits % 8);
+            x.do_update(&msg[..whole]);
+            let token = finish_token();
+            let mut out_stream = if partial != 0 {
+                x.finish_squeezer_partial_bits(&token, msg[whole].reverse_bits(), partial)
+                    .expect("partial is in 1..=7")
+            } else {
+                x.finish_squeezer(&token)
+            };
+            let (out_whole, out_partial) = (out_bits / 8, out_bits % 8);
+            let mut out = out_stream.do_output(out_whole + usize::from(out_partial != 0));
+            if out_partial != 0 {
+                let last = out.len() - 1;
+                out[last] &= (1u8 << out_partial) - 1;
+            }
+            out
+        }
+    };
+}
+shake_bits_in_place!(shake128_bits_in_place, SHAKE128);
+shake_bits_in_place!(shake256_bits_in_place, SHAKE256);
+
+/// The function under test: the message, its length in bits, the output length in bits.
+type ShakeBits = fn(&[u8], usize, usize) -> Vec<u8>;
+
+fn run_shake_msg_file(shake: ShakeBits, orientation: &str, filename: &str) {
     let Some(content) = bc_test_data(&format!("crypto/sha3/{orientation}"), filename) else {
         return;
     };
@@ -117,7 +148,7 @@ fn run_shake_msg_file<X: XOF + Default>(orientation: &str, filename: &str) {
         partial_cases += usize::from(c.len_bits % 8 != 0);
         assert_eq!(c.md.len() * 8, out_bits);
         assert_eq!(
-            shake_bits::<X>(&c.msg, c.len_bits, out_bits),
+            shake(&c.msg, c.len_bits, out_bits),
             c.md,
             "{orientation}/{filename}: Len = {}",
             c.len_bits
@@ -135,7 +166,7 @@ struct VarOutCase {
     output: Vec<u8>,
 }
 
-fn run_shake_variable_out_file<X: XOF + Default>(orientation: &str, filename: &str) {
+fn run_shake_variable_out_file(shake: ShakeBits, orientation: &str, filename: &str) {
     let Some(content) = bc_test_data(&format!("crypto/sha3/{orientation}"), filename) else {
         return;
     };
@@ -160,7 +191,7 @@ fn run_shake_variable_out_file<X: XOF + Default>(orientation: &str, filename: &s
         partial_cases += usize::from(c.out_bits % 8 != 0);
         assert_eq!(c.output.len(), c.out_bits.div_ceil(8));
         assert_eq!(
-            shake_bits::<X>(&c.msg, c.msg.len() * 8, c.out_bits),
+            shake(&c.msg, c.msg.len() * 8, c.out_bits),
             c.output,
             "{orientation}/{filename}: COUNT = {i}, Outputlen = {}",
             c.out_bits
@@ -230,21 +261,37 @@ fn run_shake_monte_file<X: XOF + Default>(orientation: &str, filename: &str) {
 }
 
 macro_rules! shake_cavp_tests {
-    ($mod:ident, $xof:ty, $prefix:literal) => {
+    ($mod:ident, $xof:ty, $in_place:ident, $prefix:literal) => {
         mod $mod {
             use super::*;
 
             #[test]
             fn bit_oriented_short_msg() {
-                run_shake_msg_file::<$xof>("bit-oriented", concat!($prefix, "ShortMsg.rsp"));
+                run_shake_msg_file(
+                    shake_bits::<$xof>,
+                    "bit-oriented",
+                    concat!($prefix, "ShortMsg.rsp"),
+                );
+                run_shake_msg_file($in_place, "bit-oriented", concat!($prefix, "ShortMsg.rsp"));
             }
             #[test]
             fn bit_oriented_long_msg() {
-                run_shake_msg_file::<$xof>("bit-oriented", concat!($prefix, "LongMsg.rsp"));
+                run_shake_msg_file(
+                    shake_bits::<$xof>,
+                    "bit-oriented",
+                    concat!($prefix, "LongMsg.rsp"),
+                );
+                run_shake_msg_file($in_place, "bit-oriented", concat!($prefix, "LongMsg.rsp"));
             }
             #[test]
             fn bit_oriented_variable_out() {
-                run_shake_variable_out_file::<$xof>(
+                run_shake_variable_out_file(
+                    shake_bits::<$xof>,
+                    "bit-oriented",
+                    concat!($prefix, "VariableOut.rsp"),
+                );
+                run_shake_variable_out_file(
+                    $in_place,
                     "bit-oriented",
                     concat!($prefix, "VariableOut.rsp"),
                 );
@@ -255,15 +302,31 @@ macro_rules! shake_cavp_tests {
             }
             #[test]
             fn byte_oriented_short_msg() {
-                run_shake_msg_file::<$xof>("byte-oriented", concat!($prefix, "ShortMsg.rsp"));
+                run_shake_msg_file(
+                    shake_bits::<$xof>,
+                    "byte-oriented",
+                    concat!($prefix, "ShortMsg.rsp"),
+                );
+                run_shake_msg_file($in_place, "byte-oriented", concat!($prefix, "ShortMsg.rsp"));
             }
             #[test]
             fn byte_oriented_long_msg() {
-                run_shake_msg_file::<$xof>("byte-oriented", concat!($prefix, "LongMsg.rsp"));
+                run_shake_msg_file(
+                    shake_bits::<$xof>,
+                    "byte-oriented",
+                    concat!($prefix, "LongMsg.rsp"),
+                );
+                run_shake_msg_file($in_place, "byte-oriented", concat!($prefix, "LongMsg.rsp"));
             }
             #[test]
             fn byte_oriented_variable_out() {
-                run_shake_variable_out_file::<$xof>(
+                run_shake_variable_out_file(
+                    shake_bits::<$xof>,
+                    "byte-oriented",
+                    concat!($prefix, "VariableOut.rsp"),
+                );
+                run_shake_variable_out_file(
+                    $in_place,
                     "byte-oriented",
                     concat!($prefix, "VariableOut.rsp"),
                 );
@@ -276,8 +339,8 @@ macro_rules! shake_cavp_tests {
     };
 }
 
-shake_cavp_tests!(shake128, SHAKE128, "SHAKE128");
-shake_cavp_tests!(shake256, SHAKE256, "SHAKE256");
+shake_cavp_tests!(shake128, SHAKE128, shake128_bits_in_place, "SHAKE128");
+shake_cavp_tests!(shake256, SHAKE256, shake256_bits_in_place, "SHAKE256");
 
 // ---------------------------------------------------------------------------------------------
 // NIST FIPS 202 example values (`crypto/SHAKETestVectors.txt`)

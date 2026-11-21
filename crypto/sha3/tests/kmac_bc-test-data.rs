@@ -4,6 +4,7 @@
 //! cloned alongside this repo at "../bc-test-data" (same convention as the sha2/sha3 crates), under
 //! `crypto/sp800-185/`. If it is not present the tests print a warning and pass vacuously.
 
+use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::MacGenerationKey;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
@@ -112,12 +113,22 @@ fn nist_sp800_185_kmac_sample_values() {
                 let k = KMAC128Key::<32>::with_params(&key, s).expect("a valid key");
                 let expected: [u8; 32] = v.output.as_slice().try_into().expect("32 bytes");
                 assert_eq!(k.mac(&v.msg), expected, "{ctx}");
+                // The same function as a final read of a KMACXOF finished where it sits.
+                let mut x = KMACXOF128::new(&key, s, false).expect("a valid key");
+                x.do_update(&v.msg);
+                let in_place = x.finish_squeezer(&finish_token()).do_output_final(want);
+                assert_eq!(in_place, v.output, "{ctx}: finish_squeezer");
                 TestFrameworkMAC::new().test_mac_key(&k, &v.msg, &expected);
             }
             (256, 64) => {
                 let k = KMAC256Key::<64>::with_params(&key, s).expect("a valid key");
                 let expected: [u8; 64] = v.output.as_slice().try_into().expect("64 bytes");
                 assert_eq!(k.mac(&v.msg), expected, "{ctx}");
+                // The same function as a final read of a KMACXOF finished where it sits.
+                let mut x = KMACXOF256::new(&key, s, false).expect("a valid key");
+                x.do_update(&v.msg);
+                let in_place = x.finish_squeezer(&finish_token()).do_output_final(want);
+                assert_eq!(in_place, v.output, "{ctx}: finish_squeezer");
                 TestFrameworkMAC::new().test_mac_key(&k, &v.msg, &expected);
             }
             other => panic!("{ctx}: unexpected (strength, length) {other:?}"),
@@ -142,11 +153,15 @@ fn nist_sp800_185_kmacxof_sample_values() {
             128 => {
                 let mut k = KMACXOF128::new(&key, v.s.as_bytes(), false).expect("a valid key");
                 k.do_update(&v.msg);
+                let in_place = k.clone().finish_squeezer(&finish_token()).do_output(want);
+                assert_eq!(in_place, v.output, "COUNT {i}: finish_squeezer");
                 k.into_squeezer().do_output(want)
             }
             256 => {
                 let mut k = KMACXOF256::new(&key, v.s.as_bytes(), false).expect("a valid key");
                 k.do_update(&v.msg);
+                let in_place = k.clone().finish_squeezer(&finish_token()).do_output(want);
+                assert_eq!(in_place, v.output, "COUNT {i}: finish_squeezer");
                 k.into_squeezer().do_output(want)
             }
             other => panic!("COUNT {i}: unexpected strength {other}"),

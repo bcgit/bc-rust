@@ -130,7 +130,7 @@ pub mod hmac;
 
 pub use self::sm3::{SM3, SUSPENDED_SM3_STATE_LEN};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, CollisionResistantHash, HashAlgParams};
 
 /*** Imports needed for docs ***/
 #[allow(unused_imports)]
@@ -155,3 +155,5 @@ impl AlgorithmOID for SM3 {
     const OID: &'static [u32] = &[1, 2, 156, 10197, 1, 401];
     const OID_DER: &'static [u8] = &[0x06, 0x08, 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x83, 0x11];
 }
+
+impl CollisionResistantHash for SM3 {}

@@ -199,7 +199,7 @@ pub fn result_is_pass(fields: &BTreeMap<String, String>) -> bool {
 }
 
 use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
-use bouncycastle_core::traits::{PrivateKey, PublicKey};
+use bouncycastle_core::traits::{CollisionResistantHash, PrivateKey, PublicKey};
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
@@ -266,7 +266,7 @@ pub fn siggen<C, H, const PK_LEN: usize, const SK_LEN: usize, const SIG_LEN: usi
 where
     C: Curve
         + Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     let width = C::SCALAR_LEN;
     let content = get_test_data("ECDSA_SigGen.txt");
@@ -336,7 +336,7 @@ pub fn keypair<C, H, const PK_LEN: usize, const SK_LEN: usize, const SIG_LEN: us
 where
     C: Curve
         + Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     use bouncycastle_ecdsa::keys_common::DerivePublicKey;
     let width = C::SCALAR_LEN;

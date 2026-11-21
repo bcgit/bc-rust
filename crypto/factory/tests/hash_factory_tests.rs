@@ -471,4 +471,12 @@ mod hash_factory_tests {
             assert_ne!(out, vec![0u8; out.len()]);
         }
     }
+
+    /// The factories' algorithm is chosen at run time, RIPEMD among the choices, so neither
+    /// carries the compile-time `CollisionResistantHash` marker a signature's hash needs.
+    #[test]
+    fn the_factories_are_not_collision_resistant_hashes() {
+        bouncycastle_core_test_framework::assert_not_collision_resistant_hash!(HashFactory);
+        bouncycastle_core_test_framework::assert_not_collision_resistant_hash!(XOFFactory);
+    }
 }

@@ -1,7 +1,35 @@
 //! Generic behaviour tests for anything that implements [`Hash`].
 
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Hash, HashAlgParams, HashOneShot};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{
+    Algorithm, CollisionResistantHash, Hash, HashAlgParams, HashOneShot,
+};
+
+/// Pins that `H` carries [`CollisionResistantHash`], which is a compile-time fact, and that it
+/// reports a security strength, as every hash with the marker does.
+pub fn test_collision_resistant_hash<H: CollisionResistantHash + Algorithm>() {
+    assert_ne!(H::MAX_SECURITY_STRENGTH, SecurityStrength::None, "{}", H::ALG_NAME);
+}
+
+/// Pins that a type does not carry [`CollisionResistantHash`]: the expansion compiles only while
+/// it does not. With the marker both impls below apply to the type, and the `_` cannot be
+/// inferred (E0283). For a concrete type only: over a generic parameter it always compiles.
+#[macro_export]
+macro_rules! assert_not_collision_resistant_hash {
+    ($t:ty) => {{
+        trait AmbiguousIfImpl<A> {
+            fn check() {}
+        }
+        impl<T: ?Sized> AmbiguousIfImpl<()> for T {}
+        struct WithTheMarker;
+        impl<T: ?Sized + ::bouncycastle_core::traits::CollisionResistantHash>
+            AmbiguousIfImpl<WithTheMarker> for T
+        {
+        }
+        let _ = <$t as AmbiguousIfImpl<_>>::check;
+    }};
+}
 
 /// Instance of the test framework.
 pub struct TestFrameworkHash {

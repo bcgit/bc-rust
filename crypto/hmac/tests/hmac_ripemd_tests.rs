@@ -226,3 +226,25 @@ fn key_policy() {
     let k = HmacKey::<RIPEMD160>::generate(&mut rng).unwrap();
     assert_eq!(k.verify(b"abc", &k.mac(b"abc")), Ok(()));
 }
+
+/// `HMACParams` for `hazmat::WithoutCollisionResistance<H>` is `H`'s in every item, so the HMAC
+/// over the wrapper is the HMAC over `H`: the same name, strength, OID, key type and tag.
+#[test]
+fn hmac_over_the_collision_resistance_wrapper_is_hmac_over_the_hash() {
+    use bouncycastle_core::hazmat::WithoutCollisionResistance;
+    type W = WithoutCollisionResistance<RIPEMD160>;
+
+    assert_eq!(<W as HMACParams>::HMAC_ALG_NAME, "HMAC-RIPEMD160");
+    assert_eq!(<W as HMACParams>::HKDF_ALG_NAME, "HKDF-RIPEMD160");
+    assert_eq!(<W as HMACParams>::HMAC_MAX_SECURITY_STRENGTH, SecurityStrength::None);
+    assert_eq!(<W as HMACParams>::HMAC_OID, <RIPEMD160 as HMACParams>::HMAC_OID);
+    assert_eq!(<W as HMACParams>::HMAC_OID_DER, <RIPEMD160 as HMACParams>::HMAC_OID_DER);
+
+    // RFC 2286 Sec 2, test case 2
+    let k = key::<20>(b"Jefe");
+    let wrapped = HmacKey::<W>::from_key_material_allow_weak(&k).unwrap();
+    let tag: [u8; 20] = wrapped.mac(b"what do ya want for nothing?");
+    assert_eq!(hex::encode(tag), "dda6c0213a485a9e24f4742064a7f033b43c4069");
+    let bare = HmacKey::<RIPEMD160>::from_key_material_allow_weak(&k).unwrap();
+    bare.verify(b"what do ya want for nothing?", &tag).unwrap();
+}

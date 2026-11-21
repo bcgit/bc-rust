@@ -4,6 +4,7 @@
 
 use crate::polynomial::{Polynomial, barrett_reduce, cond_sub_q};
 use crate::{N, q};
+use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
@@ -219,7 +220,7 @@ pub fn sample_poly_CBD(b: &[u8; 32], n: u8, eta: i16) -> Polynomial {
                 xof.do_update(&n.to_le_bytes());
 
                 let mut buf = [0u8; 2 * 64];
-                let mut xof = xof.into_squeezer();
+                let mut xof = xof.finish_squeezer(&finish_token());
                 xof.do_output_out(&mut buf);
                 buf
             };
@@ -232,7 +233,7 @@ pub fn sample_poly_CBD(b: &[u8; 32], n: u8, eta: i16) -> Polynomial {
                 xof.do_update(b);
                 xof.do_update(&n.to_le_bytes());
                 let mut buf = [0u8; 3 * 64];
-                let mut xof = xof.into_squeezer();
+                let mut xof = xof.finish_squeezer(&finish_token());
                 xof.do_output_out(&mut buf);
                 buf
             };

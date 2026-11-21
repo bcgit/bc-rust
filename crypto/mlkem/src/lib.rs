@@ -174,17 +174,17 @@
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //!
 //! Peak stack usage of each operation, measured with `mem_usage_benches/bench_mlkem_mem_usage` under
-//! `valgrind --tool=massif --stacks=yes` on 2026-11-20 (release build, one call; the Encaps and
+//! `valgrind --tool=massif --stacks=yes` on 2026-11-21 (release build, one call; the Encaps and
 //! Decaps rows are the operation alone, on a key the caller already holds, the encoded inputs being statics):
 //!
 //! | Operation | ML-KEM-512 | ML-KEM-768 | ML-KEM-1024 |
 //! |-----------|------------|------------|-------------|
-//! | KeyGen    | 12,360 | 16,328 | 22,248 |
-//! | KeyGen, `keygen_out` | 9,496 | 13,592 | 18,712 |
-//! | Encaps    | 16,584 | 23,560 | 31,624 |
-//! | Decaps    | 16,200 | 23,160 | 32,840 |
-//! | Encaps, expanded key | 16,680 | 23,704 | 32,472 |
-//! | Decaps, expanded key | 16,568 | 26,360 | 37,624 |
+//! | KeyGen    | 12,696 | 16,664 | 22,584 |
+//! | KeyGen, `keygen_out` | 9,832 | 13,928 | 19,048 |
+//! | Encaps    | 16,920 | 23,896 | 31,960 |
+//! | Decaps    | 14,712 | 20,920 | 30,952 |
+//! | Encaps, expanded key | 16,856 | 23,896 | 32,808 |
+//! | Decaps, expanded key | 16,904 | 26,696 | 37,624 |
 //!
 //! [`MLKEMTrait::keygen_out`] writes into a private key the caller holds, so no copy of it is left
 //! behind by a move. The expanded-key rows include building the expanded key.

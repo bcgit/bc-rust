@@ -4,11 +4,12 @@ use crate::prf::sealed;
 use crate::{k_in_into, k_in_len};
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::hazmat::label_kdf_output;
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, KDF, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, Hash, KDF, XOFSqueezer};
 use bouncycastle_sha3::kmac::KMACXOFInternal;
 use bouncycastle_sha3::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_utils::secret::Secret;
@@ -149,7 +150,7 @@ impl<'l, PARAMS: KmacKdfParams> KDF_KMAC<'l, PARAMS> {
         kmac.do_update(context);
         let filled = do_hazardous_operations(dkm, |dkm| {
             let out = dkm.ref_to_bytes_mut()?;
-            kmac.into_squeezer().do_output_final_out(&mut out[..len]);
+            kmac.finish_squeezer(&finish_token()).do_output_final_out(&mut out[..len]);
             Ok(())
         });
         // The key-derivation key seeds the output when it carries the strength in full-entropy

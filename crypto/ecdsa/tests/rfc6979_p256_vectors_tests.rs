@@ -5,7 +5,7 @@
 //! value that gives this `r`, so the signature pins it.
 
 use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
-use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
+use bouncycastle_core::traits::{Algorithm, CollisionResistantHash, PrivateKey, PublicKey};
 use bouncycastle_ec::P256;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
@@ -101,7 +101,7 @@ fn public_key_matches_vector() {
 }
 
 /// The deterministic signature under `H` is the appendix's `(r, s)`, and verifies.
-fn check<H: EcdsaHash>(vectors: &[Vector]) {
+fn check<H: EcdsaHash + CollisionResistantHash>(vectors: &[Vector]) {
     let (pk, sk) = key_pair::<H>();
     for v in vectors {
         let sig = sk.sign_deterministic(v.msg, None).unwrap();

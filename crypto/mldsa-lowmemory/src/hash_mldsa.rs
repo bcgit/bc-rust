@@ -45,6 +45,9 @@
 //! [`hazmat::AnyStrength<H>`](crate::hazmat::AnyStrength), which opts out of that check and
 //! leaves the signature only as strong as the hash. The named pairings of FIPS 204 are the
 //! [`HashMLDSA`] marker types below, which carry the pairing's name and OID.
+//!
+//! Signing also requires the hash to be a [`CollisionResistantHash`], which `AnyStrength` does
+//! not waive; verifying does not. See [`HashMLDSASigner`].
 
 use crate::mldsa::{MLDSA, MLDSA_RND_LEN, Rnd, draw_rnd};
 use crate::params::{
@@ -59,7 +62,8 @@ use bouncycastle_core::signature_key::{
 };
 
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, FinishToken, RNG, SignatureSigner, SignatureVerifier,
+    Algorithm, AlgorithmOID, CollisionResistantHash, FinishToken, RNG, SignatureSigner,
+    SignatureVerifier,
 };
 use bouncycastle_mldsa_common::mu_builder::compute_mu_ph;
 use bouncycastle_mldsa_common::params::weaker_of;
@@ -167,6 +171,74 @@ fn check_ph_len<H: PreHash>(ph: &[u8]) -> Result<(), SignatureError> {
 /// the digest (FIPS 204 Algorithm 4 over Algorithm 7). Made by
 /// [`PreHashSigningKey::create_ph_signer`] on an ML-DSA private key, which it borrows; the key
 /// is expanded from its seed only when the signature is finished.
+///
+/// The signing methods take only a [`CollisionResistantHash`]. A hash without the marker does
+/// not sign, under [`AnyStrength`](crate::hazmat::AnyStrength) or not:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::DeterministicPreHashSigningKey;
+/// use bouncycastle_mldsa_lowmemory::hazmat::AnyStrength;
+/// use bouncycastle_mldsa_lowmemory::{MLDSA44, MLDSATrait};
+/// use bouncycastle_ripemd::RIPEMD160;
+/// use bouncycastle_rng::HashDRBG_SHA512;
+///
+/// let (_pk, sk) = MLDSA44::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+/// let _ = sk.sign_ph_deterministic::<AnyStrength<RIPEMD160>>(&[0u8; 20], None);
+/// ```
+///
+/// Nor through the other signing entry points:
+///
+/// ```compile_fail,E0277
+/// # use bouncycastle_core::signature_key::PreHashSigningKey;
+/// # use bouncycastle_mldsa_lowmemory::hazmat::AnyStrength;
+/// # use bouncycastle_mldsa_lowmemory::{MLDSA44, MLDSATrait};
+/// # use bouncycastle_ripemd::RIPEMD160;
+/// # use bouncycastle_rng::HashDRBG_SHA512;
+/// # let mut rng = HashDRBG_SHA512::new_from_os();
+/// # let (_pk, sk) = MLDSA44::keygen(&mut rng).unwrap();
+/// let _ = sk.sign_ph::<AnyStrength<RIPEMD160>>(&mut rng, &[0u8; 20], None);
+/// ```
+///
+/// ```compile_fail,E0277
+/// # use bouncycastle_core::signature_key::PreHashSigningKey;
+/// # use bouncycastle_mldsa_lowmemory::hazmat::AnyStrength;
+/// # use bouncycastle_mldsa_lowmemory::{MLDSA44, MLDSATrait};
+/// # use bouncycastle_ripemd::RIPEMD160;
+/// # use bouncycastle_rng::HashDRBG_SHA512;
+/// # let mut rng = HashDRBG_SHA512::new_from_os();
+/// # let (_pk, sk) = MLDSA44::keygen(&mut rng).unwrap();
+/// let _ = sk.create_ph_signer::<AnyStrength<RIPEMD160>>(&mut rng, None);
+/// ```
+///
+/// ```compile_fail,E0277
+/// # use bouncycastle_core::signature_key::DeterministicPreHashSigningKey;
+/// # use bouncycastle_mldsa_lowmemory::hazmat::AnyStrength;
+/// # use bouncycastle_mldsa_lowmemory::{MLDSA44, MLDSATrait};
+/// # use bouncycastle_ripemd::RIPEMD160;
+/// # use bouncycastle_rng::HashDRBG_SHA512;
+/// # let mut rng = HashDRBG_SHA512::new_from_os();
+/// # let (_pk, sk) = MLDSA44::keygen(&mut rng).unwrap();
+/// let _ = sk.create_ph_signer_deterministic::<AnyStrength<RIPEMD160>>(None);
+/// ```
+///
+/// It verifies as `AnyStrength<H>`, and signs where the caller names
+/// [`WithoutCollisionResistance`](bouncycastle_core::hazmat::WithoutCollisionResistance) as
+/// well, inside `AnyStrength` or around it:
+///
+/// ```
+/// use bouncycastle_core::hazmat::WithoutCollisionResistance;
+/// use bouncycastle_core::signature_key::{DeterministicPreHashSigningKey, PreHashVerifyingKey};
+/// use bouncycastle_mldsa_lowmemory::hazmat::AnyStrength;
+/// use bouncycastle_mldsa_lowmemory::{MLDSA44, MLDSATrait};
+/// use bouncycastle_ripemd::RIPEMD160;
+/// use bouncycastle_rng::HashDRBG_SHA512;
+///
+/// let (pk, sk) = MLDSA44::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+/// type H = AnyStrength<WithoutCollisionResistance<RIPEMD160>>;
+/// let sig = sk.sign_ph_deterministic::<H>(&[0u8; 20], None)?;
+/// pk.verify_ph::<AnyStrength<RIPEMD160>>(&[0u8; 20], None, &sig)?;
+/// # Ok::<(), bouncycastle_core::errors::SignatureError>(())
+/// ```
 pub struct HashMLDSASigner<'k, P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>, H: PreHash> {
     _phantom: PhantomData<P>,
     sk: &'k SK,
@@ -348,7 +420,7 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> PreHashSigningKey<MLDSA<P>,
     where
         Self: 'k;
 
-    fn create_ph_signer<'k, H: PreHash>(
+    fn create_ph_signer<'k, H: PreHash + CollisionResistantHash>(
         &'k self,
         rng: &mut dyn RNG,
         ctx: Option<&[u8]>,
@@ -358,7 +430,7 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> PreHashSigningKey<MLDSA<P>,
         new_ph_signer(self, &rnd, ctx)
     }
 
-    fn sign_ph_out<H: PreHash>(
+    fn sign_ph_out<H: PreHash + CollisionResistantHash>(
         &self,
         rng: &mut dyn RNG,
         ph: &[u8],
@@ -382,14 +454,14 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
     where
         Self: 'k;
 
-    fn create_ph_signer_deterministic<'k, H: PreHash>(
+    fn create_ph_signer_deterministic<'k, H: PreHash + CollisionResistantHash>(
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::PreHashSigner<'k, H>, SignatureError> {
         new_ph_signer(self, &[0u8; MLDSA_RND_LEN], ctx)
     }
 
-    fn sign_ph_deterministic_out<H: PreHash>(
+    fn sign_ph_deterministic_out<H: PreHash + CollisionResistantHash>(
         &self,
         ph: &[u8],
         ctx: Option<&[u8]>,

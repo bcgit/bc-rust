@@ -19,7 +19,8 @@
 //! * [`PreHashSigningKey`] / [`DeterministicPreHashSigningKey`] / [`PreHashVerifyingKey`]: the
 //!   message is hashed with a hash the caller picks as a type parameter (HashML-DSA with any
 //!   approved hash, RSA over any hash), either by the worker as the message streams in, or by
-//!   the caller, who hands over the digest.
+//!   the caller, who hands over the digest. The signing two take only a
+//!   [`CollisionResistantHash`]; verifying takes any.
 //!
 //! The one-shots over a whole message are roles of their own, which name no worker:
 //! [`OneShotSigningKey`], [`DeterministicOneShotSigningKey`] and [`OneShotVerifyingKey`]. Each
@@ -54,7 +55,8 @@
 
 use crate::errors::SignatureError;
 use crate::traits::{
-    Algorithm, AlgorithmOID, HashAlgParams, HashOneShot, RNG, SignatureSigner, SignatureVerifier,
+    Algorithm, AlgorithmOID, CollisionResistantHash, HashAlgParams, HashOneShot, RNG,
+    SignatureSigner, SignatureVerifier,
 };
 
 /// Marker for one signature algorithm: ML-DSA-44, ECDSA P-256, ECDSA P-256 with RFC 6979,
@@ -302,6 +304,9 @@ pub fn verify_with_verifier<V: SignatureVerifier>(
 /// hash. The digest may be taken by the worker as the message streams in, through
 /// [`create_ph_signer`](Self::create_ph_signer), or handed over ready-made, through
 /// [`sign_ph_out`](Self::sign_ph_out); the two produce the same signature.
+///
+/// Signing requires the hash to be a [`CollisionResistantHash`]; [`PreHashVerifyingKey`] does
+/// not, so what was signed over a hash without the marker can still be verified.
 pub trait PreHashSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
     SigningKey<A, SIG_LEN>
 {
@@ -317,7 +322,7 @@ pub trait PreHashSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
     /// As [`SigningKey::create_signer`]; also [`SignatureError::PreHashTooWeak`] if the algorithm
     /// does not accept `H` (FIPS 204 Section 5.4 requires a hash of at least the parameter set's
     /// strength for HashML-DSA).
-    fn create_ph_signer<'k, H: PreHash>(
+    fn create_ph_signer<'k, H: PreHash + CollisionResistantHash>(
         &'k self,
         rng: &mut dyn RNG,
         ctx: Option<&[u8]>,
@@ -330,7 +335,7 @@ pub trait PreHashSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
     /// # Errors
     /// [`SignatureError::LengthError`] if `ph` is not `H::OUTPUT_LEN` bytes; otherwise as
     /// [`create_ph_signer`](Self::create_ph_signer).
-    fn sign_ph_out<H: PreHash>(
+    fn sign_ph_out<H: PreHash + CollisionResistantHash>(
         &self,
         rng: &mut dyn RNG,
         ph: &[u8],
@@ -343,7 +348,7 @@ pub trait PreHashSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
     ///
     /// # Errors
     /// As [`sign_ph_out`](Self::sign_ph_out).
-    fn sign_ph<H: PreHash>(
+    fn sign_ph<H: PreHash + CollisionResistantHash>(
         &self,
         rng: &mut dyn RNG,
         ph: &[u8],
@@ -370,7 +375,7 @@ pub trait DeterministicPreHashSigningKey<A: SignatureAlgorithm, const SIG_LEN: u
     /// # Errors
     /// As [`DeterministicSigningKey::create_signer_deterministic`]; also
     /// [`SignatureError::PreHashTooWeak`] if the algorithm does not accept `H`.
-    fn create_ph_signer_deterministic<'k, H: PreHash>(
+    fn create_ph_signer_deterministic<'k, H: PreHash + CollisionResistantHash>(
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::PreHashSigner<'k, H>, SignatureError>;
@@ -382,7 +387,7 @@ pub trait DeterministicPreHashSigningKey<A: SignatureAlgorithm, const SIG_LEN: u
     /// # Errors
     /// [`SignatureError::LengthError`] if `ph` is not `H::OUTPUT_LEN` bytes; otherwise as
     /// [`create_ph_signer_deterministic`](Self::create_ph_signer_deterministic).
-    fn sign_ph_deterministic_out<H: PreHash>(
+    fn sign_ph_deterministic_out<H: PreHash + CollisionResistantHash>(
         &self,
         ph: &[u8],
         ctx: Option<&[u8]>,
@@ -394,7 +399,7 @@ pub trait DeterministicPreHashSigningKey<A: SignatureAlgorithm, const SIG_LEN: u
     ///
     /// # Errors
     /// As [`sign_ph_deterministic_out`](Self::sign_ph_deterministic_out).
-    fn sign_ph_deterministic<H: PreHash>(
+    fn sign_ph_deterministic<H: PreHash + CollisionResistantHash>(
         &self,
         ph: &[u8],
         ctx: Option<&[u8]>,

@@ -4,7 +4,7 @@ use crate::mldsa::{MuBuilder, Rnd, draw_rnd, sign_internal, verify_internal};
 use crate::params::{FullPrivateKeyLen, PrivateKeyLen, PublicKeyLen, SignatureLen};
 use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, RNG, XOF, XOFSqueezer};
@@ -477,7 +477,7 @@ impl<P: MLDSAParams> MLDSASeedPrivateKey<P> {
         h.do_update(seed.ref_to_bytes());
         h.do_update(&(P::k as u8).to_le_bytes());
         h.do_update(&(P::l as u8).to_le_bytes());
-        let mut h = h.into_squeezer();
+        let mut h = h.finish_squeezer(&finish_token());
         let bytes_written = h.do_output_out(&mut rho);
         debug_assert_eq!(bytes_written, 32);
         let bytes_written = h.do_output_out(rho_prime.deref_mut());

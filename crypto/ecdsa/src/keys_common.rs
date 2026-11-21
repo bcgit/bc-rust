@@ -11,7 +11,7 @@
 //! private key alone, with no additional state).
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{PublicKey, RNG};
+use bouncycastle_core::traits::{CollisionResistantHash, PublicKey, RNG};
 
 use crate::ecdsa::EcdsaHash;
 use crate::keys::{ECDSAPrivateKey, ECDSAPublicKey};
@@ -34,11 +34,20 @@ pub trait DerivePublicKey<PK: PublicKey<PK_LEN>, const PK_LEN: usize> {
 /// customary pairing is a convention that moves.
 pub trait SignatureKeyPair: Curve {
     /// FIPS 186-5 Appendix A.2.1 key pair generation from `rng`, which must offer the curve's
-    /// strength, for ECDSA over this curve and the hash `H`.
+    /// strength, for ECDSA over this curve and the hash `H`, which is one the pair can sign with:
+    ///
+    /// ```compile_fail,E0277
+    /// use bouncycastle_ec::P256;
+    /// use bouncycastle_ecdsa::keys_common::SignatureKeyPair;
+    /// use bouncycastle_ripemd::RIPEMD160;
+    /// use bouncycastle_rng::HashDRBG_SHA512;
+    ///
+    /// let _ = P256::generate_signature_key_pair::<RIPEMD160>(&mut HashDRBG_SHA512::new_from_os());
+    /// ```
     ///
     /// # Errors
     /// [`SignatureError::RNGError`] if the RNG is weaker than the curve or fails to deliver.
-    fn generate_signature_key_pair<H: EcdsaHash>(
+    fn generate_signature_key_pair<H: EcdsaHash + CollisionResistantHash>(
         rng: &mut dyn RNG,
     ) -> Result<(ECDSAPublicKey<Self, H>, ECDSAPrivateKey<Self, H>), SignatureError>;
 }

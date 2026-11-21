@@ -5,7 +5,7 @@
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, FinishToken, Hash, HashAlgParams, HashOneShot, Suspendable,
+    Algorithm, CollisionResistantHash, FinishToken, Hash, HashAlgParams, HashOneShot, Suspendable,
 };
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
@@ -57,6 +57,8 @@ impl HashAlgParams for AsconHash256 {
     const OUTPUT_LEN: usize = DIGEST_BYTES;
     const BLOCK_LEN: usize = RATE;
 }
+
+impl CollisionResistantHash for AsconHash256 {}
 
 impl Hash for AsconHash256 {
     fn block_bitlen(&self) -> usize {

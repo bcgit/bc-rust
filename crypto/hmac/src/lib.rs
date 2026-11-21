@@ -124,6 +124,7 @@ pub mod hazmat;
 
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError};
+use bouncycastle_core::hazmat::WithoutCollisionResistance;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
@@ -177,6 +178,17 @@ pub trait HMACParams: HashOneShot + HashAlgParams + Clone {
     const HMAC_OID: &'static [u32];
     /// The DER encoding of [`HMACParams::HMAC_OID`], as reported by [`AlgorithmOID::OID_DER`].
     const HMAC_OID_DER: &'static [u8];
+}
+
+/// HMAC over [`WithoutCollisionResistance<H>`] is HMAC over `H`: every parameter is `H`'s. The
+/// wrapper needs them because RFC 6979 keys an HMAC on a deterministic signature's hash.
+impl<H: HMACParams> HMACParams for WithoutCollisionResistance<H> {
+    type MACKey = H::MACKey;
+    const HMAC_ALG_NAME: &'static str = H::HMAC_ALG_NAME;
+    const HKDF_ALG_NAME: &'static str = H::HKDF_ALG_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = H::HMAC_MAX_SECURITY_STRENGTH;
+    const HMAC_OID: &'static [u32] = H::HMAC_OID;
+    const HMAC_OID_DER: &'static [u8] = H::HMAC_OID_DER;
 }
 
 impl<HASH: HMACParams, Dir> Algorithm for HMAC<'_, HASH, Dir> {

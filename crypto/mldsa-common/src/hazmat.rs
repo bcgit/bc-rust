@@ -6,7 +6,7 @@ use bouncycastle_core::hazmat::waive_pre_hash_strength_rule;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::PreHashStrengthRule;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, FinishToken, Hash, HashAlgParams, HashOneShot,
+    Algorithm, AlgorithmOID, CollisionResistantHash, FinishToken, Hash, HashAlgParams, HashOneShot,
 };
 
 /// The pre-hash `H`, accepted by HashML-DSA with any parameter set: naming `AnyStrength<H>`
@@ -37,10 +37,18 @@ use bouncycastle_core::traits::{
 /// with a hash below that is only as strong as the hash: ML-DSA-87 over SHA-224 is a 112-bit
 /// signature, whatever the key. A verifier that accepts such a pairing accepts a forgery found
 /// by attacking the hash. Whether `H` is an approved hash remains the caller's to ensure.
+///
+/// The waiver is of the strength rule alone: `AnyStrength<H>` is a
+/// [`CollisionResistantHash`], which signing requires, only where `H` is. A hash without that
+/// marker signs as `AnyStrength<WithoutCollisionResistance<H>>`, or with the two the other way
+/// round, through [`bouncycastle_core::hazmat::WithoutCollisionResistance`].
 #[derive(Clone, Default)]
 pub struct AnyStrength<H> {
     hash: H,
 }
+
+/// Passed through from `H`, not claimed: the strength waiver says nothing of collision resistance.
+impl<H: CollisionResistantHash + Algorithm> CollisionResistantHash for AnyStrength<H> {}
 
 /// The name and the strength are `H`'s: the wrapper claims nothing `H` does not.
 impl<H: Algorithm> Algorithm for AnyStrength<H> {

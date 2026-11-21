@@ -10,7 +10,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
 };
-use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
+use bouncycastle_core::traits::{Algorithm, CollisionResistantHash, PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::signature::{
     TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
@@ -21,7 +21,7 @@ use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
 use bouncycastle_ecdsa::keys_common::DerivePublicKey;
 use bouncycastle_rng::{DefaultRNG, FixedSeedRNG};
 
-fn keygen_default<C: Curve, H: EcdsaHash>()
+fn keygen_default<C: Curve, H: EcdsaHash + CollisionResistantHash>()
 -> Result<(ECDSAPublicKey<C, H>, ECDSAPrivateKey<C, H>), SignatureError> {
     keygen::<C, H>(&mut DefaultRNG::default())
 }
@@ -44,7 +44,7 @@ pub fn framework_and_metadata<
 ) where
     C: Curve
         + Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     let framework = TestFrameworkSignature::new(false);
     framework.test_signature::<ECDSA<C, H>, ECDSAPublicKey<C, H>, ECDSAPrivateKey<C, H>, SIG_LEN>(
@@ -80,7 +80,7 @@ pub fn framework_and_metadata<
 pub fn two_signers_one_verifier<C, H, const SIG_LEN: usize>()
 where
     C: Curve<Signature = [u8; SIG_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     let (pk, sk) = keygen_default::<C, H>().unwrap();
     let msg = b"one verifier for both kinds of k";
@@ -112,7 +112,7 @@ where
 pub fn key_loading<C, H, const PK_LEN: usize, const SK_LEN: usize>()
 where
     C: Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     let (pk, _) = keygen_default::<C, H>().unwrap();
     let uncompressed = pk.encode();
@@ -170,7 +170,7 @@ where
 pub fn rng_rules<C, H, const PK_LEN: usize>(strength: SecurityStrength, below: SecurityStrength)
 where
     C: Curve<PkUncompressed = [u8; PK_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     let mut weak = FixedSeedRNG::new([0x42u8; 96]);
     weak.set_security_strength(below);
@@ -200,7 +200,7 @@ where
 pub fn signature_length_and_range<C, H, const SK_LEN: usize, const SIG_LEN: usize>()
 where
     C: Curve<ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     let (pk, sk) = keygen_default::<C, H>().unwrap();
     let msg = b"length-checked, range-checked signature";

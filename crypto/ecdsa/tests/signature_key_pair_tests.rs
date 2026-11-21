@@ -6,6 +6,7 @@
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
+use bouncycastle_core::traits::CollisionResistantHash;
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
 use bouncycastle_ecdsa::keys::keygen;
@@ -21,7 +22,7 @@ fn seed() -> [u8; 96] {
 
 /// The marker's pair under `H` is `keygen::<C, H>`'s pair for the same RNG output, and the
 /// marker applies the same strength gate: an RNG at 112 bits is below every curve here.
-fn is_keygen<C: SignatureKeyPair, H: EcdsaHash>() {
+fn is_keygen<C: SignatureKeyPair, H: EcdsaHash + CollisionResistantHash>() {
     let from_marker = C::generate_signature_key_pair::<H>(&mut FixedSeedRNG::new(seed())).unwrap();
     let from_keygen = keygen::<C, H>(&mut FixedSeedRNG::new(seed())).unwrap();
     assert_eq!(from_marker, from_keygen);

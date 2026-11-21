@@ -102,20 +102,19 @@
 //!
 //! | Entry point                        | Stack   |
 //! |------------------------------------|---------|
-//! | `keygen`                           | 5640 B  |
-//! | `keygen_out`                       | 5048 B  |
-//! | `Ed448PrivateKey::from_bytes`      | 5032 B  |
-//! | `Ed448PrivateKey::from_bytes_out`  | 4360 B  |
+//! | `keygen`                           | 4672 B  |
+//! | `keygen_out`                       | 4080 B  |
+//! | `Ed448PrivateKey::from_bytes`      | 4064 B  |
+//! | `Ed448PrivateKey::from_bytes_out`  | 3392 B  |
 //! | `Ed448PublicKey::from_bytes`       | 7232 B  |
 //! | `Ed448PrivateKey::pk`              | 3136 B  |
-//! | Ed448 sign                         | 6296 B  |
-//! | Ed448 verify                       | 10864 B |
-//! | Ed448ph sign                       | 8024 B  |
-//! | Ed448ph verify                     | 12896 B |
+//! | Ed448 sign                         | 4144 B  |
+//! | Ed448 verify                       | 10320 B |
+//! | Ed448ph sign                       | 5888 B  |
+//! | Ed448ph verify                     | 12352 B |
 //!
 //! The key generation figures leave out the RNG. The Ed448ph figures are for the streaming
-//! signer and verifier, and include the worker: a SHAKE256 state and the context. Key expansion
-//! and signing include the 4096 bytes of stack they overwrite after hashing a secret.
+//! signer and verifier, and include the worker: a SHAKE256 state and the context.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -172,12 +171,13 @@
 //! [`Ed448PrivateKey::from_bytes_out`], `clone_from` and `encode_out` into a key or buffer you
 //! own where that matters.
 //!
-//! Two computations leave secrets on the stack that no `Secret` reaches, and each runs in a
-//! frame of its own whose stack is overwritten afterwards. One is the last step of signing,
-//! where the compiler spills limbs of the scalar it held in registers. The other is every
-//! SHAKE256 over the private key or the prefix: SHAKE256 yields its 114 octets only by moving
-//! the sponge, and before this was done the moved-from copies left the private key and whole
-//! Keccak states of the prefix's hash behind. With both in place, a scan of the dead stack
+//! Two computations would leave secrets on the stack that no `Secret` reaches. One is the last
+//! step of signing, where the compiler spills limbs of the scalar it held in registers: it
+//! runs in a frame of its own whose stack is overwritten afterwards. The other is every
+//! SHAKE256 over the private key or the prefix: a sponge that is moved to be squeezed leaves
+//! the private key and whole Keccak states of the prefix's hash behind, so each is finished
+//! where it sits, and `bouncycastle-sha3` overwrites the frame of each Keccak permutation,
+//! which spills lanes of the state. With both in place, a scan of the dead stack
 //! after each operation finds none of the private key, the scalar, the prefix, the digests,
 //! the nonce `r`, `r + k s` or those Keccak states after `keygen_out`, `from_bytes_out`,
 //! `clone_from`, `encode_out`, `pk`, `==`, `keypair_consistency_check` and every form of

@@ -35,7 +35,8 @@ use bouncycastle_core::signature_key::{
     verify_with_verifier,
 };
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmInfo, FinishToken, HashAlgParams, RNG, SignatureSigner, SignatureVerifier,
+    Algorithm, AlgorithmInfo, CollisionResistantHash, FinishToken, HashAlgParams, RNG,
+    SignatureSigner, SignatureVerifier,
 };
 use bouncycastle_ec::curve::{
     Curve, FieldElement, JacobianPoint, PublicScalar, ScalarFieldElement,
@@ -99,6 +100,58 @@ const fn min_strength(a: SecurityStrength, b: SecurityStrength) -> SecurityStren
 /// 3279 Section 2.2.3 DER `SEQUENCE { r, s }` for interop that needs it. Neither signer uses
 /// `ctx`: ECDSA has no context string, and the argument is accepted and ignored so that the key
 /// traits read the same across algorithms.
+///
+/// The private key signs only where `H` is a [`CollisionResistantHash`]; the public key verifies
+/// under any hash. Signing over a hash without the marker does not compile:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::DeterministicOneShotSigningKey;
+/// use bouncycastle_core::traits::PrivateKey;
+/// use bouncycastle_ec::P256;
+/// use bouncycastle_ecdsa::ecdsa::ECDSA;
+/// use bouncycastle_ecdsa::keys::ECDSAPrivateKey;
+/// use bouncycastle_ripemd::RIPEMD160;
+///
+/// let sk = ECDSAPrivateKey::<P256, RIPEMD160>::from_bytes(&[1u8; 32]).unwrap();
+/// let _ = DeterministicOneShotSigningKey::<ECDSA<P256, RIPEMD160>, 64>::sign_deterministic(
+///     &sk, b"message", None,
+/// );
+/// ```
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::OneShotSigningKey;
+/// use bouncycastle_core::traits::PrivateKey;
+/// use bouncycastle_ec::P256;
+/// use bouncycastle_ecdsa::ecdsa::ECDSA;
+/// use bouncycastle_ecdsa::keys::ECDSAPrivateKey;
+/// use bouncycastle_ripemd::RIPEMD160;
+/// use bouncycastle_rng::HashDRBG_SHA512;
+///
+/// let sk = ECDSAPrivateKey::<P256, RIPEMD160>::from_bytes(&[1u8; 32]).unwrap();
+/// let mut rng = HashDRBG_SHA512::new_from_os();
+/// let _ = OneShotSigningKey::<ECDSA<P256, RIPEMD160>, 64>::sign(&sk, &mut rng, b"message", None);
+/// ```
+///
+/// A caller who must produce such a signature re-pairs the key with
+/// [`WithoutCollisionResistance<H>`](bouncycastle_core::hazmat::WithoutCollisionResistance),
+/// which signs as `H` does:
+///
+/// ```
+/// use bouncycastle_core::hazmat::WithoutCollisionResistance;
+/// use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
+/// use bouncycastle_core::traits::PrivateKey;
+/// use bouncycastle_ec::P256;
+/// use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
+/// use bouncycastle_ecdsa::keys_common::DerivePublicKey;
+/// use bouncycastle_ripemd::RIPEMD160;
+///
+/// let sk = ECDSAPrivateKey::<P256, RIPEMD160>::from_bytes(&[1u8; 32]).unwrap();
+/// let pk: ECDSAPublicKey<P256, RIPEMD160> = sk.derive_pk();
+/// let sk = sk.with_hash::<WithoutCollisionResistance<RIPEMD160>>();
+/// let sig = sk.sign_deterministic(b"message", None)?;
+/// pk.verify(b"message", None, &sig)?;
+/// # Ok::<(), bouncycastle_core::errors::SignatureError>(())
+/// ```
 pub struct ECDSA<C: Curve, H: EcdsaHash>(PhantomData<(C, H)>);
 
 impl<C: Curve, H: EcdsaHash> ECDSA<C, H> {
@@ -117,9 +170,10 @@ impl<C: Curve, H: EcdsaHash> Algorithm for ECDSA<C, H> {
 
 impl<C: Curve, H: EcdsaHash> SignatureAlgorithm for ECDSA<C, H> {}
 
-/// A hash ECDSA signs with: any [`HMACParams`] hash, because the deterministic signer keys RFC
+/// A hash ECDSA is paired with: any [`HMACParams`] hash, because the deterministic signer keys RFC
 /// 6979's HMAC on it. Implemented for every such hash, so the bound is a name for "a hash", not
-/// a restriction.
+/// a restriction, and it is all a key type or a verification asks. Signing and key-pair
+/// generation ask in addition for a [`CollisionResistantHash`].
 pub trait EcdsaHash: HMACParams {}
 
 impl<H: HMACParams> EcdsaHash for H {}
@@ -293,8 +347,8 @@ fn verify_final<C: Curve, H: EcdsaHash>(
     if r1 == r { Ok(()) } else { Err(SignatureError::SignatureVerificationFailed) } // step 9
 }
 
-impl<C, H: EcdsaHash, const SIG_LEN: usize> SigningKey<ECDSA<C, H>, SIG_LEN>
-    for ECDSAPrivateKey<C, H>
+impl<C, H: EcdsaHash + CollisionResistantHash, const SIG_LEN: usize>
+    SigningKey<ECDSA<C, H>, SIG_LEN> for ECDSAPrivateKey<C, H>
 where
     C: Curve<Signature = [u8; SIG_LEN]>,
 {
@@ -313,8 +367,8 @@ where
     }
 }
 
-impl<C, H: EcdsaHash, const SIG_LEN: usize> OneShotSigningKey<ECDSA<C, H>, SIG_LEN>
-    for ECDSAPrivateKey<C, H>
+impl<C, H: EcdsaHash + CollisionResistantHash, const SIG_LEN: usize>
+    OneShotSigningKey<ECDSA<C, H>, SIG_LEN> for ECDSAPrivateKey<C, H>
 where
     C: Curve<Signature = [u8; SIG_LEN]>,
 {
@@ -330,8 +384,8 @@ where
     }
 }
 
-impl<C, H: EcdsaHash, const SIG_LEN: usize> DeterministicSigningKey<ECDSA<C, H>, SIG_LEN>
-    for ECDSAPrivateKey<C, H>
+impl<C, H: EcdsaHash + CollisionResistantHash, const SIG_LEN: usize>
+    DeterministicSigningKey<ECDSA<C, H>, SIG_LEN> for ECDSAPrivateKey<C, H>
 where
     C: Curve<Signature = [u8; SIG_LEN]>,
 {
@@ -349,8 +403,8 @@ where
     }
 }
 
-impl<C, H: EcdsaHash, const SIG_LEN: usize> DeterministicOneShotSigningKey<ECDSA<C, H>, SIG_LEN>
-    for ECDSAPrivateKey<C, H>
+impl<C, H: EcdsaHash + CollisionResistantHash, const SIG_LEN: usize>
+    DeterministicOneShotSigningKey<ECDSA<C, H>, SIG_LEN> for ECDSAPrivateKey<C, H>
 where
     C: Curve<Signature = [u8; SIG_LEN]>,
 {

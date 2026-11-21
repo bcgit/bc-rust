@@ -56,7 +56,7 @@
 //! assert_ne!(bound[..16], first[..]);
 //! ```
 
-use crate::cshake::{CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer};
+use crate::cshake::{CSHAKE_COMPONENT_LEN, CSHAKEBorrowedSqueezer, CSHAKEInternal, CSHAKESqueezer};
 use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
@@ -481,6 +481,9 @@ impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for KMACXOFInternal<PARAM
     type Key = ();
 
     fn write_state(&self, out: &mut [u8]) {
+        // A value that lent out its squeezer is finished: unread, its state would resume as one
+        // still taking input, and read, as nothing.
+        self.cshake.assert_not_lent();
         self.cshake.write_tagged(PARAMS::KMACXOF_STATE_TAG, out)
     }
 
@@ -492,6 +495,7 @@ impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for KMACXOFInternal<PARAM
 
 /// The absorbing phase; the squeezing half is a [`CSHAKESqueezer`], which suspends on its
 /// own. The state inverts to the key exactly as [`KMACInternal`]'s does: store it as the key.
+/// Suspending a value that `finish_squeezer` has finished panics.
 impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_KMACXOF_STATE_LEN> for KMACXOFInternal<PARAMS> {
     fn suspend(self) -> [u8; SUSPENDED_KMACXOF_STATE_LEN] {
         suspend_component(&self)
@@ -557,7 +561,12 @@ impl<PARAMS: SHAKEParams> XOF for KMACXOFInternal<PARAMS> {
 
     /// The `right_encode(L)` of Sec 4.3.1 step 1 is not absorbed here: which `L` it carries depends
     /// on how the first output is read, so [`CSHAKESqueezer`] decides it.
+    ///
+    /// # Panics
+    /// If the value has been finished already, through
+    /// [`finish_squeezer`](KMACXOFInternal::finish_squeezer).
     fn into_squeezer(self) -> Self::Squeezer {
+        self.cshake.assert_not_finished();
         CSHAKESqueezer::new(self.cshake)
     }
 
@@ -576,6 +585,22 @@ impl<PARAMS: SHAKEParams> XOF for KMACXOFInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
+    /// Ends the input phase where the sponge sits and lends out its squeezing half:
+    /// [`XOF::into_squeezer`] without the move, for a sponge that holds a key.
+    ///
+    /// The squeezer borrows this value and reads as the one [`XOF::into_squeezer`] returns: a
+    /// first read through [`XOFSqueezer::do_output_final`] is the fixed-length KMAC of that
+    /// length. Afterwards the value has begun producing output: the caller lets it drop, as
+    /// after a hash final, which is what the token stands for (see [`FinishToken`]). A second
+    /// call continues the stream the first read chose; anything else that would absorb or
+    /// finish again ([`Hash::do_update`], the hash finals, [`XOF::into_squeezer`], [`XOF::xof`])
+    /// panics from this call on, read or not, in every build, and produces nothing.
+    ///
+    /// [`XOFSqueezer::do_output_final`]: bouncycastle_core::traits::XOFSqueezer::do_output_final
+    pub fn finish_squeezer(&mut self, _token: &FinishToken) -> CSHAKEBorrowedSqueezer<'_, PARAMS> {
+        self.cshake.finish_squeezer_unbound()
+    }
+
     /// One-shot: hashes `data` with this instance's parameters.
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
