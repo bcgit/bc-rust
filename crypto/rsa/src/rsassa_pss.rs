@@ -22,7 +22,9 @@ use crate::rsassa::{
 use crate::size::{RsaSize, min_strength};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::SignatureAlgorithm;
-use bouncycastle_core::traits::{Algorithm, HashAlgParams, HashOneShot, XOF};
+use bouncycastle_core::traits::{
+    Algorithm, CollisionResistantHash, HashAlgParams, HashOneShot, XOF,
+};
 use bouncycastle_sha2::{SHA256InitValue, SHA256Internal, SHA512InitValue, SHA512Internal};
 use bouncycastle_sha3::{SHA3Internal, SHA3Params, SHAKEInternal, SHAKEParams};
 use bouncycastle_utils::const_str::ConstStr;
@@ -170,6 +172,38 @@ impl<M> UnsaltedPss for NoSalt<M> {}
 /// `sk.sign(&mut rng, msg, None)`, or for [`NoSalt`] through `DeterministicSigningKey`,
 /// `sk.sign_deterministic(msg, None)`; `ctx` is accepted and ignored, since RSA has no context
 /// string.
+///
+/// Signing requires a [`CollisionResistantHash`] as `H` (the mask's hash is not bound by it);
+/// verification does not. A key over SHA-1 verifies and does not sign, salted or not:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::OneShotSigningKey;
+/// use bouncycastle_rng::DefaultRNG;
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::keys::RsaPrivateComponents;
+/// use bouncycastle_rsa::rsassa_pss::{Mgf1, RSASSA_PSS};
+/// use bouncycastle_sha1::SHA1;
+///
+/// type Alg = RSASSA_PSS<RSA2048, SHA1, Mgf1<SHA1, 20>>;
+/// let z = [0u64; 16];
+/// let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&z, &z, &z, &z, &z).unwrap();
+/// let sk = sk.key::<Alg>();
+/// let _ = OneShotSigningKey::<Alg, 256>::sign(&sk, &mut DefaultRNG::default(), b"message", None);
+/// ```
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::DeterministicOneShotSigningKey;
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::keys::RsaPrivateComponents;
+/// use bouncycastle_rsa::rsassa_pss::{NoSalt, RSASSA_PSS};
+/// use bouncycastle_sha1::SHA1;
+///
+/// type Alg = RSASSA_PSS<RSA2048, SHA1, NoSalt<SHA1>>;
+/// let z = [0u64; 16];
+/// let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&z, &z, &z, &z, &z).unwrap();
+/// let sk = sk.key::<Alg>();
+/// let _ = DeterministicOneShotSigningKey::<Alg, 256>::sign_deterministic(&sk, b"message", None);
+/// ```
 #[allow(non_camel_case_types)]
 pub struct RSASSA_PSS<K: RsaSize, H, P = Conventional> {
     _params: PhantomData<(K, H, P)>,
@@ -199,8 +233,11 @@ impl<K: RsaSize, H: HashOneShot + HashAlgParams, P: PssParams<H>> RsaSignatureAl
     }
 }
 
-impl<K: RsaSize, H: HashOneShot + HashAlgParams, P: PssParams<H> + SaltedPss>
-    RsaRandomizedSignatureAlgorithm for RSASSA_PSS<K, H, P>
+impl<
+    K: RsaSize,
+    H: HashOneShot + HashAlgParams + CollisionResistantHash,
+    P: PssParams<H> + SaltedPss,
+> RsaRandomizedSignatureAlgorithm for RSASSA_PSS<K, H, P>
 {
     const SALT_LEN: usize = P::SALT_LEN;
 
@@ -209,8 +246,11 @@ impl<K: RsaSize, H: HashOneShot + HashAlgParams, P: PssParams<H> + SaltedPss>
     }
 }
 
-impl<K: RsaSize, H: HashOneShot + HashAlgParams, P: PssParams<H> + UnsaltedPss>
-    RsaDeterministicSignatureAlgorithm for RSASSA_PSS<K, H, P>
+impl<
+    K: RsaSize,
+    H: HashOneShot + HashAlgParams + CollisionResistantHash,
+    P: PssParams<H> + UnsaltedPss,
+> RsaDeterministicSignatureAlgorithm for RSASSA_PSS<K, H, P>
 {
     fn emsa_encode<const K_LEN: usize>(m_hash: &[u8]) -> [u8; K_LEN] {
         emsa_pss_encode_from_hash::<H, P, K_LEN>(m_hash, &[])

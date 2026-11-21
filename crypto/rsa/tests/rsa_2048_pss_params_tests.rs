@@ -5,6 +5,7 @@
 //! deterministic and so signs through `DeterministicSigningKey`. A key is for one set of
 //! parameters, so the other set's signatures are invalid under it.
 
+use bouncycastle_core::hazmat::WithoutCollisionResistance;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
@@ -17,9 +18,11 @@ use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keys::{RsaPrivateComponents, RsaPublicComponents};
 use bouncycastle_rsa::rsa_2048::RSASSA_PSS_SHA256;
 use bouncycastle_rsa::rsassa::RsaSignatureAlgorithm;
+use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use bouncycastle_rsa::rsassa_pss::{Conventional, Mgf1, NoSalt, PssHash, RSASSA_PSS};
 use bouncycastle_rsa::size::{RsaSize, SignatureKeyPair};
 use bouncycastle_rsa::{RSA3072, RSA8192};
+use bouncycastle_sha1::SHA1;
 use bouncycastle_sha2::{SHA224, SHA256, SHA512};
 use bouncycastle_sha3::{SHA3_256, SHAKE128, SHAKE256};
 use serde_json::Value;
@@ -124,6 +127,18 @@ fn sha256_with_no_salt_wycheproof_vectors() {
         "SHA-256",
         0,
         (103, 61, 42),
+    );
+}
+
+/// SHA-1 throughout: a signature over it is still verified.
+#[test]
+fn sha1_wycheproof_vectors_verify() {
+    wycheproof::<RSASSA_PSS<RSA2048, SHA1, Mgf1<SHA1, 20>>>(
+        "rsa_pss_2048_sha1_mgf1_20_test.json",
+        "SHA-1",
+        "SHA-1",
+        20,
+        (88, 42, 46),
     );
 }
 
@@ -264,4 +279,30 @@ fn no_salt_is_deterministic_and_parameters_do_not_mix() {
     let e = sk_g.sign_deterministic(msg, None).unwrap();
     assert_eq!(e, sk_g.sign_deterministic(msg, None).unwrap());
     pk_g.verify(msg, None, &e).unwrap();
+}
+
+/// A key over SHA-1 does not sign (the `compile_fail` examples on the algorithm types); one over
+/// `WithoutCollisionResistance<SHA1>` does, and it is the same algorithm: the key over the bare
+/// hash verifies what it made, under PKCS#1 v1.5 and under PSS, salted and not.
+#[test]
+fn sha1_signs_only_through_the_hazmat_wrapper() {
+    type Sha1 = WithoutCollisionResistance<SHA1>;
+    let sk =
+        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
+    let msg = b"the message to sign";
+
+    let signer = sk.key::<RSASSA_PKCS1_v1_5<RSA2048, Sha1>>();
+    assert_eq!(<RSASSA_PKCS1_v1_5<RSA2048, Sha1> as Algorithm>::ALG_NAME, "RSASSA-PKCS1-v1_5-SHA1");
+    let sig = signer.sign_deterministic(msg, None).unwrap();
+    pk.key::<RSASSA_PKCS1_v1_5<RSA2048, SHA1>>().verify(msg, None, &sig).unwrap();
+    assert!(pk.key::<RSASSA_PKCS1_v1_5<RSA2048, SHA256>>().verify(msg, None, &sig).is_err());
+
+    let signer = sk.key::<RSASSA_PSS<RSA2048, Sha1, Mgf1<SHA1, 20>>>();
+    let sig = signer.sign(&mut DefaultRNG::default(), msg, None).unwrap();
+    pk.key::<RSASSA_PSS<RSA2048, SHA1, Mgf1<SHA1, 20>>>().verify(msg, None, &sig).unwrap();
+
+    let signer = sk.key::<RSASSA_PSS<RSA2048, Sha1, NoSalt<SHA1>>>();
+    let sig = signer.sign_deterministic(msg, None).unwrap();
+    pk.key::<RSASSA_PSS<RSA2048, SHA1, NoSalt<SHA1>>>().verify(msg, None, &sig).unwrap();
 }

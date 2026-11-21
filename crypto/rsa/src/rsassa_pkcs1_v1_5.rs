@@ -10,7 +10,9 @@ use crate::rsassa::{RsaDeterministicSignatureAlgorithm, RsaSignatureAlgorithm};
 use crate::size::{RsaSize, min_strength};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::SignatureAlgorithm;
-use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, HashOneShot};
+use bouncycastle_core::traits::{
+    Algorithm, AlgorithmOID, CollisionResistantHash, HashAlgParams, HashOneShot,
+};
 use bouncycastle_utils::const_str::ConstStr;
 use core::marker::PhantomData;
 
@@ -23,6 +25,27 @@ use core::marker::PhantomData;
 /// scheme and hash, so a call names the marker:
 /// a key over it signs through `DeterministicSigningKey`, `sk.sign_deterministic(msg, None)`.
 /// `ctx` is accepted and ignored, since RSA has no context string.
+///
+/// Signing requires a [`CollisionResistantHash`]; verification does not. A key over SHA-1
+/// verifies and does not sign:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::DeterministicOneShotSigningKey;
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::keys::RsaPrivateComponents;
+/// use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
+/// use bouncycastle_sha1::SHA1;
+///
+/// let z = [0u64; 16];
+/// let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&z, &z, &z, &z, &z).unwrap();
+/// let sk = sk.key::<RSASSA_PKCS1_v1_5<RSA2048, SHA1>>();
+/// let _ = DeterministicOneShotSigningKey::<RSASSA_PKCS1_v1_5<RSA2048, SHA1>, 256>::sign_deterministic(
+///     &sk, b"message", None,
+/// );
+/// ```
+///
+/// A caller who must make such a signature names the hash as
+/// [`WithoutCollisionResistance<SHA1>`](bouncycastle_core::hazmat::WithoutCollisionResistance).
 #[allow(non_camel_case_types)]
 pub struct RSASSA_PKCS1_v1_5<K: RsaSize, H> {
     _params: PhantomData<(K, H)>,
@@ -51,8 +74,8 @@ impl<K: RsaSize, H: HashOneShot + HashAlgParams + AlgorithmOID> RsaSignatureAlgo
     }
 }
 
-impl<K: RsaSize, H: HashOneShot + HashAlgParams + AlgorithmOID> RsaDeterministicSignatureAlgorithm
-    for RSASSA_PKCS1_v1_5<K, H>
+impl<K: RsaSize, H: HashOneShot + HashAlgParams + AlgorithmOID + CollisionResistantHash>
+    RsaDeterministicSignatureAlgorithm for RSASSA_PKCS1_v1_5<K, H>
 {
     fn emsa_encode<const K_LEN: usize>(m_hash: &[u8]) -> [u8; K_LEN] {
         emsa_pkcs1_v1_5_encode_from_hash::<H, K_LEN>(m_hash)
