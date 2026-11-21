@@ -4,12 +4,12 @@
 
 use crate::{DUMMY_SEED, FailingRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle_core::traits::{
     RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
-use bouncycastle_rng::FixedSeedRNG;
 
 /// Instance of the test framework.
 pub struct TestFrameworkSymmetricCipher {

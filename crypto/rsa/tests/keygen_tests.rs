@@ -285,9 +285,6 @@ impl RNG for ConstantRng {
     fn next_int(&mut self) -> Result<u32, RNGError> {
         Ok(u32::from_ne_bytes([self.fill; 4]))
     }
-    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
-        Ok(vec![self.fill; len])
-    }
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
         out.fill(self.fill);
         Ok(out.len())

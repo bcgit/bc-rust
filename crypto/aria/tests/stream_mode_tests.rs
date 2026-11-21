@@ -25,12 +25,12 @@ mod common;
 use bouncycastle_aria::{ARIA128Key, ARIA192Key, ARIA256Key, BLOCK_LEN, CTR_NONCE_LEN};
 use bouncycastle_cipher::modes::{CFB, CFB8, CTR, OFB};
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-use bouncycastle_rng::FixedSeedRNG;
 use common::bytes;
 
 /// The 160-byte plaintext shared by all twelve vectors.

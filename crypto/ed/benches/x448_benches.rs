@@ -1,11 +1,11 @@
 use bouncycastle_core::agreement_key::AgreementKey;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_ed::x448::{
     POINT_LEN, SCALAR_LEN, X448PrivateKey, X448PublicKey, keygen_from_seed,
 };
-use bouncycastle_rng::FixedSeedRNG;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 

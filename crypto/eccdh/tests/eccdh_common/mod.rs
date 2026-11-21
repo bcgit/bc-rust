@@ -6,6 +6,7 @@
 use bouncycastle_concatkdf::ConcatKDF;
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError, RNGError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -17,7 +18,7 @@ use bouncycastle_ec::curve::Curve;
 use bouncycastle_eccdh::eccdh::{ECCDH, ECCDH_ConcatKDF, ECCDH_X963KDF, MatchedHash};
 use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
 use bouncycastle_eccdh::keys_common::DerivePublicKey;
-use bouncycastle_rng::{DefaultRNG, FixedSeedRNG};
+use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::hkdf::HKDF_SHA256;
 use bouncycastle_x963kdf::X963KDF;
 

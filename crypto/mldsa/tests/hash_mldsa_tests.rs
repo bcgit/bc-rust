@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod hash_mldsa_tests {
     use bouncycastle_core::errors::SignatureError;
+    use bouncycastle_core::hazmat::FixedSeedRNG;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::signature_key::{
@@ -18,7 +19,6 @@ mod hash_mldsa_tests {
     use bouncycastle_mldsa::{MLDSA44_SIG_LEN, MLDSA65_SIG_LEN, MLDSA87_SIG_LEN};
     use bouncycastle_mldsa::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
     use bouncycastle_rng::DefaultRNG;
-    use bouncycastle_rng::FixedSeedRNG;
     use bouncycastle_rng::HashDRBG_SHA512;
     use bouncycastle_sha2::{SHA256, SHA512};
     use bouncycastle_sha3::{SHAKE128, SHAKE256};

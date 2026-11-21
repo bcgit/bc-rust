@@ -20,10 +20,10 @@ mod common;
 
 use bouncycastle_camellia::{BLOCK_LEN, Camellia128Key, Camellia192Key, Camellia256Key};
 use bouncycastle_cipher::modes::{Blocks, CBC};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-use bouncycastle_rng::FixedSeedRNG;
 use common::bytes;
 
 /// The IV of the first entry of every chain.

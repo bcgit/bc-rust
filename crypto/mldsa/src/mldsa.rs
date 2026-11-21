@@ -224,7 +224,7 @@
 //! key (`create_signer_deterministic`, `sign_deterministic`), [`MLDSAPrivateKeyTrait::sign_mu_deterministic`]
 //! at the mu level and [`DeterministicPreHashSigningKey`] over a pre-hash. No method takes `rnd`
 //! itself; a known-answer test with some other `rnd` passes an RNG that returns it
-//! (`bouncycastle_rng::FixedSeedRNG`).
+//! (`bouncycastle_core::hazmat::FixedSeedRNG`).
 //!
 //! [`DeterministicPreHashSigningKey`]: bouncycastle_core::signature_key::DeterministicPreHashSigningKey
 //!

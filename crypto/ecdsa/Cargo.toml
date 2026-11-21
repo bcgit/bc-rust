@@ -7,7 +7,6 @@ edition.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-ec.workspace = true
 bouncycastle-hmac.workspace = true
-bouncycastle-rng.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-utils.workspace = true
 
@@ -18,6 +17,7 @@ bouncycastle-ripemd.workspace = true
 criterion.workspace = true
 bouncycastle-sha3.workspace = true
 serde_json = "1.0"
+bouncycastle-rng.workspace = true
 
 [[bench]]
 name = "ecdsa_benches"

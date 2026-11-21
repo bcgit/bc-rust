@@ -5,6 +5,7 @@
 //! ed crate's own suites cover the same KEM through the key roles and the other four sets.
 
 use bouncycastle_core::errors::KEMError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
@@ -13,7 +14,6 @@ use bouncycastle_ed::x25519::{
     DHKEM_SS_LEN, POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey,
 };
 use bouncycastle_hex as hex;
-use bouncycastle_rng::FixedSeedRNG;
 
 type X25519DHKEM = DHKEM<X25519, POINT_LEN, SCALAR_LEN, POINT_LEN, DHKEM_SS_LEN>;
 

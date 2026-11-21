@@ -49,9 +49,6 @@ impl RNG for FailingRNG {
     fn next_int(&mut self) -> Result<u32, RNGError> {
         Err(RNGError::GenericError("FailingRNG: every draw fails"))
     }
-    fn next_bytes(&mut self, _: usize) -> Result<Vec<u8>, RNGError> {
-        Err(RNGError::GenericError("FailingRNG: every draw fails"))
-    }
     fn next_bytes_out(&mut self, _: &mut [u8]) -> Result<usize, RNGError> {
         Err(RNGError::GenericError("FailingRNG: every draw fails"))
     }

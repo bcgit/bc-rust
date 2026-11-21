@@ -3,6 +3,7 @@
 //! entry point; a pairing it allows gives the same signature either way.
 
 use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     DeterministicPreHashSigningKey, PreHash, PreHashSigningKey, PreHashVerifyingKey,
@@ -17,7 +18,7 @@ use bouncycastle_mldsa_lowmemory::{
     MLDSA44, MLDSA44_SIG_LEN, MLDSA65, MLDSA65_SIG_LEN, MLDSA87, MLDSA87_SIG_LEN,
     MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait,
 };
-use bouncycastle_rng::{DefaultRNG, FixedSeedRNG};
+use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
 

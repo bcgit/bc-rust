@@ -23,12 +23,12 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use bouncycastle::core::hazmat::FixedSeedRNG;
 use bouncycastle::core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
 use bouncycastle::core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
 use bouncycastle::ed::ed448::{Ed448, Ed448PrivateKey, Ed448PublicKey, keygen, keygen_out};
-use bouncycastle::rng::FixedSeedRNG;
 use std::hint::black_box;
 
 /// The private key of RFC 8032 Section 7.4's "256 octets" vector.

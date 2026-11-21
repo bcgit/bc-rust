@@ -3,6 +3,7 @@
 
 use crate::{DUMMY_SEED, FailingRNG};
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicPreHashSigningKey, DeterministicSigningKey,
     OneShotSigningKey, OneShotVerifyingKey, PreHash, PreHashSigningKey, PreHashVerifyingKey,
@@ -12,7 +13,6 @@ use bouncycastle_core::traits::{
     AlgorithmInfo, CollisionResistantHash, PrivateKey, PublicKey, RNG, SignatureSigner,
     SignatureVerifier,
 };
-use bouncycastle_rng::FixedSeedRNG;
 
 const MSG: &[u8] = b"The quick brown fox jumped over the lazy dog";
 

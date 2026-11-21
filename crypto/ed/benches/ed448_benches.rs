@@ -1,9 +1,9 @@
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
 use bouncycastle_ed::ed448::{Ed448, Ed448PrivateKey, Ed448PublicKey, keygen};
-use bouncycastle_rng::FixedSeedRNG;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 

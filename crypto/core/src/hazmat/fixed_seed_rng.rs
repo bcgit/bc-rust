@@ -1,11 +1,11 @@
 //! A deterministic [`RNG`] that hands back the bytes it was given, for known-answer and other
 //! reproducible tests.
 
-use bouncycastle_core::errors::{KeyMaterialError, RNGError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
-use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::RNG;
+use crate::errors::{KeyMaterialError, RNGError};
+use crate::hazmat::do_hazardous_operations;
+use crate::key_material::{KeyMaterialTrait, KeyType};
+use crate::security_strength::SecurityStrength;
+use crate::traits::RNG;
 
 /// A fake [`RNG`] that produces a fixed, fully deterministic byte stream: the bytes a test
 /// supplies come back out, so a known-answer vector's nonce, `rnd` or seed can be fed through an
@@ -13,7 +13,7 @@ use bouncycastle_core::traits::RNG;
 ///
 /// The stream is the given bytes repeated indefinitely. A single internal cursor is shared across
 /// every [`RNG`] method, so each byte handed out — whether through [`RNG::next_bytes_out`],
-/// [`RNG::next_bytes`], [`RNG::next_int`], or [`RNG::fill_keymaterial_out`] — advances the same
+/// [`RNG::next_int`] or [`RNG::fill_keymaterial_out`] — advances the same
 /// stream. Two instances built from the same bytes therefore emit identical streams, which is
 /// what makes RNG-driven operations reproducible (and comparable against their seed/`m`-driven
 /// internal counterparts) in tests.
@@ -22,8 +22,12 @@ use bouncycastle_core::traits::RNG;
 /// is a slice and a cursor whatever their length; or hand it an array when the value has to be
 /// owned. Drawing from an empty `B` panics.
 ///
-/// This is a deterministic stub for tests only; it is in no way a secure RNG, and nothing outside
-/// a test should construct one.
+/// # 🚨 Security Considerations 🚨
+///
+/// This is not a random number generator: it must never supply randomness outside known-answer
+/// tests, self-tests and other reproducible tests. Nothing in the library will catch a misuse:
+/// it reports a 256-bit strength unless told otherwise, and labels the key material it fills as
+/// a full-entropy 256-bit seed.
 pub struct FixedSeedRNG<B: AsRef<[u8]>> {
     bytes: B,
     pos: usize,
@@ -65,14 +69,6 @@ impl<B: AsRef<[u8]>> RNG for FixedSeedRNG<B> {
             *slot = self.next_byte();
         }
         Ok(u32::from_le_bytes(buf))
-    }
-
-    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
-        let mut out = vec![0u8; len];
-        for slot in out.iter_mut() {
-            *slot = self.next_byte();
-        }
-        Ok(out)
     }
 
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {

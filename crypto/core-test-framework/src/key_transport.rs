@@ -2,11 +2,11 @@
 //! `bouncycastle_core::key_transport_key`.
 
 use bouncycastle_core::errors::{KeyMaterialError, KeyTransportError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::key_transport_key::{KeyTransportDecryptingKey, KeyTransportEncryptingKey};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
-use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_utils::min;
 
 /// Instance of the test framework.

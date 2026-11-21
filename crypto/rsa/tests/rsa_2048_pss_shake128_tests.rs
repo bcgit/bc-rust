@@ -228,9 +228,6 @@ impl RNG for FixedRng {
     fn next_int(&mut self) -> Result<u32, bouncycastle_core::errors::RNGError> {
         Ok(0x42424242)
     }
-    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, bouncycastle_core::errors::RNGError> {
-        Ok(vec![0x42u8; len])
-    }
     fn next_bytes_out(
         &mut self,
         out: &mut [u8],

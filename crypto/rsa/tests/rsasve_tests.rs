@@ -22,6 +22,7 @@
 //!   suites below use as their fixed keys.
 
 use bouncycastle_core::errors::{KEMError, KeyDecodingError, RNGError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -29,7 +30,6 @@ use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKeys};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_rng::FixedSeedRNG;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;

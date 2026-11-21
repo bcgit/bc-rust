@@ -2,6 +2,7 @@
 #[cfg(test)]
 mod mlkem_tests {
     use bouncycastle_core::errors::{KEMError, KeyDecodingError, RNGError};
+    use bouncycastle_core::hazmat::FixedSeedRNG;
     use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
@@ -20,7 +21,6 @@ mod mlkem_tests {
     };
     use bouncycastle_mlkem::{MLKEMPrivateKeyTrait, MLKEMTrait};
     use bouncycastle_rng::DefaultRNG;
-    use bouncycastle_rng::FixedSeedRNG;
     use bouncycastle_sha3::SHAKE256;
 
     #[test]

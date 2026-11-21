@@ -2,6 +2,7 @@
 //! workers they produce.
 
 use bouncycastle_core::errors::{KEMError, KeyDecodingError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -9,7 +10,6 @@ use bouncycastle_core::traits::Algorithm;
 use bouncycastle_core::traits::{
     AlgorithmInfo, KEMDecapsulator, KEMEncapsulator, PrivateKey, PublicKey, RNG,
 };
-use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_utils::min;
 
 /// Instance of the test framework.

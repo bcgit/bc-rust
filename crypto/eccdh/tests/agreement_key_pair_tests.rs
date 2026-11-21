@@ -4,13 +4,14 @@
 
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::{KeyAgreementError, RNGError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::RNG;
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle_eccdh::keys::keygen;
 use bouncycastle_eccdh::keys_common::AgreementKeyPair;
-use bouncycastle_rng::{DefaultRNG, FixedSeedRNG};
+use bouncycastle_rng::DefaultRNG;
 use core::fmt::Debug;
 
 /// A counting seed longer than any curve's draw, so consecutive bytes differ.

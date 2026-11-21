@@ -63,7 +63,7 @@ testing must also be contained within the `mod tests {}` block.
 All traits in `bouncycastle-core` must have corresponding tests in `bouncycastle-core-test-framework` that exercise all
 behaviours and error conditions that are common to all implementations of that trait.
 `bouncycastle-core-test-framework` is test infrastructure only: it goes under `[dev-dependencies]` and is never a
-runtime dependency, since it ships a deterministic `FixedSeedRNG`.
+runtime dependency.
 
 All crypto algorithms must have tests against the bc-test-data repo and against wycheproof.
 

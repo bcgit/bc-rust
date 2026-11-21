@@ -26,7 +26,8 @@
 //! use bouncycastle_rng as rng;
 //!
 //! let mut rng = bouncycastle_factory::rng_factory::RNGFactory::new(rng::HASH_DRBG_SHA256_NAME).unwrap();
-//! let output: Vec<u8> = rng.next_bytes(32).unwrap();
+//! let mut output = [0u8; 32];
+//! rng.next_bytes_out(&mut output).unwrap();
 //! ```
 //! Equivalently, it may be invoked by passing a string instead of using the constant:
 //!
@@ -35,7 +36,8 @@
 //! use bouncycastle_core::traits::RNG;
 //!
 //! let mut rng = bouncycastle_factory::rng_factory::RNGFactory::new("HashDRBG-SHA256").unwrap();
-//! let output: Vec<u8> = rng.next_bytes(32).unwrap();
+//! let mut output = [0u8; 32];
+//! rng.next_bytes_out(&mut output).unwrap();
 //! ```
 
 use crate::{AlgorithmFactory, FactoryError};
@@ -103,13 +105,6 @@ impl RNG for RNGFactory {
         match self {
             Self::HashDRBG_SHA256(rng) => rng.next_int(),
             Self::HashDRBG_SHA512(rng) => rng.next_int(),
-        }
-    }
-
-    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
-        match self {
-            Self::HashDRBG_SHA256(rng) => rng.next_bytes(len),
-            Self::HashDRBG_SHA512(rng) => rng.next_bytes(len),
         }
     }
 

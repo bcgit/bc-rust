@@ -9,6 +9,7 @@ use bouncycastle_aes::AES128Key;
 use bouncycastle_cipher::modes::{CBC, GCM};
 use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
@@ -18,7 +19,6 @@ use bouncycastle_core::symmetric_key::{
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_rng::FixedSeedRNG;
 
 const MSG: &[u8] = b"the quick brown fox jumps over the lazy dog, twice over, for two blocks";
 

@@ -52,6 +52,7 @@ const MLDSA87_KAT1: Kat = Kat {
 mod mldsa_tests {
     use crate::{MLDSA44_KAT1, MLDSA65_KAT1, MLDSA87_KAT1};
     use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
+    use bouncycastle_core::hazmat::FixedSeedRNG;
     use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
@@ -76,7 +77,6 @@ mod mldsa_tests {
     };
     use bouncycastle_mldsa::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait};
     use bouncycastle_rng::DefaultRNG;
-    use bouncycastle_rng::FixedSeedRNG;
     use bouncycastle_rng::HashDRBG_SHA512;
 
     #[test]

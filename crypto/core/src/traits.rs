@@ -520,6 +520,9 @@ pub trait Hash: AlgorithmInfo {
 
     /// Finish absorbing input and produce the hashes output.
     /// Consumes self, so this must be the final call to this object.
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
     fn do_final(mut self) -> Vec<u8>
     where
         Self: Sized,
@@ -571,6 +574,9 @@ pub trait Hash: AlgorithmInfo {
     ///
     /// 0 is a valid value and means the message ends on a byte boundary (equivalent to [`Hash::do_final`]).
     /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
     fn do_final_partial_bits(
         mut self,
         partial_byte: u8,
@@ -629,6 +635,9 @@ pub trait HashOneShot: Hash + Default {
     }
 
     /// Hashes `data` and returns the digest.
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
     fn hash(data: &[u8]) -> Vec<u8> {
         let mut h = Self::default();
         h.do_update(data);
@@ -734,11 +743,12 @@ pub trait KDF: AlgorithmInfo {
     ) -> Result<usize, KDFError>;
 
     /// One-shot: `len` bytes, at most [`KDF_ONE_SHOT_MAX_LEN`], as new key material. Provided
-    /// over [`derive_key_out`](Self::derive_key_out).
+    /// over [`derive_key_out`](Self::derive_key_out). Only available with the `std` feature.
     ///
     /// # Errors
     /// [`KDFError::InvalidLength`] if `len` exceeds [`KDF_ONE_SHOT_MAX_LEN`], else as
     /// [`derive_key_out`](Self::derive_key_out).
+    #[cfg(feature = "std")]
     fn derive_key(
         &self,
         ikm: &dyn KeyMaterialTrait,
@@ -753,10 +763,12 @@ pub trait KDF: AlgorithmInfo {
         Ok(Box::new(output_key))
     }
 
-    /// One-shot over [`derive_key_from_multiple_out`](Self::derive_key_from_multiple_out).
+    /// One-shot over [`derive_key_from_multiple_out`](Self::derive_key_from_multiple_out). Only
+    /// available with the `std` feature.
     ///
     /// # Errors
     /// As [`derive_key`](Self::derive_key).
+    #[cfg(feature = "std")]
     fn derive_key_from_multiple(
         &self,
         ikms: &[&dyn KeyMaterialTrait],
@@ -774,6 +786,7 @@ pub trait KDF: AlgorithmInfo {
 
 /// The one-shots' refusal of a length past [`KDF_ONE_SHOT_MAX_LEN`]; the `_out` forms take any
 /// length the function and the buffer allow.
+#[cfg(feature = "std")]
 const ONE_SHOT_TOO_LONG: &str =
     "the KDF one-shots derive at most KDF_ONE_SHOT_MAX_LEN bytes; use the _out form for more";
 
@@ -1204,9 +1217,6 @@ pub trait RNG {
     ) -> Result<(), RNGError>;
     /// Returns the next random 32-bit integer.
     fn next_int(&mut self) -> Result<u32, RNGError>;
-
-    /// Returns the number of requested bytes.
-    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError>;
 
     /// Returns the number of bytes written.
     /// The entire output buffer is zeroized before the random bytes are written.
@@ -1721,6 +1731,9 @@ pub trait XOFSqueezer {
     /// read -- the bytes [`do_output`](Self::do_output) would give, continuing from wherever
     /// earlier reads left the stream. An implementation with an output length still to bind
     /// overrides it to bind `num_bytes` when nothing has been read yet; see the trait docs.
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
     fn do_output_final(mut self, num_bytes: usize) -> Vec<u8>
     where
         Self: Sized,
@@ -1807,6 +1820,9 @@ pub trait XOF: Hash {
     ///
     /// The default absorbs and reads in the obvious way; override it only where the type can do
     /// better, as SHAKE does.
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
     fn xof(mut self, data: &[u8], result_len: usize) -> Vec<u8>
     where
         Self: Sized,

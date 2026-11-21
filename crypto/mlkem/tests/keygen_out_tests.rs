@@ -2,6 +2,7 @@
 //! refusal of a key that was never filled.
 
 use bouncycastle_core::errors::{KEMError, KeyMaterialError, RNGError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -16,7 +17,6 @@ use bouncycastle_mlkem::{
     MLKEM1024, MLKEM1024_CT_LEN, MLKEM1024_PK_LEN, MLKEM1024PrivateKey,
     MLKEM1024PrivateKeyExpanded, MLKEMPrivateKeyTrait, MLKEMTrait,
 };
-use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_sha2::{SHA256, SHA512};
 
 const ZEROIZED: KEMError = KEMError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey);

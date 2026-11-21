@@ -18,4 +18,6 @@ mod provided;
 pub mod security_strength;
 pub mod signature_key;
 pub mod symmetric_key;
+// Its docs link to the allocating one-shots, which a build without `std` does not have.
+#[cfg_attr(not(feature = "std"), allow(rustdoc::broken_intra_doc_links))]
 pub mod traits;

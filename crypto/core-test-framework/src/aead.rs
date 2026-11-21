@@ -20,6 +20,7 @@
 
 use crate::{DUMMY_SEED, FailingRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::symmetric_key::{
     AeadDecryptionKey, AeadEncryptionKey, AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey,
 };
@@ -27,7 +28,6 @@ use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, RNG, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
-use bouncycastle_rng::FixedSeedRNG;
 
 /// Instance of the test framework.
 pub struct TestFrameworkAEADCipher {

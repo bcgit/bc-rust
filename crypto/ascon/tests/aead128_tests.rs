@@ -525,7 +525,7 @@ fn both_decrypt_entry_points_close_the_aad_phase_on_the_first_non_empty_call() {
 /// `do_encrypt_final` -- and either must decrypt back to the original plaintext.
 #[test]
 fn aead128_tagged_and_direct_layouts_agree() {
-    use bouncycastle_rng::FixedSeedRNG;
+    use bouncycastle_core::hazmat::FixedSeedRNG;
 
     let km = aead_key(&KEY);
     let aad = b"tagged-layout-aad";
@@ -605,7 +605,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
 /// decrypt them back.
 #[test]
 fn aead128_no_aad_one_shots_match_kat() {
-    use bouncycastle_rng::FixedSeedRNG;
+    use bouncycastle_core::hazmat::FixedSeedRNG;
 
     let km = aead_key(&KEY);
     // The NIST LWC AEAD KAT convention uses Key == Nonce == 000102…0F (i.e. KEY for both).

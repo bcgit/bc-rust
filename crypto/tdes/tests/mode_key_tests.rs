@@ -6,6 +6,7 @@ use bouncycastle_cipher::modes::hazmat::ecb::ECB;
 use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, ModeNames, OFB, TKW};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, EcbDecryptionKey, KeyExpansion, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -21,7 +22,7 @@ use bouncycastle_core_test_framework::key_wrap::TestFrameworkKeyWrap;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
-use bouncycastle_rng::{FixedSeedRNG, HashDRBG_SHA512};
+use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_tdes::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle_tdes::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key};
 

@@ -11,6 +11,7 @@
 
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, KeyMaterialError, RNGError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -25,7 +26,7 @@ use bouncycastle_ed::x448::{
     X448PublicKey, keygen,
 };
 use bouncycastle_hex as hex;
-use bouncycastle_rng::{DefaultRNG, FixedSeedRNG, HashDRBG_SHA512};
+use bouncycastle_rng::{DefaultRNG, HashDRBG_SHA512};
 use bouncycastle_utils::secret::Secret;
 use std::collections::HashMap;
 
@@ -403,9 +404,6 @@ impl RNG for FailingRNG {
         Ok(())
     }
     fn next_int(&mut self) -> Result<u32, RNGError> {
-        Err(RNGError::GenericError("failing RNG"))
-    }
-    fn next_bytes(&mut self, _: usize) -> Result<Vec<u8>, RNGError> {
         Err(RNGError::GenericError("failing RNG"))
     }
     fn next_bytes_out(&mut self, _: &mut [u8]) -> Result<usize, RNGError> {

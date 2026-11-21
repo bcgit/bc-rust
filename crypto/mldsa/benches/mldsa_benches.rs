@@ -1,3 +1,4 @@
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_hex as hex;
@@ -6,7 +7,6 @@ use bouncycastle_mldsa::{
     MLDSA65_SIG_LEN, MLDSA65PrivateKeyExpanded, MLDSA65PublicKeyExpanded, MLDSA87, MLDSA87_SIG_LEN,
     MLDSA87PrivateKeyExpanded, MLDSA87PublicKeyExpanded, MLDSAPrivateKeyTrait, MLDSATrait,
 };
-use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_rng::HashDRBG_SHA512;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
