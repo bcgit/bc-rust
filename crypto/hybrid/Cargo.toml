@@ -1,5 +1,5 @@
 [package]
-name = "bouncycastle-hpke"
+name = "bouncycastle-hybrid"
 version.workspace = true
 edition.workspace = true
 

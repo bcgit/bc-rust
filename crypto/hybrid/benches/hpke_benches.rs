@@ -7,7 +7,7 @@ use bouncycastle_chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_ed::x25519::keygen;
-use bouncycastle_hpke::{
+use bouncycastle_hybrid::hpke::{
     HpkeAuthRecipient, HpkeAuthSender, HpkeCipher, HpkeContext, HpkeKdf, HpkeParams, HpkeRecipient,
     HpkeSender, NT,
 };

@@ -1,6 +1,6 @@
 //! Hybrid Public Key Encryption (HPKE), as specified in RFC 9180.
 //!
-//! This crate is HPKE itself, in its four modes: a setup on the recipient's public key gives
+//! This module is HPKE itself, in its four modes: a setup on the recipient's public key gives
 //! the sender `enc` and an encryption context, the same setup on the private key gives the
 //! recipient its context, and the contexts seal and open the messages of the exchange and
 //! export secrets from it (RFC 9180 Sections 5 and 6).
@@ -29,7 +29,7 @@
 //! use bouncycastle_cipher::modes::GCM;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 //! use bouncycastle_ed::x25519::keygen;
-//! use bouncycastle_hpke::{HpkeParams, HpkeRecipient, HpkeSender, NT};
+//! use bouncycastle_hybrid::hpke::{HpkeParams, HpkeRecipient, HpkeSender, NT};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_sha2::SHA256;
 //!
@@ -53,7 +53,7 @@
 //! sender.export_out(b"exporter context", &mut a);
 //! recipient.export_out(b"exporter context", &mut b);
 //! assert_eq!(a.ref_to_bytes(), b.ref_to_bytes());
-//! # Ok::<(), bouncycastle_hpke::HpkeError>(())
+//! # Ok::<(), bouncycastle_hybrid::hpke::HpkeError>(())
 //! ```
 //!
 //! To authenticate the sender by its key pair, the setups are
@@ -66,7 +66,7 @@
 //!
 //! # Memory Usage
 //!
-//! Nothing here allocates, and there are no lookup tables of this crate's own. An
+//! Nothing here allocates, and there are no lookup tables of this module's own. An
 //! [`HpkeContext`] holds the AEAD's key object, a 12-byte base nonce, the sequence number
 //! and the exporter secret.
 //!
@@ -109,10 +109,6 @@
 //!   built; the context itself wipes its key, nonce and exporter secret when dropped.
 //! * The crate's own source is `no_std`, but `bouncycastle-core`, which it depends on, is not yet.
 
-#![no_std]
-#![forbid(unsafe_code)]
-#![forbid(missing_docs)]
+mod scheme;
 
-mod hpke;
-
-pub use hpke::*;
+pub use scheme::*;

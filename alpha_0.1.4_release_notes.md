@@ -39,7 +39,7 @@
   roles: `X25519PrivateKey` implements `AgreementKey` over `()` for the raw shared secret and over
   `KdfParams<HkdfDescription<SHA256>, LEN>` for a derived key (`X25519_HKDF_SHA256`), and with `X25519PublicKey` the KEM roles
   as DHKEM(X25519, HKDF-SHA256) of RFC 9180 Section 4.1 (`DHKEM_X25519_HKDF_SHA256`), through the new
-  `bouncycastle-hpke` crate's generic DHKEM;
+  `bouncycastle-dhkem` crate's generic DHKEM;
   `keygen` draws the key from the caller's RNG; checked against RFC 7748's vectors, RFC 9180 Appendix A.1.1, A.1.2, A.2.1, A.2.2, A.7.1 and A.7.2, and
   Wycheproof's X25519 set; the `x25519` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree, encaps
   and decaps.
@@ -76,7 +76,7 @@
   and DHKEM(P-521, HKDF-SHA512) (`kem_id` 0x0010 to 0x0012) on the ECC CDH keys: `ECCDHPublicKey<C>` and
   `ECCDHPrivateKey<C>` over `P256`, `P384` and `P521` carry the KEM roles with `()` as the parameters, under the
   markers `DHKEM_P256_HKDF_SHA256`, `DHKEM_P384_HKDF_SHA384` and `DHKEM_P521_HKDF_SHA512` (`ECDHKEM<C>`), with
-  `dhkem::derive_key_pair` for Section 7.1.3's `DeriveKeyPair`. `bouncycastle-hpke` gains the rejection-sampling
+  `dhkem::derive_key_pair` for Section 7.1.3's `DeriveKeyPair`. `bouncycastle-dhkem` gains the rejection-sampling
   form of `DeriveKeyPair` beside the expand form: `DHKEMParams::DERIVE_KEY_PAIR_BY_EXPAND` is replaced by
   `DERIVE_KEY_PAIR`, a `DeriveKeyPairForm`, and `DHKEMParams::private_key_from_bytes` returns an `Option`, a change
   for implementors of a DHKEM group. Checked against the RFC's machine-readable vectors for P-256 and P-521 (32
@@ -88,8 +88,8 @@
 * scrypt -- RFC 7914, as `bouncycastle-scrypt`: `SCrypt` over working memory the caller supplies
   (`derive_with_memory_out`, `ScryptParams::work_len`), and on the `KDF` trait with the `std` feature, allocating up to
   a limit. The `scrypt` CLI command takes `--log2-n`, `-r`, `-p` and `--max-memory`.
-* HPKE -- RFC 9180 Sections 5 and 6 in all four modes, as `bouncycastle-hpke`, on the X25519, X448, P-256, P-384
-  and P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
+* HPKE -- RFC 9180 Sections 5 and 6 in all four modes, as `bouncycastle-hybrid::hpke`, on the X25519, X448, P-256,
+  P-384 and P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
   (Auth, AuthPSK) give contexts with `seal_out` / `open_out` and `export_out`; HKDF over SHA-256, SHA-384 or
   SHA-512 with AES-128-GCM, AES-256-GCM, ChaCha20Poly1305 or export-only. No CLI command yet.
 * AES-GCM-SIV -- the nonce misuse-resistant AEAD of RFC 8452, as `AES128Key<GCM_SIV>` and `AES256Key<GCM_SIV>`
@@ -100,9 +100,8 @@
   Counter, Feedback and Double-Pipeline Mode over HMAC (SHA-2, SHA-3) or CMAC (AES), and the KDF Using KMAC, on the
   `KDF` trait; six parameterless instantiations in `KDFFactory`; the `kbkdf-counter`, `kbkdf-feedback`,
   `kbkdf-double-pipeline`, `kbkdf-kmac128` and `kbkdf-kmac256` CLI commands.
-* `bouncycastle-dhkem` -- the generic DHKEM leaves `bouncycastle-hpke` for a crate of its own
-  (`bouncycastle_hpke::dhkem::*` is now `bouncycastle_dhkem::*`), and gains `AuthEncap` and `AuthDecap`. Its
-  `_out` functions return the number of bytes written.
+* `bouncycastle-dhkem` -- the generic DHKEM is a crate of its own, apart from HPKE, and gains `AuthEncap` and
+  `AuthDecap`. Its `_out` functions return the number of bytes written.
 
 ## Minor features / bug fixes
 

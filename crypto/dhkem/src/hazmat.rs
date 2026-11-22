@@ -1,8 +1,9 @@
 //! `LabeledExtract` and `LabeledExpand` of RFC 9180 Section 4, over HKDF (RFC 5869) on the hash
 //! `H`, with the `suite_id` as an argument: the DHKEM's is `concat("KEM", I2OSP(kem_id, 2))`
 //! (Section 4.1) and HPKE's is `concat("HPKE", I2OSP(kem_id, 2), I2OSP(kdf_id, 2),
-//! I2OSP(aead_id, 2))` (Section 5.1). Public for `bouncycastle-hpke`'s key schedule; see
-//! [`bouncycastle_core::hazmat`] for what the path means.
+//! I2OSP(aead_id, 2))` (Section 5.1). Public for the key schedule of
+//! `bouncycastle-hybrid`'s `hpke` module; see [`bouncycastle_core::hazmat`] for what the path
+//! means.
 //!
 //! # 🚨 Security Considerations 🚨
 //!

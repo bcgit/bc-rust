@@ -27,7 +27,7 @@ use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
 use bouncycastle_ed::x448::{X448PrivateKey, X448PublicKey};
 use bouncycastle_ed::x25519::{X25519PrivateKey, X25519PublicKey};
 use bouncycastle_hex as hex;
-use bouncycastle_hpke::{
+use bouncycastle_hybrid::hpke::{
     ExportOnly, HpkeAead, HpkeAuthRecipient, HpkeAuthSender, HpkeCipher, HpkeContext, HpkeError,
     HpkeKdf, HpkeParams, HpkeRecipient, HpkeSender, NN, NT, Psk, Recipient, Sender,
 };

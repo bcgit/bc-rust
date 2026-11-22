@@ -340,7 +340,7 @@ pub struct Recipient;
 /// use bouncycastle_aes::AES128Key;
 /// use bouncycastle_cipher::modes::GCM;
 /// use bouncycastle_ed::x25519::keygen;
-/// use bouncycastle_hpke::{HpkeParams, HpkeSender};
+/// use bouncycastle_hybrid::hpke::{HpkeParams, HpkeSender};
 /// use bouncycastle_rng::HashDRBG_SHA512;
 /// use bouncycastle_sha2::SHA256;
 ///
@@ -506,7 +506,7 @@ impl<Dir, H: HpkeKdf, A: HpkeAead> HpkeContext<Dir, H, A> {
     /// use bouncycastle_cipher::modes::GCM;
     /// use bouncycastle_core::key_material::KeyMaterial;
     /// use bouncycastle_ed::x25519::keygen;
-    /// use bouncycastle_hpke::{HpkeParams, HpkeSender};
+    /// use bouncycastle_hybrid::hpke::{HpkeParams, HpkeSender};
     /// use bouncycastle_rng::HashDRBG_SHA512;
     /// use bouncycastle_sha2::SHA256;
     ///
