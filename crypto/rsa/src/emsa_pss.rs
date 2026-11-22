@@ -33,9 +33,10 @@ pub(crate) const SALT_LEN_ERROR: SignatureError =
 /// it incrementally -- this function itself never sees the message), and the salt supplied
 /// rather than generated here -- [`crate::rsassa_pss`] draws it from an RNG; this function stays
 /// deterministic so it can be tested directly against a known salt. Step 3's error ("encoding
-/// error", `emLen < hLen + sLen + 2`) is a `debug_assert`, since every (hash, modulus size)
-/// pairing this crate wires up has a modulus far wider than any hash-plus-salt combination it
-/// offers.
+/// error", `emLen < hLen + sLen + 2`) is [`SignatureError::EncodingError`]: a pairing can be
+/// named whose modulus is too short for its hash and salt (RSA-1024 with SHA-512 and a
+/// 64-byte salt needs 130 bytes of 128), and although no such pairing signs, the encoding is
+/// reachable through the algorithm traits.
 /// EMSA-PSS-ENCODE (RFC 8017 §9.1.1) from the message hash `m_hash` (step 2's `mHash`,
 /// `H::OUTPUT_LEN` bytes) and the salt (`sLen = P::SALT_LEN` bytes), with `P`'s mask, into the
 /// `K_LEN`-byte `EM`. The lengths every other width derives from are `K_LEN` and the hash's:
@@ -59,10 +60,12 @@ where
     if salt.len() != s_len {
         return Err(SALT_LEN_ERROR);
     }
-    debug_assert!(
-        K_LEN >= h_len + s_len + 2,
-        "emsa_pss_encode: modulus too short for this hash/salt"
-    );
+    // Step 3: "If emLen < hLen + sLen + 2, output "encoding error" and stop."
+    if K_LEN < h_len + s_len + 2 {
+        return Err(SignatureError::EncodingError(
+            "the modulus is too short for this hash and salt length",
+        ));
+    }
     let db_len = K_LEN - h_len - 1;
 
     // Steps 5-6: M' = 8 zero octets || mHash || salt; H = Hash(M').

@@ -81,7 +81,8 @@ pub trait RsaRandomizedSignatureAlgorithm: RsaSignatureAlgorithm {
     ///
     /// # Errors
     /// [`SignatureError::LengthError`] if `m_hash` is not one output of the hash or `salt` is
-    /// not `SALT_LEN` bytes.
+    /// not `SALT_LEN` bytes; [`SignatureError::EncodingError`] if the modulus is too short for
+    /// the hash and the salt (RFC 8017 §9.1.1 step 3), which no pairing that signs is.
     fn emsa_encode<const K_LEN: usize>(
         m_hash: &[u8],
         salt: &[u8],

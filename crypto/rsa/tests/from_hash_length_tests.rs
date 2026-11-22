@@ -220,3 +220,31 @@ fn pss_from_hash_refuses_a_salt_of_the_wrong_length() {
     assert_eq!(rsassa::sign_from_hash_with_salt(&sk_20, &digest[..20], &salt[..20]), Err(HASH_LEN));
     assert_eq!(rsassa::verify_from_hash(&pk_20, &digest[..32], &good), Err(HASH_LEN));
 }
+
+/// RFC 8017 Section 9.1.1 step 3: "If emLen < hLen + sLen + 2, output "encoding error" and
+/// stop." RSA-1024 with SHA-512 and its 64-byte salt needs 130 bytes of a 128-byte modulus.
+/// No key signs at RSA-1024, but the pairing can be named and its encoding called through
+/// the algorithm traits: an error, and from the verification (Section 9.1.2 step 3,
+/// "inconsistent") a refusal, in every build. The next size up has the room.
+#[test]
+fn pss_encoding_refuses_a_modulus_too_short_for_the_hash_and_salt() {
+    use bouncycastle_rsa::{RSA1024, RSA1536};
+    type Short = RSASSA_PSS<RSA1024, SHA512>;
+    type Unsalted = RSASSA_PSS<RSA1024, SHA512, NoSalt<SHA512>>;
+    type Fits = RSASSA_PSS<RSA1536, SHA512>;
+    let too_short =
+        SignatureError::EncodingError("the modulus is too short for this hash and salt length");
+    let (digest, salt) = ([0x11u8; 64], [0x42u8; 64]);
+
+    assert_eq!(Short::emsa_encode::<128>(&digest, &salt), Err(too_short));
+    assert!(!Short::emsa_verify::<128>(&digest, &[0u8; 128]));
+    let mut em = [0u8; 128];
+    em[127] = 0xbc;
+    assert!(!Short::emsa_verify::<128>(&digest, &em));
+
+    // Without a salt the same hash fits (66 of 128 bytes), and with one at RSA-1536 too.
+    let em = Unsalted::emsa_encode::<128>(&digest).unwrap();
+    assert!(Unsalted::emsa_verify::<128>(&digest, &em));
+    let em = Fits::emsa_encode::<192>(&digest, &salt).unwrap();
+    assert!(Fits::emsa_verify::<192>(&digest, &em));
+}
