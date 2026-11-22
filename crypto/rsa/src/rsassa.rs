@@ -31,6 +31,25 @@ use bouncycastle_core::traits::{
 /// An RSA signature algorithm: the modulus size, the message hash, and the scheme's EMSA
 /// verification. A key over it, [`RsaPrivateKey<A>`] / [`RsaPublicKey<A>`], is a key for it and
 /// for nothing else.
+///
+/// The encodings' `K_LEN` is the size's modulus length and no other, checked when the method is
+/// instantiated:
+///
+/// ```compile_fail,E0080
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::rsassa::RsaSignatureAlgorithm;
+/// use bouncycastle_rsa::rsassa_pss::RSASSA_PSS;
+/// use bouncycastle_sha2::SHA256;
+/// let _ = RSASSA_PSS::<RSA2048, SHA256>::emsa_verify::<128>(&[0u8; 32], &[0u8; 128]);
+/// ```
+///
+/// ```
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::rsassa::RsaSignatureAlgorithm;
+/// use bouncycastle_rsa::rsassa_pss::RSASSA_PSS;
+/// use bouncycastle_sha2::SHA256;
+/// assert!(!RSASSA_PSS::<RSA2048, SHA256>::emsa_verify::<256>(&[0u8; 32], &[0u8; 256]));
+/// ```
 pub trait RsaSignatureAlgorithm: SignatureAlgorithm + sealed::Sealed {
     /// The modulus size.
     type Size: RsaSize;

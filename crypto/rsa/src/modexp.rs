@@ -39,6 +39,17 @@ use bouncycastle_ec::nat;
 use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::{ZeroizablePrimitive, zeroize_in_place};
 
+/// The relations between a width and its companions that every function here generic over
+/// `L`, `L2` and `L21` needs: a product is `L2 = 2 * L` limbs and REDC's accumulator
+/// `L21 = 2 * L + 1`. Stable Rust cannot compute one const parameter from another, so the
+/// caller spells all three, and each public function evaluates this in a `const` block: a
+/// triple that does not agree is an error when the function is instantiated, not an index out
+/// of bounds when it runs.
+pub(crate) const fn check_widths<const L: usize, const L2: usize, const L21: usize>() {
+    assert!(L2 == 2 * L, "the double width L2 must be 2 * L");
+    assert!(L21 == 2 * L + 1, "the accumulator width L21 must be 2 * L + 1");
+}
+
 /// `n' = -n0^-1 mod 2^64` for an odd `n0`, by Newton's method: `x` is correct to one bit at
 /// `x = 1` (since `n0` is odd, `n0 * 1` is odd, i.e. `≡ 1 mod 2`), and each round of
 /// `x <- x * (2 - n0 * x)` (all mod `2^64`, via wrapping arithmetic) doubles the number of
@@ -170,11 +181,26 @@ fn from_montgomery<const L: usize, const L2: usize, const L21: usize>(
 /// trick [`mod_pow`] itself doesn't need (it stays in Montgomery form throughout its ladder).
 /// `a` need only fit in `L` limbs, not be `< ctx.modulus()`, by the same `T < n*R` argument
 /// `to_montgomery` relies on -- see the module docs' note on [`montgomery::redc`]'s precondition.
+///
+/// `L2` is `2 * L` and `L21` is `2 * L + 1`, checked when the function is instantiated:
+///
+/// ```compile_fail,E0080
+/// use bouncycastle_rsa::modexp::{MontgomeryContext, mul_mod};
+/// let ctx = MontgomeryContext::<2>::for_public_modulus(&[7, 0]).unwrap();
+/// let _ = mul_mod::<2, 5, 5>(&[3, 0], &[4, 0], &ctx);
+/// ```
+///
+/// ```
+/// use bouncycastle_rsa::modexp::{MontgomeryContext, mul_mod};
+/// let ctx = MontgomeryContext::<2>::for_public_modulus(&[7, 0]).unwrap();
+/// assert_eq!(mul_mod::<2, 4, 5>(&[3, 0], &[4, 0], &ctx), [5, 0]);
+/// ```
 pub fn mul_mod<const L: usize, const L2: usize, const L21: usize>(
     a: &[u64; L],
     b: &[u64; L],
     ctx: &MontgomeryContext<L>,
 ) -> [u64; L] {
+    const { check_widths::<L, L2, L21>() };
     let mut b_bar = to_montgomery::<L, L2, L21>(b, ctx);
     let mut t = montgomery::widening_mul::<L, L2>(a, &b_bar);
     let result = redc_normalize::<L, L2, L21>(&t, &ctx.modulus, ctx.n_prime);
@@ -307,11 +333,26 @@ impl<const L: usize> MontgomeryContext<L> {
 /// `base` must be `< ctx.modulus()`; callers reduce first if that is not already guaranteed (RSA
 /// callers always pass an already-reduced value: a message digest padded to the modulus width, or
 /// a signature, both taken modulo `n` by construction).
+///
+/// `L2` is `2 * L` and `L21` is `2 * L + 1`, checked when the function is instantiated:
+///
+/// ```compile_fail,E0080
+/// use bouncycastle_rsa::modexp::{MontgomeryContext, mod_pow};
+/// let ctx = MontgomeryContext::<2>::for_public_modulus(&[7, 0]).unwrap();
+/// let _ = mod_pow::<2, 4, 4>(&[3, 0], &[5, 0], &ctx);
+/// ```
+///
+/// ```
+/// use bouncycastle_rsa::modexp::{MontgomeryContext, mod_pow};
+/// let ctx = MontgomeryContext::<2>::for_public_modulus(&[7, 0]).unwrap();
+/// assert_eq!(mod_pow::<2, 4, 5>(&[3, 0], &[5, 0], &ctx), [5, 0]); // 3^5 = 243 = 5 mod 7
+/// ```
 pub fn mod_pow<const L: usize, const L2: usize, const L21: usize>(
     base: &[u64; L],
     exponent: &[u64; L],
     ctx: &MontgomeryContext<L>,
 ) -> [u64; L] {
+    const { check_widths::<L, L2, L21>() };
     debug_assert_eq!(nat::sub(base, &ctx.modulus).1, 1, "mod_pow needs base < modulus");
 
     let mut r0 = ctx.r_mod_n;
@@ -352,11 +393,26 @@ pub fn mod_pow<const L: usize, const L2: usize, const L21: usize>(
 /// multiplications fall: never for a private exponent. Constant time in `base`, which can be
 /// secret (RSASVE's secret value, a recovered message): the sequence of operations is a
 /// function of the exponent alone, and each is the same Montgomery product `mod_pow` uses.
+///
+/// `L2` is `2 * L` and `L21` is `2 * L + 1`, checked when the function is instantiated:
+///
+/// ```compile_fail,E0080
+/// use bouncycastle_rsa::modexp::{MontgomeryContext, mod_pow_public_exponent};
+/// let ctx = MontgomeryContext::<2>::for_public_modulus(&[7, 0]).unwrap();
+/// let _ = mod_pow_public_exponent::<2, 3, 5>(&[3, 0], 5, &ctx);
+/// ```
+///
+/// ```
+/// use bouncycastle_rsa::modexp::{MontgomeryContext, mod_pow_public_exponent};
+/// let ctx = MontgomeryContext::<2>::for_public_modulus(&[7, 0]).unwrap();
+/// assert_eq!(mod_pow_public_exponent::<2, 4, 5>(&[3, 0], 5, &ctx), [5, 0]);
+/// ```
 pub fn mod_pow_public_exponent<const L: usize, const L2: usize, const L21: usize>(
     base: &[u64; L],
     exponent: u64,
     ctx: &MontgomeryContext<L>,
 ) -> [u64; L] {
+    const { check_widths::<L, L2, L21>() };
     let mut base_bar = to_montgomery::<L, L2, L21>(base, ctx);
     // Montgomery form of 1, so that an exponent of zero gives 1.
     let mut acc = ctx.r_mod_n;
@@ -381,6 +437,40 @@ pub fn mod_pow_public_exponent<const L: usize, const L2: usize, const L21: usize
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // `check_widths` runs in `const` blocks, where a failure is a build error that only the
+    // `compile_fail` doctests on the public functions can show. Called at run time it is an
+    // ordinary function, so its two relations are pinned here as well.
+    #[test]
+    fn check_widths_takes_the_consistent_triples() {
+        check_widths::<1, 2, 3>();
+        check_widths::<16, 32, 33>();
+        check_widths::<128, 256, 257>();
+    }
+
+    #[test]
+    #[should_panic(expected = "the double width L2 must be 2 * L")]
+    fn check_widths_refuses_a_short_double_width() {
+        check_widths::<2, 3, 5>();
+    }
+
+    #[test]
+    #[should_panic(expected = "the double width L2 must be 2 * L")]
+    fn check_widths_refuses_a_long_double_width() {
+        check_widths::<2, 5, 5>();
+    }
+
+    #[test]
+    #[should_panic(expected = "the accumulator width L21 must be 2 * L + 1")]
+    fn check_widths_refuses_a_short_accumulator() {
+        check_widths::<2, 4, 4>();
+    }
+
+    #[test]
+    #[should_panic(expected = "the accumulator width L21 must be 2 * L + 1")]
+    fn check_widths_refuses_a_long_accumulator() {
+        check_widths::<2, 4, 6>();
+    }
 
     /// A modulus, then its `n'`, `R mod n` and `R^2 mod n`.
     type Case<const L: usize> = ([u64; L], u64, [u64; L], [u64; L]);

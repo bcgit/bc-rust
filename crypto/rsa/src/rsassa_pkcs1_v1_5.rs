@@ -71,6 +71,7 @@ impl<K: RsaSize, H: HashOneShot + HashAlgParams + AlgorithmOID> RsaSignatureAlgo
     type Hash = H;
 
     fn emsa_verify<const K_LEN: usize>(m_hash: &[u8], em: &[u8; K_LEN]) -> bool {
+        const { assert!(K_LEN == K::K_LEN, "K_LEN is the size's modulus length") };
         emsa_pkcs1_v1_5_verify_from_hash::<H, K_LEN>(m_hash, em)
     }
 }
@@ -79,6 +80,7 @@ impl<K: RsaSize, H: HashOneShot + HashAlgParams + AlgorithmOID + CollisionResist
     RsaDeterministicSignatureAlgorithm for RSASSA_PKCS1_v1_5<K, H>
 {
     fn emsa_encode<const K_LEN: usize>(m_hash: &[u8]) -> Result<[u8; K_LEN], SignatureError> {
+        const { assert!(K_LEN == K::K_LEN, "K_LEN is the size's modulus length") };
         emsa_pkcs1_v1_5_encode_from_hash::<H, K_LEN>(m_hash)
     }
 }

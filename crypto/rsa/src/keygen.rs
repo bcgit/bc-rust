@@ -25,7 +25,7 @@
 //! `rsa_core::rsasp1` builds over the secret primes on every signature.
 
 use crate::keys::{RsaPrivateComponents, RsaPublicComponents};
-use crate::modexp::{MontgomeryContext, mod_pow, mul_mod, reduce_wide};
+use crate::modexp::{MontgomeryContext, check_widths, mod_pow, mul_mod, reduce_wide};
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -358,11 +358,32 @@ fn has_small_factor<const N: usize>(w: &[u64; N]) -> bool {
 /// its type rules out zero rounds at compile time. Bases that fall outside `[2, w - 2]` are
 /// redrawn (step 4.2); an RNG that cannot produce one in 128 draws is reported as
 /// `Err(GenericError)`, so a broken RNG cannot hang the test.
+///
+/// `N2` is `2 * N` and `N21` is `2 * N + 1`, checked when the function is instantiated:
+///
+/// ```compile_fail,E0080
+/// use bouncycastle_rng::DefaultRNG;
+/// use bouncycastle_rsa::keygen::is_probable_prime;
+/// use core::num::NonZeroUsize;
+/// let rounds = NonZeroUsize::new(5).unwrap();
+/// let _ = is_probable_prime::<2, 4, 6>(&[0xffffffffffffffc5, 0], rounds, &mut DefaultRNG::default());
+/// ```
+///
+/// ```
+/// use bouncycastle_rng::DefaultRNG;
+/// use bouncycastle_rsa::keygen::is_probable_prime;
+/// use core::num::NonZeroUsize;
+/// let rounds = NonZeroUsize::new(5).unwrap();
+/// // 2^64 - 59 is the largest prime below 2^64.
+/// let prime = is_probable_prime::<2, 4, 5>(&[0xffffffffffffffc5, 0], rounds, &mut DefaultRNG::default());
+/// assert_eq!(prime, Ok(true));
+/// ```
 pub fn is_probable_prime<const N: usize, const N2: usize, const N21: usize>(
     w: &[u64; N],
     rounds: NonZeroUsize,
     rng: &mut dyn RNG,
 ) -> Result<bool, SignatureError> {
+    const { check_widths::<N, N2, N21>() };
     let mut one = [0u64; N];
     one[0] = 1;
     let mut two = [0u64; N];
@@ -531,6 +552,33 @@ fn primes_too_close<const N: usize>(p: &[u64; N], q: &[u64; N]) -> bool {
 /// `required_strength`; `RNGError` for an RNG failure; `GenericError` if the candidate limits of
 /// steps 4.7/5.8 (`5 * nlen` for `p`, `10 * nlen` for `q`) are exhausted, which a working RNG
 /// does not do.
+///
+/// `HALF2` is `2 * HALF` and `HALF21` is `2 * HALF + 1`, checked when the function is
+/// instantiated:
+///
+/// ```compile_fail,E0080
+/// use bouncycastle_rng::DefaultRNG;
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::keygen::keygen_from_rng;
+/// use bouncycastle_rsa::size::{RsaSigningSize, RsaSize};
+/// let _ = keygen_from_rng::<RSA2048, 16, 32, 32>(
+///     &mut DefaultRNG::default(),
+///     RSA2048::MR_ROUNDS,
+///     RSA2048::STRENGTH,
+/// );
+/// ```
+///
+/// ```no_run
+/// use bouncycastle_rng::DefaultRNG;
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::keygen::keygen_from_rng;
+/// use bouncycastle_rsa::size::{RsaSigningSize, RsaSize};
+/// let _ = keygen_from_rng::<RSA2048, 16, 32, 33>(
+///     &mut DefaultRNG::default(),
+///     RSA2048::MR_ROUNDS,
+///     RSA2048::STRENGTH,
+/// );
+/// ```
 pub fn keygen_from_rng<K, const HALF: usize, const HALF2: usize, const HALF21: usize>(
     rng: &mut dyn RNG,
     rounds: NonZeroUsize,
@@ -539,7 +587,7 @@ pub fn keygen_from_rng<K, const HALF: usize, const HALF2: usize, const HALF21: u
 where
     K: RsaSigningSize + RsaSize<HalfLimbs = [u64; HALF], Limbs = [u64; HALF2]>,
 {
-    debug_assert_eq!(HALF2, 2 * HALF);
+    const { check_widths::<HALF, HALF2, HALF21>() };
     // Step 3 (and A.1.3's preamble): the DRBG's strength must meet the modulus's.
     if rng.security_strength() < required_strength {
         return Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm));
