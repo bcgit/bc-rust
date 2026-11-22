@@ -22,7 +22,7 @@ pub enum CtxBehaviour {
     /// The context is bound into the signature, and one longer than 255 bytes is refused
     /// (ML-DSA).
     Bound,
-    /// The context is accepted and has no effect (ECDSA, RSA).
+    /// The context is accepted and has no effect.
     Ignored,
     /// A non-empty context is a `LengthError`, from the one-shots and from the constructors of
     /// the workers; `None` and the empty context are accepted.
