@@ -471,8 +471,9 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 Six workflows under `.github/workflows/`, all triggered by pull requests:
 
 - `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then
-  `cargo test -p bouncycastle-digest --no-default-features`, since `--all-features` never
-  builds a crate with a default feature off.
+  `cargo test -p bouncycastle-digest --no-default-features` on the crate's unit tests and scrypt's
+  caller-memory tests (the vector suites need bc-test-data, which that job does not check out),
+  since `--all-features` never builds a crate with a default feature off.
 - `rust-test.yml`: `cargo test --all` on stable, with `bcgit/bc-test-data` and `C2SP/wycheproof`
   checked out beside the repository. Wycheproof is pinned to a commit (`ref:` in the workflow), so
   that a change upstream does not fail an unrelated PR: a vector suite that is strict about the
