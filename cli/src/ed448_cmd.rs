@@ -17,7 +17,7 @@ use bouncycastle::core::signature_key::{
 };
 use bouncycastle::core::traits::{PublicKey, SignatureSigner, SignatureVerifier};
 use bouncycastle::ed::ed448::{
-    CONTEXT_MAX_LEN, Ed448, Ed448PrivateKey, Ed448PublicKey, SIGNATURE_LEN, keygen_out,
+    CONTEXT_MAX_LEN, Ed448PrivateKey, Ed448PublicKey, SIGNATURE_LEN, keygen_out,
     keypair_consistency_check,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
@@ -159,12 +159,13 @@ enum SignFailure {
 fn sign(input: &SignInput, sk: &Ed448PrivateKey) -> Result<[u8; SIGNATURE_LEN], SignFailure> {
     match input {
         SignInput::Message { ctx, msg } => {
-            DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(sk, msg, Some(ctx))
-                .map_err(SignFailure::Signature)
+            sk.sign_deterministic(msg, Some(ctx)).map_err(SignFailure::Signature)
         }
         SignInput::Context(ctx) => {
-            let mut signer =
-                sk.create_signer_deterministic(Some(ctx)).map_err(SignFailure::Signature)?;
+            let mut signer = sk
+                .as_prehash()
+                .create_signer_deterministic(Some(ctx))
+                .map_err(SignFailure::Signature)?;
             let mut stdin = std::io::stdin();
             let mut buf = [0u8; CHUNK_LEN];
             loop {
@@ -188,10 +189,10 @@ fn verify(
     match variant {
         Ed448Variant::Pure => {
             let msg = read_stdin_all();
-            OneShotVerifyingKey::<Ed448, _>::verify(pk, &msg, Some(ctx), sig)
+            pk.verify(&msg, Some(ctx), sig)
         }
         Ed448Variant::Prehash => {
-            let mut verifier = pk.create_verifier(Some(ctx))?;
+            let mut verifier = pk.as_prehash().create_verifier(Some(ctx))?;
             stream_stdin(|chunk| verifier.do_update(chunk));
             verifier.do_verify_final(sig)
         }

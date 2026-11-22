@@ -21,7 +21,7 @@
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use bouncycastle_core::traits::PublicKey;
-use bouncycastle_ed::ed25519::{Ed25519, Ed25519PublicKey, Ed25519ph};
+use bouncycastle_ed::ed25519::Ed25519PublicKey;
 
 // (number, message, public key, signature)
 const TAMING: &[(usize, &str, &str, &str)] = &[
@@ -152,12 +152,12 @@ fn taming_vectors() {
             Err(_) => at_decode += 1,
             Ok(pk) => {
                 assert_eq!(
-                    OneShotVerifyingKey::<Ed25519, _>::verify(&pk, &msg, None, &sig),
+                    pk.verify(&msg, None, &sig),
                     Err(SignatureError::SignatureVerificationFailed),
                     "vector {number}"
                 );
                 assert_eq!(
-                    OneShotVerifyingKey::<Ed25519ph, _>::verify(&pk, &msg, None, &sig),
+                    pk.as_prehash().verify(&msg, None, &sig),
                     Err(SignatureError::SignatureVerificationFailed),
                     "vector {number}"
                 );

@@ -26,7 +26,7 @@ use bouncycastle::core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
 use bouncycastle::core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
-use bouncycastle::ed::ed25519::{Ed25519, Ed25519PrivateKey, Ed25519PublicKey, keygen, keygen_out};
+use bouncycastle::ed::ed25519::{Ed25519PrivateKey, Ed25519PublicKey, keygen, keygen_out};
 use std::hint::black_box;
 
 /// The private key of RFC 8032 Section 7.1's TEST SHA(abc) and Section 7.3's TEST abc.
@@ -177,8 +177,7 @@ fn bench_ed25519_sign() {
 
     let sk = load_sk();
     measure(|| {
-        let sig = DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(&sk, &MSG, None)
-            .unwrap();
+        let sig = sk.sign_deterministic(&MSG, None).unwrap();
         print!("{:x?}", sig);
     });
 }
@@ -189,7 +188,7 @@ fn bench_ed25519_verify() {
 
     let pk = load_pk();
     measure(|| {
-        OneShotVerifyingKey::<Ed25519, _>::verify(&pk, &MSG, None, &SIG).unwrap();
+        pk.verify(&MSG, None, &SIG).unwrap();
         print!("ok");
     });
 }
@@ -200,7 +199,7 @@ fn bench_ed25519ph_sign() {
 
     let sk = load_sk();
     measure(|| {
-        let mut signer = sk.create_signer_deterministic(None).unwrap();
+        let mut signer = sk.as_prehash().create_signer_deterministic(None).unwrap();
         signer.do_update(&MSG_PH);
         let sig = signer.do_final().unwrap();
         print!("{:x?}", sig);
@@ -213,7 +212,7 @@ fn bench_ed25519ph_verify() {
 
     let pk = load_pk();
     measure(|| {
-        let mut verifier = pk.create_verifier(None).unwrap();
+        let mut verifier = pk.as_prehash().create_verifier(None).unwrap();
         verifier.do_update(&MSG_PH);
         verifier.do_verify_final(&SIG_PH).unwrap();
         print!("ok");

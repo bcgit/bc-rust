@@ -28,7 +28,7 @@ use bouncycastle::core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
 use bouncycastle::core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
-use bouncycastle::ed::ed448::{Ed448, Ed448PrivateKey, Ed448PublicKey, keygen, keygen_out};
+use bouncycastle::ed::ed448::{Ed448PrivateKey, Ed448PublicKey, keygen, keygen_out};
 use std::hint::black_box;
 
 /// The private key of RFC 8032 Section 7.4's "256 octets" vector.
@@ -202,12 +202,7 @@ fn bench_ed448_sign() {
 
     let sk = load_sk();
     measure(|| {
-        let sig = DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(
-            black_box(&sk),
-            black_box(&MSG),
-            black_box(None),
-        )
-        .unwrap();
+        let sig = black_box(&sk).sign_deterministic(black_box(&MSG), black_box(None)).unwrap();
         print!("{:x?}", sig);
     });
 }
@@ -218,13 +213,7 @@ fn bench_ed448_verify() {
 
     let pk = load_pk();
     measure(|| {
-        OneShotVerifyingKey::<Ed448, _>::verify(
-            black_box(&pk),
-            black_box(&MSG),
-            black_box(None),
-            black_box(&SIG),
-        )
-        .unwrap();
+        black_box(&pk).verify(black_box(&MSG), black_box(None), black_box(&SIG)).unwrap();
         print!("ok");
     });
 }
@@ -235,7 +224,8 @@ fn bench_ed448ph_sign() {
 
     let sk = load_sk();
     measure(|| {
-        let mut signer = black_box(&sk).create_signer_deterministic(black_box(None)).unwrap();
+        let mut signer =
+            black_box(&sk).as_prehash().create_signer_deterministic(black_box(None)).unwrap();
         signer.do_update(black_box(&MSG));
         let sig = signer.do_final().unwrap();
         print!("{:x?}", sig);
@@ -248,7 +238,7 @@ fn bench_ed448ph_verify() {
 
     let pk = load_pk();
     measure(|| {
-        let mut verifier = black_box(&pk).create_verifier(black_box(None)).unwrap();
+        let mut verifier = black_box(&pk).as_prehash().create_verifier(black_box(None)).unwrap();
         verifier.do_update(black_box(&MSG));
         verifier.do_verify_final(black_box(&SIG_PH)).unwrap();
         print!("ok");

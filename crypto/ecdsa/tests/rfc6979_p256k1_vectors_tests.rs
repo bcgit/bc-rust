@@ -123,5 +123,8 @@ fn deterministic_signature_verifies() {
         let pk = public_key_for(v);
         let sig = sk.sign_deterministic(v.msg, None).unwrap();
         pk.verify(v.msg, None, &sig).unwrap();
+        // The empty context is the absent one.
+        assert_eq!(sk.sign_deterministic(v.msg, Some(&[])).unwrap(), sig);
+        pk.verify(v.msg, Some(&[]), &sig).unwrap();
     }
 }

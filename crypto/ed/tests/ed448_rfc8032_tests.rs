@@ -7,9 +7,7 @@ use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
-use bouncycastle_ed::ed448::{
-    Ed448, Ed448PrivateKey, Ed448PublicKey, Ed448ph, keypair_consistency_check,
-};
+use bouncycastle_ed::ed448::{Ed448PrivateKey, Ed448PublicKey, keypair_consistency_check};
 
 // (test name, secret key, public key, message, context, signature)
 const RFC8032_ED448: &[(&str, &str, &str, &str, &str, &str)] = &[
@@ -286,16 +284,14 @@ fn rfc_8032_section_7_4_ed448() {
         with_context += usize::from(!ctx.is_empty());
 
         for ctx in contexts(&ctx) {
-            let signed =
-                DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(&sk, &msg, ctx)
-                    .unwrap();
+            let signed = sk.sign_deterministic(&msg, ctx).unwrap();
             assert_eq!(signed.as_slice(), sig, "{name}: signature");
-            OneShotVerifyingKey::<Ed448, _>::verify(&pk, &msg, ctx, &sig).unwrap();
+            pk.verify(&msg, ctx, &sig).unwrap();
             // It is not an Ed448ph signature.
-            assert!(OneShotVerifyingKey::<Ed448ph, _>::verify(&pk, &msg, ctx, &sig).is_err());
+            assert!(pk.as_prehash().verify(&msg, ctx, &sig).is_err());
         }
         // Nor a signature under another context.
-        assert!(OneShotVerifyingKey::<Ed448, _>::verify(&pk, &msg, Some(b"fo"), &sig).is_err());
+        assert!(pk.verify(&msg, Some(b"fo"), &sig).is_err());
     }
     assert_eq!(with_context, 1);
 }
@@ -310,15 +306,13 @@ fn rfc_8032_section_7_5_ed448ph() {
         with_context += usize::from(!ctx.is_empty());
 
         for ctx in contexts(&ctx) {
-            let signed =
-                DeterministicOneShotSigningKey::<Ed448ph, _>::sign_deterministic(&sk, &msg, ctx)
-                    .unwrap();
+            let signed = sk.as_prehash().sign_deterministic(&msg, ctx).unwrap();
             assert_eq!(signed.as_slice(), sig, "{name}: signature");
-            OneShotVerifyingKey::<Ed448ph, _>::verify(&pk, &msg, ctx, &sig).unwrap();
+            pk.as_prehash().verify(&msg, ctx, &sig).unwrap();
 
             // Streamed an octet at a time.
-            let mut signer = sk.create_signer_deterministic(ctx).unwrap();
-            let mut verifier = pk.create_verifier(ctx).unwrap();
+            let mut signer = sk.as_prehash().create_signer_deterministic(ctx).unwrap();
+            let mut verifier = pk.as_prehash().create_verifier(ctx).unwrap();
             for octet in msg.chunks(1) {
                 signer.do_update(octet);
                 verifier.do_update(octet);
@@ -327,7 +321,7 @@ fn rfc_8032_section_7_5_ed448ph() {
             verifier.do_verify_final(&sig).unwrap();
 
             // It is not an Ed448 signature.
-            assert!(OneShotVerifyingKey::<Ed448, _>::verify(&pk, &msg, ctx, &sig).is_err());
+            assert!(pk.verify(&msg, ctx, &sig).is_err());
         }
     }
     assert_eq!(with_context, 1);

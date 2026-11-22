@@ -22,6 +22,11 @@ fn two_signers_one_verifier() {
 }
 
 #[test]
+fn context_is_refused() {
+    ecdsa_common::context_is_refused::<Bp384r1, SHA384, 96>();
+}
+
+#[test]
 fn key_loading() {
     ecdsa_common::key_loading::<Bp384r1, SHA384, 97, 48>();
 }
