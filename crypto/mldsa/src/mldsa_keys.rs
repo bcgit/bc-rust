@@ -60,6 +60,18 @@ pub type MLDSA87PrivateKeyExpanded<'k> = MLDSAPrivateKeyExpanded<'k, MLDSA87Para
 /// type parameter may not be used as one, so their impls are generic over the length and bound
 /// through the per-length traits (`P: PublicKeyLen<PK_LEN>`), which have one impl per parameter
 /// set and so let the length be inferred from `P`.
+///
+/// It is a key of [`MLDSA`](crate::MLDSA), and verifies HashML-DSA only through the view
+/// [`as_prehash`](Self::as_prehash) gives; the key itself has no pre-hash method:
+///
+/// ```compile_fail,E0599
+/// use bouncycastle_core::signature_key::PreHashVerifyingKey;
+/// use bouncycastle_mldsa::MLDSA44PublicKey;
+///
+/// fn verify(pk: &MLDSA44PublicKey, sig: &[u8]) {
+///     let _ = pk.verify_ph(&[0u8; 64], None, sig);
+/// }
+/// ```
 pub struct MLDSAPublicKey<P: MLDSAParams> {
     rho: [u8; 32],
     t1: P::VecK,
@@ -396,6 +408,18 @@ impl<P: MLDSAParams> MLDSAPublicKeyTrait<P> for MLDSAPublicKeyExpanded<'_, P> {
 }
 
 /// An ML-DSA private key.
+///
+/// It is a key of [`MLDSA`](crate::MLDSA), and signs HashML-DSA only through the view
+/// [`as_prehash`](Self::as_prehash) gives; the key itself has no pre-hash method:
+///
+/// ```compile_fail,E0599
+/// use bouncycastle_core::signature_key::DeterministicPreHashSigningKey;
+/// use bouncycastle_mldsa::MLDSA44PrivateKey;
+///
+/// fn sign(sk: &MLDSA44PrivateKey) {
+///     let _ = sk.sign_ph_deterministic(&[0u8; 64], None);
+/// }
+/// ```
 //
 // Dev note: This will automatically inherit the [`Secret`] protections because [`Polynomial`] wraps the underlying data with [`Secret`].
 pub struct MLDSAPrivateKey<P: MLDSAParams> {

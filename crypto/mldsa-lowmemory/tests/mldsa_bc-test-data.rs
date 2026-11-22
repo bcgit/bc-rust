@@ -675,24 +675,23 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
                     assert_eq!(ph, &*hex::decode(&self.message_hash).unwrap());
 
                     let sig = sk
-                        .sign_ph_deterministic::<SHA512>(
-                            &ph,
-                            Some(&*hex::decode(&self.context).unwrap()),
-                        )
+                        .as_prehash::<SHA512>()
+                        .sign_ph_deterministic(&ph, Some(&*hex::decode(&self.context).unwrap()))
                         .unwrap();
                     assert_eq!(sig, &*hex::decode(&self.sm).unwrap());
 
-                    pk.verify_ph::<SHA512>(
-                        &SHA512::hash(&hex::decode(&self.msg).unwrap()),
-                        Some(&*hex::decode(&self.context).unwrap()),
-                        &sig,
-                    )
-                    .unwrap_or_else(|_| {
-                        panic!(
-                            "paramSet: {}, is_hash: {}, count: {}",
-                            parameter_set, IS_HASH_MLDSA, self.count
+                    pk.as_prehash::<SHA512>()
+                        .verify_ph(
+                            &SHA512::hash(&hex::decode(&self.msg).unwrap()),
+                            Some(&*hex::decode(&self.context).unwrap()),
+                            &sig,
                         )
-                    });
+                        .unwrap_or_else(|_| {
+                            panic!(
+                                "paramSet: {}, is_hash: {}, count: {}",
+                                parameter_set, IS_HASH_MLDSA, self.count
+                            )
+                        });
                 } else {
                     // The vector is for the internal interface, so mu is built without the ctx framing.
                     let mu = self.mu(&sk.tr());
@@ -748,24 +747,23 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
                     assert_eq!(ph, &*hex::decode(&self.message_hash).unwrap());
 
                     let sig = sk
-                        .sign_ph_deterministic::<SHA512>(
-                            &ph,
-                            Some(&*hex::decode(&self.context).unwrap()),
-                        )
+                        .as_prehash::<SHA512>()
+                        .sign_ph_deterministic(&ph, Some(&*hex::decode(&self.context).unwrap()))
                         .unwrap();
                     assert_eq!(sig, &*hex::decode(&self.sm).unwrap());
 
-                    pk.verify_ph::<SHA512>(
-                        &SHA512::hash(&hex::decode(&self.msg).unwrap()),
-                        Some(&*hex::decode(&self.context).unwrap()),
-                        &sig,
-                    )
-                    .unwrap_or_else(|_| {
-                        panic!(
-                            "paramSet: {}, isHash: {}, count: {}",
-                            parameter_set, IS_HASH_MLDSA, self.count
+                    pk.as_prehash::<SHA512>()
+                        .verify_ph(
+                            &SHA512::hash(&hex::decode(&self.msg).unwrap()),
+                            Some(&*hex::decode(&self.context).unwrap()),
+                            &sig,
                         )
-                    });
+                        .unwrap_or_else(|_| {
+                            panic!(
+                                "paramSet: {}, isHash: {}, count: {}",
+                                parameter_set, IS_HASH_MLDSA, self.count
+                            )
+                        });
                 } else {
                     // The vector is for the internal interface, so mu is built without the ctx framing.
                     let mu = self.mu(&sk.tr());
@@ -815,19 +813,18 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
                     assert_eq!(ph, &*hex::decode(&self.message_hash).unwrap());
 
                     let sig = sk
-                        .sign_ph_deterministic::<SHA512>(
-                            &ph,
-                            Some(&*hex::decode(&self.context).unwrap()),
-                        )
+                        .as_prehash::<SHA512>()
+                        .sign_ph_deterministic(&ph, Some(&*hex::decode(&self.context).unwrap()))
                         .unwrap();
                     assert_eq!(sig, &*hex::decode(&self.sm).unwrap());
 
-                    pk.verify_ph::<SHA512>(
-                        &SHA512::hash(&hex::decode(&self.msg).unwrap()),
-                        Some(&*hex::decode(&self.context).unwrap()),
-                        &sig,
-                    )
-                    .unwrap();
+                    pk.as_prehash::<SHA512>()
+                        .verify_ph(
+                            &SHA512::hash(&hex::decode(&self.msg).unwrap()),
+                            Some(&*hex::decode(&self.context).unwrap()),
+                            &sig,
+                        )
+                        .unwrap();
                 } else {
                     // The vector is for the internal interface, so mu is built without the ctx framing.
                     let mu = self.mu(&sk.tr());

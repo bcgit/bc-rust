@@ -650,10 +650,10 @@ pub trait HashOneShot: Hash + Default {
 ///
 /// A signature is made over a digest of the message, so whoever can find two messages with one
 /// digest can have one of them signed and present the signature with the other. The signing roles
-/// of the schemes that take their hash from the caller (ECDSA, HashML-DSA) therefore require this
-/// marker of the hash, and a hash without it cannot be used to produce a signature. The verifying
-/// roles do not require it, so a signature made over such a hash can still be checked; neither do
-/// MACs or KDFs, which do not rest on collision resistance.
+/// of the schemes whose keys are paired with a hash of the caller's choice (ECDSA, HashML-DSA)
+/// therefore require this marker of the hash, and a hash without it cannot be used to produce a
+/// signature. The verifying roles do not require it, so a signature made over such a hash can
+/// still be checked; neither do MACs or KDFs, which do not rest on collision resistance.
 ///
 /// Implemented by each hash in the library that has a fixed digest length, takes no key or
 /// parameter, and reports a security strength ([`Algorithm::MAX_SECURITY_STRENGTH`] other than

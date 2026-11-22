@@ -15,15 +15,16 @@
 //! present the tests print a warning and pass vacuously.
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::signature_key::{PreHash, PreHashVerifyingKey, SignatureAlgorithm};
-use bouncycastle_core::traits::{PrivateKey, PublicKey, SignatureVerifier};
+use bouncycastle_core::signature_key::{PreHash, PreHashAlgorithm, PreHashVerifyingKey};
+use bouncycastle_core::traits::{Algorithm, HashOneShot, PrivateKey, PublicKey, SignatureVerifier};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa::MLDSAPrivateKeyTrait;
 use bouncycastle_mldsa_lowmemory::hazmat::AnyStrength;
 use bouncycastle_mldsa_lowmemory::{
-    MLDSA44, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44PublicKey, MLDSA65, MLDSA65_PK_LEN,
-    MLDSA65_SIG_LEN, MLDSA65PublicKey, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87PublicKey,
+    MLDSA, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44Params, MLDSA65_PK_LEN, MLDSA65_SIG_LEN,
+    MLDSA65Params, MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87Params, MLDSAPublicKey, PublicKeyLen,
+    SignatureLen,
 };
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
@@ -125,76 +126,86 @@ fn check_tallies(file: &str, tallies: &Tallies, records: usize, weak: usize) {
     assert_eq!(total(|t| t.bare), records - weak);
 }
 
-/// Verifies the record's signature with the pre-hash `H`, by the one-shot over the digest and
-/// by the streaming verifier over the message, and checks that both find it valid or not as `valid` says.
-fn verify_as<A, PK, H, const SIG_LEN: usize>(rec: &Record, pk: &PK, valid: bool)
+/// Verifies the record's signature with a HashML-DSA public key, by the one-shots over the
+/// digest and the message and by the streaming verifier, and checks that each finds it valid or
+/// not as `valid` says.
+fn verify_as<A, PK, const SIG_LEN: usize>(rec: &Record, pk: &PK, valid: bool)
 where
-    A: SignatureAlgorithm,
+    A: PreHashAlgorithm,
     PK: PreHashVerifyingKey<A, SIG_LEN>,
-    H: PreHash,
 {
     let (msg, ctx, sig) = (rec.hex("message"), rec.hex("context"), rec.hex("signature"));
     let ctx = Some(ctx.as_slice());
     let expected = || if valid { Ok(()) } else { Err(SignatureError::SignatureVerificationFailed) };
-    assert_eq!(pk.verify_ph::<H>(&H::hash(&msg), ctx, &sig), expected(), "{}", rec.id());
-    let mut verifier = pk.create_ph_verifier::<H>(ctx).unwrap();
+    assert_eq!(pk.verify_ph(&A::Hash::hash(&msg), ctx, &sig), expected(), "{}", rec.id());
+    assert_eq!(pk.verify(&msg, ctx, &sig), expected(), "{}: one-shot", rec.id());
+    let mut verifier = pk.create_verifier(ctx).unwrap();
     verifier.do_update(&msg);
     assert_eq!(verifier.do_verify_final(&sig), expected(), "{}: streaming", rec.id());
 }
 
-fn verify_with<A, PK, H, const PK_LEN: usize, const SIG_LEN: usize>(
+/// The key over the bare hash refuses at each verifying entry point, whatever the signature.
+fn verify_is_refused<A, PK, const SIG_LEN: usize>(rec: &Record, pk: &PK)
+where
+    A: PreHashAlgorithm,
+    PK: PreHashVerifyingKey<A, SIG_LEN>,
+{
+    let (msg, sig) = (rec.hex("message"), rec.hex("signature"));
+    let too_weak = Err(SignatureError::PreHashTooWeak);
+    assert_eq!(pk.verify_ph(&A::Hash::hash(&msg), None, &sig), too_weak, "{}", rec.id());
+    assert_eq!(pk.verify(&msg, None, &sig), too_weak, "{}", rec.id());
+    assert!(
+        matches!(pk.create_verifier(None), Err(SignatureError::PreHashTooWeak)),
+        "{}",
+        rec.id()
+    );
+}
+
+/// One record under the hash `H`: through `AnyStrength`, and with the bare hash, which verifies
+/// or is refused as FIPS 204 Section 5.4 has it for the parameter set `P`.
+fn verify_with<P, H, const SIG_LEN: usize>(
     rec: &Record,
-    pk: &[u8],
+    pk: &MLDSAPublicKey<P>,
     valid: bool,
     tally: &mut Tally,
 ) where
-    A: SignatureAlgorithm,
-    PK: PublicKey<PK_LEN> + PreHashVerifyingKey<A, SIG_LEN>,
+    P: SignatureLen<SIG_LEN>,
     H: PreHash,
 {
-    let pk = PK::from_bytes(pk).unwrap();
-
-    verify_as::<A, PK, AnyStrength<H>, SIG_LEN>(rec, &pk, valid);
+    verify_as(rec, &pk.as_prehash::<AnyStrength<H>>(), valid);
     tally.wrapped += 1;
-    if H::MAX_SECURITY_STRENGTH < A::MAX_SECURITY_STRENGTH {
-        // The bare hash is refused at each verifying entry point, whatever the signature.
-        let (ph, sig) = (H::hash(&rec.hex("message")), rec.hex("signature"));
-        let too_weak = Err(SignatureError::PreHashTooWeak);
-        assert_eq!(pk.verify_ph::<H>(&ph, None, &sig), too_weak, "{}", rec.id());
-        assert!(
-            matches!(pk.create_ph_verifier::<H>(None), Err(SignatureError::PreHashTooWeak)),
-            "{}",
-            rec.id()
-        );
+    if H::MAX_SECURITY_STRENGTH < MLDSA::<P>::MAX_SECURITY_STRENGTH {
+        verify_is_refused(rec, &pk.as_prehash::<H>());
         tally.refused += 1;
     } else {
-        verify_as::<A, PK, H, SIG_LEN>(rec, &pk, valid);
+        verify_as(rec, &pk.as_prehash::<H>(), valid);
         tally.bare += 1;
     }
 }
 
-fn verify<A, PK, const PK_LEN: usize, const SIG_LEN: usize>(
+/// One record under the encoded public key `pk` of the parameter set `P`, by its `hashAlg`.
+fn verify<P, const PK_LEN: usize, const SIG_LEN: usize>(
     rec: &Record,
     pk: &[u8],
     valid: bool,
     tally: &mut Tally,
 ) where
-    A: SignatureAlgorithm,
-    PK: PublicKey<PK_LEN> + PreHashVerifyingKey<A, SIG_LEN>,
+    P: PublicKeyLen<PK_LEN> + SignatureLen<SIG_LEN>,
 {
+    let pk = MLDSAPublicKey::<P>::from_bytes(pk).unwrap();
     match rec.str("hashAlg") {
-        "SHA2-224" => verify_with::<A, PK, SHA224, PK_LEN, SIG_LEN>(rec, pk, valid, tally),
-        "SHA2-256" => verify_with::<A, PK, SHA256, PK_LEN, SIG_LEN>(rec, pk, valid, tally),
-        "SHA2-384" => verify_with::<A, PK, SHA384, PK_LEN, SIG_LEN>(rec, pk, valid, tally),
-        "SHA2-512" => verify_with::<A, PK, SHA512, PK_LEN, SIG_LEN>(rec, pk, valid, tally),
-        "SHA2-512/224" => verify_with::<A, PK, SHA512_224, PK_LEN, SIG_LEN>(rec, pk, valid, tally),
-        "SHA2-512/256" => verify_with::<A, PK, SHA512_256, PK_LEN, SIG_LEN>(rec, pk, valid, tally),
-        "SHA3-224" => verify_with::<A, PK, SHA3_224, PK_LEN, SIG_LEN>(rec, pk, valid, tally),
-        "SHA3-256" => verify_with::<A, PK, SHA3_256, PK_LEN, SIG_LEN>(rec, pk, valid, tally),
-        "SHA3-384" => verify_with::<A, PK, SHA3_384, PK_LEN, SIG_LEN>(rec, pk, valid, tally),
-        "SHA3-512" => verify_with::<A, PK, SHA3_512, PK_LEN, SIG_LEN>(rec, pk, valid, tally),
-        "SHAKE-128" => verify_with::<A, PK, SHAKE128, PK_LEN, SIG_LEN>(rec, pk, valid, tally),
-        "SHAKE-256" => verify_with::<A, PK, SHAKE256, PK_LEN, SIG_LEN>(rec, pk, valid, tally),
+        "SHA2-224" => verify_with::<P, SHA224, SIG_LEN>(rec, &pk, valid, tally),
+        "SHA2-256" => verify_with::<P, SHA256, SIG_LEN>(rec, &pk, valid, tally),
+        "SHA2-384" => verify_with::<P, SHA384, SIG_LEN>(rec, &pk, valid, tally),
+        "SHA2-512" => verify_with::<P, SHA512, SIG_LEN>(rec, &pk, valid, tally),
+        "SHA2-512/224" => verify_with::<P, SHA512_224, SIG_LEN>(rec, &pk, valid, tally),
+        "SHA2-512/256" => verify_with::<P, SHA512_256, SIG_LEN>(rec, &pk, valid, tally),
+        "SHA3-224" => verify_with::<P, SHA3_224, SIG_LEN>(rec, &pk, valid, tally),
+        "SHA3-256" => verify_with::<P, SHA3_256, SIG_LEN>(rec, &pk, valid, tally),
+        "SHA3-384" => verify_with::<P, SHA3_384, SIG_LEN>(rec, &pk, valid, tally),
+        "SHA3-512" => verify_with::<P, SHA3_512, SIG_LEN>(rec, &pk, valid, tally),
+        "SHAKE-128" => verify_with::<P, SHAKE128, SIG_LEN>(rec, &pk, valid, tally),
+        "SHAKE-256" => verify_with::<P, SHAKE256, SIG_LEN>(rec, &pk, valid, tally),
         other => panic!("{}: unknown hashAlg {other}", rec.id()),
     }
 }
@@ -216,7 +227,7 @@ fn ML_DSA_sigGen_preHash_verifies() {
             "ML-DSA-44" => {
                 let pk =
                     bouncycastle_mldsa::MLDSA44PrivateKey::from_bytes(&sk).unwrap().derive_pk();
-                verify::<MLDSA44, MLDSA44PublicKey, MLDSA44_PK_LEN, MLDSA44_SIG_LEN>(
+                verify::<MLDSA44Params, MLDSA44_PK_LEN, MLDSA44_SIG_LEN>(
                     rec,
                     &PublicKey::<MLDSA44_PK_LEN>::encode(&pk),
                     true,
@@ -226,7 +237,7 @@ fn ML_DSA_sigGen_preHash_verifies() {
             "ML-DSA-65" => {
                 let pk =
                     bouncycastle_mldsa::MLDSA65PrivateKey::from_bytes(&sk).unwrap().derive_pk();
-                verify::<MLDSA65, MLDSA65PublicKey, MLDSA65_PK_LEN, MLDSA65_SIG_LEN>(
+                verify::<MLDSA65Params, MLDSA65_PK_LEN, MLDSA65_SIG_LEN>(
                     rec,
                     &PublicKey::<MLDSA65_PK_LEN>::encode(&pk),
                     true,
@@ -236,7 +247,7 @@ fn ML_DSA_sigGen_preHash_verifies() {
             "ML-DSA-87" => {
                 let pk =
                     bouncycastle_mldsa::MLDSA87PrivateKey::from_bytes(&sk).unwrap().derive_pk();
-                verify::<MLDSA87, MLDSA87PublicKey, MLDSA87_PK_LEN, MLDSA87_SIG_LEN>(
+                verify::<MLDSA87Params, MLDSA87_PK_LEN, MLDSA87_SIG_LEN>(
                     rec,
                     &PublicKey::<MLDSA87_PK_LEN>::encode(&pk),
                     true,
@@ -266,15 +277,15 @@ fn ML_DSA_sigVer_preHash() {
         let pk = rec.hex("pk");
         let valid = rec.flag("testPassed");
         match rec.str("parameterSet") {
-            "ML-DSA-44" => verify::<MLDSA44, MLDSA44PublicKey, MLDSA44_PK_LEN, MLDSA44_SIG_LEN>(
-                rec, &pk, valid, tally,
-            ),
-            "ML-DSA-65" => verify::<MLDSA65, MLDSA65PublicKey, MLDSA65_PK_LEN, MLDSA65_SIG_LEN>(
-                rec, &pk, valid, tally,
-            ),
-            "ML-DSA-87" => verify::<MLDSA87, MLDSA87PublicKey, MLDSA87_PK_LEN, MLDSA87_SIG_LEN>(
-                rec, &pk, valid, tally,
-            ),
+            "ML-DSA-44" => {
+                verify::<MLDSA44Params, MLDSA44_PK_LEN, MLDSA44_SIG_LEN>(rec, &pk, valid, tally)
+            }
+            "ML-DSA-65" => {
+                verify::<MLDSA65Params, MLDSA65_PK_LEN, MLDSA65_SIG_LEN>(rec, &pk, valid, tally)
+            }
+            "ML-DSA-87" => {
+                verify::<MLDSA87Params, MLDSA87_PK_LEN, MLDSA87_SIG_LEN>(rec, &pk, valid, tally)
+            }
             other => panic!("{}: unknown parameterSet {other}", rec.id()),
         }
     }

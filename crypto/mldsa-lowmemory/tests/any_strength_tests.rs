@@ -1,13 +1,14 @@
 //! `hazmat::AnyStrength<H>`: the pre-hash `H` in everything but HashML-DSA's strength check
 //! (FIPS 204 Section 5.4). A pairing the check refuses is accepted through the wrapper at every
-//! entry point; a pairing it allows gives the same signature either way.
+//! entry point; a pairing it allows gives the same signature either way. The hash is named where
+//! the HashML-DSA key is made, `as_prehash::<AnyStrength<H>>()`.
 
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
-    DeterministicPreHashSigningKey, PreHash, PreHashSigningKey, PreHashVerifyingKey,
-    SignatureAlgorithm,
+    DeterministicPreHashSigningKey, PreHash, PreHashAlgorithm, PreHashSigningKey,
+    PreHashVerifyingKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, AlgorithmOID, CollisionResistantHash, HashAlgParams, HashOneShot,
@@ -15,8 +16,8 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_mldsa_lowmemory::hazmat::AnyStrength;
 use bouncycastle_mldsa_lowmemory::{
-    MLDSA44, MLDSA44_SIG_LEN, MLDSA65, MLDSA65_SIG_LEN, MLDSA87, MLDSA87_SIG_LEN,
-    MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait,
+    MLDSA44, MLDSA44_SIG_LEN, MLDSA65, MLDSA87, MLDSA87_SIG_LEN, MLDSAPrivateKeyTrait,
+    MLDSAPublicKeyTrait, MLDSATrait,
 };
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
@@ -55,56 +56,56 @@ fn any_strength_reports_the_hash_it_wraps() {
     reports_the_hash_it_wraps::<SHAKE256>();
 }
 
-/// Signs and verifies through all six entry points with the hash `H`, which the key must accept,
-/// and returns the deterministic and the hedged (fixed `rnd`) signatures.
-fn every_entry_point<A, PK, SK, H, const SIG_LEN: usize>(
+/// Signs and verifies through every entry point of a HashML-DSA key pair, which must accept its
+/// hash, and returns the deterministic and the hedged (fixed `rnd`) signatures.
+fn every_entry_point<A, PK, SK, const SIG_LEN: usize>(
     pk: &PK,
     sk: &SK,
 ) -> ([u8; SIG_LEN], [u8; SIG_LEN])
 where
-    A: SignatureAlgorithm,
+    A: PreHashAlgorithm,
+    A::Hash: CollisionResistantHash,
     PK: PreHashVerifyingKey<A, SIG_LEN>,
     SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash + CollisionResistantHash,
 {
-    let ph = H::hash(MSG);
-    // 32 bytes is one draw of rnd, so the two hedged signers below draw the same one.
+    let ph = A::Hash::hash(MSG);
+    // 32 bytes is one draw of rnd, so the hedged signers below draw the same one.
     let rnd: [u8; 32] = core::array::from_fn(|i| i as u8 + 1);
 
-    // deterministic: the one-shot over the digest and the streaming signer over the message
-    let det = sk.sign_ph_deterministic::<H>(&ph, CTX).unwrap();
-    let mut signer = sk.create_ph_signer_deterministic::<H>(CTX).unwrap();
+    // deterministic: the one-shots over the digest and the message, and the streaming signer
+    let det = sk.sign_ph_deterministic(&ph, CTX).unwrap();
+    assert_eq!(sk.sign_deterministic(MSG, CTX).unwrap(), det);
+    let mut signer = sk.create_signer_deterministic(CTX).unwrap();
     signer.do_update(&MSG[..10]);
     signer.do_update(&MSG[10..]);
     assert_eq!(signer.do_final().unwrap(), det);
 
     // hedged: likewise
-    let hedged = sk.sign_ph::<H>(&mut FixedSeedRNG::new(rnd), &ph, CTX).unwrap();
-    let mut signer = sk.create_ph_signer::<H>(&mut FixedSeedRNG::new(rnd), CTX).unwrap();
+    let hedged = sk.sign_ph(&mut FixedSeedRNG::new(rnd), &ph, CTX).unwrap();
+    assert_eq!(sk.sign(&mut FixedSeedRNG::new(rnd), MSG, CTX).unwrap(), hedged);
+    let mut signer = sk.create_signer(&mut FixedSeedRNG::new(rnd), CTX).unwrap();
     signer.do_update(MSG);
     assert_eq!(signer.do_final().unwrap(), hedged);
     assert_ne!(hedged, det);
 
     for sig in [&det, &hedged] {
-        // the one-shot verify over the digest and the streaming verifier over the message
-        pk.verify_ph::<H>(&ph, CTX, sig).unwrap();
-        let mut verifier = pk.create_ph_verifier::<H>(CTX).unwrap();
+        // the one-shot verifies over the digest and the message, and the streaming verifier
+        pk.verify_ph(&ph, CTX, sig).unwrap();
+        pk.verify(MSG, CTX, sig).unwrap();
+        let mut verifier = pk.create_verifier(CTX).unwrap();
         verifier.do_update(&MSG[..20]);
         verifier.do_update(&MSG[20..]);
         verifier.do_verify_final(sig).unwrap();
 
         // and it is still a verification: another context, message or signature fails
-        assert_eq!(
-            pk.verify_ph::<H>(&ph, None, sig),
-            Err(SignatureError::SignatureVerificationFailed)
-        );
-        let mut verifier = pk.create_ph_verifier::<H>(CTX).unwrap();
+        assert_eq!(pk.verify_ph(&ph, None, sig), Err(SignatureError::SignatureVerificationFailed));
+        let mut verifier = pk.create_verifier(CTX).unwrap();
         verifier.do_update(b"another message");
         assert_eq!(verifier.do_verify_final(sig), Err(SignatureError::SignatureVerificationFailed));
         let mut tampered = *sig;
         tampered[SIG_LEN / 2] ^= 1;
         assert_eq!(
-            pk.verify_ph::<H>(&ph, CTX, &tampered),
+            pk.verify_ph(&ph, CTX, &tampered),
             Err(SignatureError::SignatureVerificationFailed)
         );
     }
@@ -112,110 +113,159 @@ where
     (det, hedged)
 }
 
-/// A pairing FIPS 204 Section 5.4 rules out: `H` is refused at every entry point, and
-/// `AnyStrength<H>` is accepted at every one.
-fn weak_pairing<A, PK, SK, H, const SIG_LEN: usize>(pk: &PK, sk: &SK)
-where
-    A: SignatureAlgorithm,
+/// A pairing FIPS 204 Section 5.4 rules out: the key pair over `H` refuses at every entry
+/// point, and the one over `AnyStrength<H>` accepts at every one.
+fn weak_pairing<A, PK, SK, AW, PKW, SKW, const SIG_LEN: usize>(
+    pk: &PK,
+    sk: &SK,
+    pk_waived: &PKW,
+    sk_waived: &SKW,
+) where
+    A: PreHashAlgorithm,
+    A::Hash: CollisionResistantHash,
     PK: PreHashVerifyingKey<A, SIG_LEN>,
     SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash + CollisionResistantHash,
+    AW: PreHashAlgorithm,
+    AW::Hash: CollisionResistantHash,
+    PKW: PreHashVerifyingKey<AW, SIG_LEN>,
+    SKW: PreHashSigningKey<AW, SIG_LEN> + DeterministicPreHashSigningKey<AW, SIG_LEN>,
 {
-    assert!(H::MAX_SECURITY_STRENGTH < A::MAX_SECURITY_STRENGTH, "the pairing is a weak one");
-    let ph = H::hash(MSG);
+    let ph = A::Hash::hash(MSG);
     let mut rng = DefaultRNG::default();
     let too_weak = Err(SignatureError::PreHashTooWeak);
 
-    assert!(matches!(sk.create_ph_signer::<H>(&mut rng, CTX), Err(SignatureError::PreHashTooWeak)));
-    assert_eq!(sk.sign_ph::<H>(&mut rng, &ph, CTX), too_weak);
-    assert!(matches!(
-        sk.create_ph_signer_deterministic::<H>(CTX),
-        Err(SignatureError::PreHashTooWeak)
-    ));
-    assert_eq!(sk.sign_ph_deterministic::<H>(&ph, CTX), too_weak);
-    assert!(matches!(pk.create_ph_verifier::<H>(CTX), Err(SignatureError::PreHashTooWeak)));
-    assert_eq!(pk.verify_ph::<H>(&ph, CTX, &[0u8; SIG_LEN]), Err(SignatureError::PreHashTooWeak));
+    assert!(matches!(sk.create_signer(&mut rng, CTX), Err(SignatureError::PreHashTooWeak)));
+    assert_eq!(sk.sign(&mut rng, MSG, CTX), too_weak);
+    assert_eq!(sk.sign_ph(&mut rng, &ph, CTX), too_weak);
+    assert!(matches!(sk.create_signer_deterministic(CTX), Err(SignatureError::PreHashTooWeak)));
+    assert_eq!(sk.sign_deterministic(MSG, CTX), too_weak);
+    assert_eq!(sk.sign_ph_deterministic(&ph, CTX), too_weak);
+    assert!(matches!(pk.create_verifier(CTX), Err(SignatureError::PreHashTooWeak)));
+    assert_eq!(pk.verify(MSG, CTX, &[0u8; SIG_LEN]), Err(SignatureError::PreHashTooWeak));
+    assert_eq!(pk.verify_ph(&ph, CTX, &[0u8; SIG_LEN]), Err(SignatureError::PreHashTooWeak));
 
-    let (det, hedged) = every_entry_point::<A, PK, SK, AnyStrength<H>, SIG_LEN>(pk, sk);
+    let (det, hedged) = every_entry_point(pk_waived, sk_waived);
 
-    // a worker over a waived weak hash reports the hash's strength, not the parameter set's
-    let signer = sk.create_ph_signer_deterministic::<AnyStrength<H>>(CTX).unwrap();
-    assert_eq!(signer.max_security_strength(), H::MAX_SECURITY_STRENGTH);
-    let verifier = pk.create_ph_verifier::<AnyStrength<H>>(CTX).unwrap();
-    assert_eq!(verifier.max_security_strength(), H::MAX_SECURITY_STRENGTH);
+    // the algorithm and a worker over a waived weak hash report the hash's strength, not the
+    // parameter set's
+    let weak = A::Hash::MAX_SECURITY_STRENGTH;
+    assert_eq!(AW::MAX_SECURITY_STRENGTH, weak);
+    assert_eq!(AW::ALG_NAME, A::ALG_NAME);
+    let signer = sk_waived.create_signer_deterministic(CTX).unwrap();
+    assert_eq!(signer.max_security_strength(), weak);
+    let verifier = pk_waived.create_verifier(CTX).unwrap();
+    assert_eq!(verifier.max_security_strength(), weak);
 
     // the wrapper did not turn the check off for the hash itself
-    assert_eq!(pk.verify_ph::<H>(&ph, CTX, &det), Err(SignatureError::PreHashTooWeak));
-    assert_eq!(pk.verify_ph::<H>(&ph, CTX, &hedged), Err(SignatureError::PreHashTooWeak));
+    assert_eq!(pk.verify_ph(&ph, CTX, &det), Err(SignatureError::PreHashTooWeak));
+    assert_eq!(pk.verify_ph(&ph, CTX, &hedged), Err(SignatureError::PreHashTooWeak));
 }
 
-/// A pairing FIPS 204 Section 5.4 allows: the wrapper changes nothing. The signatures are the
-/// same bytes, and each verifies as the other.
-fn strong_pairing<A, PK, SK, H, const SIG_LEN: usize>(pk: &PK, sk: &SK)
-where
-    A: SignatureAlgorithm,
+/// [`weak_pairing`] over the views of one key pair under `H` and under `AnyStrength<H>`.
+macro_rules! weak_pairing {
+    ($pk:expr, $sk:expr, $H:ty) => {
+        weak_pairing(
+            &$pk.as_prehash::<$H>(),
+            &$sk.as_prehash::<$H>(),
+            &$pk.as_prehash::<AnyStrength<$H>>(),
+            &$sk.as_prehash::<AnyStrength<$H>>(),
+        )
+    };
+}
+
+/// A pairing FIPS 204 Section 5.4 allows, at the parameter set's `strength`: the wrapper changes
+/// nothing. The signatures are the same bytes, and each verifies as the other.
+fn strong_pairing<A, PK, SK, AW, PKW, SKW, const SIG_LEN: usize>(
+    pk: &PK,
+    sk: &SK,
+    pk_waived: &PKW,
+    sk_waived: &SKW,
+    strength: SecurityStrength,
+) where
+    A: PreHashAlgorithm,
+    A::Hash: CollisionResistantHash,
     PK: PreHashVerifyingKey<A, SIG_LEN>,
     SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash + CollisionResistantHash,
+    AW: PreHashAlgorithm,
+    AW::Hash: CollisionResistantHash,
+    PKW: PreHashVerifyingKey<AW, SIG_LEN>,
+    SKW: PreHashSigningKey<AW, SIG_LEN> + DeterministicPreHashSigningKey<AW, SIG_LEN>,
 {
-    assert!(H::MAX_SECURITY_STRENGTH >= A::MAX_SECURITY_STRENGTH, "the pairing is a strong one");
-    let (det, hedged) = every_entry_point::<A, PK, SK, H, SIG_LEN>(pk, sk);
-    let (det_wrapped, hedged_wrapped) =
-        every_entry_point::<A, PK, SK, AnyStrength<H>, SIG_LEN>(pk, sk);
+    let (det, hedged) = every_entry_point(pk, sk);
+    let (det_wrapped, hedged_wrapped) = every_entry_point(pk_waived, sk_waived);
     assert_eq!(det_wrapped, det);
     assert_eq!(hedged_wrapped, hedged);
 
-    // and a worker over a hash at least as strong reports the parameter set's strength
-    let signer = sk.create_ph_signer_deterministic::<AnyStrength<H>>(CTX).unwrap();
-    assert_eq!(signer.max_security_strength(), A::MAX_SECURITY_STRENGTH);
-    let verifier = pk.create_ph_verifier::<H>(CTX).unwrap();
-    assert_eq!(verifier.max_security_strength(), A::MAX_SECURITY_STRENGTH);
+    // the algorithm and a worker over a hash at least as strong report the parameter set's
+    // strength, under the same name with the wrapper and without
+    assert_eq!(A::MAX_SECURITY_STRENGTH, strength);
+    assert_eq!(AW::MAX_SECURITY_STRENGTH, strength);
+    assert_eq!(AW::ALG_NAME, A::ALG_NAME);
+    let signer = sk_waived.create_signer_deterministic(CTX).unwrap();
+    assert_eq!(signer.max_security_strength(), strength);
+    assert_eq!(signer.alg_name(), A::ALG_NAME);
+    let verifier = pk.create_verifier(CTX).unwrap();
+    assert_eq!(verifier.max_security_strength(), strength);
+    assert_eq!(verifier.alg_name(), A::ALG_NAME);
 
     // every_entry_point verified each under the hash it was made with; now crosswise
-    let ph = H::hash(MSG);
-    pk.verify_ph::<AnyStrength<H>>(&ph, CTX, &det).unwrap();
-    pk.verify_ph::<H>(&ph, CTX, &det_wrapped).unwrap();
-    let mut verifier = pk.create_ph_verifier::<AnyStrength<H>>(CTX).unwrap();
+    let ph = A::Hash::hash(MSG);
+    pk_waived.verify_ph(&ph, CTX, &det).unwrap();
+    pk.verify_ph(&ph, CTX, &det_wrapped).unwrap();
+    let mut verifier = pk_waived.create_verifier(CTX).unwrap();
     verifier.do_update(MSG);
     verifier.do_verify_final(&hedged).unwrap();
-    let mut verifier = pk.create_ph_verifier::<H>(CTX).unwrap();
+    let mut verifier = pk.create_verifier(CTX).unwrap();
     verifier.do_update(MSG);
     verifier.do_verify_final(&hedged_wrapped).unwrap();
+}
+
+/// [`strong_pairing`] over the views of one key pair under `H` and under `AnyStrength<H>`.
+macro_rules! strong_pairing {
+    ($pk:expr, $sk:expr, $H:ty, $alg:ty) => {
+        strong_pairing(
+            &$pk.as_prehash::<$H>(),
+            &$sk.as_prehash::<$H>(),
+            &$pk.as_prehash::<AnyStrength<$H>>(),
+            &$sk.as_prehash::<AnyStrength<$H>>(),
+            <$alg>::MAX_SECURITY_STRENGTH,
+        )
+    };
 }
 
 #[test]
 fn weak_pairings_need_the_wrapper() {
     let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
-    weak_pairing::<MLDSA44, _, _, SHA224, MLDSA44_SIG_LEN>(&pk, &sk);
-    weak_pairing::<MLDSA44, _, _, SHA512_224, MLDSA44_SIG_LEN>(&pk, &sk);
-    weak_pairing::<MLDSA44, _, _, SHA3_224, MLDSA44_SIG_LEN>(&pk, &sk);
+    weak_pairing!(pk, sk, SHA224);
+    weak_pairing!(pk, sk, SHA512_224);
+    weak_pairing!(pk, sk, SHA3_224);
 
     let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
-    weak_pairing::<MLDSA65, _, _, SHA224, MLDSA65_SIG_LEN>(&pk, &sk);
-    weak_pairing::<MLDSA65, _, _, SHA256, MLDSA65_SIG_LEN>(&pk, &sk);
-    weak_pairing::<MLDSA65, _, _, SHAKE128, MLDSA65_SIG_LEN>(&pk, &sk);
+    weak_pairing!(pk, sk, SHA224);
+    weak_pairing!(pk, sk, SHA256);
+    weak_pairing!(pk, sk, SHAKE128);
 
     let (pk, sk) = MLDSA87::keygen(&mut DefaultRNG::default()).unwrap();
-    weak_pairing::<MLDSA87, _, _, SHA224, MLDSA87_SIG_LEN>(&pk, &sk);
-    weak_pairing::<MLDSA87, _, _, SHA512_256, MLDSA87_SIG_LEN>(&pk, &sk);
-    weak_pairing::<MLDSA87, _, _, SHA384, MLDSA87_SIG_LEN>(&pk, &sk);
-    weak_pairing::<MLDSA87, _, _, SHA3_384, MLDSA87_SIG_LEN>(&pk, &sk);
+    weak_pairing!(pk, sk, SHA224);
+    weak_pairing!(pk, sk, SHA512_256);
+    weak_pairing!(pk, sk, SHA384);
+    weak_pairing!(pk, sk, SHA3_384);
 }
 
 #[test]
 fn the_wrapper_changes_no_output() {
     let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
-    strong_pairing::<MLDSA44, _, _, SHA256, MLDSA44_SIG_LEN>(&pk, &sk);
-    strong_pairing::<MLDSA44, _, _, SHAKE128, MLDSA44_SIG_LEN>(&pk, &sk);
-    strong_pairing::<MLDSA44, _, _, SHA3_512, MLDSA44_SIG_LEN>(&pk, &sk);
+    strong_pairing!(pk, sk, SHA256, MLDSA44);
+    strong_pairing!(pk, sk, SHAKE128, MLDSA44);
+    strong_pairing!(pk, sk, SHA3_512, MLDSA44);
 
     let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
-    strong_pairing::<MLDSA65, _, _, SHA384, MLDSA65_SIG_LEN>(&pk, &sk);
-    strong_pairing::<MLDSA65, _, _, SHA512, MLDSA65_SIG_LEN>(&pk, &sk);
+    strong_pairing!(pk, sk, SHA384, MLDSA65);
+    strong_pairing!(pk, sk, SHA512, MLDSA65);
 
     let (pk, sk) = MLDSA87::keygen(&mut DefaultRNG::default()).unwrap();
-    strong_pairing::<MLDSA87, _, _, SHA512, MLDSA87_SIG_LEN>(&pk, &sk);
-    strong_pairing::<MLDSA87, _, _, SHAKE256, MLDSA87_SIG_LEN>(&pk, &sk);
+    strong_pairing!(pk, sk, SHA512, MLDSA87);
+    strong_pairing!(pk, sk, SHAKE256, MLDSA87);
 }
 
 /// The wrapper binds the wrapped hash into the signature as `H` would: the message
@@ -236,22 +286,22 @@ fn the_signature_carries_the_wrapped_hash() {
     let mu: [u8; 64] = SHAKE256::hash(&tr_m_prime).try_into().unwrap();
     let by_mu: [u8; MLDSA87_SIG_LEN] = sk.sign_mu_deterministic(&mu).unwrap();
 
-    let sig = sk.sign_ph_deterministic::<AnyStrength<SHA224>>(&ph, CTX).unwrap();
+    let sig = sk.as_prehash::<AnyStrength<SHA224>>().sign_ph_deterministic(&ph, CTX).unwrap();
     assert_eq!(sig, by_mu);
     pk.verify_mu(&mu, &sig).unwrap();
 
     // SHA3-224 and SHA-512/224 digests are 28 bytes too, under other OIDs
     assert_eq!(
-        pk.verify_ph::<AnyStrength<SHA3_224>>(&ph, CTX, &sig),
+        pk.as_prehash::<AnyStrength<SHA3_224>>().verify_ph(&ph, CTX, &sig),
         Err(SignatureError::SignatureVerificationFailed)
     );
     assert_eq!(
-        pk.verify_ph::<AnyStrength<SHA512_224>>(&ph, CTX, &sig),
+        pk.as_prehash::<AnyStrength<SHA512_224>>().verify_ph(&ph, CTX, &sig),
         Err(SignatureError::SignatureVerificationFailed)
     );
     // and a digest of another length is still a length error
     assert!(matches!(
-        pk.verify_ph::<AnyStrength<SHA256>>(&ph, CTX, &sig),
+        pk.as_prehash::<AnyStrength<SHA256>>().verify_ph(&ph, CTX, &sig),
         Err(SignatureError::LengthError(_))
     ));
 }
@@ -260,7 +310,7 @@ fn the_signature_carries_the_wrapped_hash() {
 /// needs the strength waiver alone; signing needs `hazmat::WithoutCollisionResistance` as well,
 /// inside `AnyStrength` or around it, and either way the signature is the one over RIPEMD-160:
 /// the same bytes, carrying its OID. That `AnyStrength<RIPEMD160>` does not sign is a
-/// `compile_fail` doctest on `HashMLDSASigner`.
+/// `compile_fail` doctest on `HashMLDSAPrivateKey`.
 #[test]
 fn a_hash_without_collision_resistance_verifies_and_signs_only_when_named() {
     use bouncycastle_core::hazmat::WithoutCollisionResistance;
@@ -269,9 +319,9 @@ fn a_hash_without_collision_resistance_verifies_and_signs_only_when_named() {
     type Outside = WithoutCollisionResistance<AnyStrength<RIPEMD160>>;
 
     let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
-    let (det, hedged) = every_entry_point::<MLDSA44, _, _, Inside, MLDSA44_SIG_LEN>(&pk, &sk);
+    let (det, hedged) = every_entry_point(&pk.as_prehash::<Inside>(), &sk.as_prehash::<Inside>());
     let (det_outside, hedged_outside) =
-        every_entry_point::<MLDSA44, _, _, Outside, MLDSA44_SIG_LEN>(&pk, &sk);
+        every_entry_point(&pk.as_prehash::<Outside>(), &sk.as_prehash::<Outside>());
     assert_eq!(det_outside, det);
     assert_eq!(hedged_outside, hedged);
 
@@ -289,25 +339,28 @@ fn a_hash_without_collision_resistance_verifies_and_signs_only_when_named() {
     assert_eq!(det, by_mu);
 
     // verifying asks for the strength waiver only
-    pk.verify_ph::<AnyStrength<RIPEMD160>>(&ph, CTX, &det).unwrap();
-    let mut verifier = pk.create_ph_verifier::<AnyStrength<RIPEMD160>>(CTX).unwrap();
+    pk.as_prehash::<AnyStrength<RIPEMD160>>().verify_ph(&ph, CTX, &det).unwrap();
+    let mut verifier = pk.as_prehash::<AnyStrength<RIPEMD160>>().create_verifier(CTX).unwrap();
     assert_eq!(verifier.max_security_strength(), SecurityStrength::None);
     verifier.do_update(MSG);
     verifier.do_verify_final(&hedged).unwrap();
 
     // and neither wrapper stands in for the other: the strength rule still refuses the bare
     // hash, and the collision-resistance wrapper alone
-    assert_eq!(pk.verify_ph::<RIPEMD160>(&ph, CTX, &det), Err(SignatureError::PreHashTooWeak));
     assert_eq!(
-        sk.sign_ph_deterministic::<WithoutCollisionResistance<RIPEMD160>>(&ph, CTX),
+        pk.as_prehash::<RIPEMD160>().verify_ph(&ph, CTX, &det),
+        Err(SignatureError::PreHashTooWeak)
+    );
+    assert_eq!(
+        sk.as_prehash::<WithoutCollisionResistance<RIPEMD160>>().sign_ph_deterministic(&ph, CTX),
         Err(SignatureError::PreHashTooWeak)
     );
 
     // over a hash that has the marker the wrapper changes nothing
-    let (det_bare, _) = every_entry_point::<MLDSA44, _, _, SHA512, MLDSA44_SIG_LEN>(&pk, &sk);
-    let (det_wrapped, _) =
-        every_entry_point::<MLDSA44, _, _, WithoutCollisionResistance<SHA512>, MLDSA44_SIG_LEN>(
-            &pk, &sk,
-        );
+    let (det_bare, _) = every_entry_point(&pk.as_prehash::<SHA512>(), &sk.as_prehash::<SHA512>());
+    let (det_wrapped, _) = every_entry_point(
+        &pk.as_prehash::<WithoutCollisionResistance<SHA512>>(),
+        &sk.as_prehash::<WithoutCollisionResistance<SHA512>>(),
+    );
     assert_eq!(det_wrapped, det_bare);
 }

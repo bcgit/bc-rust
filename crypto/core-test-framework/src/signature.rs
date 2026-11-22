@@ -6,12 +6,12 @@ use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicPreHashSigningKey, DeterministicSigningKey,
-    OneShotSigningKey, OneShotVerifyingKey, PreHash, PreHashSigningKey, PreHashVerifyingKey,
-    SignatureAlgorithm, SigningKey, VerifyingKey,
+    OneShotSigningKey, OneShotVerifyingKey, PreHashAlgorithm, PreHashSigningKey,
+    PreHashVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{
-    AlgorithmInfo, CollisionResistantHash, PrivateKey, PublicKey, RNG, SignatureSigner,
-    SignatureVerifier,
+    AlgorithmInfo, CollisionResistantHash, HashOneShot, PrivateKey, PublicKey, RNG,
+    SignatureSigner, SignatureVerifier,
 };
 
 const MSG: &[u8] = b"The quick brown fox jumped over the lazy dog";
@@ -470,25 +470,28 @@ impl TestFrameworkSignature {
             CtxBehaviour::Refused => verifier.do_verify_final(sig).unwrap(),
         }
     }
-    /// Every member of [`PreHashSigningKey`] and [`PreHashVerifyingKey`] for the hash `H`, and
-    /// of the workers they produce. The pure-message members are [`test_signature`](Self::test_signature)'s job.
+    /// Every member of [`PreHashSigningKey`] and [`PreHashVerifyingKey`], against the streaming
+    /// and one-shot roles of the same keys: a digest made with the key's `Hash` is signed and
+    /// verified as the message it is the digest of. The roles over the message are
+    /// [`test_signature`](Self::test_signature)'s job.
     pub fn test_ph_signature<
-        A: SignatureAlgorithm,
+        A: PreHashAlgorithm,
         PK: PreHashVerifyingKey<A, SIG_LEN>,
         SK: PreHashSigningKey<A, SIG_LEN>,
-        H: PreHash + CollisionResistantHash,
         const SIG_LEN: usize,
     >(
         &self,
         keygen: fn() -> Result<(PK, SK), SignatureError>,
         run_full_bitflipping_tests: bool,
-    ) {
+    ) where
+        A::Hash: CollisionResistantHash,
+    {
         let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 256, _>(|i| i as u8));
         let (pk, sk) = keygen().unwrap();
-        let ph = H::hash(DUMMY_SEED);
+        let ph = A::Hash::hash(DUMMY_SEED);
 
-        // the streaming pre-hash signer hashes the message itself
-        let mut signer = sk.create_ph_signer::<H>(&mut rng, Some(b"ph")).unwrap();
+        // the streaming signer hashes the message itself
+        let mut signer = sk.create_signer(&mut rng, Some(b"ph")).unwrap();
         assert_eq!(signer.alg_name(), A::ALG_NAME);
         for chunk in DUMMY_SEED.chunks(100) {
             signer.do_update(chunk);
@@ -496,47 +499,52 @@ impl TestFrameworkSignature {
         let sig = signer.do_final().unwrap();
 
         // ... and its signature verifies over the message and over the digest alike
-        let mut verifier = pk.create_ph_verifier::<H>(Some(b"ph")).unwrap();
+        let mut verifier = pk.create_verifier(Some(b"ph")).unwrap();
         assert_eq!(verifier.alg_name(), A::ALG_NAME);
         verifier.do_update(DUMMY_SEED);
         verifier.do_verify_final(&sig).unwrap();
-        pk.verify_ph::<H>(&ph, Some(b"ph"), &sig).unwrap();
+        pk.verify_ph(&ph, Some(b"ph"), &sig).unwrap();
 
         // the one-shots over the digest
-        let sig = sk.sign_ph::<H>(&mut rng, &ph, Some(b"ph")).unwrap();
-        pk.verify_ph::<H>(&ph, Some(b"ph"), &sig).unwrap();
-        let mut verifier = pk.create_ph_verifier::<H>(Some(b"ph")).unwrap();
+        let sig = sk.sign_ph(&mut rng, &ph, Some(b"ph")).unwrap();
+        pk.verify_ph(&ph, Some(b"ph"), &sig).unwrap();
+        let mut verifier = pk.create_verifier(Some(b"ph")).unwrap();
         for chunk in DUMMY_SEED.chunks(100) {
             verifier.do_update(chunk);
         }
         verifier.do_verify_final(&sig).unwrap();
+        pk.verify(DUMMY_SEED, Some(b"ph"), &sig).unwrap();
 
         let mut out = [0u8; SIG_LEN];
-        assert_eq!(sk.sign_ph_out::<H>(&mut rng, &ph, Some(b"ph"), &mut out).unwrap(), SIG_LEN);
-        pk.verify_ph::<H>(&ph, Some(b"ph"), &out).unwrap();
+        assert_eq!(sk.sign_ph_out(&mut rng, &ph, Some(b"ph"), &mut out).unwrap(), SIG_LEN);
+        pk.verify_ph(&ph, Some(b"ph"), &out).unwrap();
 
-        // a pre-hash signature is not a signature of the bare message, nor of another digest
+        // a signature over a digest is one over that digest's message, and no other
         assert!(matches!(
-            pk.verify(DUMMY_SEED, Some(b"ph"), &sig),
+            pk.verify(MSG, Some(b"ph"), &sig),
             Err(SignatureError::SignatureVerificationFailed)
         ));
         assert!(matches!(
-            pk.verify_ph::<H>(&H::hash(MSG), Some(b"ph"), &sig),
+            pk.verify_ph(&A::Hash::hash(MSG), Some(b"ph"), &sig),
             Err(SignatureError::SignatureVerificationFailed)
         ));
 
-        // a digest of the wrong length is refused before anything is signed or checked
+        // a digest of the wrong length is refused before anything is signed or checked, and
+        // `_out` leaves nothing stale in the buffer
         let short = &ph[..ph.len() - 1];
+        assert!(matches!(sk.sign_ph(&mut rng, short, None), Err(SignatureError::LengthError(_))));
+        let mut out = [0xA5u8; SIG_LEN];
         assert!(matches!(
-            sk.sign_ph::<H>(&mut rng, short, None),
+            sk.sign_ph_out(&mut rng, short, None, &mut out),
             Err(SignatureError::LengthError(_))
         ));
+        assert_eq!(out, [0u8; SIG_LEN]);
         assert!(matches!(
-            pk.verify_ph::<H>(short, Some(b"ph"), &sig),
+            pk.verify_ph(short, Some(b"ph"), &sig),
             Err(SignatureError::LengthError(_))
         ));
 
-        Self::check_corrupted_ph_signatures::<A, PK, H, SIG_LEN>(
+        Self::check_corrupted_ph_signatures::<A, PK, SIG_LEN>(
             &pk,
             &ph,
             &sig,
@@ -544,26 +552,29 @@ impl TestFrameworkSignature {
         );
     }
 
-    /// Every member of [`DeterministicPreHashSigningKey`] and [`PreHashVerifyingKey`] for the
-    /// hash `H`, and of the workers they produce.
+    /// Every member of [`DeterministicPreHashSigningKey`] and [`PreHashVerifyingKey`], against
+    /// the streaming and one-shot roles of the same keys.
     pub fn test_deterministic_ph_signature<
-        A: SignatureAlgorithm,
+        A: PreHashAlgorithm,
         PK: PreHashVerifyingKey<A, SIG_LEN>,
         SK: DeterministicPreHashSigningKey<A, SIG_LEN>,
-        H: PreHash + CollisionResistantHash,
         const SIG_LEN: usize,
     >(
         &self,
         keygen: fn() -> Result<(PK, SK), SignatureError>,
         run_full_bitflipping_tests: bool,
-    ) {
+    ) where
+        A::Hash: CollisionResistantHash,
+    {
         let (pk, sk) = keygen().unwrap();
-        let ph = H::hash(DUMMY_SEED);
+        let ph = A::Hash::hash(DUMMY_SEED);
 
-        // the one-shot over the digest, and the streaming signer over the message, agree
-        let sig = sk.sign_ph_deterministic::<H>(&ph, Some(b"ph")).unwrap();
-        assert_eq!(sig, sk.sign_ph_deterministic::<H>(&ph, Some(b"ph")).unwrap());
-        let mut signer = sk.create_ph_signer_deterministic::<H>(Some(b"ph")).unwrap();
+        // the one-shot over the digest, the one-shot over the message and the streaming signer
+        // agree
+        let sig = sk.sign_ph_deterministic(&ph, Some(b"ph")).unwrap();
+        assert_eq!(sig, sk.sign_ph_deterministic(&ph, Some(b"ph")).unwrap());
+        assert_eq!(sig, sk.sign_deterministic(DUMMY_SEED, Some(b"ph")).unwrap());
+        let mut signer = sk.create_signer_deterministic(Some(b"ph")).unwrap();
         // A deterministic variant may name how it picks its nonce (`ECDetDSA-P256` for RFC 6979
         // under the `ECDSAP256` marker), so only the strength is pinned to the marker here.
         assert!(!signer.alg_name().is_empty());
@@ -574,30 +585,36 @@ impl TestFrameworkSignature {
         assert_eq!(signer.do_final().unwrap(), sig);
 
         let mut out = [0u8; SIG_LEN];
-        assert_eq!(sk.sign_ph_deterministic_out::<H>(&ph, Some(b"ph"), &mut out).unwrap(), SIG_LEN);
+        assert_eq!(sk.sign_ph_deterministic_out(&ph, Some(b"ph"), &mut out).unwrap(), SIG_LEN);
         assert_eq!(out, sig);
 
         // verifies over the digest and over the message
-        pk.verify_ph::<H>(&ph, Some(b"ph"), &sig).unwrap();
-        let mut verifier = pk.create_ph_verifier::<H>(Some(b"ph")).unwrap();
+        pk.verify_ph(&ph, Some(b"ph"), &sig).unwrap();
+        let mut verifier = pk.create_verifier(Some(b"ph")).unwrap();
         verifier.do_update(DUMMY_SEED);
         verifier.do_verify_final(&sig).unwrap();
 
         assert!(matches!(
-            pk.verify(DUMMY_SEED, Some(b"ph"), &sig),
+            pk.verify(MSG, Some(b"ph"), &sig),
             Err(SignatureError::SignatureVerificationFailed)
         ));
         let short = &ph[..ph.len() - 1];
         assert!(matches!(
-            sk.sign_ph_deterministic::<H>(short, None),
+            sk.sign_ph_deterministic(short, None),
             Err(SignatureError::LengthError(_))
         ));
+        let mut out = [0xA5u8; SIG_LEN];
         assert!(matches!(
-            pk.verify_ph::<H>(short, Some(b"ph"), &sig),
+            sk.sign_ph_deterministic_out(short, None, &mut out),
+            Err(SignatureError::LengthError(_))
+        ));
+        assert_eq!(out, [0u8; SIG_LEN]);
+        assert!(matches!(
+            pk.verify_ph(short, Some(b"ph"), &sig),
             Err(SignatureError::LengthError(_))
         ));
 
-        Self::check_corrupted_ph_signatures::<A, PK, H, SIG_LEN>(
+        Self::check_corrupted_ph_signatures::<A, PK, SIG_LEN>(
             &pk,
             &ph,
             &sig,
@@ -636,9 +653,8 @@ impl TestFrameworkSignature {
 
     /// As [`check_corrupted_signatures`](Self::check_corrupted_signatures), through `verify_ph`.
     fn check_corrupted_ph_signatures<
-        A: SignatureAlgorithm,
+        A: PreHashAlgorithm,
         PK: PreHashVerifyingKey<A, SIG_LEN>,
-        H: PreHash,
         const SIG_LEN: usize,
     >(
         pk: &PK,
@@ -656,7 +672,7 @@ impl TestFrameworkSignature {
             bad[i] ^= mask;
             assert!(
                 matches!(
-                    pk.verify_ph::<H>(ph, Some(b"ph"), &bad),
+                    pk.verify_ph(ph, Some(b"ph"), &bad),
                     Err(SignatureError::SignatureVerificationFailed)
                 ),
                 "byte {i} xor {mask:#x} must not verify"

@@ -37,6 +37,18 @@ pub type MLDSA87PublicKey = MLDSAPublicKey<MLDSA87Params>;
 pub type MLDSA87PrivateKey = MLDSASeedPrivateKey<MLDSA87Params>;
 
 /// An ML-DSA public key.
+///
+/// It is a key of [`MLDSA`](crate::MLDSA), and verifies HashML-DSA only through the view
+/// [`as_prehash`](Self::as_prehash) gives; the key itself has no pre-hash method:
+///
+/// ```compile_fail,E0599
+/// use bouncycastle_core::signature_key::PreHashVerifyingKey;
+/// use bouncycastle_mldsa_lowmemory::MLDSA44PublicKey;
+///
+/// fn verify(pk: &MLDSA44PublicKey, sig: &[u8]) {
+///     let _ = pk.verify_ph(&[0u8; 64], None, sig);
+/// }
+/// ```
 pub struct MLDSAPublicKey<P: MLDSAParams> {
     pub(crate) rho: [u8; 32],
     pub(crate) t1_packed: P::T1Packed,
@@ -366,6 +378,18 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
 }
 
 /// Internal structure for holding a seed-based private key for ML-DSA.
+///
+/// It is a key of [`MLDSA`](crate::MLDSA), and signs HashML-DSA only through the view
+/// [`as_prehash`](Self::as_prehash) gives; the key itself has no pre-hash method:
+///
+/// ```compile_fail,E0599
+/// use bouncycastle_core::signature_key::DeterministicPreHashSigningKey;
+/// use bouncycastle_mldsa_lowmemory::MLDSA44PrivateKey;
+///
+/// fn sign(sk: &MLDSA44PrivateKey) {
+///     let _ = sk.sign_ph_deterministic(&[0u8; 64], None);
+/// }
+/// ```
 pub struct MLDSASeedPrivateKey<P: MLDSAParams> {
     _phantom: core::marker::PhantomData<P>,
     // note: KeyMaterial is inherently Secret

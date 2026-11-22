@@ -285,6 +285,11 @@ cipher and MAC traits had (`local/signer_verifier_init_removal_plan.md`). Mechan
   several algorithms (ML-DSA and HashML-DSA, ECDSA and RFC 6979, PKCS#1 and PSS), so the marker
   goes on the role trait, not the key type; a pre-hash's hash goes on the method
   (`create_ph_signer::<SHA512>`), with the strength rule checked at construction.
+  *Superseded, November 2026:* every signature key now names one algorithm. Ed25519ph, Ed448ph
+  and HashML-DSA are keys of their own, borrowing views reached by `as_prehash()` /
+  `as_prehash::<H>()`, so the hash is on the view (`HashMLDSA<P, H>`) and the pre-hash traits
+  keep only the digest-supplied methods, over a marker that names its hash
+  (`PreHashAlgorithm::Hash`).
 - **A test RNG that repeats its seed defeats a "two signatures differ" check.** `FixedSeedRNG`
   emits its seed cyclically; two 32-byte draws from a 64-byte constant seed are identical, and
   so are two 64-byte draws (a PSS/SHA-512 salt) from a 64-byte counting seed. Seed it with a

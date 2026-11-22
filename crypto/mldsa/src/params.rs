@@ -1,19 +1,11 @@
-//! This crate's view of the three ML-DSA parameter sets of FIPS 204, Section 4, and the four
-//! HashML-DSA pairings built on them, each as a sealed trait with one type per set.
+//! This crate's view of the three ML-DSA parameter sets of FIPS 204, Section 4, as a sealed
+//! trait with one type per set.
 //!
 //! The values of Table 1 and Table 2, the algorithm metadata and the derived constants live on
 //! [`MLDSAParamsBase`] in `bouncycastle-mldsa-common`, shared with `bouncycastle-mldsa-lowmemory`;
 //! [`MLDSAParams`] extends it with the vector and matrix types this implementation materializes.
 
-use crate::hash_mldsa::{
-    HASH_ML_DSA_44_with_SHA256_NAME, HASH_ML_DSA_44_with_SHA512_NAME,
-    HASH_ML_DSA_65_with_SHA512_NAME, HASH_ML_DSA_87_with_SHA512_NAME,
-};
 use crate::matrix::{Matrix, MatrixTrait, Vector, VectorTrait};
-use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, HashOneShot};
-use bouncycastle_mldsa_common::params::weaker_of;
-use bouncycastle_sha2::{SHA256, SHA512};
 
 pub use bouncycastle_mldsa_common::params::{
     ByteBuffer, MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParamsBase,
@@ -83,88 +75,6 @@ impl SignatureLen<{ MLDSA65Params::SIG_LEN }> for MLDSA65Params {}
 impl PublicKeyLen<{ MLDSA87Params::PK_LEN }> for MLDSA87Params {}
 impl PrivateKeyLen<{ MLDSA87Params::SK_LEN }> for MLDSA87Params {}
 impl SignatureLen<{ MLDSA87Params::SIG_LEN }> for MLDSA87Params {}
-
-/// A crate-private (aka "sealed") trait that prevents a new HashML-DSA pairing from being defined
-/// outside this crate.
-trait HashMLDSAParamsInternalTrait {}
-
-/// One HashML-DSA algorithm: an ML-DSA parameter set paired with a pre-hash function.
-///
-/// FIPS 204, Algorithm 4 (HashML-DSA.Sign) leaves the choice of PH open, so an instantiation is a
-/// pairing rather than a single parameter set. Everything that varies across the pairings lives
-/// here, so [`crate::hash_mldsa::HashMLDSA`] takes one type rather than a parameter set plus a
-/// hash function plus a digest length.
-///
-/// Sealed via a private supertrait, so the four types below are the only implementations.
-pub trait HashMLDSAParams: HashMLDSAParamsInternalTrait {
-    /// The ML-DSA parameter set underneath.
-    type MLDSA: MLDSAParams;
-    /// PH, the pre-hash function.
-    type PreHash: HashOneShot + HashAlgParams + AlgorithmOID;
-
-    /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
-    ///
-    /// Written out per pairing rather than derived: it is the two component names spliced
-    /// together, and `&'static str` cannot be concatenated in a const context.
-    const ALG_NAME: &'static str;
-
-    /* Derived. Never written out per pairing. */
-
-    /// The length of the pre-hash `ph`, which is just PH's output length.
-    const PH_LEN: usize = <Self::PreHash as HashAlgParams>::OUTPUT_LEN;
-
-    /// The strength claimed for the pairing, as reported by `Algorithm::MAX_SECURITY_STRENGTH`.
-    ///
-    /// A HashML-DSA signature is no stronger than either of its two components, so this is the
-    /// weaker of the two; in every pairing here the ML-DSA parameter set is the binding one.
-    const MAX_SECURITY_STRENGTH: SecurityStrength = weaker_of(
-        <Self::MLDSA as MLDSAParamsBase>::MAX_SECURITY_STRENGTH,
-        <Self::PreHash as Algorithm>::MAX_SECURITY_STRENGTH,
-    );
-}
-
-/// The HashML-DSA-44_with_SHA256 pairing.
-#[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HashMLDSA44_with_SHA256Params;
-/// The HashML-DSA-44_with_SHA512 pairing.
-#[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HashMLDSA44_with_SHA512Params;
-/// The HashML-DSA-65_with_SHA512 pairing.
-#[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HashMLDSA65_with_SHA512Params;
-/// The HashML-DSA-87_with_SHA512 pairing.
-#[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HashMLDSA87_with_SHA512Params;
-
-impl HashMLDSAParamsInternalTrait for HashMLDSA44_with_SHA256Params {}
-impl HashMLDSAParamsInternalTrait for HashMLDSA44_with_SHA512Params {}
-impl HashMLDSAParamsInternalTrait for HashMLDSA65_with_SHA512Params {}
-impl HashMLDSAParamsInternalTrait for HashMLDSA87_with_SHA512Params {}
-
-impl HashMLDSAParams for HashMLDSA44_with_SHA256Params {
-    type MLDSA = MLDSA44Params;
-    type PreHash = SHA256;
-    const ALG_NAME: &'static str = HASH_ML_DSA_44_with_SHA256_NAME;
-}
-impl HashMLDSAParams for HashMLDSA44_with_SHA512Params {
-    type MLDSA = MLDSA44Params;
-    type PreHash = SHA512;
-    const ALG_NAME: &'static str = HASH_ML_DSA_44_with_SHA512_NAME;
-}
-impl HashMLDSAParams for HashMLDSA65_with_SHA512Params {
-    type MLDSA = MLDSA65Params;
-    type PreHash = SHA512;
-    const ALG_NAME: &'static str = HASH_ML_DSA_65_with_SHA512_NAME;
-}
-impl HashMLDSAParams for HashMLDSA87_with_SHA512Params {
-    type MLDSA = MLDSA87Params;
-    type PreHash = SHA512;
-    const ALG_NAME: &'static str = HASH_ML_DSA_87_with_SHA512_NAME;
-}
 
 #[cfg(test)]
 mod tests {

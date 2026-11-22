@@ -12,20 +12,21 @@
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::signature_key::{
-    DeterministicPreHashSigningKey, PreHash, PreHashSigningKey, PreHashVerifyingKey,
-    SignatureAlgorithm,
+    DeterministicPreHashSigningKey, PreHash, PreHashAlgorithm, PreHashSigningKey,
+    PreHashVerifyingKey,
 };
 use bouncycastle_core::traits::{
-    CollisionResistantHash, PrivateKey, PublicKey, SignatureSigner, SignatureVerifier,
+    Algorithm, CollisionResistantHash, HashOneShot, PrivateKey, PublicKey, SignatureSigner,
+    SignatureVerifier,
 };
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa::hazmat::AnyStrength;
 use bouncycastle_mldsa::{
-    MLDSA44, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA44PublicKey,
-    MLDSA65, MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65PublicKey,
-    MLDSA87, MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN, MLDSA87PrivateKey, MLDSA87PublicKey,
-    MLDSAPrivateKeyTrait,
+    MLDSA, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN, MLDSA44Params, MLDSA65_PK_LEN,
+    MLDSA65_SIG_LEN, MLDSA65_SK_LEN, MLDSA65Params, MLDSA87_PK_LEN, MLDSA87_SIG_LEN,
+    MLDSA87_SK_LEN, MLDSA87Params, MLDSAPrivateKey, MLDSAPrivateKeyTrait, MLDSAPublicKey,
+    PrivateKeyLen, PublicKeyLen, SignatureLen,
 };
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
@@ -129,120 +130,121 @@ fn check_tallies(file: &str, tallies: &Tallies, records: usize, weak: usize) {
 
 /* sigGen */
 
-/// Signs the record's message with the pre-hash `H`, by the one-shot over the digest and by the
-/// streaming signer over the message, and checks both against the record's signature, which
-/// must then verify.
-fn sign_as<A, PK, SK, H, const SIG_LEN: usize>(rec: &Record, pk: &PK, sk: &SK)
+/// Signs the record's message with a HashML-DSA key pair, by the one-shots over the digest and
+/// the message and by the streaming signer, and checks each against the record's signature,
+/// which must then verify.
+fn sign_as<A, PK, SK, const SIG_LEN: usize>(rec: &Record, pk: &PK, sk: &SK)
 where
-    A: SignatureAlgorithm,
+    A: PreHashAlgorithm,
+    A::Hash: CollisionResistantHash,
     PK: PreHashVerifyingKey<A, SIG_LEN>,
     SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash + CollisionResistantHash,
 {
     let (msg, ctx, expected) = (rec.hex("message"), rec.hex("context"), rec.hex("signature"));
     let ctx = Some(ctx.as_slice());
-    let ph = H::hash(&msg);
+    let ph = A::Hash::hash(&msg);
 
-    let (one_shot, streamed) = if rec.flag("deterministic") {
-        let mut signer = sk.create_ph_signer_deterministic::<H>(ctx).unwrap();
+    let (over_digest, over_message, streamed) = if rec.flag("deterministic") {
+        let mut signer = sk.create_signer_deterministic(ctx).unwrap();
         signer.do_update(&msg);
-        (sk.sign_ph_deterministic::<H>(&ph, ctx).unwrap(), signer.do_final().unwrap())
+        (
+            sk.sign_ph_deterministic(&ph, ctx).unwrap(),
+            sk.sign_deterministic(&msg, ctx).unwrap(),
+            signer.do_final().unwrap(),
+        )
     } else {
         // The hedged variant draws rnd, 32 bytes, from the RNG: the record's `rnd`.
         let rnd = rec.hex("rnd");
-        let mut signer = sk.create_ph_signer::<H>(&mut FixedSeedRNG::new(&rnd), ctx).unwrap();
+        let mut signer = sk.create_signer(&mut FixedSeedRNG::new(&rnd), ctx).unwrap();
         signer.do_update(&msg);
         (
-            sk.sign_ph::<H>(&mut FixedSeedRNG::new(&rnd), &ph, ctx).unwrap(),
+            sk.sign_ph(&mut FixedSeedRNG::new(&rnd), &ph, ctx).unwrap(),
+            sk.sign(&mut FixedSeedRNG::new(&rnd), &msg, ctx).unwrap(),
             signer.do_final().unwrap(),
         )
     };
-    assert_eq!(one_shot.as_slice(), expected, "sigGen {}: one-shot", rec.id());
+    assert_eq!(over_digest.as_slice(), expected, "sigGen {}: one-shot over the digest", rec.id());
+    assert_eq!(over_message.as_slice(), expected, "sigGen {}: one-shot", rec.id());
     assert_eq!(streamed.as_slice(), expected, "sigGen {}: streaming", rec.id());
 
-    pk.verify_ph::<H>(&ph, ctx, &expected)
+    pk.verify_ph(&ph, ctx, &expected)
         .unwrap_or_else(|e| panic!("sigGen {}: verify_ph: {e:?}", rec.id()));
-    let mut verifier = pk.create_ph_verifier::<H>(ctx).unwrap();
+    let mut verifier = pk.create_verifier(ctx).unwrap();
     verifier.do_update(&msg);
     verifier
         .do_verify_final(&expected)
         .unwrap_or_else(|e| panic!("sigGen {}: streaming verify: {e:?}", rec.id()));
 }
 
-/// The bare hash is refused at each signing entry point.
-fn sign_is_refused<A, SK, H, const SIG_LEN: usize>(rec: &Record, sk: &SK)
+/// The key over the bare hash refuses at each signing entry point.
+fn sign_is_refused<A, SK, const SIG_LEN: usize>(rec: &Record, sk: &SK)
 where
-    A: SignatureAlgorithm,
+    A: PreHashAlgorithm,
+    A::Hash: CollisionResistantHash,
     SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash + CollisionResistantHash,
 {
-    let ph = H::hash(&rec.hex("message"));
+    let msg = rec.hex("message");
+    let ph = A::Hash::hash(&msg);
     let mut rng = FixedSeedRNG::new([0u8; 32]);
     let too_weak = Err(SignatureError::PreHashTooWeak);
-    assert_eq!(sk.sign_ph_deterministic::<H>(&ph, None), too_weak, "sigGen {}", rec.id());
-    assert_eq!(sk.sign_ph::<H>(&mut rng, &ph, None), too_weak, "sigGen {}", rec.id());
+    assert_eq!(sk.sign_ph_deterministic(&ph, None), too_weak, "sigGen {}", rec.id());
+    assert_eq!(sk.sign_ph(&mut rng, &ph, None), too_weak, "sigGen {}", rec.id());
+    assert_eq!(sk.sign_deterministic(&msg, None), too_weak, "sigGen {}", rec.id());
+    assert_eq!(sk.sign(&mut rng, &msg, None), too_weak, "sigGen {}", rec.id());
     assert!(
-        matches!(sk.create_ph_signer_deterministic::<H>(None), Err(SignatureError::PreHashTooWeak)),
+        matches!(sk.create_signer_deterministic(None), Err(SignatureError::PreHashTooWeak)),
         "sigGen {}",
         rec.id()
     );
     assert!(
-        matches!(sk.create_ph_signer::<H>(&mut rng, None), Err(SignatureError::PreHashTooWeak)),
+        matches!(sk.create_signer(&mut rng, None), Err(SignatureError::PreHashTooWeak)),
         "sigGen {}",
         rec.id()
     );
 }
 
-fn sig_gen_with<A, PK, SK, H, const SK_LEN: usize, const SIG_LEN: usize>(
+/// One record under the hash `H`: through `AnyStrength`, and with the bare hash, which signs or
+/// is refused as FIPS 204 Section 5.4 has it for the parameter set `P`.
+fn sig_gen_with<P, H, const SIG_LEN: usize>(
     rec: &Record,
-    pk_of: fn(&SK) -> PK,
+    pk: &MLDSAPublicKey<P>,
+    sk: &MLDSAPrivateKey<P>,
     tally: &mut Tally,
 ) where
-    A: SignatureAlgorithm,
-    PK: PreHashVerifyingKey<A, SIG_LEN>,
-    SK: PrivateKey<SK_LEN>
-        + PreHashSigningKey<A, SIG_LEN>
-        + DeterministicPreHashSigningKey<A, SIG_LEN>,
+    P: SignatureLen<SIG_LEN>,
     H: PreHash + CollisionResistantHash,
 {
-    let sk = SK::from_bytes(&rec.hex("sk")).unwrap();
-    let pk = pk_of(&sk);
-
-    sign_as::<A, PK, SK, AnyStrength<H>, SIG_LEN>(rec, &pk, &sk);
+    sign_as(rec, &pk.as_prehash::<AnyStrength<H>>(), &sk.as_prehash::<AnyStrength<H>>());
     tally.wrapped += 1;
-    if H::MAX_SECURITY_STRENGTH < A::MAX_SECURITY_STRENGTH {
-        sign_is_refused::<A, SK, H, SIG_LEN>(rec, &sk);
+    if H::MAX_SECURITY_STRENGTH < MLDSA::<P>::MAX_SECURITY_STRENGTH {
+        sign_is_refused(rec, &sk.as_prehash::<H>());
         tally.refused += 1;
     } else {
-        sign_as::<A, PK, SK, H, SIG_LEN>(rec, &pk, &sk);
+        sign_as(rec, &pk.as_prehash::<H>(), &sk.as_prehash::<H>());
         tally.bare += 1;
     }
 }
 
-fn sig_gen<A, PK, SK, const SK_LEN: usize, const SIG_LEN: usize>(
-    rec: &Record,
-    pk_of: fn(&SK) -> PK,
-    tally: &mut Tally,
-) where
-    A: SignatureAlgorithm,
-    PK: PreHashVerifyingKey<A, SIG_LEN>,
-    SK: PrivateKey<SK_LEN>
-        + PreHashSigningKey<A, SIG_LEN>
-        + DeterministicPreHashSigningKey<A, SIG_LEN>,
+/// One record under the parameter set `P`, by its `hashAlg`.
+fn sig_gen<P, const SK_LEN: usize, const SIG_LEN: usize>(rec: &Record, tally: &mut Tally)
+where
+    P: PrivateKeyLen<SK_LEN> + SignatureLen<SIG_LEN>,
 {
+    let sk = MLDSAPrivateKey::<P>::from_bytes(&rec.hex("sk")).unwrap();
+    let pk = sk.derive_pk();
     match rec.str("hashAlg") {
-        "SHA2-224" => sig_gen_with::<A, PK, SK, SHA224, SK_LEN, SIG_LEN>(rec, pk_of, tally),
-        "SHA2-256" => sig_gen_with::<A, PK, SK, SHA256, SK_LEN, SIG_LEN>(rec, pk_of, tally),
-        "SHA2-384" => sig_gen_with::<A, PK, SK, SHA384, SK_LEN, SIG_LEN>(rec, pk_of, tally),
-        "SHA2-512" => sig_gen_with::<A, PK, SK, SHA512, SK_LEN, SIG_LEN>(rec, pk_of, tally),
-        "SHA2-512/224" => sig_gen_with::<A, PK, SK, SHA512_224, SK_LEN, SIG_LEN>(rec, pk_of, tally),
-        "SHA2-512/256" => sig_gen_with::<A, PK, SK, SHA512_256, SK_LEN, SIG_LEN>(rec, pk_of, tally),
-        "SHA3-224" => sig_gen_with::<A, PK, SK, SHA3_224, SK_LEN, SIG_LEN>(rec, pk_of, tally),
-        "SHA3-256" => sig_gen_with::<A, PK, SK, SHA3_256, SK_LEN, SIG_LEN>(rec, pk_of, tally),
-        "SHA3-384" => sig_gen_with::<A, PK, SK, SHA3_384, SK_LEN, SIG_LEN>(rec, pk_of, tally),
-        "SHA3-512" => sig_gen_with::<A, PK, SK, SHA3_512, SK_LEN, SIG_LEN>(rec, pk_of, tally),
-        "SHAKE-128" => sig_gen_with::<A, PK, SK, SHAKE128, SK_LEN, SIG_LEN>(rec, pk_of, tally),
-        "SHAKE-256" => sig_gen_with::<A, PK, SK, SHAKE256, SK_LEN, SIG_LEN>(rec, pk_of, tally),
+        "SHA2-224" => sig_gen_with::<P, SHA224, SIG_LEN>(rec, &pk, &sk, tally),
+        "SHA2-256" => sig_gen_with::<P, SHA256, SIG_LEN>(rec, &pk, &sk, tally),
+        "SHA2-384" => sig_gen_with::<P, SHA384, SIG_LEN>(rec, &pk, &sk, tally),
+        "SHA2-512" => sig_gen_with::<P, SHA512, SIG_LEN>(rec, &pk, &sk, tally),
+        "SHA2-512/224" => sig_gen_with::<P, SHA512_224, SIG_LEN>(rec, &pk, &sk, tally),
+        "SHA2-512/256" => sig_gen_with::<P, SHA512_256, SIG_LEN>(rec, &pk, &sk, tally),
+        "SHA3-224" => sig_gen_with::<P, SHA3_224, SIG_LEN>(rec, &pk, &sk, tally),
+        "SHA3-256" => sig_gen_with::<P, SHA3_256, SIG_LEN>(rec, &pk, &sk, tally),
+        "SHA3-384" => sig_gen_with::<P, SHA3_384, SIG_LEN>(rec, &pk, &sk, tally),
+        "SHA3-512" => sig_gen_with::<P, SHA3_512, SIG_LEN>(rec, &pk, &sk, tally),
+        "SHAKE-128" => sig_gen_with::<P, SHAKE128, SIG_LEN>(rec, &pk, &sk, tally),
+        "SHAKE-256" => sig_gen_with::<P, SHAKE256, SIG_LEN>(rec, &pk, &sk, tally),
         other => panic!("sigGen {}: unknown hashAlg {other}", rec.id()),
     }
 }
@@ -259,27 +261,9 @@ fn ML_DSA_sigGen_preHash() {
     for rec in &records {
         let tally = tallies.entry(rec.pairing()).or_default();
         match rec.str("parameterSet") {
-            "ML-DSA-44" => sig_gen::<
-                MLDSA44,
-                MLDSA44PublicKey,
-                MLDSA44PrivateKey,
-                MLDSA44_SK_LEN,
-                MLDSA44_SIG_LEN,
-            >(rec, |sk| sk.derive_pk(), tally),
-            "ML-DSA-65" => sig_gen::<
-                MLDSA65,
-                MLDSA65PublicKey,
-                MLDSA65PrivateKey,
-                MLDSA65_SK_LEN,
-                MLDSA65_SIG_LEN,
-            >(rec, |sk| sk.derive_pk(), tally),
-            "ML-DSA-87" => sig_gen::<
-                MLDSA87,
-                MLDSA87PublicKey,
-                MLDSA87PrivateKey,
-                MLDSA87_SK_LEN,
-                MLDSA87_SIG_LEN,
-            >(rec, |sk| sk.derive_pk(), tally),
+            "ML-DSA-44" => sig_gen::<MLDSA44Params, MLDSA44_SK_LEN, MLDSA44_SIG_LEN>(rec, tally),
+            "ML-DSA-65" => sig_gen::<MLDSA65Params, MLDSA65_SK_LEN, MLDSA65_SIG_LEN>(rec, tally),
+            "ML-DSA-87" => sig_gen::<MLDSA87Params, MLDSA87_SK_LEN, MLDSA87_SIG_LEN>(rec, tally),
             other => panic!("sigGen {}: unknown parameterSet {other}", rec.id()),
         }
     }
@@ -289,13 +273,12 @@ fn ML_DSA_sigGen_preHash() {
 
 /* sigVer */
 
-/// Verifies the record's signature with the pre-hash `H`, by the one-shot over the digest and
-/// by the streaming verifier over the message, and checks both against `testPassed`.
-fn verify_as<A, PK, H, const SIG_LEN: usize>(rec: &Record, pk: &PK)
+/// Verifies the record's signature with a HashML-DSA public key, by the one-shots over the
+/// digest and the message and by the streaming verifier, and checks each against `testPassed`.
+fn verify_as<A, PK, const SIG_LEN: usize>(rec: &Record, pk: &PK)
 where
-    A: SignatureAlgorithm,
+    A: PreHashAlgorithm,
     PK: PreHashVerifyingKey<A, SIG_LEN>,
-    H: PreHash,
 {
     let (msg, ctx, sig) = (rec.hex("message"), rec.hex("context"), rec.hex("signature"));
     let ctx = Some(ctx.as_slice());
@@ -305,59 +288,66 @@ where
         Err(SignatureError::SignatureVerificationFailed)
     };
 
-    assert_eq!(pk.verify_ph::<H>(&H::hash(&msg), ctx, &sig), expected, "sigVer {}", rec.id());
-    let mut verifier = pk.create_ph_verifier::<H>(ctx).unwrap();
+    assert_eq!(pk.verify_ph(&A::Hash::hash(&msg), ctx, &sig), expected, "sigVer {}", rec.id());
+    assert_eq!(pk.verify(&msg, ctx, &sig), expected, "sigVer {}: one-shot", rec.id());
+    let mut verifier = pk.create_verifier(ctx).unwrap();
     verifier.do_update(&msg);
     assert_eq!(verifier.do_verify_final(&sig), expected, "sigVer {}: streaming", rec.id());
 }
 
-fn sig_ver_with<A, PK, H, const PK_LEN: usize, const SIG_LEN: usize>(
-    rec: &Record,
-    tally: &mut Tally,
-) where
-    A: SignatureAlgorithm,
-    PK: PublicKey<PK_LEN> + PreHashVerifyingKey<A, SIG_LEN>,
+/// The key over the bare hash refuses at each verifying entry point, whatever the signature.
+fn verify_is_refused<A, PK, const SIG_LEN: usize>(rec: &Record, pk: &PK)
+where
+    A: PreHashAlgorithm,
+    PK: PreHashVerifyingKey<A, SIG_LEN>,
+{
+    let (msg, sig) = (rec.hex("message"), rec.hex("signature"));
+    let too_weak = Err(SignatureError::PreHashTooWeak);
+    assert_eq!(pk.verify_ph(&A::Hash::hash(&msg), None, &sig), too_weak, "sigVer {}", rec.id());
+    assert_eq!(pk.verify(&msg, None, &sig), too_weak, "sigVer {}", rec.id());
+    assert!(
+        matches!(pk.create_verifier(None), Err(SignatureError::PreHashTooWeak)),
+        "sigVer {}",
+        rec.id()
+    );
+}
+
+/// One record under the hash `H`; see [`sig_gen_with`].
+fn sig_ver_with<P, H, const SIG_LEN: usize>(rec: &Record, pk: &MLDSAPublicKey<P>, tally: &mut Tally)
+where
+    P: SignatureLen<SIG_LEN>,
     H: PreHash,
 {
-    let pk = PK::from_bytes(&rec.hex("pk")).unwrap();
-
-    verify_as::<A, PK, AnyStrength<H>, SIG_LEN>(rec, &pk);
+    verify_as(rec, &pk.as_prehash::<AnyStrength<H>>());
     tally.wrapped += 1;
-    if H::MAX_SECURITY_STRENGTH < A::MAX_SECURITY_STRENGTH {
-        // The bare hash is refused at each verifying entry point, whatever the signature.
-        let (ph, sig) = (H::hash(&rec.hex("message")), rec.hex("signature"));
-        let too_weak = Err(SignatureError::PreHashTooWeak);
-        assert_eq!(pk.verify_ph::<H>(&ph, None, &sig), too_weak, "sigVer {}", rec.id());
-        assert!(
-            matches!(pk.create_ph_verifier::<H>(None), Err(SignatureError::PreHashTooWeak)),
-            "sigVer {}",
-            rec.id()
-        );
+    if H::MAX_SECURITY_STRENGTH < MLDSA::<P>::MAX_SECURITY_STRENGTH {
+        verify_is_refused(rec, &pk.as_prehash::<H>());
         tally.refused += 1;
     } else {
-        verify_as::<A, PK, H, SIG_LEN>(rec, &pk);
+        verify_as(rec, &pk.as_prehash::<H>());
         tally.bare += 1;
     }
 }
 
-fn sig_ver<A, PK, const PK_LEN: usize, const SIG_LEN: usize>(rec: &Record, tally: &mut Tally)
+/// One record under the parameter set `P`, by its `hashAlg`.
+fn sig_ver<P, const PK_LEN: usize, const SIG_LEN: usize>(rec: &Record, tally: &mut Tally)
 where
-    A: SignatureAlgorithm,
-    PK: PublicKey<PK_LEN> + PreHashVerifyingKey<A, SIG_LEN>,
+    P: PublicKeyLen<PK_LEN> + SignatureLen<SIG_LEN>,
 {
+    let pk = MLDSAPublicKey::<P>::from_bytes(&rec.hex("pk")).unwrap();
     match rec.str("hashAlg") {
-        "SHA2-224" => sig_ver_with::<A, PK, SHA224, PK_LEN, SIG_LEN>(rec, tally),
-        "SHA2-256" => sig_ver_with::<A, PK, SHA256, PK_LEN, SIG_LEN>(rec, tally),
-        "SHA2-384" => sig_ver_with::<A, PK, SHA384, PK_LEN, SIG_LEN>(rec, tally),
-        "SHA2-512" => sig_ver_with::<A, PK, SHA512, PK_LEN, SIG_LEN>(rec, tally),
-        "SHA2-512/224" => sig_ver_with::<A, PK, SHA512_224, PK_LEN, SIG_LEN>(rec, tally),
-        "SHA2-512/256" => sig_ver_with::<A, PK, SHA512_256, PK_LEN, SIG_LEN>(rec, tally),
-        "SHA3-224" => sig_ver_with::<A, PK, SHA3_224, PK_LEN, SIG_LEN>(rec, tally),
-        "SHA3-256" => sig_ver_with::<A, PK, SHA3_256, PK_LEN, SIG_LEN>(rec, tally),
-        "SHA3-384" => sig_ver_with::<A, PK, SHA3_384, PK_LEN, SIG_LEN>(rec, tally),
-        "SHA3-512" => sig_ver_with::<A, PK, SHA3_512, PK_LEN, SIG_LEN>(rec, tally),
-        "SHAKE-128" => sig_ver_with::<A, PK, SHAKE128, PK_LEN, SIG_LEN>(rec, tally),
-        "SHAKE-256" => sig_ver_with::<A, PK, SHAKE256, PK_LEN, SIG_LEN>(rec, tally),
+        "SHA2-224" => sig_ver_with::<P, SHA224, SIG_LEN>(rec, &pk, tally),
+        "SHA2-256" => sig_ver_with::<P, SHA256, SIG_LEN>(rec, &pk, tally),
+        "SHA2-384" => sig_ver_with::<P, SHA384, SIG_LEN>(rec, &pk, tally),
+        "SHA2-512" => sig_ver_with::<P, SHA512, SIG_LEN>(rec, &pk, tally),
+        "SHA2-512/224" => sig_ver_with::<P, SHA512_224, SIG_LEN>(rec, &pk, tally),
+        "SHA2-512/256" => sig_ver_with::<P, SHA512_256, SIG_LEN>(rec, &pk, tally),
+        "SHA3-224" => sig_ver_with::<P, SHA3_224, SIG_LEN>(rec, &pk, tally),
+        "SHA3-256" => sig_ver_with::<P, SHA3_256, SIG_LEN>(rec, &pk, tally),
+        "SHA3-384" => sig_ver_with::<P, SHA3_384, SIG_LEN>(rec, &pk, tally),
+        "SHA3-512" => sig_ver_with::<P, SHA3_512, SIG_LEN>(rec, &pk, tally),
+        "SHAKE-128" => sig_ver_with::<P, SHAKE128, SIG_LEN>(rec, &pk, tally),
+        "SHAKE-256" => sig_ver_with::<P, SHAKE256, SIG_LEN>(rec, &pk, tally),
         other => panic!("sigVer {}: unknown hashAlg {other}", rec.id()),
     }
 }
@@ -375,15 +365,9 @@ fn ML_DSA_sigVer_preHash() {
     for rec in &records {
         let tally = tallies.entry(rec.pairing()).or_default();
         match rec.str("parameterSet") {
-            "ML-DSA-44" => {
-                sig_ver::<MLDSA44, MLDSA44PublicKey, MLDSA44_PK_LEN, MLDSA44_SIG_LEN>(rec, tally)
-            }
-            "ML-DSA-65" => {
-                sig_ver::<MLDSA65, MLDSA65PublicKey, MLDSA65_PK_LEN, MLDSA65_SIG_LEN>(rec, tally)
-            }
-            "ML-DSA-87" => {
-                sig_ver::<MLDSA87, MLDSA87PublicKey, MLDSA87_PK_LEN, MLDSA87_SIG_LEN>(rec, tally)
-            }
+            "ML-DSA-44" => sig_ver::<MLDSA44Params, MLDSA44_PK_LEN, MLDSA44_SIG_LEN>(rec, tally),
+            "ML-DSA-65" => sig_ver::<MLDSA65Params, MLDSA65_PK_LEN, MLDSA65_SIG_LEN>(rec, tally),
+            "ML-DSA-87" => sig_ver::<MLDSA87Params, MLDSA87_PK_LEN, MLDSA87_SIG_LEN>(rec, tally),
             other => panic!("sigVer {}: unknown parameterSet {other}", rec.id()),
         }
     }

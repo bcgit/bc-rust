@@ -9,22 +9,23 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, CollisionResistantHash, FinishToken, Hash, HashAlgParams, HashOneShot,
 };
 
-/// The pre-hash `H`, accepted by HashML-DSA with any parameter set: naming `AnyStrength<H>`
-/// where a key's pre-hash methods take the hash opts out of the check that otherwise refuses a
-/// hash weaker than the parameter set with `SignatureError::PreHashTooWeak`.
+/// The pre-hash `H`, accepted by HashML-DSA with any parameter set: naming `AnyStrength<H>` as
+/// the hash of a HashML-DSA key, `as_prehash::<AnyStrength<H>>()`, opts out of the check that
+/// otherwise refuses a hash weaker than the parameter set with `SignatureError::PreHashTooWeak`.
 ///
 /// It is `H` in everything else: the same digest, lengths, name, OID and
 /// [`MAX_SECURITY_STRENGTH`](Algorithm::MAX_SECURITY_STRENGTH), so a signature made with
-/// `AnyStrength<H>` is the signature `H` gives, and each verifies as the other wherever `H`
-/// alone is accepted. It exists for interoperability with a peer that uses a weak pairing and
-/// for validation testing, where NIST's ACVP vectors pair every approved hash with every
-/// parameter set.
+/// `AnyStrength<H>` is the signature `H` gives, under the same algorithm name, and each verifies
+/// as the other wherever `H` alone is accepted. The algorithm's strength is the weaker of the
+/// parameter set's and `H`'s. It exists for interoperability with a peer that uses a weak
+/// pairing and for validation testing, where NIST's ACVP vectors pair every approved hash with
+/// every parameter set.
 ///
 /// ```text
 /// let ph = SHA224::hash(msg);
-/// sk.sign_ph_deterministic::<SHA224>(&ph, None);                    // ML-DSA-87: PreHashTooWeak
-/// let sig = sk.sign_ph_deterministic::<AnyStrength<SHA224>>(&ph, None)?;
-/// pk.verify_ph::<AnyStrength<SHA224>>(&ph, None, &sig)?;
+/// sk.as_prehash::<SHA224>().sign_ph_deterministic(&ph, None);       // ML-DSA-87: PreHashTooWeak
+/// let sig = sk.as_prehash::<AnyStrength<SHA224>>().sign_ph_deterministic(&ph, None)?;
+/// pk.as_prehash::<AnyStrength<SHA224>>().verify_ph(&ph, None, &sig)?;
 /// ```
 ///
 /// # 🚨 Security Considerations 🚨

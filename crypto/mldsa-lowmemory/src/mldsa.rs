@@ -216,16 +216,15 @@
 //!
 //! The 32-byte signing randomizer of FIPS 204 Algorithm 2, step 5. This implementation signs the
 //! hedged variant: `rnd` is drawn from the RNG the caller passes to `create_signer`, `sign`,
-//! `sign_mu` and the pre-hash forms, so signing one message twice gives two different signatures.
+//! `sign_mu` and a HashML-DSA key's forms, so signing one message twice gives two different
+//! signatures.
 //! FIPS 204 also permits the deterministic variant, `rnd` all zeros; it is as secure against
 //! forgery, but it loses some privacy: identical signatures reveal that the same message was
 //! signed twice by the same key. The deterministic variant is [`DeterministicSigningKey`] on the
 //! key (`create_signer_deterministic`, `sign_deterministic`), [`MLDSAPrivateKeyTrait::sign_mu_deterministic`]
-//! at the mu level and [`DeterministicPreHashSigningKey`] over a pre-hash. No method takes `rnd`
+//! at the mu level, and the same roles on a HashML-DSA key. No method takes `rnd`
 //! itself; a known-answer test with some other `rnd` passes an RNG that returns it
 //! (`bouncycastle_core::hazmat::FixedSeedRNG`).
-//!
-//! [`DeterministicPreHashSigningKey`]: bouncycastle_core::signature_key::DeterministicPreHashSigningKey
 //!
 //! # Signing from a seed
 //!

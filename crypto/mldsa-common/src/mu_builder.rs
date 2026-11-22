@@ -14,7 +14,7 @@ use bouncycastle_sha3::SUSPENDED_SHA3_STATE_LEN;
 /// Note: this struct is only exposed for "pure" ML-DSA and not for HashML-DSA because HashML-DSA
 /// does not benefit from allowing external construction of the message representative mu.
 /// The same behaviour can be obtained by computing the pre-hash `ph` with the appropriate hash function
-/// and providing that to HashMLDSA via `PHSigner::sign_ph`.
+/// and providing that to a HashML-DSA key's `sign_ph`.
 #[derive(Clone)]
 pub struct MuBuilder {
     h: H,

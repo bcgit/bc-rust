@@ -1,5 +1,6 @@
 use bouncycastle_core::signature_key::{
-    DeterministicPreHashSigningKey, PreHashSigningKey, PreHashVerifyingKey,
+    DeterministicPreHashSigningKey, PreHashSigningKey, PreHashVerifyingKey, SigningKey,
+    VerifyingKey,
 };
 use bouncycastle_core::traits::{HashOneShot, SignatureSigner, SignatureVerifier};
 use bouncycastle_hex as hex;
@@ -25,34 +26,94 @@ mod hash_mldsa_tests {
     use bouncycastle_sha2::{SHA256, SHA512};
     use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
+    /// The HashML-DSA views of one key pair under the hash `H`, for the framework, whose runners
+    /// take a function that returns the keys by value: a view borrows its key, so the pair lives in
+    /// a static. A macro, one function per parameter set, because a static cannot be generic.
+    macro_rules! views {
+        ($name:ident, $alg:ty, $P:ty, $PK:ty, $SK:ty) => {
+            fn $name<H: bouncycastle_core::signature_key::PreHash>() -> Result<
+                (
+                    bouncycastle_mldsa_lowmemory::HashMLDSAPublicKey<'static, $P, H>,
+                    bouncycastle_mldsa_lowmemory::HashMLDSAPrivateKey<'static, $P, H>,
+                ),
+                SignatureError,
+            > {
+                static PAIR: std::sync::OnceLock<($PK, $SK)> = std::sync::OnceLock::new();
+                let (pk, sk) =
+                    PAIR.get_or_init(|| <$alg>::keygen(&mut DefaultRNG::default()).unwrap());
+                Ok((pk.as_prehash(), sk.as_prehash()))
+            }
+        };
+    }
+    views!(
+        views_44,
+        MLDSA44,
+        bouncycastle_mldsa_lowmemory::MLDSA44Params,
+        MLDSA44PublicKey,
+        MLDSA44PrivateKey
+    );
+    views!(
+        views_65,
+        MLDSA65,
+        bouncycastle_mldsa_lowmemory::MLDSA65Params,
+        MLDSA65PublicKey,
+        MLDSA65PrivateKey
+    );
+    views!(
+        views_87,
+        MLDSA87,
+        bouncycastle_mldsa_lowmemory::MLDSA87Params,
+        MLDSA87PublicKey,
+        MLDSA87PrivateKey
+    );
+
+    /// The signing and verifying roles over the message, hedged and deterministic, on the views
+    /// of the four named pairings; the digest-supplied roles are the next two tests'.
+    #[test]
+    fn core_framework_roles_over_the_message() {
+        let tf = TestFrameworkSignature::new(true);
+        tf.test_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHA256>, false);
+        tf.test_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHA512>, false);
+        tf.test_signature::<_, _, _, MLDSA65_SIG_LEN>(views_65::<SHA512>, false);
+        tf.test_signature::<_, _, _, MLDSA87_SIG_LEN>(views_87::<SHA512>, false);
+        tf.test_deterministic_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHA256>, false);
+        tf.test_deterministic_signature::<_, _, _, MLDSA65_SIG_LEN>(views_65::<SHA512>, false);
+        tf.test_deterministic_signature::<_, _, _, MLDSA87_SIG_LEN>(views_87::<SHA512>, false);
+    }
+
     #[test]
     fn core_framework_signature() {
         let tf = TestFrameworkSignature::new(true);
 
         // HashML-DSA-44 with SHA-256, the one SHA-256 pairing
-        tf.test_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHA256, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
+        tf.test_ph_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHA256>, false);
 
         // the SHA-512 pairings
-        tf.test_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHA512, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
-        tf.test_ph_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, SHA512, MLDSA65_SIG_LEN>(|| MLDSA65::keygen(&mut DefaultRNG::default()), false);
-        tf.test_ph_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, SHA512, MLDSA87_SIG_LEN>(|| MLDSA87::keygen(&mut DefaultRNG::default()), false);
+        tf.test_ph_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHA512>, false);
+        tf.test_ph_signature::<_, _, _, MLDSA65_SIG_LEN>(views_65::<SHA512>, false);
+        tf.test_ph_signature::<_, _, _, MLDSA87_SIG_LEN>(views_87::<SHA512>, false);
     }
 
     /// The deterministic variant over a pre-hash, through the framework's suite.
     #[test]
     fn core_framework_deterministic_ph_signature() {
         let tf = TestFrameworkSignature::new(true);
-        tf.test_deterministic_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHA256, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
-        tf.test_deterministic_ph_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, SHA512, MLDSA65_SIG_LEN>(|| MLDSA65::keygen(&mut DefaultRNG::default()), false);
-        tf.test_deterministic_ph_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, SHA512, MLDSA87_SIG_LEN>(|| MLDSA87::keygen(&mut DefaultRNG::default()), false);
+        tf.test_deterministic_ph_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHA256>, false);
+        tf.test_deterministic_ph_signature::<_, _, _, MLDSA65_SIG_LEN>(views_65::<SHA512>, false);
+        tf.test_deterministic_ph_signature::<_, _, _, MLDSA87_SIG_LEN>(views_87::<SHA512>, false);
 
         // the deterministic pre-hash signature is the hedged one with rnd all zeros
         let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
         let ph = SHA512::hash(b"deterministic is hedged with rnd = 0");
-        let hedged_zero =
-            sk.sign_ph::<SHA512>(&mut FixedSeedRNG::new([0u8; 32]), &ph, None).unwrap();
-        assert_eq!(sk.sign_ph_deterministic::<SHA512>(&ph, None).unwrap(), hedged_zero);
-        pk.verify_ph::<SHA512>(&ph, None, &hedged_zero).unwrap();
+        let hedged_zero = sk
+            .as_prehash::<SHA512>()
+            .sign_ph(&mut FixedSeedRNG::new([0u8; 32]), &ph, None)
+            .unwrap();
+        assert_eq!(
+            sk.as_prehash::<SHA512>().sign_ph_deterministic(&ph, None).unwrap(),
+            hedged_zero
+        );
+        pk.as_prehash::<SHA512>().verify_ph(&ph, None, &hedged_zero).unwrap();
     }
 
     /// FIPS 204 Section 5.4: a hash weaker than the parameter set is refused when the signer or
@@ -62,19 +123,19 @@ mod hash_mldsa_tests {
         let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
         let ph = SHA256::hash(b"msg");
         assert!(matches!(
-            sk.create_ph_signer::<SHA256>(&mut HashDRBG_SHA512::new_from_os(), None),
+            sk.as_prehash::<SHA256>().create_signer(&mut HashDRBG_SHA512::new_from_os(), None),
             Err(SignatureError::PreHashTooWeak)
         ));
         assert!(matches!(
-            sk.sign_ph::<SHA256>(&mut HashDRBG_SHA512::new_from_os(), &ph, None),
+            sk.as_prehash::<SHA256>().sign_ph(&mut HashDRBG_SHA512::new_from_os(), &ph, None),
             Err(SignatureError::PreHashTooWeak)
         ));
         assert!(matches!(
-            pk.create_ph_verifier::<SHA256>(None),
+            pk.as_prehash::<SHA256>().create_verifier(None),
             Err(SignatureError::PreHashTooWeak)
         ));
         assert!(matches!(
-            pk.verify_ph::<SHA256>(&ph, None, &[0u8; MLDSA65_SIG_LEN]),
+            pk.as_prehash::<SHA256>().verify_ph(&ph, None, &[0u8; MLDSA65_SIG_LEN]),
             Err(SignatureError::PreHashTooWeak)
         ));
     }
@@ -102,7 +163,8 @@ mod hash_mldsa_tests {
         // There is no exposed sign_deterministic() that does the ph computation internally and takes an rnd,
         // therefore ph has to be computed manually here
         let ph: [u8; 64] = SHA512::hash(msg)[..64].try_into().unwrap();
-        let sig = sk.sign_ph::<SHA512>(&mut FixedSeedRNG::new(&rnd), &ph, None).unwrap();
+        let sig =
+            sk.as_prehash::<SHA512>().sign_ph(&mut FixedSeedRNG::new(&rnd), &ph, None).unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
 
         // HashML-DSA-65_with_SHA512
@@ -113,7 +175,8 @@ mod hash_mldsa_tests {
         // There is no exposed sign_deterministic() that does the ph computation internally and takes an rnd,
         // therefore ph has to be computed manually here
         let ph: [u8; 64] = SHA512::hash(msg)[..64].try_into().unwrap();
-        let sig = sk.sign_ph::<SHA512>(&mut FixedSeedRNG::new(&rnd), &ph, None).unwrap();
+        let sig =
+            sk.as_prehash::<SHA512>().sign_ph(&mut FixedSeedRNG::new(&rnd), &ph, None).unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
 
         // HashML-DSA-87_with_SHA512
@@ -124,7 +187,8 @@ mod hash_mldsa_tests {
         // There is no exposed sign_deterministic() that does the ph computation internally and takes an rnd,
         // therefore ph has to be computed manually here
         let ph: [u8; 64] = SHA512::hash(msg)[..64].try_into().unwrap();
-        let sig = sk.sign_ph::<SHA512>(&mut FixedSeedRNG::new(&rnd), &ph, None).unwrap();
+        let sig =
+            sk.as_prehash::<SHA512>().sign_ph(&mut FixedSeedRNG::new(&rnd), &ph, None).unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
     }
 
@@ -153,21 +217,22 @@ mod hash_mldsa_tests {
         let expected_ph: [u8; 64] = SHA512::hash(msg).try_into().unwrap();
         let mut expected_sig = [0u8; MLDSA44_SIG_LEN];
         let bytes_written = expected_sk
-            .sign_ph_out::<SHA512>(
-                &mut FixedSeedRNG::new(rnd),
-                &expected_ph,
-                ctx,
-                &mut expected_sig,
-            )
+            .as_prehash::<SHA512>()
+            .sign_ph_out(&mut FixedSeedRNG::new(rnd), &expected_ph, ctx, &mut expected_sig)
             .unwrap();
         assert_eq!(bytes_written, MLDSA44_SIG_LEN);
-        expected_pk.verify_ph::<SHA512>(&SHA512::hash(msg), ctx, &expected_sig).unwrap();
+        expected_pk
+            .as_prehash::<SHA512>()
+            .verify_ph(&SHA512::hash(msg), ctx, &expected_sig)
+            .unwrap();
         // END expected values
 
         // test the streaming API from sk
 
-        let mut s =
-            expected_sk.create_ph_signer::<SHA512>(&mut FixedSeedRNG::new(rnd), ctx).unwrap();
+        let mut s = expected_sk
+            .as_prehash::<SHA512>()
+            .create_signer(&mut FixedSeedRNG::new(rnd), ctx)
+            .unwrap();
         s.do_update(msg);
         let sig = s.do_final().unwrap();
         assert_eq!(&sig, &expected_sig);
@@ -175,34 +240,36 @@ mod hash_mldsa_tests {
         // test the streaming API from seed
 
         let (_pk, sk_from_seed) = MLDSA44::keygen_from_seed(&seed).unwrap();
-        let mut s =
-            sk_from_seed.create_ph_signer::<SHA512>(&mut FixedSeedRNG::new(rnd), ctx).unwrap();
+        let mut s = sk_from_seed
+            .as_prehash::<SHA512>()
+            .create_signer(&mut FixedSeedRNG::new(rnd), ctx)
+            .unwrap();
         s.do_update(msg);
         let sig = s.do_final().unwrap();
         assert_eq!(&sig, &expected_sig);
 
         // test the streaming verifier
 
-        let mut v = expected_pk.create_ph_verifier::<SHA512>(ctx).unwrap();
+        let mut v = expected_pk.as_prehash::<SHA512>().create_verifier(ctx).unwrap();
         v.do_update(msg);
         v.do_verify_final(&expected_sig).unwrap();
 
         // and it rejects a corrupted signature, the wrong message, and the wrong context
         let mut bad_sig = expected_sig;
         bad_sig[7] ^= 0x01;
-        let mut v = expected_pk.create_ph_verifier::<SHA512>(ctx).unwrap();
+        let mut v = expected_pk.as_prehash::<SHA512>().create_verifier(ctx).unwrap();
         v.do_update(msg);
         assert!(matches!(
             v.do_verify_final(&bad_sig),
             Err(SignatureError::SignatureVerificationFailed)
         ));
-        let mut v = expected_pk.create_ph_verifier::<SHA512>(ctx).unwrap();
+        let mut v = expected_pk.as_prehash::<SHA512>().create_verifier(ctx).unwrap();
         v.do_update(b"not the message");
         assert!(matches!(
             v.do_verify_final(&expected_sig),
             Err(SignatureError::SignatureVerificationFailed)
         ));
-        let mut v = expected_pk.create_ph_verifier::<SHA512>(Some(b"other ctx")).unwrap();
+        let mut v = expected_pk.as_prehash::<SHA512>().create_verifier(Some(b"other ctx")).unwrap();
         v.do_update(msg);
         assert!(matches!(
             v.do_verify_final(&expected_sig),
@@ -219,13 +286,15 @@ mod hash_mldsa_tests {
         let (_pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
 
         // ctx with len 255 works
-        sk.create_ph_signer::<SHA256>(&mut HashDRBG_SHA512::new_from_os(), Some(&[1u8; 255]))
+        sk.as_prehash::<SHA256>()
+            .create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&[1u8; 255]))
             .unwrap();
 
         // ctx with len 256 is too long
         let too_long_ctx = [1u8; 256];
         match sk
-            .create_ph_signer::<SHA256>(&mut HashDRBG_SHA512::new_from_os(), Some(&too_long_ctx))
+            .as_prehash::<SHA256>()
+            .create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&too_long_ctx))
         {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for ctx too long"),
@@ -238,10 +307,15 @@ mod hash_mldsa_tests {
         // MLDSA44
         let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
         let sig = sk
-            .sign_ph::<SHA256>(&mut HashDRBG_SHA512::new_from_os(), &SHA256::hash(msg), None)
+            .as_prehash::<SHA256>()
+            .sign_ph(&mut HashDRBG_SHA512::new_from_os(), &SHA256::hash(msg), None)
             .unwrap();
         // too short
-        match pk.verify_ph::<SHA256>(&SHA256::hash(msg), None, &sig[..MLDSA44_SIG_LEN - 1]) {
+        match pk.as_prehash::<SHA256>().verify_ph(
+            &SHA256::hash(msg),
+            None,
+            &sig[..MLDSA44_SIG_LEN - 1],
+        ) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for sig too short"),
         }
@@ -250,39 +324,47 @@ mod hash_mldsa_tests {
         let mut sig_too_long = [0u8; MLDSA44_SIG_LEN + 2];
         sig_too_long[..MLDSA44_SIG_LEN].copy_from_slice(&sig);
         sig_too_long[MLDSA44_SIG_LEN..].copy_from_slice(&[1u8, 0u8]);
-        match pk.verify_ph::<SHA256>(&SHA256::hash(msg), None, &sig_too_long) {
+        match pk.as_prehash::<SHA256>().verify_ph(&SHA256::hash(msg), None, &sig_too_long) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for sig too short"),
         }
 
         // sign_ph_deterministic ctx just right at 255
         let sig = sk
-            .sign_ph::<SHA512>(&mut FixedSeedRNG::new([3u8; 32]), &[2u8; 64], Some(&[1u8; 255]))
+            .as_prehash::<SHA512>()
+            .sign_ph(&mut FixedSeedRNG::new([3u8; 32]), &[2u8; 64], Some(&[1u8; 255]))
             .unwrap();
-        pk.verify_ph::<SHA512>(&[2u8; 64], Some(&[1u8; 255]), &sig).unwrap();
+        pk.as_prehash::<SHA512>().verify_ph(&[2u8; 64], Some(&[1u8; 255]), &sig).unwrap();
 
         // sign_ph_deterministic ctx too long
-        match sk.sign_ph::<SHA512>(&mut FixedSeedRNG::new([3u8; 32]), &[2u8; 64], Some(&[1u8; 256]))
-        {
+        match sk.as_prehash::<SHA512>().sign_ph(
+            &mut FixedSeedRNG::new([3u8; 32]),
+            &[2u8; 64],
+            Some(&[1u8; 256]),
+        ) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error"),
         }
 
         // sign_ph_deterministic ctx just right at 255
         let sig = sk
-            .sign_ph::<SHA512>(&mut FixedSeedRNG::new([3u8; 32]), &[2u8; 64], Some(&[1u8; 255]))
+            .as_prehash::<SHA512>()
+            .sign_ph(&mut FixedSeedRNG::new([3u8; 32]), &[2u8; 64], Some(&[1u8; 255]))
             .unwrap();
-        pk.verify_ph::<SHA512>(&[2u8; 64], Some(&[1u8; 255]), &sig).unwrap();
+        pk.as_prehash::<SHA512>().verify_ph(&[2u8; 64], Some(&[1u8; 255]), &sig).unwrap();
 
         // sign_ph_deterministic ctx too long
-        match sk.sign_ph::<SHA512>(&mut FixedSeedRNG::new([3u8; 32]), &[2u8; 64], Some(&[2u8; 256]))
-        {
+        match sk.as_prehash::<SHA512>().sign_ph(
+            &mut FixedSeedRNG::new([3u8; 32]),
+            &[2u8; 64],
+            Some(&[2u8; 256]),
+        ) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error"),
         }
 
         // verify_ph ctx too long
-        match pk.verify_ph::<SHA512>(&[2u8; 64], Some(&[2u8; 256]), &sig) {
+        match pk.as_prehash::<SHA512>().verify_ph(&[2u8; 64], Some(&[2u8; 256]), &sig) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error"),
         }
@@ -337,12 +419,18 @@ mod hash_mldsa_tests {
         let ph512: [u8; 64] = SHA512::hash(msg).try_into().unwrap();
 
         let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
-        let sig = sk.sign_ph::<SHA256>(&mut HashDRBG_SHA512::new_from_os(), &ph256, None).unwrap();
-        pk.verify_ph::<SHA256>(&ph256, None, &sig).unwrap();
+        let sig = sk
+            .as_prehash::<SHA256>()
+            .sign_ph(&mut HashDRBG_SHA512::new_from_os(), &ph256, None)
+            .unwrap();
+        pk.as_prehash::<SHA256>().verify_ph(&ph256, None, &sig).unwrap();
 
         let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
-        let sig = sk.sign_ph::<SHA512>(&mut HashDRBG_SHA512::new_from_os(), &ph512, None).unwrap();
-        pk.verify_ph::<SHA512>(&ph512, None, &sig).unwrap();
+        let sig = sk
+            .as_prehash::<SHA512>()
+            .sign_ph(&mut HashDRBG_SHA512::new_from_os(), &ph512, None)
+            .unwrap();
+        pk.as_prehash::<SHA512>().verify_ph(&ph512, None, &sig).unwrap();
     }
 
     /// FIPS 204 Algorithm 4, case SHAKE128 (lines 17 to 19): the pre-hash is SHAKE128(M, 256)
@@ -351,27 +439,27 @@ mod hash_mldsa_tests {
     #[test]
     fn shake_pre_hashes() {
         let tf = TestFrameworkSignature::new(true);
-        tf.test_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHAKE128, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
-        tf.test_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHAKE256, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
-        tf.test_ph_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, SHAKE256, MLDSA65_SIG_LEN>(|| MLDSA65::keygen(&mut DefaultRNG::default()), false);
-        tf.test_ph_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, SHAKE256, MLDSA87_SIG_LEN>(|| MLDSA87::keygen(&mut DefaultRNG::default()), false);
+        tf.test_ph_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHAKE128>, false);
+        tf.test_ph_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHAKE256>, false);
+        tf.test_ph_signature::<_, _, _, MLDSA65_SIG_LEN>(views_65::<SHAKE256>, false);
+        tf.test_ph_signature::<_, _, _, MLDSA87_SIG_LEN>(views_87::<SHAKE256>, false);
 
         let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
         assert!(matches!(
-            sk.create_ph_signer::<SHAKE128>(&mut DefaultRNG::default(), None),
+            sk.as_prehash::<SHAKE128>().create_signer(&mut DefaultRNG::default(), None),
             Err(SignatureError::PreHashTooWeak)
         ));
         assert!(matches!(
-            pk.create_ph_verifier::<SHAKE128>(None),
+            pk.as_prehash::<SHAKE128>().create_verifier(None),
             Err(SignatureError::PreHashTooWeak)
         ));
         let (pk, sk) = MLDSA87::keygen(&mut DefaultRNG::default()).unwrap();
         assert!(matches!(
-            sk.create_ph_signer::<SHAKE128>(&mut DefaultRNG::default(), None),
+            sk.as_prehash::<SHAKE128>().create_signer(&mut DefaultRNG::default(), None),
             Err(SignatureError::PreHashTooWeak)
         ));
         assert!(matches!(
-            pk.create_ph_verifier::<SHAKE128>(None),
+            pk.as_prehash::<SHAKE128>().create_verifier(None),
             Err(SignatureError::PreHashTooWeak)
         ));
 
@@ -389,7 +477,10 @@ mod hash_mldsa_tests {
         tr_m_prime.extend_from_slice(&ph);
         let mu: [u8; 64] = SHAKE256::hash(&tr_m_prime).try_into().unwrap();
         let by_mu: [u8; MLDSA44_SIG_LEN] = sk.sign_mu_deterministic(&mu).unwrap();
-        assert_eq!(sk.sign_ph_deterministic::<SHAKE128>(&ph, Some(ctx)).unwrap(), by_mu);
-        pk.verify_ph::<SHAKE128>(&ph, Some(ctx), &by_mu).unwrap();
+        assert_eq!(
+            sk.as_prehash::<SHAKE128>().sign_ph_deterministic(&ph, Some(ctx)).unwrap(),
+            by_mu
+        );
+        pk.as_prehash::<SHAKE128>().verify_ph(&ph, Some(ctx), &by_mu).unwrap();
     }
 }

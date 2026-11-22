@@ -188,21 +188,38 @@ macro_rules! keygen_out_tests {
                 assert_eq!(sk.sign_mu(&mu, &mut rng()).unwrap_err(), ZEROIZED);
                 assert_eq!(exp.sign_mu(&mu, &mut rng()).unwrap_err(), ZEROIZED);
 
-                assert_eq!(sk.create_ph_signer::<SHA512>(&mut rng(), None).err(), Some(ZEROIZED));
-                assert_eq!(sk.create_ph_signer_deterministic::<SHA512>(None).err(), Some(ZEROIZED));
-                assert_eq!(exp.create_ph_signer::<SHA512>(&mut rng(), None).err(), Some(ZEROIZED));
                 assert_eq!(
-                    exp.create_ph_signer_deterministic::<SHA512>(None).err(),
+                    sk.as_prehash::<SHA512>().create_signer(&mut rng(), None).err(),
                     Some(ZEROIZED)
                 );
-                assert_eq!(sk.sign_ph::<SHA512>(&mut rng(), &ph, None).unwrap_err(), ZEROIZED);
+                assert_eq!(
+                    sk.as_prehash::<SHA512>().create_signer_deterministic(None).err(),
+                    Some(ZEROIZED)
+                );
+                assert_eq!(
+                    exp.as_prehash::<SHA512>().create_signer(&mut rng(), None).err(),
+                    Some(ZEROIZED)
+                );
+                assert_eq!(
+                    exp.as_prehash::<SHA512>().create_signer_deterministic(None).err(),
+                    Some(ZEROIZED)
+                );
+                assert_eq!(
+                    sk.as_prehash::<SHA512>().sign_ph(&mut rng(), &ph, None).unwrap_err(),
+                    ZEROIZED
+                );
                 out.fill(0xFF);
                 assert_eq!(
-                    sk.sign_ph_deterministic_out::<SHA512>(&ph, None, &mut out).unwrap_err(),
+                    sk.as_prehash::<SHA512>()
+                        .sign_ph_deterministic_out(&ph, None, &mut out)
+                        .unwrap_err(),
                     ZEROIZED
                 );
                 assert_eq!(out, [0u8; $sig_len]);
-                assert_eq!(exp.sign_ph_deterministic::<SHA512>(&ph, None).unwrap_err(), ZEROIZED);
+                assert_eq!(
+                    exp.as_prehash::<SHA512>().sign_ph_deterministic(&ph, None).unwrap_err(),
+                    ZEROIZED
+                );
             }
 
             #[test]
@@ -219,10 +236,16 @@ macro_rules! keygen_out_tests {
                 assert_eq!(exp.verify(b"msg", None, &sig).unwrap_err(), ZEROIZED);
                 assert_eq!(pk.verify_mu(&mu, &sig).unwrap_err(), ZEROIZED);
                 assert_eq!(exp.verify_mu(&mu, &sig).unwrap_err(), ZEROIZED);
-                assert_eq!(pk.create_ph_verifier::<SHA512>(None).err(), Some(ZEROIZED));
-                assert_eq!(exp.create_ph_verifier::<SHA512>(None).err(), Some(ZEROIZED));
-                assert_eq!(pk.verify_ph::<SHA512>(&ph, None, &sig).unwrap_err(), ZEROIZED);
-                assert_eq!(exp.verify_ph::<SHA512>(&ph, None, &sig).unwrap_err(), ZEROIZED);
+                assert_eq!(pk.as_prehash::<SHA512>().create_verifier(None).err(), Some(ZEROIZED));
+                assert_eq!(exp.as_prehash::<SHA512>().create_verifier(None).err(), Some(ZEROIZED));
+                assert_eq!(
+                    pk.as_prehash::<SHA512>().verify_ph(&ph, None, &sig).unwrap_err(),
+                    ZEROIZED
+                );
+                assert_eq!(
+                    exp.as_prehash::<SHA512>().verify_ph(&ph, None, &sig).unwrap_err(),
+                    ZEROIZED
+                );
             }
         }
     };

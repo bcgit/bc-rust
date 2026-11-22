@@ -199,6 +199,7 @@ mod params;
 
 /*** Exported types ***/
 pub use hash_mldsa::HashMLDSA44_with_SHA256;
+pub use hash_mldsa::{HashMLDSA, HashMLDSAPrivateKey, HashMLDSAPublicKey};
 pub use hash_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
 pub use mldsa::MuBuilder;
 pub use mldsa::{MLDSA, MLDSA44, MLDSA65, MLDSA87, MLDSATrait};
@@ -213,6 +214,7 @@ pub use mldsa_keys::{
     MLDSAPublicKeyExpanded,
 };
 pub use mldsa_keys::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
+pub use params::{MLDSA44Params, MLDSA65Params, MLDSA87Params};
 pub use params::{PrivateKeyLen, PublicKeyLen, SignatureLen};
 
 /*** Exported constants ***/
