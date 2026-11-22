@@ -8,8 +8,8 @@
 //! `N_MINUS_1_LIMBS` constant surfaced: several bit-level and off-by-one mutants survived because
 //! nothing here pinned the function (or the constant) against an independent reference.
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_ec::hazmat::bp256r1_extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_hex::decode as hex_decode;
 
 fn bytes32(hex: &str) -> [u8; 32] {
     hex_decode(hex).unwrap().try_into().unwrap()

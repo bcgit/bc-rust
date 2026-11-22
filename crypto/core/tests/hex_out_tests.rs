@@ -3,7 +3,7 @@
 // They compare with the allocating forms.
 #![cfg(feature = "std")]
 
-use bouncycastle_hex::{self as hex, HexError, decode_out_len, encode_out_len};
+use bouncycastle_core::hex::{self as hex, HexError, decode_out_len, encode_out_len};
 
 const BYTES: &[u8] = b"\x00\x01\x7f\x80\xab\xcd\xef\xff";
 

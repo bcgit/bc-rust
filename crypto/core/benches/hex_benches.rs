@@ -1,4 +1,4 @@
-use bouncycastle_hex as hex;
+use bouncycastle_core::hex;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 

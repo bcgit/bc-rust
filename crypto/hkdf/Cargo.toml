@@ -10,6 +10,5 @@ bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
-bouncycastle-hex.workspace = true
 bouncycastle-sha2.workspace = true
 criterion.workspace = true

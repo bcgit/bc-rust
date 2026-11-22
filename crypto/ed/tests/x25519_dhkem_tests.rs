@@ -3,6 +3,7 @@
 
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, KeyMaterialError, RNGError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
+use bouncycastle_core::hex;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -15,7 +16,6 @@ use bouncycastle_ed::x25519::{
     DHKEM_SS_LEN, DHKEM_X25519_HKDF_SHA256, POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey,
     X25519PublicKey, keygen, keygen_from_seed,
 };
-use bouncycastle_hex as hex;
 use bouncycastle_rng::{DefaultRNG, HashDRBG_SHA512};
 use bouncycastle_utils::secret::Secret;
 

@@ -106,7 +106,7 @@ const RFC8032_ED25519PH: &[(&str, &str, &str, &str, &str)] = &[(
 )];
 
 fn bytes(hex: &str) -> Vec<u8> {
-    bouncycastle_hex::decode(hex).unwrap()
+    bouncycastle_core::hex::decode(hex).unwrap()
 }
 
 /// The key pair of a vector: the private key decoded, its public key compared with the

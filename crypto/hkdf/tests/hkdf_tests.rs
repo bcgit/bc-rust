@@ -2,6 +2,7 @@
 mod hkdf_tests {
     use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError};
     use bouncycastle_core::hazmat::do_hazardous_operations;
+    use bouncycastle_core::hex;
     use bouncycastle_core::kdf_params::{KdfDescription, KdfParams, KeyLen};
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512,
@@ -14,7 +15,6 @@ mod hkdf_tests {
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
-    use bouncycastle_hex as hex;
     use bouncycastle_hkdf::{HKDF, HkdfDescription};
     use bouncycastle_hmac::hazmat as hmac_hazmat;
     use bouncycastle_hmac::{HMACParams, HmacKey};

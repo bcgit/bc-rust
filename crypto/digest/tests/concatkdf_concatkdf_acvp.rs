@@ -24,7 +24,7 @@ fn get_test_data(filename: &str) -> Value {
 }
 
 fn hex(v: &Value) -> Vec<u8> {
-    bouncycastle_hex::decode(v.as_str().unwrap()).unwrap()
+    bouncycastle_core::hex::decode(v.as_str().unwrap()).unwrap()
 }
 
 /// A tcId, which the files give as a number or as a string.

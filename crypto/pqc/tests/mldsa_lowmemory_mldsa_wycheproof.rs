@@ -24,12 +24,12 @@
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use bouncycastle_core::traits::PublicKey;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, wycheproof_json};
-use bouncycastle_hex as hex;
 use bouncycastle_pqc::mldsa_lowmemory::{
     MLDSA44, MLDSA44PublicKey, MLDSA65, MLDSA65PublicKey, MLDSA87, MLDSA87PublicKey,
     MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait,

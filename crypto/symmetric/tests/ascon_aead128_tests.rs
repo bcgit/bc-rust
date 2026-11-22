@@ -12,6 +12,7 @@
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
@@ -20,7 +21,6 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
-use bouncycastle_hex as hex;
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_symmetric::ascon::{ASCON_AEAD128_NAME, Ascon_AEAD128, AsconAEAD128Key};
 

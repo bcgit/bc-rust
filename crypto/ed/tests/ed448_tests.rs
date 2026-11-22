@@ -284,7 +284,7 @@ fn what_was_not_signed_is_rejected() {
 #[test]
 fn s_not_below_the_group_order_is_rejected() {
     let (pk, sk) = key_pair().unwrap();
-    let l = bouncycastle_hex::decode(L).unwrap();
+    let l = bouncycastle_core::hex::decode(L).unwrap();
     assert_eq!(l.len(), 57);
     for (name, sign, verify) in BOTH {
         let sig = sign(&sk, MSG, None);
@@ -446,10 +446,11 @@ const NON_CANONICAL_R_KATS: &[(&str, &str)] = &[
 /// p + 1, or with bit 448 set, are refused, though the equation would hold for them.
 #[test]
 fn a_small_order_r_is_accepted_only_canonically_encoded() {
-    let pk = Ed448PublicKey::from_bytes(&bouncycastle_hex::decode(GENERATED_PK).unwrap()).unwrap();
+    let pk =
+        Ed448PublicKey::from_bytes(&bouncycastle_core::hex::decode(GENERATED_PK).unwrap()).unwrap();
     assert_eq!((COFACTORED_KATS.len(), NON_CANONICAL_R_KATS.len()), (7, 5));
     for (what, sig) in COFACTORED_KATS {
-        let sig = bouncycastle_hex::decode(sig).unwrap();
+        let sig = bouncycastle_core::hex::decode(sig).unwrap();
         assert_eq!(verify(&pk, b"cofactored", None, &sig), Ok(()), "{what}");
         assert_eq!(verify(&pk, b"cofactored", Some(&[]), &sig), Ok(()), "{what}");
         assert_eq!(verify(&pk, b"cofactoreD", None, &sig), FAILED, "{what}");
@@ -457,7 +458,7 @@ fn a_small_order_r_is_accepted_only_canonically_encoded() {
         assert_eq!(verify_ph(&pk, b"cofactored", None, &sig), FAILED, "{what}");
     }
     for (what, sig) in NON_CANONICAL_R_KATS {
-        let sig = bouncycastle_hex::decode(sig).unwrap();
+        let sig = bouncycastle_core::hex::decode(sig).unwrap();
         assert_eq!(verify(&pk, b"cofactored", None, &sig), FAILED, "{what}");
     }
 }
@@ -541,13 +542,14 @@ const CONTEXT_KATS: &[(bool, &str, &str)] = &[
 /// length octet and the placing of the context in `dom4` (RFC 8032 Section 2).
 #[test]
 fn known_answers_with_a_context() {
-    let sk = Ed448PrivateKey::from_bytes(&bouncycastle_hex::decode(GENERATED_SK).unwrap()).unwrap();
+    let sk = Ed448PrivateKey::from_bytes(&bouncycastle_core::hex::decode(GENERATED_SK).unwrap())
+        .unwrap();
     let pk = sk.pk().unwrap();
-    assert_eq!(pk.encode().as_slice(), bouncycastle_hex::decode(GENERATED_PK).unwrap());
+    assert_eq!(pk.encode().as_slice(), bouncycastle_core::hex::decode(GENERATED_PK).unwrap());
     let mut seen = Vec::new();
     for (ph, ctx, sig) in CONTEXT_KATS {
-        let ctx = bouncycastle_hex::decode(ctx).unwrap();
-        let sig = bouncycastle_hex::decode(sig).unwrap();
+        let ctx = bouncycastle_core::hex::decode(ctx).unwrap();
+        let sig = bouncycastle_core::hex::decode(sig).unwrap();
         let (name, sign, verify) = BOTH[usize::from(*ph)];
         assert_eq!(sign(&sk, b"abc", Some(&ctx))[..], sig[..], "{name}: context of {}", ctx.len());
         assert_eq!(verify(&pk, b"abc", Some(&ctx), &sig), Ok(()), "{name}");

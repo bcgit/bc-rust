@@ -729,11 +729,11 @@ mod tests {
     ];
 
     fn octets<const N: usize>(hex: &str) -> [u8; N] {
-        bouncycastle_hex::decode(hex).unwrap().try_into().unwrap()
+        bouncycastle_core::hex::decode(hex).unwrap().try_into().unwrap()
     }
 
     fn bytes(hex: &str) -> Vec<u8> {
-        bouncycastle_hex::decode(hex).unwrap()
+        bouncycastle_core::hex::decode(hex).unwrap()
     }
 
     fn sha512(m: &[u8]) -> [u8; PREHASH_LEN] {

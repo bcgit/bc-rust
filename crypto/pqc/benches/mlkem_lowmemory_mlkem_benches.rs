@@ -1,6 +1,6 @@
+use bouncycastle_core::hex;
 use bouncycastle_core::kem_key::DecapsulatingKey;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyType};
-use bouncycastle_hex as hex;
 use bouncycastle_pqc::mlkem_lowmemory::hazmat::EncapsWithRandomness;
 use bouncycastle_pqc::mlkem_lowmemory::{
     MLKEM_RND_LEN, MLKEM512, MLKEM512_CT_LEN, MLKEM512PrivateKeyExpanded, MLKEM768,

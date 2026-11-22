@@ -230,7 +230,7 @@ const APPENDIX_C: &[(&str, &str, &str, &str, &str, &str)] = &[
 // END values lifted from RFC 8452.
 
 fn hex(s: &str) -> Vec<u8> {
-    bouncycastle_hex::decode(s).expect("the lifted values are hex")
+    bouncycastle_core::hex::decode(s).expect("the lifted values are hex")
 }
 
 /// One vector through the in-place one-shots of the key type `K`.

@@ -22,7 +22,7 @@ fn rng() -> FixedSeedRNG<[u8; 128]> {
 }
 
 fn octets(hex: &str) -> [u8; 57] {
-    bouncycastle_hex::decode(hex).unwrap().try_into().unwrap()
+    bouncycastle_core::hex::decode(hex).unwrap().try_into().unwrap()
 }
 
 // The encodings below were made with the Python library of RFC 8032 Appendix A, lifted from

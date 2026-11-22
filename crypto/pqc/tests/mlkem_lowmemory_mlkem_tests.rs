@@ -4,11 +4,11 @@ mod mlkem_tests {
     use bouncycastle_core::errors::{KEMError, RNGError};
     use bouncycastle_core::hazmat::FixedSeedRNG;
     use bouncycastle_core::hazmat::do_hazardous_operations;
+    use bouncycastle_core::hex;
     use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, XOF, XOFSqueezer};
-    use bouncycastle_hex as hex;
     use bouncycastle_pqc::mlkem_lowmemory::hazmat::EncapsWithRandomness;
     use bouncycastle_pqc::mlkem_lowmemory::mlkem::{
         MLKEM512_FULL_SK_LEN, MLKEM768_FULL_SK_LEN, MLKEM1024_FULL_SK_LEN,

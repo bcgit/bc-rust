@@ -8,12 +8,12 @@
 //! decode takes a String (which can be in any bytes-like container) and returns a `Vec<u8>`.
 //!
 //! Moreover, the API of this crate is intended to mirror that of the public `hex` crate,
-//! so you should generally be able to swap `use hex` for `use bouncycastle_hex` and all the function
+//! so you should generally be able to swap `use hex` for `use bouncycastle_core::hex` and all the function
 //! calls and behaviours should work as expected.
 //!
 //! ```
 //! # #[cfg(feature = "std")] {
-//! use bouncycastle_hex as hex;
+//! use bouncycastle_core::hex as hex;
 //!
 //! let out = hex::encode(b"\x00\x01\x02\x03"); // "00010203"
 //! let out = hex::encode(&[0x00, 0x01, 0x02, 0x03]); // "00010203"
@@ -29,15 +29,6 @@
 //! [`encode_out`] and [`decode_out`] write into the caller's buffer instead, sized by
 //! [`encode_out_len`] and [`decode_out_len`], and need no allocator; [`encode`] and [`decode`]
 //! need the `std` feature.
-
-#![no_std]
-// Docs link to the allocating one-shots, which a build without `std` does not have.
-#![cfg_attr(not(feature = "std"), allow(rustdoc::broken_intra_doc_links))]
-#![forbid(unsafe_code)]
-#![forbid(missing_docs)]
-
-#[cfg(feature = "std")]
-extern crate std;
 
 use bouncycastle_utils::ct::Condition;
 #[cfg(feature = "std")]

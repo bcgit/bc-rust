@@ -10,6 +10,5 @@ bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 bouncycastle-ed.workspace = true
-bouncycastle-hex.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-sha2.workspace = true

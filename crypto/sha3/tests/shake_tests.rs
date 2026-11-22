@@ -41,7 +41,7 @@ mod shake_tests {
         let mut out = shake.into_squeezer_partial_bits(0x10, 4).unwrap();
         assert_eq!(
             out.do_output(16),
-            bouncycastle_hex::decode("d40238024b040a954d9c2c89daf480e5").unwrap(),
+            bouncycastle_core::hex::decode("d40238024b040a954d9c2c89daf480e5").unwrap(),
             "SHAKE128 of the 4-bit message 0001"
         );
     }

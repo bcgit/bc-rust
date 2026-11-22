@@ -4,6 +4,7 @@
 //! [`ECDSA<P256, H>`] signs them. The appendix's `k` is not asserted directly: it is the one
 //! value that gives this `r`, so the signature pins it.
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_core::traits::{Algorithm, CollisionResistantHash, PrivateKey, PublicKey};
 use bouncycastle_ec::P256;
@@ -11,7 +12,6 @@ use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
 use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 use bouncycastle_ecdsa::keys_common::DerivePublicKey;
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
 
 const SCALAR_LEN: usize = 32;

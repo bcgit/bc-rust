@@ -17,10 +17,10 @@
 #![allow(dead_code)]
 
 use bouncycastle_core::agreement_key::AgreementKey;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, wycheproof_json};
-use bouncycastle_hex::decode as hex_decode;
 
 /// The contents of `filename` from `wycheproof/testvectors_v1/`, through the framework's
 /// loader; panics if the checkout or the file is missing.

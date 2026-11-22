@@ -21,9 +21,9 @@
 //!  * Monte (s. 6.2.2) — `MD0 = Seed`; for i in 1..=1000: `MDi = SHA3(MDi-1)`; report `MD1000`
 //!    per COUNT and reseed with it.
 
+use bouncycastle_core::hex;
 use bouncycastle_core::traits::{Hash, HashOneShot};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use bouncycastle_hex as hex;
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 
 // ---------------------------------------------------------------------------------------------

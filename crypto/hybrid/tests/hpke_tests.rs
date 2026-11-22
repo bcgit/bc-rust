@@ -16,6 +16,7 @@
 use bouncycastle_aes::{AES128Key, AES256Key};
 use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::errors::{KEMError, SymmetricCipherError};
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
@@ -25,7 +26,6 @@ use bouncycastle_ec::{P256, P384, P521};
 use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
 use bouncycastle_ed::x448::{X448PrivateKey, X448PublicKey};
 use bouncycastle_ed::x25519::{X25519PrivateKey, X25519PublicKey};
-use bouncycastle_hex as hex;
 use bouncycastle_hybrid::hpke::{
     ExportOnly, HpkeAead, HpkeAuthRecipient, HpkeAuthSender, HpkeCipher, HpkeContext, HpkeError,
     HpkeKdf, HpkeParams, HpkeRecipient, HpkeSender, NN, NT, Psk, Recipient, Sender,

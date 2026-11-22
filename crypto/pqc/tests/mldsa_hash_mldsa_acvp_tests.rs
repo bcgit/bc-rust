@@ -11,6 +11,7 @@
 
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
+use bouncycastle_core::hex;
 use bouncycastle_core::signature_key::{
     DeterministicPreHashSigningKey, PreHash, PreHashAlgorithm, PreHashSigningKey,
     PreHashVerifyingKey,
@@ -20,7 +21,6 @@ use bouncycastle_core::traits::{
     SignatureVerifier,
 };
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use bouncycastle_hex as hex;
 use bouncycastle_pqc::mldsa::hazmat::AnyStrength;
 use bouncycastle_pqc::mldsa::{
     MLDSA, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN, MLDSA44Params, MLDSA65_PK_LEN,

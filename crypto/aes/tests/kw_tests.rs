@@ -17,12 +17,12 @@ use bouncycastle_aes::{
 use bouncycastle_cipher::modes::{KW, KWP, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::Mode;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::key_wrap::TestFrameworkKeyWrap;
-use bouncycastle_hex as hex;
 
 fn bytes<const N: usize>(hex_str: &str) -> [u8; N] {
     hex::decode(hex_str).expect("valid hex").try_into().expect("the expected length")

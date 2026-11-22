@@ -6,9 +6,9 @@
 #[path = "ripemd_cross_vectors_data/mod.rs"]
 mod cross_vectors_data;
 
+use bouncycastle_core::hex;
 use bouncycastle_core::traits::HashOneShot;
 use bouncycastle_digest::ripemd::{RIPEMD128, RIPEMD160, RIPEMD256, RIPEMD320};
-use bouncycastle_hex as hex;
 use cross_vectors_data::VECTORS;
 
 /// The xorshift32 stream the vectors were generated from.

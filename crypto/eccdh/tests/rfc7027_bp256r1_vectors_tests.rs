@@ -3,12 +3,12 @@
 //! derive from their private keys, and the agreement must give `x_Z` from either side.
 
 use bouncycastle_core::agreement_key::AgreementKey;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ec::Bp256r1;
 use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
 use bouncycastle_eccdh::keys_common::DerivePublicKey;
-use bouncycastle_hex::decode as hex_decode;
 
 const D_A: &str = "81DB1EE100150FF2EA338D708271BE38300CB54241D79950F77B063039804F1D";
 const X_QA: &str = "44106E913F92BC02A1705D9953A8414DB95E1AAA49E81D9E85F929A8E3100BE5";

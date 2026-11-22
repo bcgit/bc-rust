@@ -12,7 +12,7 @@
 //! `cargo mutants`, which copies the tree into `/tmp`, they resolve to `/tmp/bc-test-data` and
 //! `/tmp/wycheproof`.
 
-use bouncycastle_hex as hex;
+use bouncycastle_core::hex;
 use std::fs;
 use std::path::Path;
 use std::sync::Once;

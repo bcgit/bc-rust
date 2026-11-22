@@ -20,8 +20,8 @@
 //! unoptimised builds (see its attribute) and runs under `cargo test --release`.
 
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_hex as hex;
 use bouncycastle_symmetric::sm4::BLOCK_LEN;
 use bouncycastle_symmetric::sm4::hazmat::SM4Internal;
 

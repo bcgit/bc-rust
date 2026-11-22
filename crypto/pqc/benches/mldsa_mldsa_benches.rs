@@ -1,7 +1,7 @@
 use bouncycastle_core::hazmat::FixedSeedRNG;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
-use bouncycastle_hex as hex;
 use bouncycastle_pqc::mldsa::{
     MLDSA44, MLDSA44_SIG_LEN, MLDSA44PrivateKeyExpanded, MLDSA44PublicKeyExpanded, MLDSA65,
     MLDSA65_SIG_LEN, MLDSA65PrivateKeyExpanded, MLDSA65PublicKeyExpanded, MLDSA87, MLDSA87_SIG_LEN,

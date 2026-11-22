@@ -5,10 +5,10 @@
 //! for why this independent-reference pinning matters. Inputs are the 56 bytes (448 bits)
 //! `keys_p384` and `ecdsa_p384` actually draw, except where a shorter input is the point.
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_ec::hazmat::p384_extra_bits::reduce_wide_bits_mod_n_minus_1;
 use bouncycastle_ec::hazmat::p384_scalar::N_LIMBS;
 use bouncycastle_ec::hazmat::p384_sec1::be_bytes_from_limbs;
-use bouncycastle_hex::decode as hex_decode;
 
 fn bytes48(hex: &str) -> [u8; 48] {
     hex_decode(hex).unwrap().try_into().unwrap()

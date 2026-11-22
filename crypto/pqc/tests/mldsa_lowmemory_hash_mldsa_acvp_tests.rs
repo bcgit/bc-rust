@@ -15,10 +15,10 @@
 //! present the tests print a warning and pass vacuously.
 
 use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::hex;
 use bouncycastle_core::signature_key::{PreHash, PreHashAlgorithm, PreHashVerifyingKey};
 use bouncycastle_core::traits::{Algorithm, HashOneShot, PrivateKey, PublicKey, SignatureVerifier};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use bouncycastle_hex as hex;
 use bouncycastle_pqc::mldsa::MLDSAPrivateKeyTrait;
 use bouncycastle_pqc::mldsa_lowmemory::hazmat::AnyStrength;
 use bouncycastle_pqc::mldsa_lowmemory::{

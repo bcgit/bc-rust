@@ -9,13 +9,13 @@ use bouncycastle_cipher::modes::{CMAC, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, MACGenerator};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
-use bouncycastle_hex as hex;
 
 /// `KeyType::MACKey` material from hex, including the all-zero key some vector sets use.
 fn mac_key<const N: usize>(key_hex: &str) -> KeyMaterial<N> {

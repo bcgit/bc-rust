@@ -27,9 +27,9 @@
 //!    (maxoutbytes - minoutbytes + 1)` bytes; report `Output`/`Outputlen` per COUNT.
 
 use bouncycastle_core::hazmat::finish_token;
+use bouncycastle_core::hex;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use bouncycastle_hex as hex;
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
 // ---------------------------------------------------------------------------------------------

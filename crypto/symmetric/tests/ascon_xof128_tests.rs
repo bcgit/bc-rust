@@ -5,9 +5,9 @@
 //! and suspend/resume tests.
 
 use bouncycastle_core::errors::HashError;
+use bouncycastle_core::hex;
 use bouncycastle_core::traits::{Hash, HashOneShot, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
-use bouncycastle_hex as hex;
 use bouncycastle_symmetric::ascon::{AsconXof128, AsconXof128Squeezer};
 
 /// Embedded NIST LWC Ascon-XOF128 vectors `(message, 512-bit output)` in hex, spanning empty,

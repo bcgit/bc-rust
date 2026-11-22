@@ -1588,7 +1588,7 @@ mod tests {
     ];
 
     fn bytes56(hex: &str) -> [u8; 56] {
-        bouncycastle_hex::decode(hex).unwrap().try_into().unwrap()
+        bouncycastle_core::hex::decode(hex).unwrap().try_into().unwrap()
     }
 
     /// The canonical encoding of a value.
