@@ -185,11 +185,14 @@ mod mlkem_key_tests {
 
         // inequality checks
         let mut bytes = pk.encode();
-        bytes[17] ^= 0x01;
+        // The flipped octet is the last one, which is in rho for a public key and in z for a
+        // private key: any value there decodes. A flip inside the 12-bit coefficients can push one
+        // to q or above, which decoding rightly refuses; with a random key that failed now and then.
+        *bytes.last_mut().unwrap() ^= 0x01;
         assert_ne!(pk, MLKEM512PublicKey::from_bytes(&bytes).unwrap());
 
         let mut bytes = sk.encode();
-        bytes[17] ^= 0x01;
+        *bytes.last_mut().unwrap() ^= 0x01;
         assert_ne!(sk, MLKEM512PrivateKey::from_bytes(&bytes).unwrap());
 
         // MLKEM768
@@ -207,11 +210,11 @@ mod mlkem_key_tests {
 
         // inequality checks
         let mut bytes = pk.encode();
-        bytes[17] ^= 0x01;
+        *bytes.last_mut().unwrap() ^= 0x01;
         assert_ne!(pk, MLKEM768PublicKey::from_bytes(&bytes).unwrap());
 
         let mut bytes = sk.encode();
-        bytes[17] ^= 0x01;
+        *bytes.last_mut().unwrap() ^= 0x01;
         assert_ne!(sk, MLKEM768PrivateKey::from_bytes(&bytes).unwrap());
 
         // MLKEM1024
@@ -229,11 +232,11 @@ mod mlkem_key_tests {
 
         // inequality checks
         let mut bytes = pk.encode();
-        bytes[17] ^= 0x01;
+        *bytes.last_mut().unwrap() ^= 0x01;
         assert_ne!(pk, MLKEM1024PublicKey::from_bytes(&bytes).unwrap());
 
         let mut bytes = sk.encode();
-        bytes[17] ^= 0x01;
+        *bytes.last_mut().unwrap() ^= 0x01;
         assert_ne!(sk, MLKEM1024PrivateKey::from_bytes(&bytes).unwrap());
     }
 
