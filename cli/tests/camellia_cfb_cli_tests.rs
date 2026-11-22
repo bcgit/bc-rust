@@ -7,7 +7,7 @@
 //!
 //! Vectors are the `CAMELLIA-*-CFB` entries of OpenSSL's `evpciph_camellia.txt` (OpenSSL 3.6.2):
 //! for each key length the four entries chain into one four-block CFB128 message under the IV
-//! `000102..0f`; see `crypto/camellia/tests/stream_mode_tests.rs`.
+//! `000102..0f`; see `crypto/symmetric/tests/camellia_stream_mode_tests.rs`.
 
 mod common;
 use common::{

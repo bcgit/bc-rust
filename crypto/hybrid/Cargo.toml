@@ -5,7 +5,7 @@ edition.workspace = true
 
 [dependencies]
 bouncycastle-aes.workspace = true
-bouncycastle-chacha20-poly1305-aead.workspace = true
+bouncycastle-symmetric.workspace = true
 bouncycastle-cipher.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-dhkem.workspace = true

@@ -3,7 +3,7 @@
 //! They share everything but the key type with the `aes*-kw` / `aes*-kwp` commands, whose
 //! `test_aes_kw.sh` covers the command-line contract exhaustively. No key-wrap vectors are
 //! published for SM4 (the composition is pinned against RFC 3394 and RFC 5649 in
-//! `crypto/sm4/tests/kw_reference_tests.rs`), so this file checks the commands against the
+//! `crypto/symmetric/tests/sm4_kw_reference_tests.rs`), so this file checks the commands against the
 //! library's own answer, and that they exist, fail closed and are listed.
 
 mod common;

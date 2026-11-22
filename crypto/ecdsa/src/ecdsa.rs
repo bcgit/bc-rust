@@ -112,7 +112,7 @@ const fn min_strength(a: SecurityStrength, b: SecurityStrength) -> SecurityStren
 /// use bouncycastle_ec::P256;
 /// use bouncycastle_ecdsa::ecdsa::ECDSA;
 /// use bouncycastle_ecdsa::keys::ECDSAPrivateKey;
-/// use bouncycastle_ripemd::RIPEMD160;
+/// use bouncycastle_digest::ripemd::RIPEMD160;
 ///
 /// let sk = ECDSAPrivateKey::<P256, RIPEMD160>::from_bytes(&[1u8; 32]).unwrap();
 /// let _ = DeterministicOneShotSigningKey::<ECDSA<P256, RIPEMD160>, 64>::sign_deterministic(
@@ -126,7 +126,7 @@ const fn min_strength(a: SecurityStrength, b: SecurityStrength) -> SecurityStren
 /// use bouncycastle_ec::P256;
 /// use bouncycastle_ecdsa::ecdsa::ECDSA;
 /// use bouncycastle_ecdsa::keys::ECDSAPrivateKey;
-/// use bouncycastle_ripemd::RIPEMD160;
+/// use bouncycastle_digest::ripemd::RIPEMD160;
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let sk = ECDSAPrivateKey::<P256, RIPEMD160>::from_bytes(&[1u8; 32]).unwrap();
@@ -145,7 +145,7 @@ const fn min_strength(a: SecurityStrength, b: SecurityStrength) -> SecurityStren
 /// use bouncycastle_ec::P256;
 /// use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 /// use bouncycastle_ecdsa::keys_common::DerivePublicKey;
-/// use bouncycastle_ripemd::RIPEMD160;
+/// use bouncycastle_digest::ripemd::RIPEMD160;
 ///
 /// let sk = ECDSAPrivateKey::<P256, RIPEMD160>::from_bytes(&[1u8; 32]).unwrap();
 /// let pk: ECDSAPublicKey<P256, RIPEMD160> = sk.derive_pk();

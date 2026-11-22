@@ -14,7 +14,6 @@
 //! are in `hpke_bc_java_tests.rs`.
 
 use bouncycastle_aes::{AES128Key, AES256Key};
-use bouncycastle_chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::errors::{KEMError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -33,6 +32,7 @@ use bouncycastle_hybrid::hpke::{
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use std::collections::HashMap;
 
 // RFC 9180 Appendix A.1.1: DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM, Base mode.

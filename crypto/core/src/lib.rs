@@ -7,6 +7,9 @@
 #![forbid(missing_docs)]
 
 pub mod agreement_key;
+// Every function in it returns a `String` or a `Vec`.
+#[cfg(feature = "std")]
+pub mod base64;
 pub mod direction;
 pub mod errors;
 pub mod hazmat;

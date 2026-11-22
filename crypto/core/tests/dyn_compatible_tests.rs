@@ -132,9 +132,6 @@ fn the_worker_traits_are_dyn_compatible() {
 /// A stand-in squeezer, so `reference_xof` has a type to name; never run.
 struct NoSqueezer;
 impl XOFSqueezer for NoSqueezer {
-    fn do_output(&mut self, _: usize) -> Vec<u8> {
-        Vec::new()
-    }
     fn do_output_out(&mut self, _: &mut [u8]) -> usize {
         0
     }

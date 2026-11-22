@@ -12,7 +12,6 @@
 //! HKDF-SHA384's two-block expand.
 
 use bouncycastle_aes::{AES128Key, AES256Key};
-use bouncycastle_chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
@@ -25,6 +24,7 @@ use bouncycastle_hybrid::hpke::{
     Psk, Recipient,
 };
 use bouncycastle_sha2::SHA384;
+use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use std::collections::HashMap;
 
 /// The sets, separated by blank lines, as the driver printed them.

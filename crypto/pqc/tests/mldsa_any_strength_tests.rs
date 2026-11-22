@@ -337,7 +337,7 @@ fn the_signature_carries_the_wrapped_hash() {
 #[test]
 fn a_hash_without_collision_resistance_verifies_and_signs_only_when_named() {
     use bouncycastle_core::hazmat::WithoutCollisionResistance;
-    use bouncycastle_ripemd::RIPEMD160;
+    use bouncycastle_digest::ripemd::RIPEMD160;
     type Inside = AnyStrength<WithoutCollisionResistance<RIPEMD160>>;
     type Outside = WithoutCollisionResistance<AnyStrength<RIPEMD160>>;
 

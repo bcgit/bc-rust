@@ -12,19 +12,9 @@ version = "0.1.4"
 # *** Internal Dependencies ***
 bouncycastle = { path = "./" }
 bouncycastle-aes = { path = "./crypto/aes" }
-bouncycastle-camellia = { path = "./crypto/camellia" }
-bouncycastle-aria = { path = "./crypto/aria" }
-bouncycastle-ascon = { path = "./crypto/ascon" }
-bouncycastle-base64 = { path = "./crypto/base64" }
-bouncycastle-blake2 = { path = "./crypto/blake2" }
-bouncycastle-blake3 = { path = "./crypto/blake3" }
-bouncycastle-chacha20 = { path = "./crypto/chacha20" }
-bouncycastle-chacha20-poly1305-aead = { path = "./crypto/chacha20-poly1305-aead" }
+bouncycastle-symmetric = { path = "./crypto/symmetric" }
+bouncycastle-digest = { path = "./crypto/digest" }
 bouncycastle-cipher = { path = "./crypto/cipher" }
-bouncycastle-concatkdf = { path = "./crypto/concatkdf" }
-bouncycastle-kbkdf = { path = "./crypto/kbkdf" }
-bouncycastle-pbkdf2 = { path = "./crypto/pbkdf2" }
-bouncycastle-scrypt = { path = "./crypto/scrypt" }
 bouncycastle-core = { path = "crypto/core" }
 bouncycastle-cipher-test-framework = { path = "./crypto/cipher-test-framework" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
@@ -37,20 +27,14 @@ bouncycastle-hkdf = { path = "./crypto/hkdf" }
 bouncycastle-hmac = { path = "./crypto/hmac" }
 bouncycastle-dhkem = { path = "./crypto/dhkem" }
 bouncycastle-hybrid = { path = "./crypto/hybrid" }
-bouncycastle-poly1305 = { path = "./crypto/poly1305" }
 bouncycastle-pqc = { path = "./crypto/pqc" }
-bouncycastle-ripemd = { path = "./crypto/ripemd" }
 bouncycastle-rng = { path = "./crypto/rng" }
 bouncycastle-rsa = { path = "./crypto/rsa" }
 bouncycastle-sha1 = { path = "./crypto/sha1" }
 bouncycastle-sha2 = { path = "./crypto/sha2" }
 bouncycastle-sha3 = { path = "./crypto/sha3" }
 bouncycastle-sm2 = { path = "./crypto/sm2" }
-bouncycastle-sm3 = { path = "./crypto/sm3" }
-bouncycastle-tdes = { path = "./crypto/tdes" }
-bouncycastle-sm4 = { path = "./crypto/sm4" }
 bouncycastle-utils = { path = "./crypto/utils" }
-bouncycastle-x963kdf = { path = "./crypto/x963kdf" }
 
 
 # *** External Dependencies ***
@@ -78,19 +62,9 @@ edition.workspace = true
 
 [dependencies]
 bouncycastle-aes.workspace = true
-bouncycastle-camellia.workspace = true
-bouncycastle-aria.workspace = true
-bouncycastle-ascon.workspace = true
-bouncycastle-base64.workspace = true
-bouncycastle-blake2.workspace = true
-bouncycastle-blake3.workspace = true
-bouncycastle-chacha20.workspace = true
-bouncycastle-chacha20-poly1305-aead.workspace = true
+bouncycastle-symmetric.workspace = true
+bouncycastle-digest.workspace = true
 bouncycastle-cipher.workspace = true
-bouncycastle-concatkdf.workspace = true
-bouncycastle-kbkdf.workspace = true
-bouncycastle-pbkdf2.workspace = true
-bouncycastle-scrypt.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-ec.workspace = true
 bouncycastle-eccdh.workspace = true
@@ -101,16 +75,10 @@ bouncycastle-hkdf.workspace = true
 bouncycastle-hmac.workspace = true
 bouncycastle-dhkem.workspace = true
 bouncycastle-hybrid.workspace = true
-bouncycastle-poly1305.workspace = true
 bouncycastle-pqc.workspace = true
-bouncycastle-ripemd.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-rsa.workspace = true
 bouncycastle-sha1.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
 bouncycastle-sm2.workspace = true
-bouncycastle-sm3.workspace = true
-bouncycastle-tdes.workspace = true
-bouncycastle-sm4.workspace = true
-bouncycastle-x963kdf.workspace = true

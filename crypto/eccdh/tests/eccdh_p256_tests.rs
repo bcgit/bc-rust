@@ -100,11 +100,11 @@ fn the_parameters_name_the_length() {
     use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
     use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
     use bouncycastle_core_test_framework::DUMMY_SEED;
+    use bouncycastle_digest::x963kdf::X963KDF_SHA256;
     use bouncycastle_eccdh::keys::keygen;
     use bouncycastle_hkdf::HkdfDescription;
     use bouncycastle_rng::DefaultRNG;
     use bouncycastle_sha2::SHA256;
-    use bouncycastle_x963kdf::X963KDF_SHA256;
 
     let salt =
         KeyMaterial::<32>::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::CryptographicRandom)

@@ -9,7 +9,7 @@
 //! block, which the 12-byte-nonce split these commands use cannot produce (see the `SM4_CTR` docs),
 //! so there is no vector to decrypt here. Instead the command is required to agree with
 //! `bouncycastle_cipher::modes::Ctr` over the SM4 permutation, which
-//! `crypto/sm4/tests/stream_mode_tests.rs` pins against the Sec 8.7.1 equations.
+//! `crypto/symmetric/tests/sm4_stream_mode_tests.rs` pins against the Sec 8.7.1 equations.
 
 mod common;
 use bouncycastle::cipher::modes::CTR;

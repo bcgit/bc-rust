@@ -15,6 +15,8 @@ mod hmac_tests {
     };
     use bouncycastle_core::traits::{Algorithm, Hash, MACGenerator, MACVerifier};
     use bouncycastle_core_test_framework::DUMMY_SEED;
+    use bouncycastle_digest::sm3::SM3;
+    use bouncycastle_digest::sm3::hmac::*;
     use bouncycastle_hex as hex;
     use bouncycastle_hmac::*;
     use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
@@ -22,8 +24,6 @@ mod hmac_tests {
     use bouncycastle_sha2::*;
     use bouncycastle_sha3::hmac::*;
     use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
-    use bouncycastle_sm3::SM3;
-    use bouncycastle_sm3::hmac::*;
 
     #[test]
     fn simple_tests() {

@@ -3,6 +3,11 @@ name = "bouncycastle-sha3"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# `std` gates the one-shots that return a `Vec`; everything else is the same without it.
+default = ["std"]
+std = ["bouncycastle-core/std"]
+
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-hmac.workspace = true

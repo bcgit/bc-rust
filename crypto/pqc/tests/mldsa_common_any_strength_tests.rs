@@ -89,7 +89,7 @@ fn carries_the_marker<H: bouncycastle_core::traits::CollisionResistantHash>() {}
 fn any_strength_passes_collision_resistance_through() {
     use bouncycastle_core::hazmat::WithoutCollisionResistance;
     use bouncycastle_core_test_framework::assert_not_collision_resistant_hash;
-    use bouncycastle_ripemd::RIPEMD160;
+    use bouncycastle_digest::ripemd::RIPEMD160;
 
     carries_the_marker::<AnyStrength<SHA224>>();
     carries_the_marker::<AnyStrength<SHAKE128>>();

@@ -1,0 +1,83 @@
+[package]
+name = "bouncycastle-digest"
+description = "Hash functions and the key derivation functions built on them: BLAKE2, RIPEMD, SM3, PBKDF2, scrypt, the NIST concatenation KDF and the ANSI X9.63 KDF"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+# `std` gates scrypt's [`KDF`] and `KdfDescription` impls, which allocate the working memory, and
+# BLAKE3's `Vec`-returning one-shots; without it `scrypt` is the caller-supplied-memory function
+# alone, and the other modules are unchanged. That is a narrower API, not yet a `no_std` build: `bouncycastle-core` still links
+# `std`, and the forwarding below changes nothing while the workspace dependency on `core` keeps
+# its default features.
+default = ["std"]
+std = ["bouncycastle-core/std"]
+
+[dependencies]
+bouncycastle-core.workspace = true
+bouncycastle-hkdf.workspace = true
+bouncycastle-hmac.workspace = true
+bouncycastle-sha2.workspace = true
+bouncycastle-sha3.workspace = true
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-rng.workspace = true
+criterion.workspace = true
+
+# scrypt's trait-path tests; `scrypt_scrypt_caller_memory_tests` runs with and without `std`.
+[[test]]
+name = "scrypt_scrypt_tests"
+required-features = ["std"]
+
+# BLAKE3's tests use its `Vec`-returning one-shots.
+[[test]]
+name = "blake3_blake3_tests"
+required-features = ["std"]
+
+[[bench]]
+name = "blake2_blake2_benches"
+harness = false
+
+[[bench]]
+name = "concatkdf_concatkdf_benches"
+harness = false
+
+[[bench]]
+name = "pbkdf2_pbkdf2_benches"
+harness = false
+
+[[bench]]
+name = "ripemd_hmac_ripemd_benches"
+harness = false
+
+[[bench]]
+name = "ripemd_ripemd_benches"
+harness = false
+
+[[bench]]
+name = "scrypt_scrypt_benches"
+harness = false
+
+[[bench]]
+name = "sm3_hkdf_sm3_benches"
+harness = false
+
+[[bench]]
+name = "sm3_hmac_sm3_benches"
+harness = false
+
+[[bench]]
+name = "sm3_sm3_benches"
+harness = false
+
+[[bench]]
+name = "x963kdf_x963kdf_benches"
+harness = false
+
+[[bench]]
+name = "blake3_blake3_benches"
+harness = false

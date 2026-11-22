@@ -1,0 +1,65 @@
+[package]
+name = "bouncycastle-symmetric"
+description = "Symmetric algorithms: the ARIA, Camellia, SM4 and Triple DES block ciphers, Ascon (NIST SP 800-232), ChaCha20, Poly1305, ChaCha20-Poly1305 and the SP 800-108 KDFs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+# `std` gates the one-shots that return a `Vec`; everything else is the same without it.
+default = ["std"]
+std = ["bouncycastle-core/std"]
+
+[dependencies]
+bouncycastle-aes.workspace = true
+bouncycastle-cipher.workspace = true
+bouncycastle-core.workspace = true
+bouncycastle-hmac.workspace = true
+bouncycastle-sha2.workspace = true
+bouncycastle-sha3.workspace = true
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+bouncycastle-cipher-test-framework.workspace = true
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-hkdf.workspace = true
+bouncycastle-rng.workspace = true
+criterion.workspace = true
+serde_json = "1.0"
+
+[[bench]]
+name = "ascon_ascon_benches"
+harness = false
+
+[[bench]]
+name = "chacha20_chacha20_benches"
+harness = false
+
+[[bench]]
+name = "chacha20_poly1305_aead_chacha20_poly1305_benches"
+harness = false
+
+[[bench]]
+name = "kbkdf_kbkdf_benches"
+harness = false
+
+[[bench]]
+name = "poly1305_poly1305_benches"
+harness = false
+
+[[bench]]
+name = "aria_aria_benches"
+harness = false
+
+[[bench]]
+name = "camellia_camellia_benches"
+harness = false
+
+[[bench]]
+name = "sm4_sm4_benches"
+harness = false
+
+[[bench]]
+name = "tdes_tdes_benches"
+harness = false

@@ -13,7 +13,7 @@
 //! underlying cipher. With an 8-byte block the split is tight. This command uses the `TDES_CTR`
 //! alias: a **6-byte** nonce and a 2-byte counter, so a single message is limited to 65 536 blocks
 //! (512 KiB), past which the command fails rather than repeat a counter block. The
-//! `bouncycastle-tdes` crate docs explain the trade-off against nonce collisions.
+//! `bouncycastle_symmetric::tdes` module docs explain the trade-off against nonce collisions.
 //!
 //! `encrypt` writes that 6-byte nonce as the first bytes of its output and `decrypt` reads it back,
 //! exactly as the other modes do with their IVs; note that it is 6 bytes here, not 8.
@@ -36,7 +36,7 @@
 //! -- which SP 800-67 Rev 2 Sec 3.4's limit of 2^20 blocks per bundle already demands.
 //!
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
-//! the `bouncycastle-tdes` crate docs.
+//! the `bouncycastle_symmetric::tdes` module docs.
 
 use crate::helpers::block_mode_helpers::TDEA_LIMIT;
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};

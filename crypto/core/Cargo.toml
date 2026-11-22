@@ -16,3 +16,8 @@ bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 bouncycastle-rng.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "base64_benches"
+harness = false

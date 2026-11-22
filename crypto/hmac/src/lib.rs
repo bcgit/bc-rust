@@ -13,8 +13,8 @@
 //! |-------------|------------------------------------------------------------------------------|
 //! | SHA-2       | `bouncycastle_sha2::hmac` -- `HMAC_SHA224`, `HMAC_SHA256`, `HMAC_SHA384`, `HMAC_SHA512`, `HMAC_SHA512_224`, `HMAC_SHA512_256` |
 //! | SHA-3       | `bouncycastle_sha3::hmac` -- `HMAC_SHA3_224`, `HMAC_SHA3_256`, `HMAC_SHA3_384`, `HMAC_SHA3_512` |
-//! | SM3         | `bouncycastle_sm3::hmac` -- `HMAC_SM3`                                       |
-//! | RIPEMD      | `bouncycastle_ripemd::hmac` -- `HMAC_RIPEMD160`                              |
+//! | SM3         | `bouncycastle_digest::sm3::hmac` -- `HMAC_SM3`                                       |
+//! | RIPEMD      | `bouncycastle_digest::ripemd::hmac` -- `HMAC_RIPEMD160`                              |
 //!
 //! Although users are free to implement [`Hash`] and [`HMACParams`] for a a hash function not included with the library,
 //! and will then be able to instantiate [`HMAC`] for it as well.

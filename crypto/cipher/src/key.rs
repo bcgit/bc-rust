@@ -52,7 +52,7 @@ use bouncycastle_core::traits::{Algorithm, RNG};
 /// # Usage Examples
 ///
 /// This crate has no permutation of its own, so the examples are on the aliases: `AES128Key` in
-/// `bouncycastle-aes` shows GCM, `ARIA256Key` in `bouncycastle-aria` CBC with padding, and the
+/// `bouncycastle-aes` shows GCM, `ARIA256Key` in `bouncycastle_symmetric::aria` CBC with padding, and the
 /// `*_GMAC_128` aliases the nonce-bound MAC pair. The shape is always
 ///
 /// ```text
