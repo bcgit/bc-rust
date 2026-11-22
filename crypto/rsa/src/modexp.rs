@@ -302,6 +302,8 @@ impl<const L: usize> MontgomeryContext<L> {
     /// returns a context that gives wrong answers, without a panic.
     ///
     /// Constant time in `modulus`: no branch, memory access or loop count depends on it.
+    /// `dev_scripts/check_rsa_ct.sh` runs this, and the CRT that uses it, under memcheck with
+    /// the secrets undefined.
     pub fn for_secret_modulus(modulus: &[u64; L]) -> Self {
         let n_prime = mont_n_prime(modulus[0]);
         let r_mod_n = pow2_mod_ct(64 * L as u32, modulus);
