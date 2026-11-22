@@ -98,19 +98,19 @@ way when adding a harness, or `cargo test --workspace` fails to compile them.
 
 The workspace has four top-level kinds of member:
 
-1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework`, `cipher-test-framework` and `factory` described below. Most are one primitive each; some, such as `cipher`, hold generic building blocks (modes, padding) as sub-modules. The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is published as `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`.
+1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework` and `cipher-test-framework` described below. Most are one primitive each; some, such as `cipher`, hold generic building blocks (modes, padding) as sub-modules. The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is published as `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`.
 2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::sm3`, `bouncycastle::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
 3. `cli/` — the `bc-rust` binary built on top of `bouncycastle`, exposing every primitive as a streaming stdin→stdout subcommand using `clap`.
 4. `mem_usage_benches/` — stand-alone binary crates that measure peak stack usage of algorithms (cannot be done via criterion).
 
-### The `core` / `core-test-framework` / `factory` spine
+### The `core` / `core-test-framework` spine
 
 - `crypto/core` defines the abstract traits (`Hash`, `KDF`, `MACGenerator` / `MACVerifier`, `KEM`, `Signature`, `RNG`, `Algorithm`, `HashAlgParams`, …), error enums (`HashError`, `KDFError`, `KEMError`, `MACError`, `RNGError`, `SignatureError`), and the `KeyMaterial` / `KeyType` wrapper that all sensitive byte buffers are required to use (see `Secret` super-trait requirement in QUALITY_AND_STYLE.md).
 - `crypto/core-test-framework` contains the shared per-trait test suite (`hash.rs`, `kdf.rs`, `kem.rs`, `mac.rs`, `signature.rs`). New implementations of a core trait must be exercised through this framework — it's how trait conformance and error-condition coverage stay consistent across implementations.
 - `crypto/cipher-test-framework` holds the suites every block cipher crate runs over `BlockCipherKey<P, M>`: the keys under every mode through the core suites, the padded and stream-mode wiring checks, and the Wycheproof runners, each generic over the permutation and run at one key length per call. It is a sibling of `core-test-framework` rather than part of it because it names `bouncycastle-cipher`'s types, and that crate's own tests depend on the core framework. A new block cipher's `mode_key_tests.rs`, `padded_alias_tests.rs`, `stream_mode_alias_tests.rs` and `*_wycheproof.rs` are calls into it; what stays in the crate is the cipher's own known answers, aliases and sizes.
-- `crypto/factory` provides enum-based string-name factories (`HashFactory`, `KDFFactory`, `MACFactory`, `RNGFactory`, `XOFFactory`). Each factory enum impls the underlying trait so it can be used transparently as that primitive, except `MACFactory`, which is a key enum whose algorithm is chosen at run time and so keeps run-time tag lengths: inherent `mac` / `mac_out` / `verify` over slices, and `create_generator` / `create_verifier` handing out a `MACFactoryWorker<Dir>` with inherent finals, where the role traits take `[u8; MAC_LEN]`; and each impls `AlgorithmFactory` (`new(name)`, `default_128_bit()`, `default_256_bit()`). When adding a new primitive that fits an existing trait, register it in the corresponding factory.
+- There is no factory crate: `bouncycastle-factory` (string-name enums such as `HashFactory` and `MACFactory`) was removed in November 2026, unused inside the workspace. Algorithms are named by type.
 
-Trait/factory/CLI is the standard layering: a new algorithm typically requires (a) the primitive crate, (b) implementing the relevant `core` trait, (c) wiring it into the matching factory, (d) a CLI subcommand in `cli/src/*_cmd.rs` registered in `cli/src/main.rs`.
+Trait/CLI is the standard layering: a new algorithm typically requires (a) the primitive crate, (b) implementing the relevant `core` trait, (c) a CLI subcommand in `cli/src/*_cmd.rs` registered in `cli/src/main.rs`.
 
 ### Sub-crate layout convention
 
@@ -145,7 +145,7 @@ Repo mechanics behind those rules, which the documents don't spell out:
   processing or stream processing", because the payload length is inside the first block the MAC
   covers) -- there, read the whole input once and process it in place, rather than adding a second
   buffer the size of the input on top of it; see `aes_ccm_cmd.rs`.
-- Trait → factory → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework--factory-spine) above for the crates involved.
+- Trait → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework-spine) above for the crates involved.
 - AI-drafted docs and comments run long. Before committing, check them against QUALITY_AND_STYLE.md's "Proportion"
   rule: cut duplicated material, long rationale and restated spec text rather than adding more.
 - **Comments describe the code that is there, not the road that led to it.** Do not add a comment
@@ -252,8 +252,8 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   key locally bounds `for<'k> K::Encryptor<'k>: ..` with `K: 'static`. A test binds the key
   before the worker, since `key_fn().create_encryptor(..)` borrows a temporary.
 - **A struct cannot hold a worker that borrows a key it also owns:** HKDF runs its extract-phase HMAC as the
-  two halves `HmacKey::inner_state` / `finish_out`, and the MAC factory is a key enum that hands
-  out a worker enum.
+  two halves `HmacKey::inner_state` / `finish_out`, and the MAC factory (since removed) was a
+  key enum that handed out a worker enum.
 - **What has no key-path twin is dropped, and said so.** `new_allow_weak_key` on a cipher-based
   MAC, a wrong-length `KeyMaterial512` into a fixed-length key, GCM's verify-before-decrypt
   one-shot override: each went with a line in the commit message rather than a shim.
@@ -342,9 +342,10 @@ direction in the worker types. Mechanics to reuse:
   needed at `KMAC128Key::with_params(..)` in expression position; `let key: KMAC128Key = ..`
   takes the default. Code generic over the hash (HKDF, its tests) uses the hazmat halves
   `inner_state` / `finish_out` rather than the role, which wants the length as a const.
-- **A run-time-length tag has one home, the factory.** `MACFactory` and the `kmac*` CLI
-  commands (which bind their length through KMACXOF's final read, SP 800-185 Sec 4.3.1) are
-  where a length chosen at run time lives; everywhere else it is the key type's.
+- **A run-time-length tag has one home, the CLI.** The `kmac*` CLI commands (which bind
+  their length through KMACXOF's final read, SP 800-185 Sec 4.3.1) are where a length chosen
+  at run time lives; everywhere else it is the key type's. (`MACFactory` was the library's
+  home for one until the factory crate was removed.)
 
 ## Lessons from the in-place finals (November 2026)
 
@@ -361,7 +362,7 @@ end its message, and took `Clone` off the cipher workers. QUALITY_AND_STYLE.md h
 - **The token guards against accidents, not against intent.** The `finish_` methods take a
   `&FinishToken` whose constructor is private to `core`, so only a provided final calls them.
   Code that owns a worker without being one (a KDF's block loop, `MuBuilder::do_final`,
-  `MACFactoryWorker`, CCM's in-place one-shots, HMAC's hazmat `finish_out`) takes a token from
+  CCM's in-place one-shots, HMAC's hazmat `finish_out`) takes a token from
   `core::hazmat::finish_token()` and with it the duty to finish once and not use the worker
   again. Crate-internal keyed helpers take the token as a parameter rather than minting one.
 - **A new worker type owes the `finish_` method, not a final.** A worker that implements only
@@ -373,8 +374,8 @@ end its message, and took `Clone` off the cipher workers. QUALITY_AND_STYLE.md h
   `Clone`; add a new mode's workers to it. A worker in its own crate is asserted there, by the
   same test (Ascon) or a doctest (ChaCha20, Poly1305). A wrapper over another worker must be
   named over a `Clone` inner type, or a derived `Clone`, being conditional, passes unnoticed.
-  Check a new assertion by putting `Clone` back on the type. `Tkw`, `HMAC`, the BLAKE MACs,
-  `MACFactoryWorker` and `HpkeContext` are not `Clone` but have no assertion yet.
+  Check a new assertion by putting `Clone` back on the type. `Tkw`, `HMAC`, the BLAKE MACs
+  and `HpkeContext` are not `Clone` but have no assertion yet.
 - **`git stash create` fails with an intent-to-add file in the tree;** stage the file before
   pushing a work-in-progress tree to apollo for a mutants run.
 
@@ -427,7 +428,7 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 - `cargo mutants` is expected to be run on each crate; surviving mutants must be investigated but not all need to die (e.g. XOR/OR equivalences in crypto code are acceptable). Config lives in `.cargo/mutants.toml` (output dir `custom_mutants_output/`). Four things about running it here:
   - **Always pass `-p <crate>`.** Without it only the root package is examined, which has no mutants, and the run "passes" vacuously — see [Common commands](#common-commands).
   - **`-f`/`--file` does nothing while the checked-in config is in play**, because its `examine_globs` wins over the CLI filter: `cargo mutants -p bouncycastle-sha3 -f '**/kmac.rs'` still examines all ~874 mutants in the crate. To scope a run to the files you changed, copy `.cargo/mutants.toml` somewhere outside the repo, delete its `examine_globs` block, and pass `--config <copy>`; `-f` then filters as documented. (`--config /dev/null` also works but throws away `skip_calls`, `error_values`, `cap_lints` and the timeout multipliers with it.)
-  - **Add `--test-workspace true` when a crate's mutants are killed by another crate's tests.** The `core` traits are the case that matters: their default method bodies are exercised from `sha3` and `factory`, so a `-p bouncycastle-core` run alone reports them all as missed.
+  - **Add `--test-workspace true` when a crate's mutants are killed by another crate's tests.** The `core` traits are the case that matters: their default method bodies are exercised from the primitive crates (`sha2`, `sha3`, `hmac`, `hkdf`, `rng` and others), so a `-p bouncycastle-core` run alone reports them all as missed.
   - **Symlink the test data into `/tmp`.** `cargo mutants` copies the tree to `/tmp/cargo-mutants-<dir>-XXXX.tmp/`, so the `../../../bc-test-data/...` paths the vector suites use resolve to `/tmp/bc-test-data`. Without `ln -s <path-to>/bc-test-data /tmp/bc-test-data` those tests print their "not found" warning, pass vacuously, and every mutant they would have killed is reported as missed. Use `--jobs 3` and an explicit `--timeout`; note that a mutant which makes a squeeze return no bytes hangs a fill loop for real, so some timeouts are kills rather than false alarms.
   - **Builds use the `mutants` cargo profile** (`profile = "mutants"` in the config, defined in the root `Cargo.toml`): release optimisation without LTO, with incremental codegen. Measured on `bouncycastle-mldsa-lowmemory`, a mutant rebuilds in under a second and the suite runs in about 4 s, against 160 s per run unoptimised and an 80 s thin-LTO rebuild per mutant under `release`. Do not pass `--profile dev` or `--profile release` to "speed things up"; both are slower here.
 - Integration tests in `tests/` are preferred over in-file `#[cfg(test)] mod tests` blocks — see "Unit tests vs integration tests" in QUALITY_AND_STYLE.md for the reasoning and the exceptions. A unit test is justified for high-risk code that has known-answer values and cannot be reached through the public API; when you write one, all of its helpers go inside that `mod tests`.

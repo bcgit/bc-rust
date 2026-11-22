@@ -255,8 +255,8 @@ pub type SHA512 = SHA512Internal<SHA512Params>;
 /// assert_eq!(<SHA512t<96> as Algorithm>::ALG_NAME, "SHA512/96");
 /// ```
 ///
-/// Only [`SHA512_224`] and [`SHA512_256`] have an assigned [`AlgorithmOID`] and a `HashFactory`
-/// entry; every other `T` is reachable only by naming it in code, as above.
+/// Only [`SHA512_224`] and [`SHA512_256`] have an assigned [`AlgorithmOID`]; every other `T` is
+/// reachable only by naming it in code, as above.
 pub type SHA512t<const T: usize> = SHA512Internal<SHA512tParams<T>>;
 /// Public type for SHA512/224 (FIPS 180-4 s. 6.6).
 pub type SHA512_224 = SHA512t<224>;

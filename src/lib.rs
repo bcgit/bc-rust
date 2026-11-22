@@ -15,7 +15,6 @@ pub use bouncycastle_ec as ec;
 pub use bouncycastle_eccdh as eccdh;
 pub use bouncycastle_ecdsa as ecdsa;
 pub use bouncycastle_ed as ed;
-pub use bouncycastle_factory as factory;
 pub use bouncycastle_hex as hex;
 pub use bouncycastle_hkdf as hkdf;
 pub use bouncycastle_hmac as hmac;
