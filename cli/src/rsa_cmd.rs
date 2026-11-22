@@ -22,9 +22,9 @@
 //! `keygen` (FIPS 186-5 Appendix A.1.3 through the size marker's per-scheme generators,
 //! `RSA2048::generate_pss_signature_key_pair::<SHA256>` and siblings) writes the private key
 //! to stdout like the other key-generating commands, and -- unlike them -- also needs `--pkfile`
-//! to receive the public key: an RSA private key file (RFC 8017's CRT quintuple) does not carry
-//! the public exponent `e`, so there is no `PkFromSk`/`CheckConsistency` here, the public key has
-//! to be kept from generation time. Private and public key files use the raw fixed-width layout
+//! to receive the public key: there is no `PkFromSk`/`CheckConsistency` here, so the public key
+//! has to be kept from generation time. (The private key file is RFC 8017's CRT quintuple and
+//! `e`, so a `PkFromSk` could be written; it has not been.) Private and public key files use the raw fixed-width layout
 //! `RsaPrivateKey`/`RsaPublicKey`'s `PrivateKey`/`PublicKey` impls encode
 //! (documented under `# Encoding` on those types): not PEM, not ASN.1 DER -- this crate has no
 //! encoder for either -- so a key produced by another RSA implementation cannot be fed to this
@@ -193,8 +193,8 @@ fn rsa_keygen_cmd<A: RsaSignatureAlgorithm, const PK_LEN: usize, const SK_LEN: u
 {
     let Some(pkfile) = pkfile else {
         eprintln!(
-            "Error: {alg_name} keygen needs --pkfile to receive the public key (an RSA \
-             private key file does not carry e, so it cannot be derived later)."
+            "Error: {alg_name} keygen needs --pkfile to receive the public key (this command \
+             cannot derive it from the private key file later)."
         );
         exit(-1);
     };

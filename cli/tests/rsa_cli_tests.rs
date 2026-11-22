@@ -29,7 +29,7 @@ const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
 
 /// The genuine RSA-2048 CRT key `bouncycastle_rsa`'s own crate docs use (Wycheproof
 /// `rsa_pkcs1_2048_sig_gen_test.json`'s SHA-256 group, factored as `rsa_2048_pkcs1_v1_5_tests.rs`
-/// describes), in the CLI's `p || q || dP || dQ || qInv` key-file layout, hex.
+/// describes), in the CLI's `p || q || dP || dQ || qInv || e` key-file layout, hex.
 const SK_2048_HEX: &str = concat!(
     "dc431050f782e894fb5248247d98cb7d58b8d1e24f3b55d041c56e4de086b0d5",
     "bb028bda42eeb5d234d5681e5809d415e6a289ad4cfbf78f978f6c35814f50ee",
@@ -51,6 +51,7 @@ const SK_2048_HEX: &str = concat!(
     "7993d0445f758d51933e85179c0320b0c968b48a91c38b5be923e1097c0c562f",
     "88d42294b6a2759bafa5428a74f1270874e45f6fcc60f21602de5eccd143cf31",
     "241f5921b5ad3983fb54ef17be3b285367e50c999c67247b552fe4bfce945f7b",
+    "0000000000010001",
 );
 /// Its public key, `n || e` with `e = 0x10001`.
 const PK_2048_HEX: &str = concat!(
@@ -62,7 +63,7 @@ const PK_2048_HEX: &str = concat!(
     "4c03145b5d3495d4ed5411eb878daf05fd7afc3e09ada0f1126422f590975a19",
     "69816f48698bcbba1b4d9cae79d460d8f9f85e7975005d9bc22c4e5ac0f7c1a4",
     "5d12569a62807d3b9a02e5a530e773066f453d1f5b4c2e9cf7820283f742b9d5",
-    "00010001",
+    "0000000000010001",
 );
 /// The RSA-1024 public key from `bouncycastle_rsa`'s crate docs (Wycheproof
 /// `rsa_pkcs1_1024_sig_gen_test.json`'s first group), `n || e`.
@@ -71,7 +72,7 @@ const PK_1024_HEX: &str = concat!(
     "90adb011a919575a40760d1f23fe92509c8a5810b6d05990b909dd0f4c6014f2",
     "b31b6abd805bace99816e2eda41fd7b95405db7c5c8f4cf6babb14f550d5d0dd",
     "5179b54951fff6aa9686f30f478db649b7c7044cc202dccad00343468eaacfbf",
-    "00010001",
+    "0000000000010001",
 );
 /// One of that group's genuine PKCS#1 v1.5/SHA-256 signatures, over twenty zero bytes.
 const SIG_1024_HEX: &str = concat!(
@@ -280,14 +281,14 @@ fn rsa_2048_verify_rejects_a_tampered_signature_and_a_truncated_one() {
 
 #[test]
 fn rsa_2048_rejects_a_wrong_length_key_file() {
-    let short_sk = temp_file("shortsk", &unhex(SK_2048_HEX)[..639]);
+    let short_sk = temp_file("shortsk", &unhex(SK_2048_HEX)[..647]);
     let err = run_err(
         &["rsa-2048", "sign", "--scheme", "pkcs1v15", "--hash", "sha256", "--skfile", &short_sk],
         b"msg",
     );
-    assert!(err.contains("640 bytes"), "stderr: {err}");
+    assert!(err.contains("648 bytes"), "stderr: {err}");
 
-    let short_pk = temp_file("shortpk", &unhex(PK_2048_HEX)[..259]);
+    let short_pk = temp_file("shortpk", &unhex(PK_2048_HEX)[..263]);
     let sigfile = temp_file("sig", &[0u8; 256]);
     let err = run_err(
         &[
@@ -296,7 +297,7 @@ fn rsa_2048_rejects_a_wrong_length_key_file() {
         ],
         b"msg",
     );
-    assert!(err.contains("260 bytes"), "stderr: {err}");
+    assert!(err.contains("264 bytes"), "stderr: {err}");
 }
 
 /// Pairings a size does not offer (PSS at 1024 bits, SHAKE256 at 2048) are refused up front.
@@ -321,7 +322,7 @@ fn unsupported_pairings_are_refused() {
     assert!(err.contains("not supported"), "stderr: {err}");
 }
 
-/// `keygen` writes a 640-byte private key to stdout and a 260-byte public key to `--pkfile`, and
+/// `keygen` writes a 648-byte private key to stdout and a 264-byte public key to `--pkfile`, and
 /// the pair then signs and verifies through the CLI; without `--pkfile` it refuses, since the
 /// public key cannot be recovered from the private key file later.
 #[test]
@@ -335,9 +336,9 @@ fn rsa_2048_keygen_then_sign_and_verify() {
         &[],
     );
     let sk_hex = String::from_utf8(sk_hex).unwrap();
-    assert_eq!(sk_hex.trim().len(), 2 * 640, "private key on stdout, hex");
+    assert_eq!(sk_hex.trim().len(), 2 * 648, "private key on stdout, hex");
     let pk_hex = std::fs::read_to_string(&pkfile).unwrap();
-    assert_eq!(pk_hex.trim().len(), 2 * 260, "public key in --pkfile, hex");
+    assert_eq!(pk_hex.trim().len(), 2 * 264, "public key in --pkfile, hex");
     let pk = RsaPublicKey::<RSASSA_PSS_SHA256>::from_bytes(&unhex(pk_hex.trim())).unwrap();
     assert_eq!(pk.e(), 65537);
 

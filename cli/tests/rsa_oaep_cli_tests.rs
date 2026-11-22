@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The RSA-2048 key of Wycheproof's `rsa_oaep_2048_sha256_mgf1sha256_test.json`, in the CLI's
-/// `p || q || dP || dQ || qInv` key-file layout, hex.
+/// `p || q || dP || dQ || qInv || e` key-file layout, hex.
 const SK_HEX: &str = concat!(
     "dc431050f782e894fb5248247d98cb7d58b8d1e24f3b55d041c56e4de086b0d5",
     "bb028bda42eeb5d234d5681e5809d415e6a289ad4cfbf78f978f6c35814f50ee",
@@ -31,6 +31,7 @@ const SK_HEX: &str = concat!(
     "7993d0445f758d51933e85179c0320b0c968b48a91c38b5be923e1097c0c562f",
     "88d42294b6a2759bafa5428a74f1270874e45f6fcc60f21602de5eccd143cf31",
     "241f5921b5ad3983fb54ef17be3b285367e50c999c67247b552fe4bfce945f7b",
+    "0000000000010001",
 );
 /// Its public key, `n || e`.
 const PK_HEX: &str = concat!(
@@ -42,7 +43,7 @@ const PK_HEX: &str = concat!(
     "4c03145b5d3495d4ed5411eb878daf05fd7afc3e09ada0f1126422f590975a19",
     "69816f48698bcbba1b4d9cae79d460d8f9f85e7975005d9bc22c4e5ac0f7c1a4",
     "5d12569a62807d3b9a02e5a530e773066f453d1f5b4c2e9cf7820283f742b9d5",
-    "00010001",
+    "0000000000010001",
 );
 /// tcId 2 of that file: a ciphertext of `MSG_HEX` under the empty label.
 const CT_HEX: &str = concat!(

@@ -6,8 +6,8 @@
 //! The shape follows `mlkem_cmd.rs`'s `Encaps`/`Decaps`. The shared secret always goes to stdout
 //! and is never written to a file. `encaps` writes the ciphertext to `--ctfile` if one is given;
 //! otherwise it prints the ciphertext and then the shared secret, both in hex, one per line.
-//! `keygen` is `rsa_cmd.rs`'s: the private key to stdout, the public key to `--pkfile`. Nothing
-//! else would work, because an RSA private key file does not carry `e`.
+//! `keygen` is `rsa_cmd.rs`'s: the private key to stdout, the public key to `--pkfile`, since
+//! no command derives the public key from the private key file.
 //!
 //! These are separate subcommands from `rsa-<size>` because `bouncycastle_rsa` keeps
 //! key-establishment and signing keys as separate types (see its `rsasve` module's
@@ -77,8 +77,8 @@ fn rsasve_cmd<
         RSASVEAction::Keygen => {
             let Some(pkfile) = pkfile else {
                 eprintln!(
-                    "Error: {alg_name} keygen needs --pkfile to receive the public key (an RSA \
-                     private key file does not carry e, so it cannot be derived later)."
+                    "Error: {alg_name} keygen needs --pkfile to receive the public key (this \
+                     command cannot derive it from the private key file later)."
                 );
                 exit(-1);
             };
