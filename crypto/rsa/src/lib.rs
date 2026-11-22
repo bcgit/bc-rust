@@ -334,9 +334,14 @@
 //!   a frame of their own whose stack is overwritten afterwards, because values derived from
 //!   the key pass through locals, return slots and spilled registers that no `Secret` names.
 //!   The wipes are sized by measurement for an optimised build on x86-64: an unoptimised
-//!   build's larger frames are not covered, and a key the caller moves is the caller's.
-//!   `keygen::is_probable_prime` wipes likewise; the bare [`modexp`] functions are building
-//!   blocks and do not.
+//!   build's larger frames are not covered. `keygen::is_probable_prime` wipes likewise; the
+//!   bare [`modexp`] functions are building blocks and do not.
+//! - **A key the caller moves is the caller's to wipe.** Taking a private key out of the
+//!   `Result` a constructor or key generation returns (`unwrap`, `?`, `Ok(key)`, `Box::new`) is
+//!   such a move, and leaves the key's components in the caller's own frame; no public
+//!   constructor builds a key in place. A caller for whom that matters borrows the key from
+//!   the `Result` (`as_ref`) and lets the `Result` drop where it was returned, which left
+//!   nothing behind in the builds measured.
 //! - **Imported keys are not validated for primality.** [`keys::RsaPrivateKey::from_crt_components`]
 //!   checks that `p`/`q` are odd and distinct, that `dP`/`dQ`/`qInv` are in range and that
 //!   `n = p * q` has exactly the size's bit length (as the public key's constructor checks of

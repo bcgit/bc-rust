@@ -225,7 +225,9 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     /// [`Self::from_crt_components`] with its result handed to `finish`, which makes of it what
     /// the caller returns: a key type over the components, another error. `finish` runs inside
     /// the frame that is wiped, so a caller that ends with this call stages no copy of the key
-    /// in a frame of its own: the key is written once, to where the caller's caller keeps it.
+    /// in a frame of its own: the key is written once, into the `Result` that caller returns.
+    /// What is done with that `Result` afterwards is not covered: taking the key out of it
+    /// is a move, as the crate's Security Considerations say.
     pub(crate) fn from_crt_components_as<T, E>(
         p: &K::HalfLimbs,
         q: &K::HalfLimbs,
