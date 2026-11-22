@@ -465,6 +465,16 @@ Seven workflows under `.github/workflows/`, all triggered by pull requests:
 `cargo test --all` is the workspace run, so a failing test does block a PR; what CI does not run is
 `cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.
 
+Nor does it run the two RSA developer checks, which are for a change to `crypto/rsa/src` or to the
+toolchain:
+
+- `dev_scripts/check_rsa_ct.sh` with valgrind: runs `dev_scripts/rsa_ct_harness` (the Montgomery
+  setup over a secret modulus and the checked CRT, through the crate's public API) under memcheck
+  with the key undefined, with two controls that must be reported.
+- `dev_scripts/check_rsa_stack.sh`: runs `dev_scripts/rsa_stack_harness`, which paints the stack,
+  runs each private-key operation and searches what it used for the key and what was derived from
+  it; x86-64 release on the installed toolchain, RSA-2048 unless sizes are given.
+
 The gitea origin has its own copies of the five pull-request checks under `.gitea/workflows/`
 (there is no Pages job). They differ from the GitHub ones in two ways: the toolchain is installed
 with `rustup` in a shell step, and the test job takes its vectors from the runner's read-only
