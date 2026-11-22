@@ -233,10 +233,10 @@ fn pss_encoding_refuses_a_modulus_too_short_for_the_hash_and_salt() {
     type Unsalted = RSASSA_PSS<RSA1024, SHA512, NoSalt<SHA512>>;
     type Fits = RSASSA_PSS<RSA1536, SHA512>;
     let too_short =
-        SignatureError::EncodingError("the modulus is too short for this hash and salt length");
+        || SignatureError::EncodingError("the modulus is too short for this hash and salt length");
     let (digest, salt) = ([0x11u8; 64], [0x42u8; 64]);
 
-    assert_eq!(Short::emsa_encode::<128>(&digest, &salt), Err(too_short));
+    assert_eq!(Short::emsa_encode::<128>(&digest, &salt), Err(too_short()));
     assert!(!Short::emsa_verify::<128>(&digest, &[0u8; 128]));
     let mut em = [0u8; 128];
     em[127] = 0xbc;
@@ -247,4 +247,12 @@ fn pss_encoding_refuses_a_modulus_too_short_for_the_hash_and_salt() {
     assert!(Unsalted::emsa_verify::<128>(&digest, &em));
     let em = Fits::emsa_encode::<192>(&digest, &salt).unwrap();
     assert!(Fits::emsa_verify::<192>(&digest, &em));
+
+    // The boundary itself: a 62-byte salt makes hLen + sLen + 2 exactly emLen, which fits, and
+    // one byte more does not.
+    type Exact = RSASSA_PSS<RSA1024, SHA512, Mgf1<SHA512, 62>>;
+    type OneOver = RSASSA_PSS<RSA1024, SHA512, Mgf1<SHA512, 63>>;
+    let em = Exact::emsa_encode::<128>(&digest, &[0x42u8; 62]).unwrap();
+    assert!(Exact::emsa_verify::<128>(&digest, &em));
+    assert_eq!(OneOver::emsa_encode::<128>(&digest, &[0x42u8; 63]), Err(too_short()));
 }
