@@ -117,6 +117,7 @@
 //! [`MacVerificationKey::verify`]: bouncycastle_core::symmetric_key::MacVerificationKey::verify
 //! [`MACVerifier::do_verify_final`]: bouncycastle_core::traits::MACVerifier::do_verify_final
 
+#![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
@@ -440,13 +441,13 @@ pub struct HMAC<'k, HASH: HMACParams, Dir> {
 }
 
 impl<HASH: HMACParams, Dir> Debug for HMAC<'_, HASH, Dir> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{} instance", HASH::HMAC_ALG_NAME)
     }
 }
 
 impl<HASH: HMACParams, Dir> Display for HMAC<'_, HASH, Dir> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{} instance", HASH::HMAC_ALG_NAME)
     }
 }
