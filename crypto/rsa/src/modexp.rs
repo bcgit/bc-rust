@@ -21,7 +21,8 @@
 //! exponent's actual value or bit length, using Joye & Yen's Montgomery powering ladder (CHES
 //! 2002, "The Montgomery Powering Ladder"), so it performs exactly one multiplication and one
 //! squaring per bit, moved into place by a branch-free conditional swap rather than a branch on
-//! the bit's value.
+//! the bit's value. [`mod_pow_public_exponent`] is for the public exponent `e` alone: it runs
+//! over that exponent's own bits and branches on them.
 //!
 //! # Security Considerations
 //!
@@ -342,6 +343,37 @@ pub fn mod_pow<const L: usize, const L2: usize, const L21: usize>(
     zeroize_in_place(&mut r1);
     zeroize_in_place(&mut new_r0);
     zeroize_in_place(&mut new_r1);
+    result
+}
+
+/// `base^exponent mod ctx.modulus()` for a public exponent, RSA's `e`: left-to-right square and
+/// multiply over the exponent's own bits, from its highest set bit down, so the cost is that of
+/// the exponent and not of the modulus's width as [`mod_pow`]'s is. `base` need only fit in `L`
+/// limbs.
+///
+/// Variable time in `exponent`, whose bits decide how many squarings are made and where the
+/// multiplications fall: never for a private exponent. Constant time in `base`, which can be
+/// secret (RSASVE's secret value, a recovered message): the sequence of operations is a
+/// function of the exponent alone, and each is the same Montgomery product `mod_pow` uses.
+pub fn mod_pow_public_exponent<const L: usize, const L2: usize, const L21: usize>(
+    base: &[u64; L],
+    exponent: u64,
+    ctx: &MontgomeryContext<L>,
+) -> [u64; L] {
+    let mut base_bar = to_montgomery::<L, L2, L21>(base, ctx);
+    // Montgomery form of 1, so that an exponent of zero gives 1.
+    let mut acc = ctx.r_mod_n;
+    for bit_index in (0..u64::BITS - exponent.leading_zeros()).rev() {
+        acc = mont_square::<L, L2, L21>(&acc, &ctx.modulus, ctx.n_prime);
+        if (exponent >> bit_index) & 1 == 1 {
+            acc = mont_mul::<L, L2, L21>(&acc, &base_bar, &ctx.modulus, ctx.n_prime);
+        }
+    }
+    let result = from_montgomery::<L, L2, L21>(&acc, ctx);
+    // Powers of the base, which can be secret: scrubbed as `mod_pow` scrubs its ladder. The
+    // values `acc` held before its last assignment are not reached.
+    zeroize_in_place(&mut base_bar);
+    zeroize_in_place(&mut acc);
     result
 }
 

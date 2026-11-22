@@ -5,7 +5,8 @@
 //! it: see each case's comment for how it was produced.
 
 use bouncycastle_rsa::modexp::{
-    MontgomeryContext, mod_pow, mont_n_prime, mul_mod, reduce_wide, sub_mod,
+    MontgomeryContext, mod_pow, mod_pow_public_exponent, mont_n_prime, mul_mod, reduce_wide,
+    sub_mod,
 };
 
 /// The context for `n` from each constructor, the constant-time one for a secret modulus and the
@@ -165,6 +166,77 @@ fn kat_l32_2048_bit() {
     for ctx in both_contexts(&n) {
         assert_eq!(mod_pow::<32, 64, 65>(&base, &exp, &ctx), expected);
     }
+}
+
+/// The exponents the public exponentiation is tried at: the degenerate ones, RSA's 3 and
+/// 65537, a 33-bit and a 56-bit value (SP 800-56B Rev. 2 allows `e` up to 256 bits, and ACVP's
+/// keys have them this long), and the largest `u64`, which is odd.
+const PUBLIC_EXPONENTS: [u64; 8] =
+    [0, 1, 2, 3, 65537, 0x0000_0001_0000_0001, 0x00c0_ffee_1234_5677, u64::MAX];
+
+/// `mod_pow_public_exponent` at `L = 2`, `pow(base, e, n)` via Python for each exponent of
+/// [`PUBLIC_EXPONENTS`].
+#[test]
+fn public_exponent_kat_l2() {
+    let n: [u64; 2] = [0x9e3779b97f4a7c15, 0xd1b54a32d192ed03];
+    let base: [u64; 2] = [0xfedcba9876543210, 0x0123456789abcdef];
+    let expected: [[u64; 2]; 8] = [
+        [0x0000000000000001, 0x0000000000000000],
+        [0xfedcba9876543210, 0x0123456789abcdef],
+        [0xde6df9bbc7a21e79, 0x7c7978d71553de08],
+        [0x25caa256a35cadb6, 0x4a4fabb6e4e905cd],
+        [0x9ad2e02ca8f65732, 0x5b513f962ca011c5],
+        [0x970c8e850c403f45, 0x3c0de65adfb7434b],
+        [0xec9a94e43e78b1d0, 0xc0944232cc57f0f8],
+        [0x24441fd89d3bf436, 0x7cd393f79b005ffa],
+    ];
+    for ctx in both_contexts(&n) {
+        for (e, expected) in PUBLIC_EXPONENTS.iter().zip(expected) {
+            assert_eq!(mod_pow_public_exponent::<2, 4, 5>(&base, *e, &ctx), expected, "e = {e:#x}");
+        }
+    }
+}
+
+/// `mod_pow_public_exponent` gives what `mod_pow`'s ladder gives for the same exponent, at
+/// one, four and thirty-two limbs (RSA-2048's modulus width) and for a base at each end of the
+/// range as well as inside it.
+#[test]
+fn public_exponent_agrees_with_the_ladder() {
+    fn agree<const L: usize, const L2: usize, const L21: usize>(n: &[u64; L], base: &[u64; L]) {
+        let mut one = [0u64; L];
+        one[0] = 1;
+        let mut n_minus_1 = *n;
+        n_minus_1[0] -= 1; // n is odd
+        for ctx in both_contexts(n) {
+            for base in [&[0u64; L], &one, base, &n_minus_1] {
+                for e in PUBLIC_EXPONENTS {
+                    let mut e_limbs = [0u64; L];
+                    e_limbs[0] = e;
+                    assert_eq!(
+                        mod_pow_public_exponent::<L, L2, L21>(base, e, &ctx),
+                        mod_pow::<L, L2, L21>(base, &e_limbs, &ctx),
+                        "L = {L}, e = {e:#x}"
+                    );
+                }
+            }
+        }
+    }
+    agree::<1, 2, 3>(&[0xffffffffffffffc5], &[0x00000000075bcd15]);
+    agree::<4, 8, 9>(
+        &[0xffffffffffffff43, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+        &[0x8899aabbccddeeff, 0x0011223344556677, 0xfedcba9876543210, 0x123456789abcdef0],
+    );
+    // 32 limbs: an odd full-length modulus and a base below it, stepped from fixed constants.
+    let mut n = [0u64; 32];
+    let mut base = [0u64; 32];
+    for i in 0..32u64 {
+        n[i as usize] = 0x9e3779b97f4a7c15u64.wrapping_mul(2 * i + 1) ^ (i << 56);
+        base[i as usize] = 0xd1b54a32d192ed03u64.wrapping_mul(i + 7);
+    }
+    n[0] |= 1;
+    n[31] |= 1 << 63;
+    base[31] &= u64::MAX >> 1;
+    agree::<32, 64, 65>(&n, &base);
 }
 
 /// An even modulus is never valid for Montgomery reduction; RSA moduli are always odd, so this

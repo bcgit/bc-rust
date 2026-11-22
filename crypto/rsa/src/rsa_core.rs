@@ -11,7 +11,9 @@
 //! multi-prime RSA, so there is nothing here to extend to `u > 2`.
 
 use crate::keys::{RsaPrivateComponents, RsaPublicComponents};
-use crate::modexp::{MontgomeryContext, mod_pow, mul_mod, reduce_wide, sub_mod};
+use crate::modexp::{
+    MontgomeryContext, mod_pow, mod_pow_public_exponent, mul_mod, reduce_wide, sub_mod,
+};
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_ec::montgomery;
@@ -35,7 +37,8 @@ pub(crate) fn rsavp1<K: RsaSize>(
 }
 
 /// `x^e mod n` for a public exponent, the shared core of RSAVP1 and RSAEP: `x` must already be
-/// below `n`. The size marker's `public_exp` forwards here with the size's widths.
+/// below `n`. The size marker's `public_exp` forwards here with the size's widths. Variable
+/// time in `n` and `e`, which are public, and constant time in `x`, which RSAEP's is not.
 pub(crate) fn public_exp<const L: usize, const L2: usize, const L21: usize>(
     n: &[u64; L],
     e: u32,
@@ -43,9 +46,7 @@ pub(crate) fn public_exp<const L: usize, const L2: usize, const L21: usize>(
 ) -> [u64; L] {
     let ctx = MontgomeryContext::<L>::for_public_modulus(n)
         .expect("RsaPublicComponents::new already validated n is odd and nonzero");
-    let mut e_limbs = [0u64; L];
-    e_limbs[0] = e as u64;
-    mod_pow::<L, L2, L21>(x, &e_limbs, &ctx)
+    mod_pow_public_exponent::<L, L2, L21>(x, u64::from(e), &ctx)
 }
 
 pub(crate) fn rsasp1<K: RsaSigningSize>(
