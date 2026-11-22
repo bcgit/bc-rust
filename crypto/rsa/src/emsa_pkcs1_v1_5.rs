@@ -6,7 +6,12 @@
 //! the message (step 1 of the encoding is the caller's), so that a streaming signer/verifier can
 //! hash incrementally and hand in the result; `H` is never instantiated here.
 
+use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{AlgorithmOID, HashAlgParams};
+
+/// What the encodings return for a message hash that is not one output of the hash.
+pub(crate) const HASH_LEN_ERROR: SignatureError =
+    SignatureError::LengthError("the message hash must be the hash's output length");
 
 /// `T`, the DER encoding of `DigestInfo { digestAlgorithm, digest }` (RFC 8017 §9.2 step 2):
 ///
@@ -31,7 +36,7 @@ const MAX_T_LEN: usize = 2 + 2 + 16 + 2 + 2 + 64;
 
 fn digest_info<H: AlgorithmOID + HashAlgParams>(digest: &[u8], t: &mut [u8; MAX_T_LEN]) -> usize {
     let h_len = digest.len();
-    debug_assert_eq!(h_len, H::OUTPUT_LEN, "digest_info: the digest is one hash output");
+    debug_assert_eq!(h_len, H::OUTPUT_LEN, "digest_info: the caller checked the digest's length");
     let oid_der = H::OID_DER;
     debug_assert!(oid_der.len() < 128 && h_len < 128, "DER length must fit in one byte");
     let inner_len = oid_der.len() + 2; // + 05 00 (the AlgorithmIdentifier's NULL parameters)
@@ -58,9 +63,15 @@ fn digest_info<H: AlgorithmOID + HashAlgParams>(digest: &[u8], t: &mut [u8; MAX_
 /// of [`digest_info`]. `K_LEN >= tLen + 11` is a constant of the pairing; a pairing that
 /// violates it does not exist here (the smallest modulus, 1024 bits, leaves 45 bytes of `PS`
 /// under SHA-512), and is a `debug_assert`.
+///
+/// A `digest` that is not `H::OUTPUT_LEN` bytes is [`HASH_LEN_ERROR`]: step 2's `DigestInfo`
+/// holds `H = Hash(M)`, and no other length is a hash under `H`'s identifier.
 pub fn emsa_pkcs1_v1_5_encode_from_hash<H: HashAlgParams + AlgorithmOID, const K_LEN: usize>(
     digest: &[u8],
-) -> [u8; K_LEN] {
+) -> Result<[u8; K_LEN], SignatureError> {
+    if digest.len() != H::OUTPUT_LEN {
+        return Err(HASH_LEN_ERROR);
+    }
     let mut t = [0u8; MAX_T_LEN];
     let t_len = digest_info::<H>(digest, &mut t);
 
@@ -71,7 +82,7 @@ pub fn emsa_pkcs1_v1_5_encode_from_hash<H: HashAlgParams + AlgorithmOID, const K
     em[1] = 0x01;
     em[K_LEN - t_len - 1] = 0x00;
     em[K_LEN - t_len..].copy_from_slice(&t[..t_len]);
-    em
+    Ok(em)
 }
 
 /// A single DER length octet in strict short form: `None` if the byte's top bit is set (BER's
@@ -160,10 +171,15 @@ fn decode_digest_info<H: AlgorithmOID>(t: &[u8], digest: &[u8]) -> bool {
 /// Confirmed against every forgery-shaped case in Wycheproof's `rsa_signature_2048_sha256_test.json`
 /// (`BerEncodedPadding`, `InvalidAsnInPadding`, `ModifiedPadding`, `WrongHash`, `InvalidPadding`,
 /// `ShortPadding`, `NoHash`), and its one `MissingNull` "acceptable" case.
-pub fn emsa_pkcs1_v1_5_verify_from_hash<H: AlgorithmOID, const K_LEN: usize>(
+///
+/// A `digest` that is not `H::OUTPUT_LEN` bytes verifies nothing, whatever `em` holds.
+pub fn emsa_pkcs1_v1_5_verify_from_hash<H: HashAlgParams + AlgorithmOID, const K_LEN: usize>(
     digest: &[u8],
     em: &[u8; K_LEN],
 ) -> bool {
+    if digest.len() != H::OUTPUT_LEN {
+        return false;
+    }
     if em[0] != 0x00 || em[1] != 0x01 {
         return false;
     }
@@ -206,7 +222,7 @@ mod tests {
     fn encode<const K_LEN: usize>(message: &[u8]) -> [u8; K_LEN] {
         let mut digest = [0u8; 32];
         SHA256::hash_out(message, &mut digest);
-        emsa_pkcs1_v1_5_encode_from_hash::<SHA256, K_LEN>(&digest)
+        emsa_pkcs1_v1_5_encode_from_hash::<SHA256, K_LEN>(&digest).unwrap()
     }
 
     /// [`encode`]'s verification counterpart, SHA-256.

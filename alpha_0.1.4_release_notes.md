@@ -123,6 +123,8 @@
 * RSA -- the result of every private-key operation (signing, RSASVE decapsulation, OAEP decryption) is checked
   against `e` before it is released; a result that fails is an error (`SignatureError::ComputationFault`, or the
   operation's one decryption error) and is wiped.
+* RSA -- `rsassa`'s `*_from_hash` functions return `SignatureError::LengthError` for a message hash or a PSS salt of
+  the wrong length, in every build; the algorithm traits' `emsa_encode` returns a `Result` for the same reason.
 
 ## Minor features / bug fixes
 

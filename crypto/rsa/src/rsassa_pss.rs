@@ -20,6 +20,7 @@ use crate::rsassa::{
     RsaDeterministicSignatureAlgorithm, RsaRandomizedSignatureAlgorithm, RsaSignatureAlgorithm,
 };
 use crate::size::{RsaSize, min_strength};
+use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::SignatureAlgorithm;
 use bouncycastle_core::traits::{
@@ -241,7 +242,10 @@ impl<
 {
     const SALT_LEN: usize = P::SALT_LEN;
 
-    fn emsa_encode<const K_LEN: usize>(m_hash: &[u8], salt: &[u8]) -> [u8; K_LEN] {
+    fn emsa_encode<const K_LEN: usize>(
+        m_hash: &[u8],
+        salt: &[u8],
+    ) -> Result<[u8; K_LEN], SignatureError> {
         emsa_pss_encode_from_hash::<H, P, K_LEN>(m_hash, salt)
     }
 }
@@ -252,7 +256,7 @@ impl<
     P: PssParams<H> + UnsaltedPss,
 > RsaDeterministicSignatureAlgorithm for RSASSA_PSS<K, H, P>
 {
-    fn emsa_encode<const K_LEN: usize>(m_hash: &[u8]) -> [u8; K_LEN] {
+    fn emsa_encode<const K_LEN: usize>(m_hash: &[u8]) -> Result<[u8; K_LEN], SignatureError> {
         emsa_pss_encode_from_hash::<H, P, K_LEN>(m_hash, &[])
     }
 }

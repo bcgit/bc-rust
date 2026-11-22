@@ -10,6 +10,7 @@
 //! the message, for a caller that already holds the digest. Sealed: the markers are the
 //! library's, so a role impl exists for every pairing and no other.
 
+use crate::emsa_pkcs1_v1_5::HASH_LEN_ERROR;
 use crate::keygen::fill_bytes;
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::mgf1::MAX_HASH_LEN;
@@ -37,7 +38,7 @@ pub trait RsaSignatureAlgorithm: SignatureAlgorithm + sealed::Sealed {
     type Hash: HashOneShot + HashAlgParams;
 
     /// The scheme's verification of the recovered `EM` against the message hash: EMSA-PKCS1-v1_5's
-    /// decoding or EMSA-PSS-VERIFY.
+    /// decoding or EMSA-PSS-VERIFY. False for an `m_hash` that is not one output of the hash.
     fn emsa_verify<const K_LEN: usize>(m_hash: &[u8], em: &[u8; K_LEN]) -> bool;
 }
 
@@ -45,7 +46,10 @@ pub trait RsaSignatureAlgorithm: SignatureAlgorithm + sealed::Sealed {
 /// keys sign through [`DeterministicSigningKey`].
 pub trait RsaDeterministicSignatureAlgorithm: RsaSignatureAlgorithm {
     /// EMSA-PKCS1-v1_5-ENCODE of the message hash.
-    fn emsa_encode<const K_LEN: usize>(m_hash: &[u8]) -> [u8; K_LEN];
+    ///
+    /// # Errors
+    /// [`SignatureError::LengthError`] if `m_hash` is not one output of the hash.
+    fn emsa_encode<const K_LEN: usize>(m_hash: &[u8]) -> Result<[u8; K_LEN], SignatureError>;
 }
 
 /// An RSA signature algorithm whose encoding takes a salt: RSASSA-PSS under salted parameters.
@@ -55,7 +59,14 @@ pub trait RsaRandomizedSignatureAlgorithm: RsaSignatureAlgorithm {
     const SALT_LEN: usize;
 
     /// EMSA-PSS-ENCODE of the message hash with `salt`, `SALT_LEN` bytes.
-    fn emsa_encode<const K_LEN: usize>(m_hash: &[u8], salt: &[u8]) -> [u8; K_LEN];
+    ///
+    /// # Errors
+    /// [`SignatureError::LengthError`] if `m_hash` is not one output of the hash or `salt` is
+    /// not `SALT_LEN` bytes.
+    fn emsa_encode<const K_LEN: usize>(
+        m_hash: &[u8],
+        salt: &[u8],
+    ) -> Result<[u8; K_LEN], SignatureError>;
 }
 
 /// The signer [`SigningKey::create_signer`] hands out for a randomized algorithm: the key,
@@ -316,8 +327,10 @@ where
 /// §8.1.1 with the salt the caller's): the scheme's encoding, then RSASP1.
 ///
 /// # Errors
-/// [`SignatureError::DecodingError`] if the encoded message is not below `n` (RSASP1 step 1),
-/// which a correct encoding never is.
+/// [`SignatureError::LengthError`] if `m_hash` is not `A::Hash::OUTPUT_LEN` bytes or `salt` is
+/// not `A::SALT_LEN` bytes; [`SignatureError::ComputationFault`] if the result fails RSASP1's
+/// check; [`SignatureError::DecodingError`] if the encoded message is not below `n` (RSASP1
+/// step 1), which a correct encoding never is.
 pub fn sign_from_hash_with_salt<A, const K_LEN: usize>(
     sk: &RsaPrivateKey<A>,
     m_hash: &[u8],
@@ -327,7 +340,7 @@ where
     A: RsaRandomizedSignatureAlgorithm,
     A::Size: RsaSigningSize + RsaSize<Modulus = [u8; K_LEN]>,
 {
-    let em = A::emsa_encode::<K_LEN>(m_hash, salt);
+    let em = A::emsa_encode::<K_LEN>(m_hash, salt)?;
     let m = A::Size::limbs_from_be_bytes(&em);
     let s = rsasp1::<A::Size>(sk.components(), &m)?;
     Ok(A::Size::be_bytes_from_limbs(&s))
@@ -337,7 +350,8 @@ where
 /// RFC 8017 §8.1.1.
 ///
 /// # Errors
-/// [`SignatureError::RNGError`] if the RNG fails to deliver, else as
+/// [`SignatureError::LengthError`] if `m_hash` is not `A::Hash::OUTPUT_LEN` bytes, before
+/// anything is drawn; [`SignatureError::RNGError`] if the RNG fails to deliver; else as
 /// [`sign_from_hash_with_salt`].
 pub fn sign_from_hash<A, const K_LEN: usize>(
     sk: &RsaPrivateKey<A>,
@@ -349,6 +363,9 @@ where
     A::Size: RsaSigningSize + RsaSize<Modulus = [u8; K_LEN]>,
 {
     const { assert!(A::SALT_LEN <= MAX_HASH_LEN, "the salt fits the buffer") };
+    if m_hash.len() != A::Hash::OUTPUT_LEN {
+        return Err(HASH_LEN_ERROR);
+    }
     let mut salt = [0u8; MAX_HASH_LEN];
     fill_bytes(rng, &mut salt[..A::SALT_LEN]).map_err(SignatureError::RNGError)?;
     sign_from_hash_with_salt::<A, K_LEN>(sk, m_hash, &salt[..A::SALT_LEN])
@@ -358,7 +375,7 @@ where
 /// scheme's encoding, then RSASP1.
 ///
 /// # Errors
-/// As [`sign_from_hash_with_salt`].
+/// As [`sign_from_hash_with_salt`], there being no salt.
 pub fn sign_from_hash_deterministic<A, const K_LEN: usize>(
     sk: &RsaPrivateKey<A>,
     m_hash: &[u8],
@@ -367,7 +384,7 @@ where
     A: RsaDeterministicSignatureAlgorithm,
     A::Size: RsaSigningSize + RsaSize<Modulus = [u8; K_LEN]>,
 {
-    let em = A::emsa_encode::<K_LEN>(m_hash);
+    let em = A::emsa_encode::<K_LEN>(m_hash)?;
     let m = A::Size::limbs_from_be_bytes(&em);
     let s = rsasp1::<A::Size>(sk.components(), &m)?;
     Ok(A::Size::be_bytes_from_limbs(&s))
@@ -377,6 +394,7 @@ where
 /// RSAVP1, then the scheme's verification of the recovered encoding.
 ///
 /// # Errors
+/// [`SignatureError::LengthError`] if `m_hash` is not `A::Hash::OUTPUT_LEN` bytes,
 /// [`SignatureError::DecodingError`] if the signature representative is not below `n`
 /// (RSAVP1 step 1), [`SignatureError::SignatureVerificationFailed`] if the encoding does not
 /// verify.
@@ -389,6 +407,9 @@ where
     A: RsaSignatureAlgorithm,
     A::Size: RsaSize<Modulus = [u8; K_LEN]>,
 {
+    if m_hash.len() != A::Hash::OUTPUT_LEN {
+        return Err(HASH_LEN_ERROR);
+    }
     let s = A::Size::limbs_from_be_bytes(signature);
     let m = rsavp1::<A::Size>(pk.components(), &s)?;
     let em = A::Size::be_bytes_from_limbs(&m);

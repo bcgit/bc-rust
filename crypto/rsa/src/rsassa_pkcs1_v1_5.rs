@@ -8,6 +8,7 @@
 use crate::emsa_pkcs1_v1_5::{emsa_pkcs1_v1_5_encode_from_hash, emsa_pkcs1_v1_5_verify_from_hash};
 use crate::rsassa::{RsaDeterministicSignatureAlgorithm, RsaSignatureAlgorithm};
 use crate::size::{RsaSize, min_strength};
+use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::SignatureAlgorithm;
 use bouncycastle_core::traits::{
@@ -77,7 +78,7 @@ impl<K: RsaSize, H: HashOneShot + HashAlgParams + AlgorithmOID> RsaSignatureAlgo
 impl<K: RsaSize, H: HashOneShot + HashAlgParams + AlgorithmOID + CollisionResistantHash>
     RsaDeterministicSignatureAlgorithm for RSASSA_PKCS1_v1_5<K, H>
 {
-    fn emsa_encode<const K_LEN: usize>(m_hash: &[u8]) -> [u8; K_LEN] {
+    fn emsa_encode<const K_LEN: usize>(m_hash: &[u8]) -> Result<[u8; K_LEN], SignatureError> {
         emsa_pkcs1_v1_5_encode_from_hash::<H, K_LEN>(m_hash)
     }
 }

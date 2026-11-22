@@ -17,9 +17,15 @@
 //! module hard-codes "clear the top bit of the first octet" instead of threading a generic
 //! bit-count parameter through for a case that cannot arise.
 
+use crate::emsa_pkcs1_v1_5::HASH_LEN_ERROR;
 use crate::mgf1::MAX_HASH_LEN;
 use crate::rsassa_pss::PssParams;
+use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{HashAlgParams, HashOneShot};
+
+/// What the encoding returns for a salt that is not the parameters' `sLen`.
+pub(crate) const SALT_LEN_ERROR: SignatureError =
+    SignatureError::LengthError("the salt must be the parameters' salt length");
 
 /// EMSA-PSS-ENCODE (RFC 8017 §9.1.1) from step 3 onward, with `emBits` fixed to `8 * K_LEN - 1`
 /// (see the module docs), steps 1-2's `mHash = Hash(M)` supplied by the caller (either
@@ -34,18 +40,25 @@ use bouncycastle_core::traits::{HashAlgParams, HashOneShot};
 /// `H::OUTPUT_LEN` bytes) and the salt (`sLen = P::SALT_LEN` bytes), with `P`'s mask, into the
 /// `K_LEN`-byte `EM`. The lengths every other width derives from are `K_LEN` and the hash's:
 /// `DB` is `K_LEN - hLen - 1` bytes, `M'` is `8 + hLen + sLen`.
+///
+/// An `m_hash` that is not `H::OUTPUT_LEN` bytes is [`HASH_LEN_ERROR`] and a `salt` that is not
+/// `P::SALT_LEN` bytes is [`SALT_LEN_ERROR`]: the caller's slices, checked in every build.
 pub fn emsa_pss_encode_from_hash<H, P, const K_LEN: usize>(
     m_hash: &[u8],
     salt: &[u8],
-) -> [u8; K_LEN]
+) -> Result<[u8; K_LEN], SignatureError>
 where
     H: HashOneShot + HashAlgParams,
     P: PssParams<H>,
 {
     let h_len = H::OUTPUT_LEN;
     let s_len = P::SALT_LEN;
-    debug_assert_eq!(m_hash.len(), h_len, "emsa_pss_encode: mHash is one hash output");
-    debug_assert_eq!(salt.len(), s_len, "emsa_pss_encode: the salt is the parameters' length");
+    if m_hash.len() != h_len {
+        return Err(HASH_LEN_ERROR);
+    }
+    if salt.len() != s_len {
+        return Err(SALT_LEN_ERROR);
+    }
     debug_assert!(
         K_LEN >= h_len + s_len + 2,
         "emsa_pss_encode: modulus too short for this hash/salt"
@@ -77,11 +90,12 @@ where
     // Step 12: EM = maskedDB || H || 0xbc.
     em[db_len..db_len + h_len].copy_from_slice(&h[..h_len]);
     em[K_LEN - 1] = 0xbc;
-    em
+    Ok(em)
 }
 
 /// EMSA-PSS-VERIFY (RFC 8017 §9.1.2) of the `K_LEN`-byte `em` against the message hash
-/// `m_hash` (step 2's `mHash`), with `sLen = P::SALT_LEN` and `P`'s mask.
+/// `m_hash` (step 2's `mHash`), with `sLen = P::SALT_LEN` and `P`'s mask. An `m_hash` that is
+/// not `H::OUTPUT_LEN` bytes is consistent with nothing.
 pub fn emsa_pss_verify_from_hash<H, P, const K_LEN: usize>(m_hash: &[u8], em: &[u8; K_LEN]) -> bool
 where
     H: HashOneShot + HashAlgParams,
@@ -89,7 +103,9 @@ where
 {
     let h_len = H::OUTPUT_LEN;
     let s_len = P::SALT_LEN;
-    debug_assert_eq!(m_hash.len(), h_len, "emsa_pss_verify: mHash is one hash output");
+    if m_hash.len() != h_len {
+        return false;
+    }
     // Step 3: emLen < hLen + sLen + 2 is "inconsistent"; a constant of the pairing.
     if K_LEN < h_len + s_len + 2 {
         return false;
@@ -181,7 +197,7 @@ mod tests {
     }
 
     fn encode(message: &[u8], salt: &[u8; 32]) -> [u8; 256] {
-        emsa_pss_encode_from_hash::<SHA256, Conventional, 256>(&m_hash(message), salt)
+        emsa_pss_encode_from_hash::<SHA256, Conventional, 256>(&m_hash(message), salt).unwrap()
     }
 
     fn verify(message: &[u8], em: &[u8; 256]) -> bool {
@@ -277,6 +293,7 @@ mod tests {
 
         fn encode(message: &[u8], salt: &[u8; 32]) -> [u8; 256] {
             emsa_pss_encode_from_hash::<SHAKE128, Conventional, 256>(&m_hash(message), salt)
+                .unwrap()
         }
 
         fn verify(message: &[u8], em: &[u8; 256]) -> bool {
