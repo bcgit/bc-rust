@@ -379,16 +379,61 @@ fn bench_8192_verify() {
     }
 }
 
+/// The modulus of [`genuine_2048_key`], `p * q`, for the functions that measure a public-key
+/// operation: building the private key to read `n` off it would put that construction's stack,
+/// which is the deeper, in the measurement.
+const N_2048: [u64; 32] = [
+    0xf7820283f742b9d5, 0x6f453d1f5b4c2e9c, 0x9a02e5a530e77306, 0x5d12569a62807d3b,
+    0xc22c4e5ac0f7c1a4, 0xf9f85e7975005d9b, 0x1b4d9cae79d460d8, 0x69816f48698bcbba,
+    0x126422f590975a19, 0xfd7afc3e09ada0f1, 0xed5411eb878daf05, 0x4c03145b5d3495d4,
+    0x12be82de4d1ece6b, 0x21d0fceca08d945a, 0x7d9658594266f5c0, 0x4c22da610428e09c,
+    0x90ed81299615d981, 0x7a1fa26a8dce26f4, 0x3eff8f17e1a02939, 0x254a2fe9765313a0,
+    0x3d3e42e46e48c98e, 0xcd20f79c15e8247f, 0x2ed8a7711a1253fa, 0xb5ab393189db9251,
+    0x9e89d6eac8845097, 0x1700f65903b46942, 0x1878d80325b6ef5a, 0x37f9746d3f7cafd3,
+    0x094fa1fee82224e6, 0x4a8a5b462ebef717, 0x6e45567151355051, 0xa2b451a07d0aa5f9,
+];
+
+/// The modulus of [`genuine_8192_key`], as [`N_2048`] is of the RSA-2048 key.
+const N_8192: [u64; 128] = [
+    0x1d61042ab2f94e3b, 0xf48eff502c093f51, 0xaa5bc4f9c8864611, 0x1db99c956fbdd1a4,
+    0x7740c38dc0641032, 0xa93862a47ba4a132, 0x084763423a1e3191, 0xb1e872ce3811655d,
+    0x7d9b6e43e1a2f9e2, 0xba4e9c2b36dabbe8, 0xc507fe8aed9ca2b8, 0xc5906450175fd0cc,
+    0xe9a4409728487b57, 0xdc94884b0178d78f, 0x17c4c87dc8281035, 0xac96c76a9846e427,
+    0xdf7e3d9db9a47755, 0x0b4353025e768963, 0x27f12a01bdfb74a1, 0x67997c0a9d66235d,
+    0x7b7decf82483b6f2, 0x53effe97c44dcd3a, 0x93c1f9f8677d0594, 0xfe737c2bcac36e0a,
+    0x978892c9bd7ec5de, 0x7c2cdda67b530f53, 0xf7bae381b684cbd5, 0x4c1d6ac3fa567751,
+    0xc573274bdd131b40, 0xdf8d3177c2541827, 0x7f106b9d83e90ae9, 0x2c568fed547825e6,
+    0x61fb1c4adcfcb251, 0x90f737d790bda4e3, 0x0e12086d9bb35f0a, 0xf73b3cb66429b918,
+    0xbe23ae5ae8aa37e3, 0x7441da06eb8ee824, 0x440ad98e26d4e9e9, 0xeee172a57ef2bfe0,
+    0xd7e4a7577bc7c925, 0x8ab720cd38b6709c, 0x0fe68bef0d9a7b77, 0xc1e72ff0d9152bf3,
+    0x35dae077e9a6e132, 0xfd1bd0ed310ece7a, 0x87c7ec64286b8883, 0xbd7da0b4b475b56a,
+    0x65ee52c9b7774425, 0xa49fac22d107c295, 0xc5c94d7ea6ba2f32, 0xa84b7c461ae1cf71,
+    0xdca738bd0c2cbf76, 0x750138e02e57f5bc, 0xb5503a2c69879036, 0xe1298856f3dc0a2d,
+    0x5349f37c86ea36e3, 0xf29670ed8ce496a8, 0x4bbc0eb0207c94d1, 0x2d6b8a2e3a2c2d39,
+    0x32cac66a8e99ca14, 0x3b14bb88e04b6b53, 0xfbf849e99df6121b, 0xbbdd6e94d5d9e20a,
+    0xc247b149e4a2f03b, 0xb3c8485b24661348, 0x1323040e774c2f40, 0xc33618245cfcc322,
+    0x9e3ae2251d6e1d5b, 0x6b4a62932e7e86cd, 0x41d1534a82c4c14f, 0x15987cbb1971435a,
+    0x107d1835999b07e3, 0xf732476824d89c5e, 0xa94cd4c11400549d, 0x8a5974601ee58869,
+    0x262ef75c129f706a, 0xcc06595faeb69abc, 0x0705e98c14e5a060, 0xdee678347b922dda,
+    0x3cd3f5134aee1f6e, 0xe93bc2495d65ab8c, 0x36845f106e713f01, 0x247a89cef8a32e58,
+    0x2290576030c5f20b, 0x13495b875f9c3a10, 0x09a12e56a44eb809, 0x82d8945abf6d7ae7,
+    0x5ce80a99e02a16c0, 0xe2f3df6054ff349c, 0x9828818e69e4cd1a, 0xbd926da43dad328c,
+    0xe195d182fd86c4f0, 0x59e7905740689019, 0x4b12503fd098b6da, 0x15397f2b901f921b,
+    0x7fc9ddcdc1c28022, 0x740f4fac209a4406, 0xe2e1f1491fc097ae, 0x1734501a90343ef1,
+    0xdfe628f30ee7de60, 0x5c8046891b4a35eb, 0xab707f7842944f5b, 0x86a62e6a7fc852c9,
+    0xcc8551a26a91f25e, 0x8ed1ea0a7a9f0021, 0x6c22c2632140bac9, 0x76b9c476670eed2a,
+    0x4ebe8ce823035344, 0x00948e90d53a3929, 0xb66647c841a5e865, 0xf8aa70e94b4479f4,
+    0x6afc21f81d81cd37, 0xbfd00914a190e9d6, 0x2864767d58eb6242, 0x6fa98a034b43d97b,
+    0x08e78c3f17b321e8, 0xfb1e660044731ecf, 0x7244a26ca285a2ef, 0xf0b49c466e7d2b33,
+    0x32a0e5da63dad5c2, 0x9d48f68729bfafaf, 0x0f9b88a231d0452b, 0x1a0ae555a68f7318,
+    0x8814810ca9391395, 0x6d8509d09e1012de, 0x66e85aaa3e05438a, 0xc08d358576b867f0,
+];
+
 /// RSASVE.GENERATE (SP 800-56B Rev. 2 §7.2.1.2): the `nLen`-byte `Z`/`z` buffers and one
 /// public-exponent `mod_pow` at the modulus width.
 fn bench_2048_rsasve_encaps() {
     eprintln!("RSA-2048/RSASVE encaps");
-    let sk = genuine_2048_key();
-    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
-    let pk = rsa_2048::RSA2048KEMPublicKey::from_bytes(
-        &pk.key::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>().encode(),
-    )
-    .unwrap();
+    let pk = rsa_2048::RSA2048KEMPublicKey::new(&N_2048, 0x10001).unwrap();
     let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
     println!("{:x?}", ct);
     println!("{}", ss.key_len());
@@ -412,12 +457,7 @@ fn bench_2048_rsasve_decaps() {
 /// public-exponent `mod_pow` at the modulus width.
 fn bench_8192_rsasve_encaps() {
     eprintln!("RSA-8192/RSASVE encaps");
-    let sk = genuine_8192_key();
-    let pk = RsaPublicComponents::<RSA8192>::new(sk.n(), 0x10001).unwrap();
-    let pk = rsa_8192::RSA8192KEMPublicKey::from_bytes(
-        &pk.key::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>().encode(),
-    )
-    .unwrap();
+    let pk = rsa_8192::RSA8192KEMPublicKey::new(&N_8192, 0x10001).unwrap();
     let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
     println!("{:x?}", ct);
     println!("{}", ss.key_len());
@@ -441,12 +481,7 @@ fn bench_8192_rsasve_decaps() {
 /// public-exponent `mod_pow` at the modulus width.
 fn bench_2048_oaep_encaps() {
     eprintln!("RSA-2048/OAEP encaps");
-    let sk = genuine_2048_key();
-    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
-    let pk = rsa_2048::RSA2048KEMPublicKey::from_bytes(
-        &pk.key::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>().encode(),
-    )
-    .unwrap();
+    let pk = rsa_2048::RSA2048KEMPublicKey::new(&N_2048, 0x10001).unwrap();
     let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), OaepParams::<SHA256>::new(b"")).unwrap();
     println!("{:x?}", ct);
     println!("{}", ss.key_len());
@@ -471,12 +506,7 @@ fn bench_2048_oaep_decaps() {
 /// public-exponent `mod_pow` at the modulus width.
 fn bench_8192_oaep_encaps() {
     eprintln!("RSA-8192/OAEP encaps");
-    let sk = genuine_8192_key();
-    let pk = RsaPublicComponents::<RSA8192>::new(sk.n(), 0x10001).unwrap();
-    let pk = rsa_8192::RSA8192KEMPublicKey::from_bytes(
-        &pk.key::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>().encode(),
-    )
-    .unwrap();
+    let pk = rsa_8192::RSA8192KEMPublicKey::new(&N_8192, 0x10001).unwrap();
     let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), OaepParams::<SHA256>::new(b"")).unwrap();
     println!("{:x?}", ct);
     println!("{}", ss.key_len());

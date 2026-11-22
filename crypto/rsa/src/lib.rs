@@ -292,11 +292,11 @@
 //!
 //! | Operation                  | RSA-2048 | RSA-8192 |
 //! |----------------------------|----------|----------|
-//! | PKCS#1 v1.5 sign (SHA-256) | 16504    | 53800    |
-//! | RSASVE encaps              | 13288    | 44600    |
-//! | RSASVE decaps              | 20600    | 59384    |
-//! | OAEP encaps (SHA-256)      | 13288    | 43416    |
-//! | OAEP decaps (SHA-256)      | 16584    | 59720    |
+//! | PKCS#1 v1.5 sign (SHA-256) | 16456    | 53720    |
+//! | RSASVE encaps              | 12888    | 35672    |
+//! | RSASVE decaps              | 20552    | 59336    |
+//! | OAEP encaps (SHA-256)      | 12232    | 31816    |
+//! | OAEP decaps (SHA-256)      | 16536    | 59672    |
 //!
 //! All values are in bytes. "On disk" is the `PublicKey`/`PrivateKey` raw
 //! layout ([`keys::RsaPublicKey`]'s and [`keys::RsaPrivateKey`]'s `# Encoding`: `n || e`, and
