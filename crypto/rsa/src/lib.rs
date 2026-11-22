@@ -334,8 +334,10 @@
 //!   a frame of their own whose stack is overwritten afterwards, because values derived from
 //!   the key pass through locals, return slots and spilled registers that no `Secret` names.
 //!   The wipes are sized by measurement for an optimised build on x86-64: an unoptimised
-//!   build's larger frames are not covered. `keygen::is_probable_prime` wipes likewise; the
-//!   bare [`modexp`] functions are building blocks and do not.
+//!   build's larger frames are not covered, and no test in the crate can see a wipe fall
+//!   short, which is what `dev_scripts/check_rsa_stack.sh` searches the stack for.
+//!   `keygen::is_probable_prime` wipes likewise; the bare [`modexp`] functions are building
+//!   blocks and do not.
 //! - **A key the caller moves is the caller's to wipe.** Taking a private key out of the
 //!   `Result` a constructor or key generation returns (`unwrap`, `?`, `Ok(key)`, `Box::new`) is
 //!   such a move, and leaves the key's components in the caller's own frame; no public
