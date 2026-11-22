@@ -121,9 +121,7 @@
 //! assert_eq!(digest, RIPEMD160::hash(b"The quick brown fox jumped over the lazy dog"));
 //! ```
 
-// todo #![no_std]
-//      waiting for the no_std refactor that removes the `-> Vec<u8>` from core::traits::Hash
-
+#![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
