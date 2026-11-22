@@ -37,13 +37,8 @@ bouncycastle-hkdf = { path = "./crypto/hkdf" }
 bouncycastle-hmac = { path = "./crypto/hmac" }
 bouncycastle-dhkem = { path = "./crypto/dhkem" }
 bouncycastle-hybrid = { path = "./crypto/hybrid" }
-bouncycastle-mlkem = { path = "./crypto/mlkem" }
-bouncycastle-mlkem-common = { path = "./crypto/mlkem-common" }
-bouncycastle-mlkem-lowmemory = { path = "./crypto/mlkem-lowmemory" }
-bouncycastle-mldsa = { path = "./crypto/mldsa" }
-bouncycastle-mldsa-common = { path = "./crypto/mldsa-common" }
-bouncycastle-mldsa-lowmemory = { path = "./crypto/mldsa-lowmemory" }
 bouncycastle-poly1305 = { path = "./crypto/poly1305" }
+bouncycastle-pqc = { path = "./crypto/pqc" }
 bouncycastle-ripemd = { path = "./crypto/ripemd" }
 bouncycastle-rng = { path = "./crypto/rng" }
 bouncycastle-sha2 = { path = "./crypto/sha2" }
@@ -104,11 +99,8 @@ bouncycastle-hkdf.workspace = true
 bouncycastle-hmac.workspace = true
 bouncycastle-dhkem.workspace = true
 bouncycastle-hybrid.workspace = true
-bouncycastle-mldsa.workspace = true
-bouncycastle-mldsa-lowmemory.workspace = true
-bouncycastle-mlkem.workspace = true
-bouncycastle-mlkem-lowmemory.workspace = true
 bouncycastle-poly1305.workspace = true
+bouncycastle-pqc.workspace = true
 bouncycastle-ripemd.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-sha2.workspace = true
