@@ -1,5 +1,5 @@
 //! Stack usage of the SHA-1 entry points, and the in-memory sizes printed by `print_struct_sizes`,
-//! the source of the "Memory Usage" tables in the bouncycastle-sha1 crate docs.
+//! the source of the "Memory Usage" tables in the `bouncycastle_digest::sha1` module docs.
 //!
 //! As with Ascon, a call needs a few hundred bytes, below the floor of the process's own start-up
 //! that `bench_aes_mem_usage` describes, so massif cannot see it. The figures in the crate docs

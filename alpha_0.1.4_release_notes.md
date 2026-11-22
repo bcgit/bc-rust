@@ -102,7 +102,7 @@
   `kbkdf-double-pipeline`, `kbkdf-kmac128` and `kbkdf-kmac256` CLI commands.
 * `bouncycastle-dhkem` -- the generic DHKEM is a crate of its own, apart from HPKE, and gains `AuthEncap` and
   `AuthDecap`. Its `_out` functions return the number of bytes written.
-* SHA-1 -- `bouncycastle-sha1`, FIPS 180-4's SHA-1 on the `Hash` traits, for interoperation with what already
+* SHA-1 -- `bouncycastle_digest::sha1`, FIPS 180-4's SHA-1 on the `Hash` traits, for interoperation with what already
   uses it (an older peer's RSA-OAEP hash or MGF1, a fingerprint): not collision resistant, so it is credited with
   no security strength (`SecurityStrength::None`). Checked against NIST's CAVP SHAVS vectors and RFC 3174's; the
   `sha1` CLI command. It does not carry `CollisionResistantHash`, so the RSA signature schemes verify over it and

@@ -90,7 +90,7 @@ fn compress_block(s: &mut [u32; 5], block: &[u8; 64]) {
     s[4] = s[4].wrapping_add(e);
 }
 
-/// SHA-1 (FIPS 180-4 s. 6.1). See the crate docs before using it for anything new.
+/// SHA-1 (FIPS 180-4 s. 6.1). See the module docs before using it for anything new.
 #[derive(Clone)]
 pub struct SHA1 {
     h: Secret<[u32; 5]>,

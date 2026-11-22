@@ -11,7 +11,7 @@
 //! The simplest usage is via the one-shot functions.
 //! ```
 //! use bouncycastle_core::traits::HashOneShot;
-//! use bouncycastle_sha1::SHA1;
+//! use bouncycastle_digest::sha1::SHA1;
 //!
 //! let output: Vec<u8> = SHA1::hash(b"abc");
 //! ```
@@ -20,7 +20,7 @@
 //!
 //! ```
 //! use bouncycastle_core::traits::Hash;
-//! use bouncycastle_sha1::SHA1;
+//! use bouncycastle_digest::sha1::SHA1;
 //!
 //! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F
 //!                     \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F";
@@ -87,10 +87,6 @@
 //! * Message length: FIPS 180-4 permits messages shorter than 2^64 bits, so this implementation
 //!   supports 2^61 - 1 bytes.
 
-#![no_std]
-#![forbid(unsafe_code)]
-#![forbid(missing_docs)]
-
 mod sha1;
 
 pub use self::sha1::{SHA1, SUSPENDED_SHA1_STATE_LEN};
@@ -104,7 +100,7 @@ use bouncycastle_core::traits::{Hash, Suspendable};
 /// Algorithm name string for SHA-1, as used by the factories and CLI.
 pub const SHA1_NAME: &str = "SHA1";
 
-/// SHA-1 is credited with no security strength: see the crate's Security Considerations.
+/// SHA-1 is credited with no security strength: see the module's Security Considerations.
 impl Algorithm for SHA1 {
     const ALG_NAME: &'static str = SHA1_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::None;

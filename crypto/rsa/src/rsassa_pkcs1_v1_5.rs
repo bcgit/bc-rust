@@ -36,7 +36,7 @@ use core::marker::PhantomData;
 /// use bouncycastle_rsa::RSA2048;
 /// use bouncycastle_rsa::keys::RsaPrivateComponents;
 /// use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
-/// use bouncycastle_sha1::SHA1;
+/// use bouncycastle_digest::sha1::SHA1;
 ///
 /// let z = [0u64; 16];
 /// let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&z, &z, &z, &z, &z, 65537).unwrap();

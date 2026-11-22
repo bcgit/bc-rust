@@ -184,7 +184,7 @@ impl<M> UnsaltedPss for NoSalt<M> {}
 /// use bouncycastle_rsa::RSA2048;
 /// use bouncycastle_rsa::keys::RsaPrivateComponents;
 /// use bouncycastle_rsa::rsassa_pss::{Mgf1, RSASSA_PSS};
-/// use bouncycastle_sha1::SHA1;
+/// use bouncycastle_digest::sha1::SHA1;
 ///
 /// type Alg = RSASSA_PSS<RSA2048, SHA1, Mgf1<SHA1, 20>>;
 /// let z = [0u64; 16];
@@ -198,7 +198,7 @@ impl<M> UnsaltedPss for NoSalt<M> {}
 /// use bouncycastle_rsa::RSA2048;
 /// use bouncycastle_rsa::keys::RsaPrivateComponents;
 /// use bouncycastle_rsa::rsassa_pss::{NoSalt, RSASSA_PSS};
-/// use bouncycastle_sha1::SHA1;
+/// use bouncycastle_digest::sha1::SHA1;
 ///
 /// type Alg = RSASSA_PSS<RSA2048, SHA1, NoSalt<SHA1>>;
 /// let z = [0u64; 16];

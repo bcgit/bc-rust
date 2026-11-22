@@ -127,7 +127,7 @@ crypto/<name>/
 
 A family crate holds its primitives as modules, each with the layout it had as a crate:
 `bouncycastle-hybrid` (`crypto/hybrid`: `hpke`), `bouncycastle-digest` (`crypto/digest`: `blake2`,
-`concatkdf`, `pbkdf2`, `ripemd`, `scrypt`, `sm3`, `x963kdf`), `bouncycastle-symmetric`
+`blake3`, `concatkdf`, `pbkdf2`, `ripemd`, `scrypt`, `sha1`, `sm3`, `x963kdf`), `bouncycastle-symmetric`
 (`crypto/symmetric`: `aria`, `ascon`, `camellia`, `chacha20`, `chacha20_poly1305_aead`, `kbkdf`,
 `poly1305`, `sm4`, `tdes`) and `bouncycastle-pqc` (`crypto/pqc`: `mldsa`,
 `mldsa_lowmemory`, `mlkem`, `mlkem_lowmemory`, and the `mldsa_common` / `mlkem_common` modules the

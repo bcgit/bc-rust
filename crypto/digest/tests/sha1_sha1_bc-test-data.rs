@@ -10,8 +10,8 @@
 
 use bouncycastle_core::traits::HashOneShot;
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
+use bouncycastle_digest::sha1::SHA1;
 use bouncycastle_hex as hex;
-use bouncycastle_sha1::SHA1;
 
 /// Splits a `Key = value` line from a `.rsp` file.
 fn kv(line: &str) -> Option<(&str, &str)> {

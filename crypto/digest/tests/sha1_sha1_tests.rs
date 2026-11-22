@@ -11,8 +11,8 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, AlgorithmOID, Hash, HashAlgParams, HashOneShot,
 };
 use bouncycastle_core_test_framework::hash::TestFrameworkHash;
+use bouncycastle_digest::sha1::*;
 use bouncycastle_hex as hex;
-use bouncycastle_sha1::*;
 
 fn h(s: &str) -> Vec<u8> {
     hex::decode(s).unwrap()
