@@ -10,7 +10,6 @@ pub use bouncycastle_digest::concatkdf;
 pub use bouncycastle_digest::pbkdf2;
 pub use bouncycastle_digest::ripemd;
 pub use bouncycastle_digest::scrypt;
-pub use bouncycastle_digest::sha1;
 pub use bouncycastle_digest::sm3;
 pub use bouncycastle_digest::x963kdf;
 pub use bouncycastle_ec as ec;

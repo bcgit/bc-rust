@@ -23,7 +23,7 @@
 use core::hint::black_box;
 
 use bouncycastle::core::traits::{Hash, HashOneShot, Suspendable};
-use bouncycastle::sha1::{SHA1, SUSPENDED_SHA1_STATE_LEN};
+use bouncycastle::digest::sha1::{SHA1, SUSPENDED_SHA1_STATE_LEN};
 
 /// Two full 64-byte blocks and a partial one.
 const MSG_LEN: usize = 150;
