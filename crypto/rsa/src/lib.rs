@@ -298,9 +298,9 @@
 //! | OAEP encaps (SHA-256)      | 12232    | 31816    |
 //! | OAEP decaps (SHA-256)      | 16536    | 59672    |
 //!
-//! All values are in bytes. "On disk" is the `PublicKey`/`PrivateKey` raw
-//! layout ([`keys::RsaPublicKey`]'s and [`keys::RsaPrivateKey`]'s `# Encoding`: `n || e`, and
-//! `p || q || dP || dQ || qInv || e` respectively); "in memory" is `core::mem::size_of`. A
+//! All values are in bytes. "On disk" is the `PublicKey`/`PrivateKey` raw layout
+//! ([`keys::RsaPublicComponents`]'s and [`keys::RsaPrivateComponents`]'s `# Encoding`: `n || e`,
+//! and `p || q || dP || dQ || qInv || e` respectively); "in memory" is `core::mem::size_of`. A
 //! signature is the same size as the modulus itself (`K::K_LEN`: 128/192/256/384/512/1024 for
 //! 1024/1536/2048/3072/4096/8192). These numbers are produced by `mem_usage_benches`'
 //! `bench_rsa_mem_usage` binary's `print_key_sizes()`; that binary is also the stack-usage

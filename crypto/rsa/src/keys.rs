@@ -145,8 +145,9 @@ impl<K: RsaSize> RsaPublicComponents<K> {
 /// The keys' `PrivateKey::encode`/`from_bytes`, at a signing size, use the raw layout
 /// `p || q || dP || dQ || qInv || e`: the five CRT components each `K::K_LEN / 2` big-endian
 /// bytes, then `e` as 8 big-endian bytes, `K::SK_LEN = 5 * K::K_LEN / 2 + 8` in all. Not an
-/// RFC 8017 or ASN.1 format -- see [`RsaPublicKey`]'s `# Encoding` for why -- just a fixed-width
-/// layout that round-trips, for `cli/src/rsa_cmd.rs` to read and write private keys as files.
+/// RFC 8017 or ASN.1 format -- see [`RsaPublicComponents`]'s `# Encoding` for why -- just a
+/// fixed-width layout that round-trips, for `cli/src/rsa_cmd.rs` to read and write private
+/// keys as files.
 /// Decoding validates the components the same way [`Self::from_crt_components`] does.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RsaPrivateComponents<K: RsaSize> {
