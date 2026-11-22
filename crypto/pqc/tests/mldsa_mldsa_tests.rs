@@ -54,6 +54,7 @@ mod mldsa_tests {
     use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
     use bouncycastle_core::hazmat::FixedSeedRNG;
     use bouncycastle_core::hazmat::do_hazardous_operations;
+    use bouncycastle_core::hex;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::signature_key::{
@@ -65,7 +66,6 @@ mod mldsa_tests {
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::signature::*;
-    use bouncycastle_hex as hex;
     use bouncycastle_pqc::mldsa::{
         MLDSA_TR_LEN, MLDSA44, MLDSA44PrivateKey, MLDSA44PrivateKeyExpanded, MLDSA44PublicKey,
         MLDSA44PublicKeyExpanded, MLDSA65, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87,

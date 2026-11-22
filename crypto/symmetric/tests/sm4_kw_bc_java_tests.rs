@@ -9,9 +9,9 @@
 //! own terms.
 
 use bouncycastle_cipher::modes::{KW, KWP};
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
-use bouncycastle_hex as hex;
 use bouncycastle_symmetric::sm4::{KEY_LEN, SM4Key};
 
 /// `KeyParameter(Hex.decode(..))`, the KEK of every case.

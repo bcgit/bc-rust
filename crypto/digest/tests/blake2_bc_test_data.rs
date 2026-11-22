@@ -10,6 +10,7 @@
 
 #[cfg(test)]
 mod bc_test_data {
+    use bouncycastle_core::hex;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
     use bouncycastle_core::symmetric_key::{
         FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey,
@@ -18,7 +19,6 @@ mod bc_test_data {
     use bouncycastle_digest::blake2::{
         BLAKE2b_512, BLAKE2b_512_MACKey, BLAKE2s_256, BLAKE2s_256_MACKey,
     };
-    use bouncycastle_hex as hex;
     use std::fs;
     use std::path::Path;
     use std::sync::Once;

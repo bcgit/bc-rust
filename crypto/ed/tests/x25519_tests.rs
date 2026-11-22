@@ -1,5 +1,6 @@
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::{KeyAgreementError, KeyMaterialError};
+use bouncycastle_core::hex;
 use bouncycastle_core::kdf_params::{KdfDescription, KdfParams, KeyLen};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterial0, KeyMaterial256, KeyMaterialTrait, KeyType,
@@ -12,7 +13,6 @@ use bouncycastle_ed::x25519::{
     HKDF_SHA256_MAX_LEN, POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen,
     keygen_from_seed,
 };
-use bouncycastle_hex as hex;
 use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::SHA256;

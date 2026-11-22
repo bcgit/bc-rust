@@ -22,6 +22,7 @@
 
 use bouncycastle_core::errors::{KEMError, RNGError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
+use bouncycastle_core::hex;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -38,7 +39,6 @@ use bouncycastle_eccdh::dhkem::{
     derive_key_pair,
 };
 use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
-use bouncycastle_hex as hex;
 use bouncycastle_rng::{DefaultRNG, HashDRBG_SHA512};
 use std::collections::HashMap;
 

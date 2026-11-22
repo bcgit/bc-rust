@@ -2,9 +2,9 @@
 //! without the `std` feature, so this file runs in both configurations.
 
 use bouncycastle_core::errors::KDFError;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_digest::scrypt::{SCrypt, ScryptParams};
-use bouncycastle_hex::decode as hex_decode;
 
 #[path = "scrypt_common/mod.rs"]
 mod common;

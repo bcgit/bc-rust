@@ -9,7 +9,7 @@ use bouncycastle_core_test_framework::test_data_loaders::Value;
 use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20Poly1305Key;
 
 pub fn decode(case: &Value, field: &str) -> Vec<u8> {
-    bouncycastle_hex::decode(case[field].as_str().expect(field)).unwrap()
+    bouncycastle_core::hex::decode(case[field].as_str().expect(field)).unwrap()
 }
 
 pub fn key(bytes: &[u8]) -> ChaCha20Poly1305Key {

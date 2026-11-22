@@ -19,8 +19,8 @@
 use bouncycastle_aes::AES_BLOCK_LEN;
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_hex as hex;
 
 /// The four plaintext blocks shared by every F.1 subsection.
 const PLAINTEXTS: [&str; 4] = [

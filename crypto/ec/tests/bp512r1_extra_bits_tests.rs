@@ -5,8 +5,8 @@
 //! this independent-reference pinning matters (a real test gap `cargo mutants` found on that
 //! curve's analogous constant and reduction).
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_ec::hazmat::bp512r1_extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_hex::decode as hex_decode;
 
 fn bytes64(hex: &str) -> [u8; 64] {
     hex_decode(hex).unwrap().try_into().unwrap()

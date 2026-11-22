@@ -3,6 +3,7 @@
 //! entropy accounting, and `Z` as a concatenation.
 
 use bouncycastle_core::errors::KDFError;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashOneShot, KDF};
@@ -12,7 +13,6 @@ use bouncycastle_digest::x963kdf::{
     X963KDF_SHA224, X963KDF_SHA256, X963KDF_SHA256_NAME, X963KDF_SHA384, X963KDF_SHA512,
     X963KDF_SHA512_NAME,
 };
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_sha2::{SHA256, SHA512};
 
 /// CAVP `ansx963_2001.rsp`, `[SHA-256]`, shared secret 192 bits, SharedInfo 128 bits, key data

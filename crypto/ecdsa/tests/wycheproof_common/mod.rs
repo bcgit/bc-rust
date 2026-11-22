@@ -20,6 +20,7 @@
 
 #![allow(dead_code)]
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use bouncycastle_core::traits::PublicKey;
 use bouncycastle_ec::curve::Curve;
@@ -27,7 +28,6 @@ use bouncycastle_ecdsa::der;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
 use bouncycastle_ecdsa::keys::ECDSAPublicKey;
-use bouncycastle_hex::decode as hex_decode;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;

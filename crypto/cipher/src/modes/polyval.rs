@@ -369,7 +369,7 @@ mod tests {
     const ONE: [u8; 16] = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
     fn hex(s: &str) -> Vec<u8> {
-        bouncycastle_hex::decode(s).expect("the lifted values are hex")
+        bouncycastle_core::hex::decode(s).expect("the lifted values are hex")
     }
 
     fn hex16(s: &str) -> [u8; 16] {

@@ -434,7 +434,7 @@ fn bench_mldsa44_sign() {
     //     KeyType::Seed,
     // ).unwrap();
     // let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));
 
     let sk = load_mldsa44_sk();
@@ -461,7 +461,7 @@ fn bench_mldsa44_sign_expanded_sk() {
     //     KeyType::Seed,
     // ).unwrap();
     // let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));
 
     let sk = load_mldsa44_sk();
@@ -504,7 +504,7 @@ fn bench_mldsa44_lowmemory_sign() {
     //     KeyType::Seed,
     // ).unwrap();
     // let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));
 
     let sk = load_mldsa44_lowmemory_sk();
@@ -810,7 +810,7 @@ fn bench_mldsa65_sign() {
     // ).unwrap();
     //
     // let (_pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));
 
     let sk = load_mldsa65_sk();
@@ -838,7 +838,7 @@ fn bench_mldsa65_sign_expanded_sk() {
     // ).unwrap();
     //
     // let (_pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));
 
     let sk = load_mldsa65_sk();
@@ -881,7 +881,7 @@ fn bench_mldsa65_lowmemory_sign() {
     //     KeyType::Seed,
     // ).unwrap();
     // let (_pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));
 
     let sk = load_mldsa65_lowmemory_sk();
@@ -1244,7 +1244,7 @@ fn bench_mldsa87_sign() {
     //     KeyType::Seed,
     // ).unwrap();
     // let (_pk, sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));
 
     let msg = b"The quick brown fox jumped over the lazy dog";
@@ -1272,7 +1272,7 @@ fn bench_mldsa87_sign_expanded_sk() {
     //     KeyType::Seed,
     // ).unwrap();
     // let (_pk, sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));
 
     let msg = b"The quick brown fox jumped over the lazy dog";
@@ -1316,7 +1316,7 @@ fn bench_mldsa87_lowmemory_sign() {
     //     KeyType::Seed,
     // ).unwrap();
     // let (_pk, sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));
 
     let sk = load_mldsa87_lowmemory_sk();

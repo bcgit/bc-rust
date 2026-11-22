@@ -10,6 +10,7 @@
 
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
@@ -18,7 +19,6 @@ use bouncycastle_core::traits::{
     SymmetricCipherEncryptor, XOF,
 };
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use bouncycastle_hex as hex;
 use bouncycastle_symmetric::ascon::AsconCXof128;
 use bouncycastle_symmetric::ascon::AsconHash256;
 use bouncycastle_symmetric::ascon::AsconXof128;

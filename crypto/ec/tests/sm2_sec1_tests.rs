@@ -6,12 +6,12 @@
 //! compressed tags (`0x02`/`0x03`) are exercised. The encodings below were derived from those
 //! coordinates independently in Python via plain big-endian byte packing.
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_ec::hazmat::sm2::Sm2FieldElement;
 use bouncycastle_ec::hazmat::sm2_domain::{G_X_LIMBS, G_Y_LIMBS};
 use bouncycastle_ec::hazmat::sm2_sec1::{
     decode, decode_point, encode_compressed, encode_uncompressed,
 };
-use bouncycastle_hex::decode as hex_decode;
 
 const TWO_G_X: [u64; 4] =
     [0x495c2e1da3f2bd52, 0x9c0dfa08c08a7331, 0x0d58ef57fa73ba4d, 0x56cefd60d7c87c00];

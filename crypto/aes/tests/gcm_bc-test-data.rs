@@ -29,10 +29,10 @@
 mod acvp_gcm_helpers;
 
 use acvp_gcm_helpers::{GCM_NONCE_LEN, run_decrypt_case, run_encrypt_case};
+use bouncycastle_core::hex;
 use bouncycastle_core_test_framework::test_data_loaders::{
     Value, bc_test_data, bc_test_data_json, hex_field,
 };
-use bouncycastle_hex as hex;
 use std::collections::BTreeMap;
 
 const TEST_DATA_DIR: &str = "crypto/aes_tdes_vectors/GCM";

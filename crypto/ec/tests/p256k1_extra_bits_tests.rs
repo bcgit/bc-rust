@@ -5,10 +5,10 @@
 //! this independent-reference pinning matters. Inputs are the 40 bytes (320 bits) `keys_p256k1`
 //! and `ecdsa_p256k1` actually draw, except where a shorter input is the point.
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_ec::hazmat::p256k1_extra_bits::reduce_wide_bits_mod_n_minus_1;
 use bouncycastle_ec::hazmat::p256k1_scalar::N_LIMBS;
 use bouncycastle_ec::hazmat::p256k1_sec1::be_bytes_from_limbs;
-use bouncycastle_hex::decode as hex_decode;
 
 fn bytes32(hex: &str) -> [u8; 32] {
     hex_decode(hex).unwrap().try_into().unwrap()

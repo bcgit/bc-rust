@@ -9,6 +9,7 @@ mod common;
 
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, MACError};
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
@@ -18,7 +19,6 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_digest::ripemd::RIPEMD160;
 use bouncycastle_digest::ripemd::hmac::*;
-use bouncycastle_hex as hex;
 use bouncycastle_hmac::{HMACParams, HmacKey};
 use bouncycastle_rng::HashDRBG_SHA256;
 use common::{arr, test_hmac};

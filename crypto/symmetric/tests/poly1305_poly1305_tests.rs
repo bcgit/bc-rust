@@ -110,7 +110,7 @@ fn final_carry_out_of_h0() {
         (0x3fffffe_u32, "eb25b4d74b68af97d05e2fa1bd5e427b"),
         (0x3ffffff_u32, "01000005000014000050000040010000"),
     ] {
-        let block: [u8; 16] = bouncycastle_hex::decode(block).unwrap().try_into().unwrap();
+        let block: [u8; 16] = bouncycastle_core::hex::decode(block).unwrap().try_into().unwrap();
         let mut key = [0u8; 32];
         key[..4].copy_from_slice(&r0.to_le_bytes());
         let mut mac = key_from_bytes(&key).into_generator();

@@ -7,12 +7,12 @@ mod common;
 
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashOneShot, KDF};
 use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_symmetric::kbkdf::{
     CounterPosition, CounterSize, KDF_Counter, KDF_Counter_HMAC_SHA3_256, KDF_Counter_HMAC_SHA256,

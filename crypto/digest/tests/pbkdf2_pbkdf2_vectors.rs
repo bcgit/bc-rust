@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 fn hex(v: &Value) -> Vec<u8> {
     let s = v.as_str().unwrap();
-    if s.is_empty() { Vec::new() } else { bouncycastle_hex::decode(s).unwrap() }
+    if s.is_empty() { Vec::new() } else { bouncycastle_core::hex::decode(s).unwrap() }
 }
 
 fn derive<H: HMACParams>(password: &[u8], salt: &[u8], iterations: u64, len: usize) -> Vec<u8> {

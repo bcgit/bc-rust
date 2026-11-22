@@ -16,9 +16,9 @@
 //!    for the next COUNT. 100 counts per file. (This differs from the SHA-3 Monte test, which hashes
 //!    only the previous digest.)
 
+use bouncycastle_core::hex;
 use bouncycastle_core::traits::HashOneShot;
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use bouncycastle_hex as hex;
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 
 /// Splits a `Key = value` line from a `.rsp` file.

@@ -144,7 +144,7 @@ fn partial_bits_match_into_squeezer_partial_bits() {
     let mut shake = SHAKE128::new();
     assert_eq!(
         shake.finish_squeezer_partial_bits(&token, 0x10, 4).unwrap().do_output(16),
-        bouncycastle_hex::decode("d40238024b040a954d9c2c89daf480e5").unwrap(),
+        bouncycastle_core::hex::decode("d40238024b040a954d9c2c89daf480e5").unwrap(),
     );
 
     for num_bits in 0..=7usize {

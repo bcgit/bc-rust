@@ -13,13 +13,13 @@
 //! pure-Python RFC 6979) and by OpenSSL 4.0.2's deterministic ECDSA (through the cryptography
 //! 50.0.1 bindings), which also anchors the curve constants a second way.
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ec::Bp384r1;
 use bouncycastle_ec::hazmat::bp384r1_comb::comb_multiply_base_point;
 use bouncycastle_ec::hazmat::bp384r1_scalar::Bp384r1Scalar;
 use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_sha2::SHA384;
 
 struct Vector {

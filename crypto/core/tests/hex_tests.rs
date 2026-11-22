@@ -1,5 +1,8 @@
-use bouncycastle_hex as hex;
-use bouncycastle_hex::HexError;
+// Through the allocating forms.
+#![cfg(feature = "std")]
+
+use bouncycastle_core::hex;
+use bouncycastle_core::hex::HexError;
 
 #[test]
 fn encode_test() {

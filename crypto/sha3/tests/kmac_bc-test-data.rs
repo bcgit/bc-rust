@@ -5,13 +5,13 @@
 //! `crypto/sp800-185/`. If it is not present the tests print a warning and pass vacuously.
 
 use bouncycastle_core::hazmat::finish_token;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::MacGenerationKey;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
-use bouncycastle_hex as hex;
 use bouncycastle_sha3::kmac::{KMAC128Key, KMAC256Key, KMACXOF128, KMACXOF256};
 
 const TEST_DATA_DIR: &str = "crypto/sp800-185";

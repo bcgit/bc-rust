@@ -42,12 +42,12 @@ fn parse(content: &str) -> Vec<Record> {
         let (k, v) = (k.trim(), v.trim());
         match k {
             "COUNT" => count = Some(v.to_string()),
-            "Z" => z = Some(bouncycastle_hex::decode(v).unwrap()),
+            "Z" => z = Some(bouncycastle_core::hex::decode(v).unwrap()),
             "SharedInfo" => {
                 info = Some(if v.is_empty() {
                     Vec::new()
                 } else {
-                    bouncycastle_hex::decode(v).unwrap()
+                    bouncycastle_core::hex::decode(v).unwrap()
                 })
             }
             "key_data" => out.push(Record {
@@ -55,7 +55,7 @@ fn parse(content: &str) -> Vec<Record> {
                 count: count.take().unwrap(),
                 z: z.take().unwrap(),
                 shared_info: info.take().unwrap(),
-                key_data: bouncycastle_hex::decode(v).unwrap(),
+                key_data: bouncycastle_core::hex::decode(v).unwrap(),
             }),
             _ => {}
         }

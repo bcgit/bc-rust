@@ -5,6 +5,23 @@
 //! while [`decode`] takes a String (which can be in any bytes-like container)
 //! and returns a `Vec<u8>`.
 //!
+//! Every function also has an `_out` form that writes into the caller's buffer and returns the
+//! number of bytes written ([`encode_out`], [`decode_out`], and `do_update_out` / `do_final_out`
+//! on the streaming types), with `_out_len` functions giving the buffer size needed. Those need
+//! no allocator; the forms that return a `String` or a `Vec` need the `std` feature.
+//!
+//! ```
+//! use bouncycastle_core::base64 as base64;
+//!
+//! let mut b64 = [0u8; 20];
+//! let n = base64::encode_out(b"Hello, World!", &mut b64).unwrap();
+//! assert_eq!(&b64[..n], b"SGVsbG8sIFdvcmxkIQ==");
+//!
+//! let mut bytes = [0u8; 15];
+//! let n = base64::decode_out(&b64[..n], &mut bytes).unwrap();
+//! assert_eq!(&bytes[..n], b"Hello, World!");
+//! ```
+//!
 //!```
 //! use bouncycastle_core::base64 as base64;
 //!
@@ -85,13 +102,53 @@
 use bouncycastle_utils::ct::Condition;
 
 /// One-shot encode from bytes to a base64-encoded string using a constant-time implementation.
+///
+/// Only available with the `std` feature.
+#[cfg(feature = "std")]
 pub fn encode<T: AsRef<[u8]>>(input: T) -> String {
-    Base64Encoder::new().do_final(input)
+    let input = input.as_ref();
+    let mut out = vec![0u8; encode_out_len(input.len())];
+    let n = encode_out(input, &mut out).expect("the buffer is encode_out_len long");
+    out.truncate(n);
+    String::from_utf8(out).expect("base64 output is ASCII")
+}
+
+/// As [`encode`], into `out`, which is zeroized first and must be at least
+/// [`encode_out_len`]`(input.len())` long. Returns the number of bytes written.
+pub fn encode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, Base64Error> {
+    Base64Encoder::new().do_final_out(input, out)
+}
+
+/// The length of the base64 encoding of `input_len` bytes, padding included: what [`encode_out`]
+/// writes and needs.
+pub const fn encode_out_len(input_len: usize) -> usize {
+    // Saturating, so that a length too large to represent fails the buffer check.
+    input_len.div_ceil(3).saturating_mul(4)
 }
 
 /// One-shot decode from a base64-encoded string to bytes using a constant-time implementation.
+///
+/// Only available with the `std` feature.
+#[cfg(feature = "std")]
 pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, Base64Error> {
-    Base64Decoder::new(true).do_final(input)
+    let input = input.as_ref();
+    let mut out = vec![0u8; decode_out_len(input.len())];
+    let n = decode_out(input, &mut out)?;
+    out.truncate(n);
+    Ok(out)
+}
+
+/// As [`decode`], into `out`, which is zeroized first and must be at least
+/// [`decode_out_len`]`(input.len())` long. Returns the number of bytes written. On an error `out`
+/// is left zeroized.
+pub fn decode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, Base64Error> {
+    Base64Decoder::new(true).do_final_out(input, out)
+}
+
+/// An upper bound on what [`decode_out`] writes for `input_len` characters of input, and so the
+/// buffer it needs. Padding and skipped whitespace make the actual output shorter.
+pub const fn decode_out_len(input_len: usize) -> usize {
+    Base64Decoder::final_len_bound(0, input_len)
 }
 
 /// Return type for errors relating to Base64 encoding and decoding.
@@ -114,6 +171,11 @@ pub enum Base64Error {
 
     /// The input ended one symbol into a block: six bits, which encode no whole byte.
     TruncatedInput,
+
+    /// The output buffer of an `_out` function is shorter than its `_out_len` function asks for.
+    /// No input was processed; after a `do_update_out` the encoder or decoder is as it was before
+    /// the call.
+    InsufficientOutputBufferSize,
 }
 
 /// The stateful base64 encoder that supports streaming.
@@ -153,50 +215,105 @@ impl Base64Encoder {
 
     /// Streaming API that performs Base64 encoding of the provided input, but does not apply
     /// the final padding and will hold an incomplete block while waiting for more input.
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
     pub fn do_update<T: AsRef<[u8]>>(&mut self, input: T) -> String {
-        let inref = input.as_ref();
-        let mut out: Vec<u8> = Vec::with_capacity(inref.len() * 4 / 3 + 4);
-        let mut out_buf: [u8; 4] = [0; 4];
+        let input = input.as_ref();
+        let mut out = vec![0u8; self.update_out_len(input.len())];
+        let n = self.do_update_out(input, &mut out).expect("the buffer is update_out_len long");
+        out.truncate(n);
+        String::from_utf8(out).expect("base64 output is ASCII")
+    }
 
-        for i in 0..inref.len() {
-            self.buf[self.vals_in_buf] = inref[i];
+    /// As [`do_update`](Self::do_update), into `out`, which is zeroized first and must be at
+    /// least [`update_out_len`](Self::update_out_len)`(input.len())` long. Returns the number of
+    /// bytes written.
+    pub fn do_update_out<T: AsRef<[u8]>>(
+        &mut self,
+        input: T,
+        out: &mut [u8],
+    ) -> Result<usize, Base64Error> {
+        out.fill(0);
+        let inref = input.as_ref();
+        if out.len() < self.update_out_len(inref.len()) {
+            return Err(Base64Error::InsufficientOutputBufferSize);
+        }
+
+        let mut written = 0;
+        for &b in inref {
+            self.buf[self.vals_in_buf] = b;
             self.vals_in_buf += 1;
 
             if self.vals_in_buf == 3 {
-                // process a block
-                Self::encode_block(&self.buf, &mut out_buf);
-                out.append(&mut out_buf.to_vec());
+                Self::encode_block(&self.buf, &mut out[written..written + 4]);
+                written += 4;
                 self.vals_in_buf = 0;
             }
         }
+        Ok(written)
+    }
 
-        String::from_utf8(out).unwrap()
+    /// What [`do_update_out`](Self::do_update_out) writes for `input_len` more bytes: four
+    /// characters for every complete block, counting the bytes this encoder already holds.
+    pub fn update_out_len(&self, input_len: usize) -> usize {
+        (self.vals_in_buf.saturating_add(input_len) / 3).saturating_mul(4)
     }
 
     /// As you would expect, do_final() consumes the object along with a final block.
     /// do_final may be called with the entire content; ie without any do_update's before it.
-    pub fn do_final<T: AsRef<[u8]>>(mut self, input: T) -> String {
-        let mut out = self.do_update(input);
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
+    pub fn do_final<T: AsRef<[u8]>>(self, input: T) -> String {
+        let input = input.as_ref();
+        let mut out = vec![0u8; self.final_out_len(input.len())];
+        let n = self.do_final_out(input, &mut out).expect("the buffer is final_out_len long");
+        out.truncate(n);
+        String::from_utf8(out).expect("base64 output is ASCII")
+    }
+
+    /// As [`do_final`](Self::do_final), into `out`, which is zeroized first and must be at least
+    /// [`final_out_len`](Self::final_out_len)`(input.len())` long. Returns the number of bytes
+    /// written. On [`Base64Error::InsufficientOutputBufferSize`] the encoder is consumed and
+    /// nothing is written.
+    pub fn do_final_out<T: AsRef<[u8]>>(
+        mut self,
+        input: T,
+        out: &mut [u8],
+    ) -> Result<usize, Base64Error> {
+        out.fill(0);
+        let input = input.as_ref();
+        if out.len() < self.final_out_len(input.len()) {
+            return Err(Base64Error::InsufficientOutputBufferSize);
+        }
+        let mut written = self.do_update_out(input, out)?;
 
         // pad the last block.
         if self.vals_in_buf != 0 {
-            let mut out_buf: [u8; 4] = [0; 4];
             if self.vals_in_buf == 1 {
                 self.buf[1] = 0;
             }
             if self.vals_in_buf <= 2 {
                 self.buf[2] = 0;
             }
-            Self::encode_block(&self.buf, &mut out_buf);
+            let block = &mut out[written..written + 4];
+            Self::encode_block(&self.buf, block);
             if self.vals_in_buf <= 2 {
-                out_buf[3] = b'=';
+                block[3] = b'=';
             }
             if self.vals_in_buf == 1 {
-                out_buf[2] = b'=';
+                block[2] = b'=';
             }
-            out.push_str(std::str::from_utf8(&out_buf).unwrap());
+            written += 4;
         }
-        out
+        Ok(written)
+    }
+
+    /// What [`do_final_out`](Self::do_final_out) writes for `input_len` more bytes: the encoding
+    /// of everything this encoder holds and is given, padding included.
+    pub fn final_out_len(&self, input_len: usize) -> usize {
+        encode_out_len(self.vals_in_buf.saturating_add(input_len))
     }
 
     fn encode_block<T: AsRef<[u8]>>(input: T, out: &mut [u8]) {
@@ -257,25 +374,77 @@ impl Base64Decoder {
         ret as u8
     }
 
-    /// Streaming API that performs Base64 encoding of the provided input, but does not apply
-    /// the final padding and will hold an incomplete block while waiting for more input.
-    pub fn do_update<T: AsRef<[u8]>>(&mut self, input: T) -> Result<Vec<u8>, Base64Error> {
-        self.decode_internal(input, true).map(|(out, _)| out)
+    /// Three bytes for every complete block of four symbols among `held` already held and
+    /// `input_len` more, counting every input character as a symbol: an upper bound, since
+    /// whitespace and padding are not symbols.
+    const fn decoded_len_bound(held: usize, input_len: usize) -> usize {
+        held.saturating_add(input_len) / 4 * 3
     }
 
-    /// Decodes up to the first padding character, returning the output and, if there was one, the
-    /// padding character's index.
-    fn decode_internal<T: AsRef<[u8]>>(
+    /// As [`decoded_len_bound`](Self::decoded_len_bound), with what a last partial block of two
+    /// or three symbols decodes to (one or two bytes).
+    const fn final_len_bound(held: usize, input_len: usize) -> usize {
+        Self::decoded_len_bound(held, input_len)
+            + (held.saturating_add(input_len) % 4).saturating_sub(1)
+    }
+
+    /// Streaming API that decodes the provided Base64 input, holding an incomplete block of
+    /// symbols while waiting for more input. Padding is for [`do_final`](Self::do_final).
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
+    pub fn do_update<T: AsRef<[u8]>>(&mut self, input: T) -> Result<Vec<u8>, Base64Error> {
+        let input = input.as_ref();
+        let mut out = vec![0u8; self.update_out_len(input.len())];
+        let n = self.do_update_out(input, &mut out)?;
+        out.truncate(n);
+        Ok(out)
+    }
+
+    /// As [`do_update`](Self::do_update), into `out`, which is zeroized first and must be at
+    /// least [`update_out_len`](Self::update_out_len)`(input.len())` long. Returns the number of
+    /// bytes written. On an error `out` is left zeroized; on
+    /// [`Base64Error::PaddingEncounteredDuringDoUpdate`] and
+    /// [`Base64Error::InsufficientOutputBufferSize`] the decoder is as it was before the call.
+    pub fn do_update_out<T: AsRef<[u8]>>(
         &mut self,
         input: T,
+        out: &mut [u8],
+    ) -> Result<usize, Base64Error> {
+        out.fill(0);
+        let input = input.as_ref();
+        if out.len() < self.update_out_len(input.len()) {
+            return Err(Base64Error::InsufficientOutputBufferSize);
+        }
+        match self.decode_internal(input, true, out) {
+            Ok((written, _)) => Ok(written),
+            Err(e) => {
+                out.fill(0);
+                Err(e)
+            }
+        }
+    }
+
+    /// An upper bound on what [`do_update_out`](Self::do_update_out) writes for `input_len` more
+    /// characters, and so the buffer it needs.
+    pub fn update_out_len(&self, input_len: usize) -> usize {
+        Self::decoded_len_bound(self.vals_in_buf, input_len)
+    }
+
+    /// Decodes up to the first padding character into `out`, which the caller has sized by
+    /// [`decoded_len_bound`](Self::decoded_len_bound), returning the number of bytes written and,
+    /// if there was one, the padding character's index.
+    fn decode_internal(
+        &mut self,
+        inref: &[u8],
         rollback_if_padding: bool,
-    ) -> Result<(Vec<u8>, Option<usize>), Base64Error> {
+        out: &mut [u8],
+    ) -> Result<(usize, Option<usize>), Base64Error> {
         // copy the current state so that we can restore it if we encounter a padding character.
-        let starting_state: [u8; 4] = self.buf.clone();
+        let starting_state: [u8; 4] = self.buf;
         let starting_vals_in_block: usize = self.vals_in_buf;
 
-        let inref = input.as_ref();
-        let mut out: Vec<u8> = vec![];
+        let mut written: usize = 0;
 
         let mut i: usize = 0;
         while i < inref.len() {
@@ -303,7 +472,7 @@ impl Base64Decoder {
                     self.vals_in_buf = starting_vals_in_block;
                     return Err(Base64Error::PaddingEncounteredDuringDoUpdate);
                 }
-                return Ok((out, Some(i)));
+                return Ok((written, Some(i)));
             }
 
             i += 1;
@@ -312,15 +481,16 @@ impl Base64Decoder {
             // here, it can be assumed that the buffer contains no padding.
             if self.vals_in_buf == 4 {
                 // decode block
-                out.push(self.buf[0] << 2 | self.buf[1] >> 4);
-                out.push(self.buf[1] << 4 | self.buf[2] >> 2);
-                out.push(self.buf[2] << 6 | self.buf[3]);
+                out[written] = self.buf[0] << 2 | self.buf[1] >> 4;
+                out[written + 1] = self.buf[1] << 4 | self.buf[2] >> 2;
+                out[written + 2] = self.buf[2] << 6 | self.buf[3];
+                written += 3;
                 self.vals_in_buf = 0;
                 continue;
             }
         }
 
-        Ok((out, None))
+        Ok((written, None))
     }
 
     /// As can be expected, do_final() consumes the object.
@@ -329,10 +499,47 @@ impl Base64Decoder {
     /// three symbols of a block, and may be followed only by the rest of that padding (and
     /// whitespace, when it is skipped): anything else is [`Base64Error::InvalidPadding`]. Input
     /// ending one symbol into a block is [`Base64Error::TruncatedInput`].
-    pub fn do_final<T: AsRef<[u8]>>(mut self, input: T) -> Result<Vec<u8>, Base64Error> {
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
+    pub fn do_final<T: AsRef<[u8]>>(self, input: T) -> Result<Vec<u8>, Base64Error> {
         let input = input.as_ref();
+        let mut out = vec![0u8; self.final_out_len(input.len())];
+        let n = self.do_final_out(input, &mut out)?;
+        out.truncate(n);
+        Ok(out)
+    }
+
+    /// As [`do_final`](Self::do_final), into `out`, which is zeroized first and must be at least
+    /// [`final_out_len`](Self::final_out_len)`(input.len())` long. Returns the number of bytes
+    /// written. On an error `out` is left zeroized.
+    pub fn do_final_out<T: AsRef<[u8]>>(
+        self,
+        input: T,
+        out: &mut [u8],
+    ) -> Result<usize, Base64Error> {
+        out.fill(0);
+        let input = input.as_ref();
+        if out.len() < self.final_out_len(input.len()) {
+            return Err(Base64Error::InsufficientOutputBufferSize);
+        }
+        let result = self.finish_into(input, out);
+        if result.is_err() {
+            out.fill(0);
+        }
+        result
+    }
+
+    /// An upper bound on what [`do_final_out`](Self::do_final_out) writes for `input_len` more
+    /// characters, and so the buffer it needs: the complete blocks, and one or two bytes for a
+    /// last partial block of two or three symbols.
+    pub fn final_out_len(&self, input_len: usize) -> usize {
+        Self::final_len_bound(self.vals_in_buf, input_len)
+    }
+
+    fn finish_into(mut self, input: &[u8], out: &mut [u8]) -> Result<usize, Base64Error> {
         // process as much as we can the usual way.
-        let (mut out, pad_at) = match self.decode_internal(input, false) {
+        let (mut written, pad_at) = match self.decode_internal(input, false, out) {
             Ok(decoded) => decoded,
             Err(Base64Error::PaddingEncounteredDuringDoUpdate) => {
                 unreachable!(
@@ -368,13 +575,17 @@ impl Base64Decoder {
             0 => {}
             // Six bits encode no whole byte.
             1 => return Err(Base64Error::TruncatedInput),
-            2 => out.push(self.buf[0] << 2 | self.buf[1] >> 4),
+            2 => {
+                out[written] = self.buf[0] << 2 | self.buf[1] >> 4;
+                written += 1;
+            }
             _ => {
-                out.push(self.buf[0] << 2 | self.buf[1] >> 4);
-                out.push(self.buf[1] << 4 | self.buf[2] >> 2);
+                out[written] = self.buf[0] << 2 | self.buf[1] >> 4;
+                out[written + 1] = self.buf[1] << 4 | self.buf[2] >> 2;
+                written += 2;
             }
         }
 
-        Ok(out)
+        Ok(written)
     }
 }

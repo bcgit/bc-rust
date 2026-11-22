@@ -12,13 +12,13 @@
 //! `ikmE[i] = (0xA5 + 7 * set + 3 * i) mod 256`, 48 bytes each; `enc` and `shared_secret` are
 //! BC Java's `Encap(pkR)` under the ephemeral key `DeriveKeyPair(ikmE)`.
 
+use bouncycastle_core::hex;
 use bouncycastle_core::kem_key::DecapsulatingKey;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ec::P384;
 use bouncycastle_eccdh::dhkem::derive_key_pair;
 use bouncycastle_eccdh::keys::ECCDHPrivateKey;
-use bouncycastle_hex as hex;
 
 struct Vector {
     ikm_r: &'static str,

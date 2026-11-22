@@ -8,10 +8,10 @@
 use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::CMAC;
 use bouncycastle_core::errors::MACError;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::MACVerifier;
-use bouncycastle_hex as hex;
 use bouncycastle_symmetric::tdes::BLOCK_LEN;
 use bouncycastle_symmetric::tdes::hazmat::{TDES2Internal, TDESInternal};
 

@@ -249,7 +249,7 @@
 //! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
-//! use bouncycastle_hex as hex;
+//! use bouncycastle_core::hex as hex;
 //! use bouncycastle_pqc::mldsa_lowmemory::{MLDSA44, MLDSA44_SIG_LEN, MLDSATrait, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";

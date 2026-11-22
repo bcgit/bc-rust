@@ -66,7 +66,7 @@ pub fn hex_field(fields: &BTreeMap<String, String>, key: &str, width: usize) -> 
     let hex = fields.get(key).unwrap_or_else(|| panic!("record missing field {key}"));
     let hex = if hex.len() % 2 == 1 { format!("0{hex}") } else { hex.clone() };
     let bytes =
-        bouncycastle_hex::decode(&hex).unwrap_or_else(|e| panic!("bad hex in {key}: {e:?}"));
+        bouncycastle_core::hex::decode(&hex).unwrap_or_else(|e| panic!("bad hex in {key}: {e:?}"));
     let bytes = if bytes.len() > width {
         let (excess, rest) = bytes.split_at(bytes.len() - width);
         assert!(excess.iter().all(|b| *b == 0), "{key} is wider than {width} bytes");

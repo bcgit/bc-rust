@@ -755,7 +755,7 @@ fn bench_mlkem512_encaps() {
     // ).unwrap();
 
     // let (pk, _sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("pk:\n{}", &hex::encode(pk.encode()));
 
     let pk = load_mlkem512_pk();
@@ -842,7 +842,7 @@ fn bench_mlkem512_lowmemory_encaps() {
     // ).unwrap();
 
     // let (pk, _sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("pk:\n{}", &hex::encode(pk.encode()));
 
     let pk = load_mlkem512_lowmemory_pk();
@@ -873,7 +873,7 @@ fn bench_mlkem768_encaps() {
     // ).unwrap();
     //
     // let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("pk:\n{}", &hex::encode(pk.encode()));
 
     let pk = load_mlkem768_pk();
@@ -985,7 +985,7 @@ fn bench_mlkem768_lowmemory_encaps() {
     // ).unwrap();
     //
     // let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("pk:\n{}", &hex::encode(pk.encode()));
 
     let pk = load_mlkem768_lowmemory_pk();
@@ -1016,7 +1016,7 @@ fn bench_mlkem1024_encaps() {
     // ).unwrap();
     //
     // let (pk, _sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("pk:\n{}", &hex::encode(pk.encode()));
 
     let pk = load_mlkem1024_pk();
@@ -1154,7 +1154,7 @@ fn bench_mlkem1024_lowmemory_encaps() {
     // ).unwrap();
     //
     // let (pk, _sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("pk:\n{}", &hex::encode(pk.encode()));
 
     let pk = load_mlkem1024_lowmemory_pk();
@@ -1296,7 +1296,7 @@ fn bench_mlkem512_decaps() {
     // let seed = KeyMaterial512::from_bytes_as_type(&seed_bytes, KeyType::Seed).unwrap();
     // let (pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
     // let (_ss, ct) = pk.encaps_with_randomness([1u8; 32]);
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));   // MLKEM512_KAT_SK
 
@@ -1338,7 +1338,7 @@ fn bench_mlkem512_lowmemory_decaps() {
     /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let (pk, _sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
     // let (_ss, ct) = pk.encaps_with_randomness([1u8; 32]);
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
 
     let ct: [u8; MLKEM512_CT_LEN] = [
@@ -1578,7 +1578,7 @@ fn bench_mlkem768_decaps() {
     // let seed = KeyMaterial512::from_bytes_as_type(&seed_bytes, KeyType::Seed).unwrap();
     // let (pk, sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
     // let (_ss, ct) = pk.encaps_with_randomness([1u8; 32]);
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));   // MLKEM768_KAT_SK
 
@@ -1620,7 +1620,7 @@ fn bench_mlkem768_lowmemory_decaps() {
     /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
     // let (_ss, ct) = pk.encaps_with_randomness([1u8; 32]);
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
 
     let ct: [u8; MLKEM768_CT_LEN] = [
@@ -1929,7 +1929,7 @@ fn bench_mlkem1024_decaps() {
     // let seed = KeyMaterial512::from_bytes_as_type(&seed_bytes, KeyType::Seed).unwrap();
     // let (pk, sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
     // let (_ss, ct) = pk.encaps_with_randomness([1u8; 32]);
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));   // MLKEM1024_KAT_SK
 
@@ -1971,7 +1971,7 @@ fn bench_mlkem1024_lowmemory_decaps() {
     /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let (pk, _sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
     // let (_ss, ct) = pk.encaps_with_randomness([1u8; 32]);
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
 
     let ct: [u8; MLKEM1024_CT_LEN] = [
@@ -2169,7 +2169,7 @@ fn bench_mlkem512_encaps_expanded_pk() {
     // ).unwrap();
 
     // let (pk, _sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("pk:\n{}", &hex::encode(pk.encode()));
 
     let pk = load_mlkem512_pk();
@@ -2191,7 +2191,7 @@ fn bench_mlkem512_decaps_expanded_sk() {
     /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let (pk, _sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
     // let (_ss, ct) = pk.encaps_with_randomness([1u8; 32]);
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
 
     let sk = load_mlkem512_sk();
@@ -2216,7 +2216,7 @@ fn bench_mlkem768_encaps_expanded_pk() {
     // ).unwrap();
     //
     // let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("pk:\n{}", &hex::encode(pk.encode()));
 
     let pk = load_mlkem768_pk();
@@ -2238,7 +2238,7 @@ fn bench_mlkem768_decaps_expanded_sk() {
     /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
     // let (_ss, ct) = pk.encaps_with_randomness([1u8; 32]);
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
 
     let sk = load_mlkem768_sk();
@@ -2263,7 +2263,7 @@ fn bench_mlkem1024_encaps_expanded_pk() {
     // ).unwrap();
     //
     // let (pk, _sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("pk:\n{}", &hex::encode(pk.encode()));
 
     let pk = load_mlkem1024_pk();
@@ -2285,7 +2285,7 @@ fn bench_mlkem1024_decaps_expanded_sk() {
     /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let (pk, _sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
     // let (_ss, ct) = pk.encaps_with_randomness([1u8; 32]);
-    // use bouncycastle_hex as hex;
+    // use bouncycastle_core::hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
 
     let sk = load_mlkem1024_sk();

@@ -65,7 +65,7 @@
 //! use bouncycastle_core::kem_key::EncapsulatingKey;
 //! use bouncycastle_core::errors::KEMError;
 //! use bouncycastle_core::key_material::{KeyMaterial512, KeyType};
-//! use bouncycastle_hex as hex;
+//! use bouncycastle_core::hex as hex;
 //!
 //! let seed = KeyMaterial512::from_bytes_as_type(
 //!     &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f

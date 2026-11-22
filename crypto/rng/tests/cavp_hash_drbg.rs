@@ -10,10 +10,10 @@
 //! A missing `bc-test-data` checkout skips these with the loader's warning, as the other crates'
 //! CAVP suites do.
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::hazmat::NewUninitialized;
 use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512, Sp80090ADrbg};
 

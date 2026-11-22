@@ -560,7 +560,7 @@ pub(crate) fn deserialize_sha3_family_state(
 #[cfg(test)]
 mod keccak_tests {
     use super::*;
-    use bouncycastle_hex as hex;
+    use bouncycastle_core::hex;
 
     /// Basic sponge sanity: absorbing in one chunk or many gives the same output, successive
     /// squeezes continue the stream (do not repeat), and different capacities give different output.

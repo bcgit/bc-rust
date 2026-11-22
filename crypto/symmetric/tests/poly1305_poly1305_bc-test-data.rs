@@ -10,7 +10,8 @@ fn rfc8439_poly1305_including_reduction_edge_cases() {
     let cases = document["tests"].as_array().unwrap();
     assert_eq!(cases.len(), 12);
     for case in cases {
-        let decode = |field: &str| bouncycastle_hex::decode(case[field].as_str().unwrap()).unwrap();
+        let decode =
+            |field: &str| bouncycastle_core::hex::decode(case[field].as_str().unwrap()).unwrap();
         let key: [u8; 32] = decode("key").try_into().unwrap();
         let msg = decode("msg");
         let tag: [u8; 16] = decode("tag").try_into().unwrap();

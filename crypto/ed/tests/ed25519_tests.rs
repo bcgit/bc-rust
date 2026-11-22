@@ -257,7 +257,7 @@ fn ed25519_rejects_what_was_not_signed() {
 #[test]
 fn s_not_below_the_group_order_is_rejected() {
     let (pk, sk) = key_pair().unwrap();
-    let l = bouncycastle_hex::decode(L).unwrap();
+    let l = bouncycastle_core::hex::decode(L).unwrap();
     for (name, sig) in [("Ed25519", sign(&sk, MSG)), ("Ed25519ph", sign_ph(&sk, MSG, None))] {
         let mut malleated = sig;
         let mut carry = 0u16;
@@ -311,11 +311,12 @@ const R_Y_IS_P: &str = concat!(
 #[test]
 fn a_small_order_r_is_accepted_only_canonically_encoded() {
     let pk =
-        Ed25519PublicKey::from_bytes(&bouncycastle_hex::decode(RFC8032_TEST1_PK).unwrap()).unwrap();
-    let zero_r = bouncycastle_hex::decode(ZERO_R).unwrap();
+        Ed25519PublicKey::from_bytes(&bouncycastle_core::hex::decode(RFC8032_TEST1_PK).unwrap())
+            .unwrap();
+    let zero_r = bouncycastle_core::hex::decode(ZERO_R).unwrap();
     assert_eq!(verify(&pk, b"cofactored", &zero_r), Ok(()));
     assert_eq!(verify(&pk, b"cofactoreD", &zero_r), FAILED);
-    let r_y_is_p = bouncycastle_hex::decode(R_Y_IS_P).unwrap();
+    let r_y_is_p = bouncycastle_core::hex::decode(R_Y_IS_P).unwrap();
     assert_eq!(verify(&pk, b"cofactored", &r_y_is_p), FAILED);
 }
 
@@ -359,11 +360,11 @@ const ED25519PH_CONTEXTS: &[(&str, &str)] = &[
 fn ed25519ph_known_answers_with_a_context() {
     // RFC 8032 Section 7.3: the secret key, and the message "abc".
     let sk = "833fe62409237b9d62ec77587520911e9a759cec1d19755b7da901b96dca3d42";
-    let sk = Ed25519PrivateKey::from_bytes(&bouncycastle_hex::decode(sk).unwrap()).unwrap();
+    let sk = Ed25519PrivateKey::from_bytes(&bouncycastle_core::hex::decode(sk).unwrap()).unwrap();
     let pk = sk.pk().unwrap();
     for (ctx, sig) in ED25519PH_CONTEXTS {
-        let ctx = bouncycastle_hex::decode(ctx).unwrap();
-        let sig = bouncycastle_hex::decode(sig).unwrap();
+        let ctx = bouncycastle_core::hex::decode(ctx).unwrap();
+        let sig = bouncycastle_core::hex::decode(sig).unwrap();
         assert_eq!(sign_ph(&sk, b"abc", Some(&ctx))[..], sig[..], "context of {}", ctx.len());
         assert_eq!(verify_ph(&pk, b"abc", Some(&ctx), &sig), Ok(()));
     }

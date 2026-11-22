@@ -2,6 +2,7 @@
 mod hash_mldsa_tests {
     use bouncycastle_core::errors::SignatureError;
     use bouncycastle_core::hazmat::FixedSeedRNG;
+    use bouncycastle_core::hex;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::signature_key::{
@@ -10,7 +11,6 @@ mod hash_mldsa_tests {
     };
     use bouncycastle_core::traits::{HashOneShot, SignatureSigner, SignatureVerifier};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
-    use bouncycastle_hex as hex;
     use bouncycastle_pqc::mldsa::{
         HashMLDSA44_with_SHA256, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512,
         HashMLDSA87_with_SHA512, MLDSA44, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65,

@@ -1339,7 +1339,7 @@ mod tests {
     ];
 
     fn bytes32(hex: &str) -> [u8; 32] {
-        bouncycastle_hex::decode(hex).unwrap().try_into().unwrap()
+        bouncycastle_core::hex::decode(hex).unwrap().try_into().unwrap()
     }
 
     /// The canonical encoding of a value.
