@@ -133,6 +133,7 @@
 //!   and SHA-512/t. This implementation supports 2^61 - 1 bytes for SHA-224/256 (the standard's
 //!   limit) and 2^64 - 1 bytes (2^67 bits) for the SHA-512 family, its byte counter's range.
 
+#![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
