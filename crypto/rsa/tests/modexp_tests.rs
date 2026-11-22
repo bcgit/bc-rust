@@ -13,7 +13,7 @@ use bouncycastle_rsa::modexp::{
 /// variable-time one for a public modulus: every known answer below holds under both.
 fn both_contexts<const L: usize>(n: &[u64; L]) -> [MontgomeryContext<L>; 2] {
     [
-        MontgomeryContext::for_secret_modulus(n).expect("modulus is odd"),
+        MontgomeryContext::for_secret_modulus(n),
         MontgomeryContext::for_public_modulus(n).expect("modulus is odd"),
     ]
 }
@@ -240,13 +240,12 @@ fn public_exponent_agrees_with_the_ladder() {
 }
 
 /// An even modulus is never valid for Montgomery reduction; RSA moduli are always odd, so this
-/// is purely a defensive boundary check.
+/// is purely a defensive boundary check, and the public-modulus constructor's alone: the
+/// secret-modulus one takes oddness as its caller's and does not branch on it.
 #[test]
 fn even_modulus_is_rejected() {
     let n: [u64; 1] = [4];
-    assert!(MontgomeryContext::<1>::for_secret_modulus(&n).is_none());
     assert!(MontgomeryContext::<1>::for_public_modulus(&n).is_none());
-    assert!(MontgomeryContext::<1>::for_secret_modulus(&[0]).is_none());
     assert!(MontgomeryContext::<1>::for_public_modulus(&[0]).is_none());
 }
 

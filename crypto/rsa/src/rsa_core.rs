@@ -136,11 +136,10 @@ pub(crate) fn crt_exp<
     m: &[u64; L],
 ) -> [u64; L] {
     let mut ctx_p = Secret::<MontgomeryContext<HALF>>::new();
-    *ctx_p = MontgomeryContext::<HALF>::for_secret_modulus(p)
-        .expect("RsaPrivateComponents::from_crt_components already validated p is odd and nonzero");
+    // Odd, as `for_secret_modulus` needs: `RsaPrivateComponents::from_crt_components` checked.
+    *ctx_p = MontgomeryContext::<HALF>::for_secret_modulus(p);
     let mut ctx_q = Secret::<MontgomeryContext<HALF>>::new();
-    *ctx_q = MontgomeryContext::<HALF>::for_secret_modulus(q)
-        .expect("RsaPrivateComponents::from_crt_components already validated q is odd and nonzero");
+    *ctx_q = MontgomeryContext::<HALF>::for_secret_modulus(q);
     // Step 2.b.i: s_1 = m^dP mod p, s_2 = m^dQ mod q, each on m reduced to the prime's width.
     let mut m_mod_p = reduce_wide::<L, HALF>(m, p);
     let mut m_mod_q = reduce_wide::<L, HALF>(m, q);

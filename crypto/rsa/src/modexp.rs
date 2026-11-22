@@ -270,26 +270,23 @@ impl<const L: usize> ZeroizablePrimitive for MontgomeryContext<L> {
 // variable-time constructor is wrong on the line that does it.
 impl<const L: usize> MontgomeryContext<L> {
     /// Builds the Montgomery context for a modulus that is secret: `p` or `q` of the CRT, or a
-    /// candidate prime. Returns `None` if `modulus` is even (zero included); Montgomery
-    /// reduction requires an odd modulus. `modulus` must be greater than 1.
+    /// candidate prime. `modulus` must be odd and greater than 1, which the caller has
+    /// established: this constructor does not test it, since the test would be a branch on the
+    /// secret. Over an even modulus a debug build stops at an assertion, and a release build
+    /// returns a context that gives wrong answers, without a panic.
     ///
-    /// Constant time in `modulus` apart from that test of its low bit: no branch, memory
-    /// access or loop count depends on any other bit of it.
-    pub fn for_secret_modulus(modulus: &[u64; L]) -> Option<Self> {
-        // The one branch on the modulus. It is on bit 0, which is set in every modulus a
-        // caller holds (a prime, or a candidate forced odd), so it tells an observer nothing.
-        if modulus[0] & 1 == 0 {
-            return None;
-        }
+    /// Constant time in `modulus`: no branch, memory access or loop count depends on it.
+    pub fn for_secret_modulus(modulus: &[u64; L]) -> Self {
         let n_prime = mont_n_prime(modulus[0]);
         let r_mod_n = pow2_mod_ct(64 * L as u32, modulus);
         let r2_mod_n = pow2_mod_ct(128 * L as u32, modulus);
-        Some(Self { modulus: *modulus, n_prime, r_mod_n, r2_mod_n })
+        Self { modulus: *modulus, n_prime, r_mod_n, r2_mod_n }
     }
 
     /// Builds the Montgomery context for a modulus that is public: RSA's `n`. Returns `None`
-    /// if `modulus` is even (zero included). `modulus` must be greater than 1. The same context
-    /// as [`Self::for_secret_modulus`] builds.
+    /// if `modulus` is even (zero included); Montgomery reduction requires an odd modulus.
+    /// `modulus` must be greater than 1. The same context as [`Self::for_secret_modulus`]
+    /// builds.
     ///
     /// Variable time in `modulus`: its doublings branch on how the running value compares with
     /// it. Never for `p`, `q` or anything else that is secret.
@@ -391,7 +388,7 @@ mod tests {
     fn assert_both_constructors_give<const L: usize>(cases: &[Case<L>]) {
         for (n, n_prime, r_mod_n, r2_mod_n) in cases {
             for ctx in [
-                MontgomeryContext::for_secret_modulus(n).unwrap(),
+                MontgomeryContext::for_secret_modulus(n),
                 MontgomeryContext::for_public_modulus(n).unwrap(),
             ] {
                 assert_eq!(ctx.modulus, *n);
@@ -490,7 +487,7 @@ mod tests {
                 2 => n[15] = 1 << 63,
                 _ => {}
             }
-            let secret = MontgomeryContext::for_secret_modulus(&n).unwrap();
+            let secret = MontgomeryContext::for_secret_modulus(&n);
             let public = MontgomeryContext::for_public_modulus(&n).unwrap();
             assert_eq!(secret.modulus, public.modulus);
             assert_eq!(secret.n_prime, public.n_prime);
