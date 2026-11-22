@@ -24,7 +24,7 @@
 //! the bit's value. [`mod_pow_public_exponent`] is for the public exponent `e` alone: it runs
 //! over that exponent's own bits and branches on them.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! [`mod_pow`] is constant-time in the *exponent*, which is what RSA signing needs (`d` is
 //! secret). It is not blinded against the message/base: an attacker who can also mount a

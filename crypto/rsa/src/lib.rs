@@ -310,7 +310,7 @@
 //! RSASP1/RSAVP1's modular exponentiation. A `SignatureSigner` / `SignatureVerifier` worker
 //! borrows its key for its lifetime and holds the hash state beside it.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! - **RSASP1 (private-key signing) is not blinded against its input.** [`modexp`]'s `mod_pow` is
 //!   constant-time in the *exponent* (the CRT exponents `dP`/`dQ`), which defeats a pure timing
