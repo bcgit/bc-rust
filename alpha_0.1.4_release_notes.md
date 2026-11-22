@@ -104,31 +104,25 @@
   `_out` functions return the number of bytes written.
 * SHA-1 -- `bouncycastle-sha1`, FIPS 180-4's SHA-1 on the `Hash` traits, for interoperation with what already
   uses it (an older peer's RSA-OAEP hash or MGF1, a fingerprint): not collision resistant, so it is credited with
-  no security strength (`SecurityStrength::None`) and is reached only by name; the `sha1` CLI command. Checked against NIST's CAVP SHAVS vectors and RFC 3174's.
-  It does not carry `CollisionResistantHash`, so the RSA signature schemes verify over it and do not sign, short of
-  `hazmat::WithoutCollisionResistance<SHA1>`.
+  no security strength (`SecurityStrength::None`). Checked against NIST's CAVP SHAVS vectors and RFC 3174's; the
+  `sha1` CLI command. It does not carry `CollisionResistantHash`, so the RSA signature schemes verify over it and
+  do not sign, short of `hazmat::WithoutCollisionResistance<SHA1>`.
+* RSA -- `bouncycastle-rsa`: RSASSA-PKCS1-v1_5 and RSASSA-PSS (RFC 8017 Section 8) on the signature roles, RSASVE
+  (NIST SP 800-56B Rev. 2 Section 7.2.1) on the KEM roles, its secret value raw or through HKDF, and key generation
+  by FIPS 186-5 Appendix A.1.3, at RSA-2048, 3072, 4096 and 8192; RSA-1024 and RSA-1536 verify signatures and
+  nothing else. A public key encodes as `n || e` and a private key as `p || q || dP || dQ || qInv || e`, with `e`
+  in 8 big-endian bytes, and a modulus must have exactly its size's bit length. The result of every private-key
+  operation is checked against `e` before it is released (`SignatureError::ComputationFault`, or the operation's
+  one decryption error). A non-empty `ctx` is refused with `SignatureError::LengthError`, RSA having no context
+  input. Private-key operations wipe the stack they used, sized for an optimised x86-64 build; a key the caller
+  moves out of the `Result` it was returned in is the caller's to wipe. The `rsa-<size>` and `rsasve-<size>` CLI
+  commands.
 * RSAES-OAEP -- RFC 8017 Section 7.1 key transport on the RSA key-establishment keys, under `OaepParams<H, M, LEN>`
   (label hash, MGF1 hash, label): as a KEM that draws the key (KTS-OAEP-basic, SP 800-56B Rev. 2) and, through
   the new `core::key_transport_key` roles, for a key the caller holds; the `rsa-oaep-<size>` CLI commands. The hashes
   are RFC 8017's seven (SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, SHA-512/256), a sealed trait
   `OaepHash`. `dev_scripts/check_oaep_ct.sh`, run on pull requests, puts the decoding under memcheck with the encoded
   message undefined and reads its Cortex-M0 and RISC-V 32I assembly.
-* RSA keys -- a key's modulus has exactly its size's bit length: the signature key constructors and decoders refuse
-  one whose top bit is clear, as the key-establishment keys already did.
-* RSA keys -- the public exponent is a `u64` (it was a `u32`), and the public key's encoding is `n || e` with `e`
-  in 8 bytes, 4 longer than before (breaking: `PK_LEN` is the modulus length plus 8).
-* RSA keys -- the private key carries the public exponent: `from_crt_components` takes `e`, and the encoding is
-  `p || q || dP || dQ || qInv || e` with `e` in 8 bytes (breaking: `SK_LEN` is 8 longer, 648 at RSA-2048).
-* RSA -- the result of every private-key operation (signing, RSASVE decapsulation, OAEP decryption) is checked
-  against `e` before it is released; a result that fails is an error (`SignatureError::ComputationFault`, or the
-  operation's one decryption error) and is wiped.
-* RSA -- `rsassa`'s `*_from_hash` functions return `SignatureError::LengthError` for a message hash or a PSS salt of
-  the wrong length, in every build; the algorithm traits' `emsa_encode` returns a `Result` for the same reason.
-* Breaking: RSA signatures refuse a non-empty `ctx`, which they accepted and dropped. RSA has no context input, so
-  `SignatureError::LengthError` for anything but `None` or the empty context, from signing and verifying, one-shot
-  and streaming, as Ed25519 does. Signatures made and verified without a context are unchanged.
-* RSA -- RSA-1024 and RSA-1536 verify signatures and nothing else: RSASVE, RSASVE with a KDF and RSAES-OAEP no
-  longer encapsulate or transport toward a public key of those sizes (the roles need a signing size).
 
 ## Minor features / bug fixes
 
