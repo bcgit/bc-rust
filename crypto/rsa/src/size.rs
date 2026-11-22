@@ -98,8 +98,9 @@ pub trait RsaSigningSize: RsaSize {
     /// [`STRENGTH`](RsaSize::STRENGTH).
     ///
     /// # Errors
-    /// [`SignatureError::RNGError`] if the RNG is weaker than the size or fails to deliver, or
-    /// if no prime was found within the candidate budget.
+    /// [`SignatureError::RNGError`] if the RNG is weaker than the size or fails to deliver;
+    /// [`SignatureError::GenericError`] if no prime was found within the candidate budget, or
+    /// no usable Miller-Rabin base in 128 draws.
     fn keygen(
         rng: &mut dyn RNG,
     ) -> Result<(RsaPublicComponents<Self>, RsaPrivateComponents<Self>), SignatureError>;

@@ -46,8 +46,9 @@ pub const PUBLIC_EXPONENT: u64 = 65537;
 /// Miller-Rabin test runs (FIPS 186-5 Appendix B.7, "if convenient, `c` may be divided by
 /// composite numbers" -- the primes are bundled into `u64` products, as BC Java's
 /// `Primes.hasAnySmallFactors` does). `2^10` is a round choice well inside Appendix B.8's
-/// "typical" `10^3` to `10^5`; about 93% of odd composites are caught here, sparing that many
-/// modular exponentiations.
+/// "typical" `10^3` to `10^5`; about 84% of odd candidates are caught here (the share of odd
+/// integers with an odd prime factor below 1024, one minus the product of `1 - 1/p` over those
+/// 171 primes, is 0.8387), sparing that many modular exponentiations.
 pub const SMALL_PRIME_LIMIT: usize = 1024;
 
 /// `pi(1024)`: the number of primes below [`SMALL_PRIME_LIMIT`].
@@ -299,8 +300,11 @@ pub(crate) fn fill_bytes(rng: &mut dyn RNG, out: &mut [u8]) -> Result<(), RNGErr
     result
 }
 
-/// Fills `out` with `64 * N` bits from `rng` (FIPS 186-5 Appendix B.2.1: the string is read as a
-/// big-endian integer; here limb `N - 1` holds its most significant 64 bits).
+/// Fills `out` with `64 * N` bits from `rng`, eight bytes to a limb in the order drawn: the
+/// first eight bytes are limb 0, the least significant, and each eight are big-endian within
+/// their limb. FIPS 186-5 Appendix B.2.1 reads a bit string most significant bit first, so the
+/// integer here is that reading of the string drawn with its eight-byte groups in reverse
+/// order. It is as uniform; a candidate reproduced from a given byte stream needs this order.
 fn fill_random<const N: usize>(
     rng: &mut dyn RNG,
     out: &mut [u64; N],

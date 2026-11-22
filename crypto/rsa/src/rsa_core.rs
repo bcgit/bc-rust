@@ -116,8 +116,9 @@ pub(crate) fn crt_exp_checked<
     ok
 }
 
-/// RFC 8017 §5.2.1 step 2.b, the CRT form of `m^d mod n`, over the five components: the size
-/// marker's `crt_exp` forwards here with the size's widths. Constant time in the key: the two
+/// RFC 8017 §5.2.1 step 2.b, the CRT form of `m^d mod n`, over the five components (RSADP's
+/// step 2.b in §5.1.2 is the same computation, its sub-steps numbered i to iv), without the
+/// result check [`crt_exp_checked`] wraps it in. Constant time in the key: the two
 /// contexts are built by `MontgomeryContext::for_secret_modulus`, every exponentiation is
 /// `mod_pow`'s ladder, every reduction `reduce_wide`'s bit-serial loop.
 pub(crate) fn crt_exp<
@@ -140,17 +141,17 @@ pub(crate) fn crt_exp<
     *ctx_p = MontgomeryContext::<HALF>::for_secret_modulus(p);
     let mut ctx_q = Secret::<MontgomeryContext<HALF>>::new();
     *ctx_q = MontgomeryContext::<HALF>::for_secret_modulus(q);
-    // Step 2.b.i: s_1 = m^dP mod p, s_2 = m^dQ mod q, each on m reduced to the prime's width.
+    // Step 2.b.1: s_1 = m^dP mod p, s_2 = m^dQ mod q, each on m reduced to the prime's width.
     let mut m_mod_p = reduce_wide::<L, HALF>(m, p);
     let mut m_mod_q = reduce_wide::<L, HALF>(m, q);
     let mut s1 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_p, d_p, &ctx_p);
     let mut s2 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_q, d_q, &ctx_q);
-    // Step 2.b.iii: h = (s_1 - s_2) * qInv mod p, with s_2 reduced mod p first (the primes need
+    // Step 2.b.3: h = (s_1 - s_2) * qInv mod p, with s_2 reduced mod p first (the primes need
     // not be the same length; see RsaPrivateComponents' docs).
     let mut s2_mod_p = reduce_wide::<HALF, HALF>(&s2, p);
     let mut diff = sub_mod::<HALF>(&s1, &s2_mod_p, p);
     let mut h = mul_mod::<HALF, HALF2, HALF21>(&diff, q_inv, &ctx_p);
-    // Step 2.b.iv: s = s_2 + q * h.
+    // Step 2.b.4: s = s_2 + q * h.
     let mut q_h = montgomery::widening_mul::<HALF, L>(q, &h);
     let mut s2_wide = [0u64; L];
     s2_wide[..HALF].copy_from_slice(&s2);
