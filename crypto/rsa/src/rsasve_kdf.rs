@@ -151,13 +151,44 @@ where
     /// RSASVE.GENERATE for `Z` and the ciphertext, then HKDF over `Z`. `Z` lives in one local,
     /// zeroized when it drops; a ciphertext for a key the caller never gets is not left in the
     /// buffer.
-    #[allow(non_snake_case)]
     fn encaps_out(
         &self,
         rng: &mut dyn RNG,
         ct: &mut [u8; N],
         ss: &mut KeyMaterial<SS_LEN>,
     ) -> Result<usize, KEMError> {
+        let result = self.derive_in_own_frame(rng, ct, ss);
+        // As after decapsulation: HKDF's pseudorandom key is left in the frames of the
+        // derivation, on this side as on that one.
+        wipe_stack_below::<K::Limbs, KDF_ENCAPS_STACK_PER_LIMB, KDF_ENCAPS_STACK_FIXED>();
+        result
+    }
+}
+
+/// What [`wipe_stack_below`] overwrites after encapsulation with HKDF: this many `K::Limbs`
+/// values and this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97) with
+/// SHA-256, the operation uses 7160 bytes at RSA-2048, 9336 at RSA-3072, 12280 at RSA-4096 and
+/// 24056 at RSA-8192; these cover 8320, 11648, 14976 and 28288, the difference being room for
+/// a compiler that lays the frames out less tightly.
+const KDF_ENCAPS_STACK_PER_LIMB: usize = 26;
+const KDF_ENCAPS_STACK_FIXED: usize = 208;
+
+impl<K: RsaSigningSize, H: HMACParams, const SS_LEN: usize>
+    RsasveKdfEncapsulator<'_, '_, '_, K, H, SS_LEN>
+{
+    /// The work of `encaps_out`. Never inlined, so that what it and the derivation leave lies
+    /// below its caller's frame, where [`wipe_stack_below`] reaches it.
+    #[allow(non_snake_case)]
+    #[inline(never)]
+    fn derive_in_own_frame<const N: usize>(
+        &self,
+        rng: &mut dyn RNG,
+        ct: &mut [u8; N],
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KEMError>
+    where
+        K: RsaSize<Modulus = [u8; N]>,
+    {
         ss.zeroize();
         let mut Z = KeyMaterial::<N>::new();
         self.pk.create_encapsulator(())?.encaps_out(rng, ct, &mut Z)?;
