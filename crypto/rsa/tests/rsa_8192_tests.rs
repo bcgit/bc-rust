@@ -12,13 +12,8 @@
 //!    this crate's own convention) are instead checked with this crate's own
 //!    PSS verifier, a genuine independent-implementation cross-check even though
 //!    it cannot be a byte-for-byte one.
-//! 2. **Real Wycheproof verify vectors, sampled.** `rsa_signature_8192_sha{256,384,512}_test.json`
-//!    exist (verify-only, with their own unrelated key) and are used here, but not exhaustively:
-//!    each has on the order of 260 vectors, and at `L = 128` a single verify costs roughly 19x
-//!    what one costs at RSA-3072 (`(128/48)^3`), which would make a full run of three such files
-//!    alone take on the order of an hour. Every *distinct* `(result, flags)` combination present
-//!    in each file is still exercised at least once (deduplicated below), so every failure mode
-//!    Wycheproof encodes for this hash is checked -- just not every repetition of it.
+//! 2. **Real Wycheproof verify vectors.** `rsa_signature_8192_sha{256,384,512}_test.json` exist
+//!    (verify-only, with their own unrelated key) and are run in full, 258 or 259 vectors each.
 
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::signature_key::{
@@ -43,7 +38,6 @@ use bouncycastle_rsa::rsassa::{
     RsaDeterministicSignatureAlgorithm, RsaRandomizedSignatureAlgorithm,
 };
 use serde_json::Value;
-use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -313,89 +307,91 @@ fn pss_sha512_rng_produces_fresh_salts_that_both_verify() {
     pk.key::<RSASSA_PSS_SHA512>().verify(b"hello", None, &sig_b).expect("sig_b must verify");
 }
 
-/// Every distinct `(result, flags)` combination in `filename`'s (single) test group, in file
-/// order -- see this file's module docs for why this is a deliberate sample, not the full vector
-/// set.
-fn distinct_cases(tests: &[Value]) -> Vec<&Value> {
-    let mut seen = HashSet::new();
-    let mut out = Vec::new();
-    for test in tests {
-        let mut flags: Vec<&str> =
-            test["flags"].as_array().unwrap().iter().map(|f| f.as_str().unwrap()).collect();
-        flags.sort_unstable();
-        let key = (test["result"].as_str().unwrap().to_string(), flags);
-        if seen.insert(key) {
-            out.push(test);
-        }
-    }
-    out
-}
-
-fn run_sampled_pkcs1_v1_5_verify_vectors(
+fn run_pkcs1_v1_5_verify_vectors(
     filename: &str,
     verify: impl Fn(&RsaPublicComponents<RSA8192>, &[u8], &[u8; 1024]) -> bool,
     expected_sha: &str,
+    expected_valid: usize,
+    expected_invalid: usize,
 ) {
     let doc: Value = serde_json::from_str(&get_test_data(filename)).expect("valid JSON");
-    let group = &doc["testGroups"][0];
-    assert_eq!(group["sha"], expected_sha);
-    let n: [u64; 128] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
-    let e =
-        u64::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
-    let pk = RsaPublicComponents::<RSA8192>::new(&n, e).unwrap();
+    let mut num_valid = 0usize;
+    let mut num_invalid = 0usize;
+    let mut num_missing_null = 0usize;
 
-    let tests = group["tests"].as_array().unwrap();
-    let sample = distinct_cases(tests);
-    assert!(sample.len() >= 10, "expected a rich sample of distinct cases, got {}", sample.len());
+    for group in doc["testGroups"].as_array().unwrap() {
+        assert_eq!(group["sha"], expected_sha);
+        let n: [u64; 128] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
+        let e = u64::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
+            .unwrap();
+        let pk = RsaPublicComponents::<RSA8192>::new(&n, e).unwrap();
 
-    for test in sample {
-        let tc_id = test["tcId"].as_u64().unwrap();
-        let msg = hex_decode(test["msg"].as_str().unwrap()).unwrap();
-        let sig_bytes = hex_decode(test["sig"].as_str().unwrap()).unwrap();
-        let flags: Vec<&str> =
-            test["flags"].as_array().unwrap().iter().map(|f| f.as_str().unwrap()).collect();
+        for test in group["tests"].as_array().unwrap() {
+            let tc_id = test["tcId"].as_u64().unwrap();
+            let msg = hex_decode(test["msg"].as_str().unwrap()).unwrap();
+            let sig_bytes = hex_decode(test["sig"].as_str().unwrap()).unwrap();
+            let flags: Vec<&str> =
+                test["flags"].as_array().unwrap().iter().map(|f| f.as_str().unwrap()).collect();
 
-        let Ok(sig): Result<[u8; 1024], _> = sig_bytes.try_into() else {
-            assert_ne!(test["result"], "valid", "tcId {tc_id}: wrong-length 'valid' signature");
-            continue;
-        };
-        let verified = verify(&pk, &msg, &sig);
-        match test["result"].as_str().unwrap() {
-            "valid" => assert!(verified, "tcId {tc_id}: expected valid, got invalid"),
-            "invalid" => assert!(!verified, "tcId {tc_id}: expected invalid, got valid"),
-            "acceptable" => {
-                assert_eq!(flags, vec!["MissingNull"], "tcId {tc_id}: unreviewed acceptable");
-                assert!(verified, "tcId {tc_id}: MissingNull must be accepted");
+            let Ok(sig): Result<[u8; 1024], _> = sig_bytes.try_into() else {
+                assert_ne!(test["result"], "valid", "tcId {tc_id}: wrong-length 'valid' signature");
+                num_invalid += 1;
+                continue;
+            };
+            let verified = verify(&pk, &msg, &sig);
+            match test["result"].as_str().unwrap() {
+                "valid" => {
+                    assert!(verified, "tcId {tc_id}: expected valid, got invalid");
+                    num_valid += 1;
+                }
+                "invalid" => {
+                    assert!(!verified, "tcId {tc_id}: expected invalid, got valid");
+                    num_invalid += 1;
+                }
+                "acceptable" => {
+                    assert_eq!(flags, vec!["MissingNull"], "tcId {tc_id}: unreviewed acceptable");
+                    assert!(verified, "tcId {tc_id}: MissingNull must be accepted");
+                    num_missing_null += 1;
+                }
+                other => panic!("tcId {tc_id}: unknown result {other:?}"),
             }
-            other => panic!("tcId {tc_id}: unknown result {other:?}"),
         }
     }
+    assert_eq!(num_missing_null, 1);
+    assert_eq!(num_valid, expected_valid, "for {filename}");
+    assert_eq!(num_invalid, expected_invalid, "for {filename}");
 }
 
 #[test]
-fn rsa_signature_8192_sha256_wycheproof_vectors_sampled() {
-    run_sampled_pkcs1_v1_5_verify_vectors(
+fn rsa_signature_8192_sha256_wycheproof_vectors() {
+    run_pkcs1_v1_5_verify_vectors(
         "rsa_signature_8192_sha256_test.json",
         |pk, msg, sig| pk.key::<RSASSA_PKCS1_v1_5_SHA256>().verify(msg, None, sig).is_ok(),
         "SHA-256",
+        7,
+        250,
     );
 }
 
 #[test]
-fn rsa_signature_8192_sha384_wycheproof_vectors_sampled() {
-    run_sampled_pkcs1_v1_5_verify_vectors(
+fn rsa_signature_8192_sha384_wycheproof_vectors() {
+    run_pkcs1_v1_5_verify_vectors(
         "rsa_signature_8192_sha384_test.json",
         |pk, msg, sig| pk.key::<RSASSA_PKCS1_v1_5_SHA384>().verify(msg, None, sig).is_ok(),
         "SHA-384",
+        7,
+        251,
     );
 }
 
 #[test]
-fn rsa_signature_8192_sha512_wycheproof_vectors_sampled() {
-    run_sampled_pkcs1_v1_5_verify_vectors(
+fn rsa_signature_8192_sha512_wycheproof_vectors() {
+    run_pkcs1_v1_5_verify_vectors(
         "rsa_signature_8192_sha512_test.json",
         |pk, msg, sig| pk.key::<RSASSA_PKCS1_v1_5_SHA512>().verify(msg, None, sig).is_ok(),
         "SHA-512",
+        7,
+        251,
     );
 }
 
