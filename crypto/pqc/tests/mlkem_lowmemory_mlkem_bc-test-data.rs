@@ -11,11 +11,11 @@
 //! against `pqc::mlkem`, which does run the encapDecap file.
 
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::PublicKey;
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use bouncycastle_hex as hex;
 use bouncycastle_pqc::mlkem_lowmemory::mlkem::{
     MLKEM512_FULL_SK_LEN, MLKEM768_FULL_SK_LEN, MLKEM1024_FULL_SK_LEN,
 };

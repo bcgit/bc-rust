@@ -1,9 +1,9 @@
+use bouncycastle_core::hex;
 use bouncycastle_core::signature_key::{
     DeterministicPreHashSigningKey, PreHashSigningKey, PreHashVerifyingKey, SigningKey,
     VerifyingKey,
 };
 use bouncycastle_core::traits::{HashOneShot, SignatureSigner, SignatureVerifier};
-use bouncycastle_hex as hex;
 use bouncycastle_rng::HashDRBG_SHA512;
 
 #[cfg(test)]

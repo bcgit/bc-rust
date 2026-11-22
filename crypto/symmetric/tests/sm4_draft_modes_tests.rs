@@ -18,10 +18,10 @@
 use bouncycastle_cipher::modes::{Blocks, CBC};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-use bouncycastle_hex as hex;
 use bouncycastle_symmetric::sm4::hazmat::SM4Internal;
 use bouncycastle_symmetric::sm4::{BLOCK_LEN, SM4Key};
 

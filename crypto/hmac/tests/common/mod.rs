@@ -1,10 +1,10 @@
 //! Helpers shared by this crate's known-answer test files.
 
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
-use bouncycastle_hex as hex;
 use bouncycastle_hmac::{HMACParams, HmacKey};
 
 /// What `TestFrameworkMAC::test_mac` ran per vector: the key built with the weak form (the RFC

@@ -10,6 +10,7 @@
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
@@ -17,7 +18,6 @@ use bouncycastle_core::signature_key::{
 };
 use bouncycastle_core::traits::{Hash, HashOneShot, PrivateKey, PublicKey, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use bouncycastle_hex as hex;
 use bouncycastle_pqc::mldsa::{
     MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65,
     MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87, MLDSA87_PK_LEN,

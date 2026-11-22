@@ -171,7 +171,7 @@ pub fn hex_field(fields: &BTreeMap<String, String>, key: &str, width: usize) -> 
     let hex = fields.get(key).unwrap_or_else(|| panic!("record missing field {key}"));
     let hex = if hex.len() % 2 == 1 { format!("0{hex}") } else { hex.clone() };
     let bytes =
-        bouncycastle_hex::decode(&hex).unwrap_or_else(|e| panic!("bad hex in {key}: {e:?}"));
+        bouncycastle_core::hex::decode(&hex).unwrap_or_else(|e| panic!("bad hex in {key}: {e:?}"));
     if bytes.len() >= width {
         return bytes;
     }
@@ -184,7 +184,7 @@ pub fn hex_field(fields: &BTreeMap<String, String>, key: &str, width: usize) -> 
 /// itself, not a fixed-width field element).
 pub fn hex_bytes(fields: &BTreeMap<String, String>, key: &str) -> Vec<u8> {
     let hex = fields.get(key).unwrap_or_else(|| panic!("record missing field {key}"));
-    bouncycastle_hex::decode(hex).unwrap_or_else(|e| panic!("bad hex in {key}: {e:?}"))
+    bouncycastle_core::hex::decode(hex).unwrap_or_else(|e| panic!("bad hex in {key}: {e:?}"))
 }
 
 /// `true` iff a CAVP `Result = P (0 )` / `Result = F (...)` field indicates success.

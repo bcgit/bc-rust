@@ -31,12 +31,12 @@ use bouncycastle_cipher::modes::{CFB, CFB8, CTR, OFB};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-use bouncycastle_hex as hex;
 use bouncycastle_symmetric::sm4::hazmat::SM4Internal;
 use bouncycastle_symmetric::sm4::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, SM4Key};
 

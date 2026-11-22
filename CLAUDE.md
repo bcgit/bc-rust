@@ -118,7 +118,7 @@ A typical primitive crate looks like:
 
 ```
 crypto/<name>/
-  Cargo.toml          # depends on bouncycastle-core; dev-deps on core-test-framework, hex, rng, criterion
+  Cargo.toml          # depends on bouncycastle-core; dev-deps on core-test-framework, rng, criterion
   src/lib.rs          # must contain #![forbid(unsafe_code)], #![forbid(missing_docs)], aim for #![no_std]
   src/*.rs            # implementation
   tests/*.rs          # integration tests, usually driven via core-test-framework

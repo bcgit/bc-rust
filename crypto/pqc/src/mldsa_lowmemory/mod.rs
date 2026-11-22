@@ -128,7 +128,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
-//! use bouncycastle_hex as hex;
+//! use bouncycastle_core::hex as hex;
 //! use bouncycastle_pqc::mldsa_lowmemory::{MLDSA65, MLDSATrait};
 //!
 //! let seed = KeyMaterial256::from_bytes_as_type(

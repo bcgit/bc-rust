@@ -6,13 +6,13 @@
 //! resulting `(r, s)`, and `Q = [d]G` computed via the standard affine group law, `random.seed
 //! 1234567`.
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ec::Secp256K1;
 use bouncycastle_ec::hazmat::p256k1_comb::comb_multiply_base_point;
 use bouncycastle_ec::hazmat::p256k1_scalar::P256K1Scalar;
 use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_sha2::SHA256;
 
 struct Vector {

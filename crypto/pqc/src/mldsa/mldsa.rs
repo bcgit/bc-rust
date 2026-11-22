@@ -281,7 +281,7 @@
 //! use bouncycastle_core::signature_key::OneShotVerifyingKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
-//! use bouncycastle_hex as hex;
+//! use bouncycastle_core::hex as hex;
 //! use bouncycastle_pqc::mldsa::{MLDSA44, MLDSA44_SIG_LEN, MLDSATrait, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";

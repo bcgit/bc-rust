@@ -76,7 +76,7 @@ mod tests {
 
     fn fe(hex: &str) -> Sm2FieldElement {
         Sm2FieldElement::from_limbs(limbs_from_be_bytes(
-            &bouncycastle_hex::decode(hex).unwrap().try_into().unwrap(),
+            &bouncycastle_core::hex::decode(hex).unwrap().try_into().unwrap(),
         ))
     }
 
@@ -110,7 +110,7 @@ mod tests {
         ];
         for (qx, qy, id, za_hex) in cases {
             let za = compute(id, &fe(qx), &fe(qy)).unwrap();
-            assert_eq!(bouncycastle_hex::encode(za), za_hex);
+            assert_eq!(bouncycastle_core::hex::encode(za), za_hex);
         }
     }
 }

@@ -26,7 +26,7 @@ pub fn hmac_sha256(key: &[u8], parts: &[&[u8]]) -> Vec<u8> {
 
 /// `v` decoded from hex; an empty string is no bytes.
 pub fn hex(v: &str) -> Vec<u8> {
-    if v.is_empty() { Vec::new() } else { bouncycastle_hex::decode(v).unwrap() }
+    if v.is_empty() { Vec::new() } else { bouncycastle_core::hex::decode(v).unwrap() }
 }
 
 /// A JSON string decoded from hex.

@@ -14,6 +14,7 @@ mod keyed_hash_tests {
     use bouncycastle_core::direction::Encrypting;
     use bouncycastle_core::errors::{KeyMaterialError, MACError};
     use bouncycastle_core::hazmat::FixedSeedRNG;
+    use bouncycastle_core::hex;
     use bouncycastle_core::key_material::{
         KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
@@ -27,7 +28,6 @@ mod keyed_hash_tests {
     use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
     use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
     use bouncycastle_digest::blake3::*;
-    use bouncycastle_hex as hex;
 
     fn h(s: &str) -> Vec<u8> {
         hex::decode(s).unwrap()

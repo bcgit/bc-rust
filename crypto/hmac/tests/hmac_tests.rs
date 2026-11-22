@@ -6,6 +6,7 @@ mod hmac_tests {
     use bouncycastle_core::direction::Encrypting;
     use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError};
     use bouncycastle_core::hazmat::do_hazardous_operations;
+    use bouncycastle_core::hex;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
@@ -17,7 +18,6 @@ mod hmac_tests {
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_digest::sm3::SM3;
     use bouncycastle_digest::sm3::hmac::*;
-    use bouncycastle_hex as hex;
     use bouncycastle_hmac::*;
     use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
     use bouncycastle_sha2::hmac::*;

@@ -16,7 +16,8 @@ fn rfc8439_blocks_encryption_and_one_time_keys() {
     let cases = document["tests"].as_array().unwrap();
     assert_eq!(cases.len(), 12);
     for case in cases {
-        let decode = |field: &str| bouncycastle_hex::decode(case[field].as_str().unwrap()).unwrap();
+        let decode =
+            |field: &str| bouncycastle_core::hex::decode(case[field].as_str().unwrap()).unwrap();
         let id = case["id"].as_str().unwrap();
         let mut key = KeyMaterial::<32>::new();
         do_hazardous_operations(&mut key, |key| {

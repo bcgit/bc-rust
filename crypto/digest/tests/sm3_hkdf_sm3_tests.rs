@@ -8,13 +8,13 @@
 #[cfg(test)]
 mod hkdf_sm3_tests {
     use bouncycastle_core::hazmat::do_hazardous_operations;
+    use bouncycastle_core::hex;
     use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{Algorithm, AlgorithmInfo};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_digest::sm3::hkdf::{HKDF_SM3, HKDF_SM3_NAME};
-    use bouncycastle_hex as hex;
 
     /// Key material of any length and content, including empty or all-zero, as the RFC 5869
     /// vectors need.

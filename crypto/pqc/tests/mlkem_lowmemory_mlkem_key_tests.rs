@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod mlkem_key_tests {
+    use bouncycastle_core::hex;
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{PrivateKey, PublicKey};
-    use bouncycastle_hex as hex;
     use bouncycastle_pqc::mlkem_lowmemory::mlkem::MLKEM512_FULL_SK_LEN;
     use bouncycastle_pqc::mlkem_lowmemory::{MLKEM512, MLKEM768, MLKEM1024};
     use bouncycastle_pqc::mlkem_lowmemory::{

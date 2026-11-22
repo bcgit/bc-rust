@@ -8,11 +8,12 @@
 //! decode takes a String (which can be in any bytes-like container) and returns a `Vec<u8>`.
 //!
 //! Moreover, the API of this crate is intended to mirror that of the public `hex` crate,
-//! so you should generally be able to swap `use hex` for `use bouncycastle_hex` and all the function
+//! so you should generally be able to swap `use hex` for `use bouncycastle_core::hex` and all the function
 //! calls and behaviours should work as expected.
 //!
 //! ```
-//! use bouncycastle_hex as hex;
+//! # #[cfg(feature = "std")] {
+//! use bouncycastle_core::hex as hex;
 //!
 //! let out = hex::encode(b"\x00\x01\x02\x03"); // "00010203"
 //! let out = hex::encode(&[0x00, 0x01, 0x02, 0x03]); // "00010203"
@@ -20,14 +21,18 @@
 //!
 //! let out = hex::decode("00010203").unwrap(); // [0x00, 0x01, 0x02, 0x03]
 //! let out = hex::decode(b"00010203").unwrap(); // [0x00, 0x01, 0x02, 0x03]
+//! # }
 //! ```
 //!
-//! The decoder ignores whitespace and "\x".
-
-#![forbid(unsafe_code)]
-#![forbid(missing_docs)]
+//! The decoder ignores whitespace, NUL and "\x".
+//!
+//! [`encode_out`] and [`decode_out`] write into the caller's buffer instead, sized by
+//! [`encode_out_len`] and [`decode_out_len`], and need no allocator; [`encode`] and [`decode`]
+//! need the `std` feature.
 
 use bouncycastle_utils::ct::Condition;
+#[cfg(feature = "std")]
+use std::{string::String, vec, vec::Vec};
 
 /// Return type for errors relating to Hex encoding and decoding.
 #[derive(Debug)]
@@ -36,27 +41,29 @@ pub enum HexError {
     InvalidHexCharacter(usize),
     /// Since hex encodes each byte as two characters, the input must have an even length.
     OddLengthInput,
-    ///
+    /// The output buffer is shorter than [`encode_out_len`] or [`decode_out_len`] asks for.
     InsufficientOutputBufferSize,
 }
 
 /// One-shot encode from bytes to a hex-encoded string using a constant-time implementation.
+///
+/// Only available with the `std` feature.
+#[cfg(feature = "std")]
 pub fn encode<T: AsRef<[u8]>>(input: T) -> String {
-    let mut out = vec![0u8; input.as_ref().len() * 2];
-    encode_out(input.as_ref(), &mut out).unwrap();
+    let mut out = vec![0u8; encode_out_len(input.as_ref().len())];
+    encode_out(input.as_ref(), &mut out).expect("the buffer is encode_out_len long");
 
-    String::from_utf8(out).unwrap()
+    String::from_utf8(out).expect("hex output is ASCII")
 }
 
-/// expects an output array which is at least input.len() / 2 in size.
-/// Returns the number of bytes written.
+/// As [`encode`], into `out`, which is zeroized first and must be at least
+/// [`encode_out_len`]`(input.len())` long. Returns the number of bytes written.
 pub fn encode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, HexError> {
+    out.fill(0);
     let inref = input.as_ref();
-    if out.len() < inref.len() * 2 {
+    if out.len() < encode_out_len(inref.len()) {
         return Err(HexError::InsufficientOutputBufferSize);
     }
-
-    out.fill(0);
 
     for i in 0..inref.len() {
         out[2 * i] = ct_word_to_hex(inref[i] >> 4);
@@ -84,26 +91,48 @@ pub fn encode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, Hex
     }
 }
 
+/// The length of the hex encoding of `input_len` bytes: what [`encode_out`] writes and needs.
+pub const fn encode_out_len(input_len: usize) -> usize {
+    // Saturating, so that a length too large to represent fails the buffer check.
+    input_len.saturating_mul(2)
+}
+
 /// One-shot decode from a hex string to a bytes using a constant-time implementation.
-/// ignores whitespace and \x
+/// ignores whitespace, NUL and \x
+///
+/// Only available with the `std` feature.
+#[cfg(feature = "std")]
 pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, HexError> {
     let inref = input.as_ref();
-    let mut out: Vec<u8> = vec![0u8; inref.len() / 2];
+    let mut out: Vec<u8> = vec![0u8; decode_out_len(inref.len())];
     let bytes_written = decode_out(inref, &mut out)?;
     out.truncate(bytes_written);
     Ok(out)
 }
 
-/// expects an output array which is at least input.len() / 2 in size.
-/// Returns the number of bytes written.
+/// An upper bound on what [`decode_out`] writes for `input_len` characters, and so the buffer it
+/// needs; exact when the input has no whitespace, NUL or `\x`.
+pub const fn decode_out_len(input_len: usize) -> usize {
+    input_len / 2
+}
+
+/// As [`decode`], into `out`, which is zeroized first and must be at least
+/// [`decode_out_len`]`(input.len())` long. Returns the number of bytes written. On an error `out`
+/// is left zeroized.
 pub fn decode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, HexError> {
+    out.fill(0);
     let inref = input.as_ref();
-    if out.len() < inref.len() / 2 {
+    if out.len() < decode_out_len(inref.len()) {
         return Err(HexError::InsufficientOutputBufferSize);
     }
+    let result = decode_into(inref, out);
+    if result.is_err() {
+        out.fill(0);
+    }
+    result
+}
 
-    out.fill(0);
-
+fn decode_into(inref: &[u8], out: &mut [u8]) -> Result<usize, HexError> {
     let mut b = 0u8;
     let mut b_i = 0u8;
     let mut out_i = 0_usize;

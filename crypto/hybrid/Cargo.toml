@@ -18,7 +18,6 @@ bouncycastle-core-test-framework.workspace = true
 bouncycastle-ec.workspace = true
 bouncycastle-eccdh.workspace = true
 bouncycastle-ed.workspace = true
-bouncycastle-hex.workspace = true
 bouncycastle-rng.workspace = true
 criterion.workspace = true
 

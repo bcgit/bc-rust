@@ -10,6 +10,7 @@ mod blake2s_tests {
     use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
     use bouncycastle_core::hazmat::FixedSeedRNG;
     use bouncycastle_core::hazmat::do_hazardous_operations;
+    use bouncycastle_core::hex;
     use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::symmetric_key::{
@@ -25,7 +26,6 @@ mod blake2s_tests {
     use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
     use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
     use bouncycastle_digest::blake2::*;
-    use bouncycastle_hex as hex;
 
     type H = BLAKE2s_256;
     type K = BLAKE2s_256_MACKey;

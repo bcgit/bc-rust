@@ -4,9 +4,9 @@
 //! streaming-equivalence, one-shot/trait-API, metadata, and unsupported-partial-op tests.
 
 use bouncycastle_core::errors::HashError;
+use bouncycastle_core::hex;
 use bouncycastle_core::traits::{Hash, HashAlgParams, HashOneShot};
 use bouncycastle_core_test_framework::hash::TestFrameworkHash;
-use bouncycastle_hex as hex;
 use bouncycastle_symmetric::ascon::AsconHash256;
 
 /// Embedded NIST LWC Ascon-Hash256 vectors `(message, digest)` in hex, spanning empty, sub-block,

@@ -50,10 +50,10 @@ use bouncycastle_aes::AES_BLOCK_LEN;
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json};
-use bouncycastle_hex as hex;
 
 const TEST_DATA_DIR: &str = "crypto/aes_tdes_vectors/AES";
 const RESPONSE_FILE: &str = "ACVP-AES-ECB.4014527.rsp.json";

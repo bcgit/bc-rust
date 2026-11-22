@@ -13,6 +13,7 @@ mod blake3_tests {
     use super::vectors::{CASES, CONTEXT, OUTPUT_LEN, input};
     use bouncycastle_core::direction::Encrypting;
     use bouncycastle_core::errors::{HashError, SuspendableError};
+    use bouncycastle_core::hex;
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
         Algorithm, AlgorithmInfo, Hash, HashAlgParams, HashOneShot, Suspendable, XOF, XOFSqueezer,
@@ -21,7 +22,6 @@ mod blake3_tests {
     use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
     use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
     use bouncycastle_digest::blake3::*;
-    use bouncycastle_hex as hex;
 
     fn h(s: &str) -> Vec<u8> {
         hex::decode(s).unwrap()

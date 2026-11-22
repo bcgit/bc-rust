@@ -3,12 +3,12 @@
 
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KDF};
 use bouncycastle_digest::scrypt::{DEFAULT_MAX_WORK_LEN, SCRYPT_NAME, SCrypt, ScryptParams};
-use bouncycastle_hex::decode as hex_decode;
 
 #[path = "scrypt_common/mod.rs"]
 mod common;

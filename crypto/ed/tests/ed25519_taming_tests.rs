@@ -143,10 +143,10 @@ fn taming_vectors() {
     assert_eq!(TAMING.len(), 12);
     let (mut at_decode, mut at_verify) = (0, 0);
     for (number, msg, pk, sig) in TAMING {
-        let msg = bouncycastle_hex::decode(msg).unwrap();
-        let sig = bouncycastle_hex::decode(sig).unwrap();
+        let msg = bouncycastle_core::hex::decode(msg).unwrap();
+        let sig = bouncycastle_core::hex::decode(sig).unwrap();
         assert_eq!(sig.len(), 64, "vector {number}");
-        let pk = Ed25519PublicKey::from_bytes(&bouncycastle_hex::decode(pk).unwrap());
+        let pk = Ed25519PublicKey::from_bytes(&bouncycastle_core::hex::decode(pk).unwrap());
         assert_eq!(pk.is_ok(), KEY_DECODES.contains(number), "vector {number}: key decode");
         match pk {
             Err(_) => at_decode += 1,

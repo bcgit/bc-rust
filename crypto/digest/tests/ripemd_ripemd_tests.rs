@@ -10,13 +10,13 @@
 #[cfg(test)]
 mod ripemd_tests {
     use bouncycastle_core::errors::{HashError, SuspendableError};
+    use bouncycastle_core::hex;
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
         Algorithm, AlgorithmInfo, AlgorithmOID, Hash, HashAlgParams, HashOneShot,
     };
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_digest::ripemd::*;
-    use bouncycastle_hex as hex;
 
     /// The designers' eight short messages, in the order of their table.
     const MESSAGES: [&[u8]; 8] = [

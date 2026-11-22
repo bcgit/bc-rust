@@ -6,6 +6,7 @@
 
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::hazmat::WithoutCollisionResistance;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
@@ -19,7 +20,6 @@ use bouncycastle_ec::P256;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
 use bouncycastle_ecdsa::keys_common::{DerivePublicKey, SignatureKeyPair};
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::SHA256;
 

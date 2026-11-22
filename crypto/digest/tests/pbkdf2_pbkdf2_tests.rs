@@ -3,6 +3,7 @@
 
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -12,7 +13,6 @@ use bouncycastle_digest::pbkdf2::{
     PBKDF2, PBKDF2_HMAC_SHA3_256, PBKDF2_HMAC_SHA224, PBKDF2_HMAC_SHA256, PBKDF2_HMAC_SHA384,
     PBKDF2_HMAC_SHA512,
 };
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_hmac::HmacKey;
 use bouncycastle_sha2::SHA256;
 use core::num::NonZeroU32;

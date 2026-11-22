@@ -10,10 +10,10 @@
 
 use bouncycastle_cipher::modes::TKW;
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use bouncycastle_hex as hex;
 use bouncycastle_symmetric::tdes::{KEY_LEN, TDES3Key};
 
 const CAVP_DIR: &str = "crypto/aes_tdes_vectors/TDES";
