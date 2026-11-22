@@ -9,7 +9,7 @@
 //! from `K`.
 
 use crate::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
-use crate::keygen::keygen_from_rng;
+use crate::keygen::{keygen_as, keygen_from_rng};
 use crate::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey, modulus_strength,
 };
@@ -183,16 +183,20 @@ impl<K: RsaSigningSize> SignatureKeyPair for K {
         (RsaPublicKey<RSASSA_PKCS1_v1_5<K, H>>, RsaPrivateKey<RSASSA_PKCS1_v1_5<K, H>>),
         SignatureError,
     > {
-        let (pk, sk) = K::keygen(rng)?;
-        Ok((RsaPublicKey::from_components(pk), RsaPrivateKey::from_components(sk)))
+        keygen_as::<K, _, _>(rng, |pair| {
+            let (pk, sk) = pair?;
+            Ok((RsaPublicKey::from_components(pk), RsaPrivateKey::from_components(sk)))
+        })
     }
 
     fn generate_pss_signature_key_pair<H: PssHash>(
         rng: &mut dyn RNG,
     ) -> Result<(RsaPublicKey<RSASSA_PSS<K, H>>, RsaPrivateKey<RSASSA_PSS<K, H>>), SignatureError>
     {
-        let (pk, sk) = K::keygen(rng)?;
-        Ok((RsaPublicKey::from_components(pk), RsaPrivateKey::from_components(sk)))
+        keygen_as::<K, _, _>(rng, |pair| {
+            let (pk, sk) = pair?;
+            Ok((RsaPublicKey::from_components(pk), RsaPrivateKey::from_components(sk)))
+        })
     }
 
     fn generate_pss_signature_key_pair_with<H: HashOneShot + HashAlgParams, P: PssParams<H>>(
@@ -201,8 +205,10 @@ impl<K: RsaSigningSize> SignatureKeyPair for K {
         (RsaPublicKey<RSASSA_PSS<K, H, P>>, RsaPrivateKey<RSASSA_PSS<K, H, P>>),
         SignatureError,
     > {
-        let (pk, sk) = K::keygen(rng)?;
-        Ok((RsaPublicKey::from_components(pk), RsaPrivateKey::from_components(sk)))
+        keygen_as::<K, _, _>(rng, |pair| {
+            let (pk, sk) = pair?;
+            Ok((RsaPublicKey::from_components(pk), RsaPrivateKey::from_components(sk)))
+        })
     }
 }
 
@@ -231,7 +237,7 @@ impl<K: RsaSigningSize> KemKeyPair for K {
     fn generate_kem_key_pair(
         rng: &mut dyn RNG,
     ) -> Result<(RsaKEMPublicKey<K>, RsaKEMPrivateKey<K>), KEMError> {
-        crate::rsasve::keygen_from::<K>(K::keygen(rng))
+        keygen_as::<K, _, _>(rng, crate::rsasve::keygen_from::<K>)
     }
 }
 

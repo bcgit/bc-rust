@@ -72,6 +72,66 @@ pub(crate) fn rsasp1<K: RsaSigningSize>(
     Ok(s)
 }
 
+/// Overwrites the stack that the previous call made from the caller's frame used, by taking a
+/// frame of its own over the same memory and wiping it. Never inlined: the frame is the point.
+/// The caller runs its computation in a never-inlined function, so that everything the
+/// computation and its callees spill or stage lies below the caller's frame, and calls this
+/// next.
+///
+/// The frame is `COUNT` values of `T`, for the part of the computation's stack that scales
+/// with the modulus (`T` is a limb array of the size in hand), and `FIXED` words for the part
+/// that does not. Each caller gives the measured figures beside its constants.
+///
+/// The shape of `wipe_stack_below` in `bouncycastle-ed` (`ed25519/scalar.rs`) and
+/// `bouncycastle-sha3` (`keccak.rs`), which are private to those crates and of one fixed size.
+/// Like theirs it is sized for an optimised build: an unoptimised build's frames are larger
+/// and are not covered.
+#[inline(never)]
+pub(crate) fn wipe_stack_below<T: ZeroizablePrimitive, const COUNT: usize, const FIXED: usize>() {
+    let mut scaled = Secret::<[T; COUNT]>::new();
+    let mut fixed = Secret::<[u64; FIXED]>::new();
+    core::hint::black_box((&mut *scaled, &mut *fixed));
+}
+
+/// [`wipe_stack_below`] when it goes out of scope, for a function whose result is itself the
+/// secret and is returned by value. Such a function ends with the call that does the work, so
+/// that the result is written to where the function's own caller wants it and not staged in
+/// this frame, and declares this first, so that the wipe runs after that call has returned:
+///
+/// ```text
+/// let _wipe = WipeStackBelowOnReturn::<T, COUNT, FIXED>::new();
+/// Self::the_work_in_own_frame(..)
+/// ```
+pub(crate) struct WipeStackBelowOnReturn<
+    T: ZeroizablePrimitive,
+    const COUNT: usize,
+    const FIXED: usize,
+>(core::marker::PhantomData<T>);
+
+impl<T: ZeroizablePrimitive, const COUNT: usize, const FIXED: usize>
+    WipeStackBelowOnReturn<T, COUNT, FIXED>
+{
+    pub(crate) fn new() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
+impl<T: ZeroizablePrimitive, const COUNT: usize, const FIXED: usize> Drop
+    for WipeStackBelowOnReturn<T, COUNT, FIXED>
+{
+    fn drop(&mut self) {
+        wipe_stack_below::<T, COUNT, FIXED>();
+    }
+}
+
+/// What [`wipe_stack_below`] overwrites after the checked CRT: this many `[u64; L]` values and
+/// this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97), the computation
+/// and everything it calls use 8248 bytes at RSA-2048, 10552 at RSA-3072, 13752 at RSA-4096
+/// and 27592 at RSA-8192; these cover 9600, 13440, 17280 and 32640, the difference being
+/// room for a compiler that lays the frames out less tightly.
+const CRT_STACK_PER_LIMB: usize = 30;
+const CRT_STACK_FIXED: usize = 240;
+
 /// The CRT exponentiation of RSASP1 and RSADP, [`crt_exp`], with its result checked before any
 /// of it leaves: `y = x^d mod n` goes into `out` only if `y^e mod n` is `x` again, which it is
 /// whenever the key's components belong together and both half-exponentiations were computed
@@ -80,8 +140,42 @@ pub(crate) fn rsasp1<K: RsaSigningSize>(
 ///
 /// `x < n`. Constant time in the key and in `y`: the comparison is over every limb, and `out`
 /// is written through a mask either way. The size marker's `crt_exp` forwards here.
+///
+/// The contexts over `p` and `q`, the two half-size results, `h` and `q * h` pass through
+/// locals, return slots and spilled registers of this computation and its callees, where the
+/// scrubbing of the named values does not reach. So it runs in a frame of its own and the
+/// stack it used is overwritten afterwards.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn crt_exp_checked<
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const HALF: usize,
+    const HALF2: usize,
+    const HALF21: usize,
+>(
+    p: &[u64; HALF],
+    q: &[u64; HALF],
+    d_p: &[u64; HALF],
+    d_q: &[u64; HALF],
+    q_inv: &[u64; HALF],
+    n: &[u64; L],
+    e: u64,
+    x: &[u64; L],
+    out: &mut [u64; L],
+) -> Condition<u64> {
+    let ok = crt_exp_checked_in_own_frame::<L, L2, L21, HALF, HALF2, HALF21>(
+        p, q, d_p, d_q, q_inv, n, e, x, out,
+    );
+    wipe_stack_below::<[u64; L], CRT_STACK_PER_LIMB, CRT_STACK_FIXED>();
+    ok
+}
+
+/// The computation of [`crt_exp_checked`]. Never inlined, so that what it and its callees
+/// leave lies below its caller's frame, where [`wipe_stack_below`] reaches it.
+#[allow(clippy::too_many_arguments)]
+#[inline(never)]
+fn crt_exp_checked_in_own_frame<
     const L: usize,
     const L2: usize,
     const L21: usize,

@@ -26,6 +26,7 @@
 
 use crate::keys::{RsaPrivateComponents, RsaPublicComponents};
 use crate::modexp::{MontgomeryContext, check_widths, mod_pow, mul_mod, reduce_wide};
+use crate::rsa_core::WipeStackBelowOnReturn;
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -588,6 +589,59 @@ where
     K: RsaSigningSize + RsaSize<HalfLimbs = [u64; HALF], Limbs = [u64; HALF2]>,
 {
     const { check_widths::<HALF, HALF2, HALF21>() };
+    // The primes, the exponents and what is derived from them pass through locals, return
+    // slots and the frames of the primality test that no `Secret` names.
+    let _wipe =
+        WipeStackBelowOnReturn::<[u64; HALF2], KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED>::new();
+    keygen_in_own_frame::<K, HALF, HALF2, HALF21>(rng, rounds, required_strength)
+}
+
+/// [`RsaSigningSize::keygen`]'s pair handed to `finish`, which makes of it what the caller
+/// returns: keys for a scheme, key-establishment keys. `finish` runs inside a frame that is
+/// wiped, so a caller that ends with this call stages no copy of the new key in a frame of its
+/// own, as with `RsaPrivateComponents::from_crt_components_as`.
+pub(crate) fn keygen_as<K: RsaSigningSize, T, E>(
+    rng: &mut dyn RNG,
+    finish: impl FnOnce(
+        Result<(RsaPublicComponents<K>, RsaPrivateComponents<K>), SignatureError>,
+    ) -> Result<T, E>,
+) -> Result<T, E> {
+    let _wipe =
+        WipeStackBelowOnReturn::<K::Limbs, KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED>::new();
+    keygen_as_in_own_frame::<K, T, E>(rng, finish)
+}
+
+/// The work of [`keygen_as`]. Never inlined, so that what it leaves lies below its caller's
+/// frame, where `wipe_stack_below` reaches it.
+#[inline(never)]
+fn keygen_as_in_own_frame<K: RsaSigningSize, T, E>(
+    rng: &mut dyn RNG,
+    finish: impl FnOnce(
+        Result<(RsaPublicComponents<K>, RsaPrivateComponents<K>), SignatureError>,
+    ) -> Result<T, E>,
+) -> Result<T, E> {
+    finish(K::keygen(rng))
+}
+
+/// What `wipe_stack_below` overwrites after key generation: this many `[u64; HALF2]` values
+/// and this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97), key
+/// generation uses 11480 bytes at RSA-2048, 16600 at RSA-3072, 21976 at RSA-4096 and 41144 at
+/// RSA-8192; these cover 13568, 19328, 25088 and 48128, the difference being room for a
+/// compiler that lays the frames out less tightly.
+const KEYGEN_STACK_PER_LIMB: usize = 45;
+const KEYGEN_STACK_FIXED: usize = 256;
+
+/// The work of [`keygen_from_rng`]. Never inlined, so that what it leaves lies below its
+/// caller's frame, where `wipe_stack_below` reaches it.
+#[inline(never)]
+fn keygen_in_own_frame<K, const HALF: usize, const HALF2: usize, const HALF21: usize>(
+    rng: &mut dyn RNG,
+    rounds: NonZeroUsize,
+    required_strength: SecurityStrength,
+) -> Result<(RsaPublicComponents<K>, RsaPrivateComponents<K>), SignatureError>
+where
+    K: RsaSigningSize + RsaSize<HalfLimbs = [u64; HALF], Limbs = [u64; HALF2]>,
+{
     // Step 3 (and A.1.3's preamble): the DRBG's strength must meet the modulus's.
     if rng.security_strength() < required_strength {
         return Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm));

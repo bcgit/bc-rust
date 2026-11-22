@@ -20,6 +20,7 @@
 //! private key only at a [`RsaSigningSize`], with the byte layouts described on the components.
 //! The scheme is not encoded, so a key file is decoded under the key type it is for.
 
+use crate::rsa_core::{WipeStackBelowOnReturn, wipe_stack_below};
 use crate::rsassa::RsaSignatureAlgorithm;
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
@@ -147,7 +148,7 @@ impl<K: RsaSize> RsaPublicComponents<K> {
 /// RFC 8017 or ASN.1 format -- see [`RsaPublicKey`]'s `# Encoding` for why -- just a fixed-width
 /// layout that round-trips, for `cli/src/rsa_cmd.rs` to read and write private keys as files.
 /// Decoding validates the components the same way [`Self::from_crt_components`] does.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RsaPrivateComponents<K: RsaSize> {
     p: Secret<K::HalfLimbs>,
     q: Secret<K::HalfLimbs>,
@@ -158,6 +159,46 @@ pub struct RsaPrivateComponents<K: RsaSize> {
     n: K::Limbs,
     /// The public exponent, kept so a private-key operation can check its result; public.
     e: u64,
+}
+
+/// What [`wipe_stack_below`] overwrites after a private key is constructed or decoded: this
+/// many `K::Limbs` values and this many words. Measured in x86-64 release builds (rustc 1.88
+/// and 1.97), decoding, the deeper of the two, uses 5320 bytes at RSA-2048, 7800 at RSA-3072,
+/// 10168 at RSA-4096 and 20328 at RSA-8192; these cover 6208, 9152, 12096 and 23872, the
+/// difference being room for a compiler that lays the frames out less tightly.
+const KEY_STACK_PER_LIMB: usize = 23;
+const KEY_STACK_FIXED: usize = 40;
+
+/// The same after a private key is encoded or cloned, which use 1944, 2856, 3752 and 7336
+/// bytes at those sizes; these cover 2304, 3328, 4352 and 8448.
+const COPY_STACK_PER_LIMB: usize = 8;
+const COPY_STACK_FIXED: usize = 32;
+
+// Written out rather than derived, to run in a frame of its own: a copy of five secret
+// components passes through return slots that no `Secret` names.
+impl<K: RsaSize> Clone for RsaPrivateComponents<K> {
+    fn clone(&self) -> Self {
+        let _wipe =
+            WipeStackBelowOnReturn::<K::Limbs, COPY_STACK_PER_LIMB, COPY_STACK_FIXED>::new();
+        self.clone_in_own_frame()
+    }
+}
+
+impl<K: RsaSize> RsaPrivateComponents<K> {
+    /// The copy [`Clone::clone`] makes. Never inlined, so that what it leaves lies below its
+    /// caller's frame, where [`wipe_stack_below`] reaches it.
+    #[inline(never)]
+    fn clone_in_own_frame(&self) -> Self {
+        Self {
+            p: self.p.clone(),
+            q: self.q.clone(),
+            d_p: self.d_p.clone(),
+            d_q: self.d_q.clone(),
+            q_inv: self.q_inv.clone(),
+            n: self.n,
+            e: self.e,
+        }
+    }
 }
 
 // The constructors are a signing size's: RSA-1024 and RSA-1536 verify only, so no private key
@@ -171,6 +212,52 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     /// `# Security Considerations`): a key whose parts do not is built, and every operation
     /// with it fails its result check.
     pub fn from_crt_components(
+        p: &K::HalfLimbs,
+        q: &K::HalfLimbs,
+        d_p: &K::HalfLimbs,
+        d_q: &K::HalfLimbs,
+        q_inv: &K::HalfLimbs,
+        e: u64,
+    ) -> Result<Self, SignatureError> {
+        Self::from_crt_components_as(p, q, d_p, d_q, q_inv, e, |components| components)
+    }
+
+    /// [`Self::from_crt_components`] with its result handed to `finish`, which makes of it what
+    /// the caller returns: a key type over the components, another error. `finish` runs inside
+    /// the frame that is wiped, so a caller that ends with this call stages no copy of the key
+    /// in a frame of its own: the key is written once, to where the caller's caller keeps it.
+    pub(crate) fn from_crt_components_as<T, E>(
+        p: &K::HalfLimbs,
+        q: &K::HalfLimbs,
+        d_p: &K::HalfLimbs,
+        d_q: &K::HalfLimbs,
+        q_inv: &K::HalfLimbs,
+        e: u64,
+        finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let _wipe = WipeStackBelowOnReturn::<K::Limbs, KEY_STACK_PER_LIMB, KEY_STACK_FIXED>::new();
+        Self::from_crt_components_in_own_frame(p, q, d_p, d_q, q_inv, e, finish)
+    }
+
+    /// The work of [`Self::from_crt_components_as`]. Never inlined, so that the copies of the
+    /// components it leaves lie below its caller's frame, where [`wipe_stack_below`] reaches
+    /// them.
+    #[inline(never)]
+    fn from_crt_components_in_own_frame<T, E>(
+        p: &K::HalfLimbs,
+        q: &K::HalfLimbs,
+        d_p: &K::HalfLimbs,
+        d_q: &K::HalfLimbs,
+        q_inv: &K::HalfLimbs,
+        e: u64,
+        finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        finish(Self::validated(p, q, d_p, d_q, q_inv, e))
+    }
+
+    /// The checks and the key of [`Self::from_crt_components`], for a caller that runs under a
+    /// wipe of its own.
+    fn validated(
         p: &K::HalfLimbs,
         q: &K::HalfLimbs,
         d_p: &K::HalfLimbs,
@@ -236,7 +323,8 @@ impl<K: RsaSize> RsaPrivateComponents<K> {
 
     /// A copy of these components as the private key of `A`.
     pub fn key<A: RsaSignatureAlgorithm<Size = K>>(&self) -> RsaPrivateKey<A> {
-        RsaPrivateKey::from_components(self.clone())
+        // The copy is made in the key, not handed to a constructor through this frame.
+        RsaPrivateKey { components: self.clone(), _alg: PhantomData }
     }
 
     /// These components as the private key of `A`.
@@ -268,6 +356,33 @@ impl<K: RsaSize> RsaPrivateComponents<K> {
 impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     /// The `# Encoding` layout.
     pub(crate) fn encode_raw(&self) -> K::PrivateKeyEncoded {
+        let _wipe =
+            WipeStackBelowOnReturn::<K::Limbs, COPY_STACK_PER_LIMB, COPY_STACK_FIXED>::new();
+        self.encode_raw_in_own_frame()
+    }
+
+    /// The `# Encoding` layout into `out`.
+    pub(crate) fn encode_raw_out(&self, out: &mut K::PrivateKeyEncoded) {
+        self.encode_raw_out_in_own_frame(out);
+        wipe_stack_below::<K::Limbs, COPY_STACK_PER_LIMB, COPY_STACK_FIXED>();
+    }
+
+    /// The work of [`Self::encode_raw`]. Never inlined: see
+    /// [`Self::from_crt_components_in_own_frame`].
+    #[inline(never)]
+    fn encode_raw_in_own_frame(&self) -> K::PrivateKeyEncoded {
+        self.encoded()
+    }
+
+    /// The work of [`Self::encode_raw_out`]. Never inlined: see
+    /// [`Self::from_crt_components_in_own_frame`].
+    #[inline(never)]
+    fn encode_raw_out_in_own_frame(&self, out: &mut K::PrivateKeyEncoded) {
+        *out = self.encoded();
+    }
+
+    /// The encoding, for a caller that runs under a wipe of its own.
+    fn encoded(&self) -> K::PrivateKeyEncoded {
         let half = K::K_LEN / 2;
         let mut out = K::PrivateKeyEncoded::ZEROED;
         for (i, component) in
@@ -283,7 +398,29 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     /// The `# Encoding` layout decoded and validated as [`Self::from_crt_components`]
     /// validates. Each component is staged in a `Secret` on the way to its limbs, scrubbed
     /// before returning; the caller's buffer is the one other copy of the encoding.
-    pub(crate) fn from_bytes_raw(bytes: &K::PrivateKeyEncoded) -> Result<Self, SignatureError> {
+    ///
+    /// The result is handed to `finish`, as [`Self::from_crt_components_as`] hands its own and
+    /// for the same reason.
+    pub(crate) fn from_bytes_raw_as<T, E>(
+        bytes: &K::PrivateKeyEncoded,
+        finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let _wipe = WipeStackBelowOnReturn::<K::Limbs, KEY_STACK_PER_LIMB, KEY_STACK_FIXED>::new();
+        Self::from_bytes_raw_in_own_frame(bytes, finish)
+    }
+
+    /// The work of [`Self::from_bytes_raw_as`]. Never inlined: see
+    /// [`Self::from_crt_components_in_own_frame`].
+    #[inline(never)]
+    fn from_bytes_raw_in_own_frame<T, E>(
+        bytes: &K::PrivateKeyEncoded,
+        finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        finish(Self::decoded(bytes))
+    }
+
+    /// The decoding, for a caller that runs under a wipe of its own.
+    fn decoded(bytes: &K::PrivateKeyEncoded) -> Result<Self, SignatureError> {
         let half = K::K_LEN / 2;
         let bytes = bytes.as_ref();
         let mut staged = Secret::<K::HalfBytes>::new();
@@ -294,7 +431,7 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
         }
         let [p, q, d_p, d_q, q_inv] = &components;
         let e_bytes: [u8; 8] = bytes[5 * half..].try_into().expect("SK_LEN is 5 * K_LEN / 2 + 8");
-        Self::from_crt_components(p, q, d_p, d_q, q_inv, u64::from_be_bytes(e_bytes))
+        Self::validated(p, q, d_p, d_q, q_inv, u64::from_be_bytes(e_bytes))
     }
 }
 
@@ -425,9 +562,9 @@ where
         q_inv: &<A::Size as RsaSize>::HalfLimbs,
         e: u64,
     ) -> Result<Self, SignatureError> {
-        Ok(Self::from_components(RsaPrivateComponents::from_crt_components(
-            p, q, d_p, d_q, q_inv, e,
-        )?))
+        RsaPrivateComponents::from_crt_components_as(p, q, d_p, d_q, q_inv, e, |components| {
+            components.map(Self::from_components)
+        })
     }
 }
 
@@ -486,7 +623,7 @@ where
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        *out = self.components.encode_raw();
+        self.components.encode_raw_out(out);
         SK_LEN
     }
 
@@ -496,9 +633,9 @@ where
                 "an RSA private key is five components of half the modulus length and eight bytes",
             )
         })?;
-        Ok(Self::from_components(
-            RsaPrivateComponents::from_bytes_raw(bytes).map_err(decoding_error)?,
-        ))
+        RsaPrivateComponents::from_bytes_raw_as(bytes, |components| {
+            components.map(Self::from_components).map_err(decoding_error)
+        })
     }
 }
 

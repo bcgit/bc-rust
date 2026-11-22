@@ -33,6 +33,7 @@
 
 use crate::eme_oaep::{self, HashBuf};
 use crate::keygen::fill_bytes;
+use crate::rsa_core::wipe_stack_below;
 use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey, in_open_range};
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{KEMError, KeyMaterialError, KeyTransportError, RNGError};
@@ -250,6 +251,37 @@ where
 /// zeroized first and left so on failure: the message length, or `None` for a decryption error
 /// of any kind. `exact_len` is as [`eme_oaep::decode_out`]'s.
 fn decrypt<K, H, M, const N: usize>(
+    sk: &RsaKEMPrivateKey<K>,
+    label: &[u8],
+    ct: &[u8; N],
+    exact_len: Option<usize>,
+    out: &mut [u8],
+) -> Option<usize>
+where
+    K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
+    H: OaepHash,
+    M: OaepHash,
+{
+    let len = decrypt_in_own_frame::<K, H, M, N>(sk, label, ct, exact_len, out);
+    // The encoded message and the seed pass through return slots and through the frames of
+    // the mask generation; the whole operation's stack is overwritten, the CRT's own wipe
+    // being inside it.
+    wipe_stack_below::<K::Limbs, DECRYPT_STACK_PER_LIMB, DECRYPT_STACK_FIXED>();
+    len
+}
+
+/// What [`wipe_stack_below`] overwrites after RSAES-OAEP-DECRYPT: this many `K::Limbs` values
+/// and this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97) with SHA-256,
+/// the operation uses 9544 bytes at RSA-2048, 12632 at RSA-3072, 16344 at RSA-4096 and 32232
+/// at RSA-8192; these cover 11008, 15360, 19712 and 37120, the difference being room for a
+/// compiler that lays the frames out less tightly.
+const DECRYPT_STACK_PER_LIMB: usize = 34;
+const DECRYPT_STACK_FIXED: usize = 288;
+
+/// The work of [`decrypt`]. Never inlined, so that what it leaves lies below its caller's
+/// frame, where [`wipe_stack_below`] reaches it.
+#[inline(never)]
+fn decrypt_in_own_frame<K, H, M, const N: usize>(
     sk: &RsaKEMPrivateKey<K>,
     label: &[u8],
     ct: &[u8; N],

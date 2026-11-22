@@ -43,8 +43,9 @@
 //! amounts to full public-key validation, which §6.4.2.2 notes "is not specified in this
 //! Recommendation".
 
-use crate::keygen::fill_bytes;
+use crate::keygen::{fill_bytes, keygen_as};
 use crate::keys::{RsaPrivateComponents, RsaPublicComponents, decoding_error};
+use crate::rsa_core::wipe_stack_below;
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{KEMError, KeyDecodingError, RNGError, SignatureError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -183,10 +184,9 @@ impl<K: RsaSigningSize> RsaKEMPrivateKey<K> {
         q_inv: &K::HalfLimbs,
         e: u64,
     ) -> Result<Self, KEMError> {
-        Self::from_rsa_key(
-            RsaPrivateComponents::from_crt_components(p, q, d_p, d_q, q_inv, e)
-                .map_err(kem_error)?,
-        )
+        RsaPrivateComponents::from_crt_components_as(p, q, d_p, d_q, q_inv, e, |components| {
+            Self::from_rsa_key(components.map_err(kem_error)?)
+        })
     }
 
     pub(crate) fn from_rsa_key(sk: RsaPrivateComponents<K>) -> Result<Self, KEMError> {
@@ -227,7 +227,7 @@ impl<K: RsaSigningSize> RSASVE<K> {
     pub fn keygen(
         rng: &mut dyn RNG,
     ) -> Result<(RsaKEMPublicKey<K>, RsaKEMPrivateKey<K>), KEMError> {
-        keygen_from::<K>(K::keygen(rng))
+        keygen_as::<K, _, _>(rng, keygen_from::<K>)
     }
 }
 
@@ -333,8 +333,36 @@ where
     /// zeroized first and left so on error. A `z` that fails the CRT result check
     /// (`z^e mod n` is not `C`) is [`KEMError::DecapsulationFailed`] too, and none of it is
     /// released.
-    #[allow(non_snake_case)]
     fn decaps_out(&self, ct: &[u8; N], ss: &mut KeyMaterial<N>) -> Result<usize, KEMError> {
+        let result = self.recover_in_own_frame(ct, ss);
+        // The secret value passes through return slots on its way from limbs to `ss`; the
+        // whole operation's stack is overwritten, the CRT's own wipe being inside it.
+        wipe_stack_below::<K::Limbs, DECAPS_STACK_PER_LIMB, DECAPS_STACK_FIXED>();
+        result
+    }
+}
+
+/// What [`wipe_stack_below`] overwrites after RSASVE.RECOVER: this many `K::Limbs` values and
+/// this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97), the operation
+/// uses 9240 bytes at RSA-2048, 12248 at RSA-3072, 15960 at RSA-4096 and 31848 at RSA-8192;
+/// these cover 10752, 15104, 19456 and 36864, the difference being room for a compiler that
+/// lays the frames out less tightly.
+const DECAPS_STACK_PER_LIMB: usize = 34;
+const DECAPS_STACK_FIXED: usize = 256;
+
+impl<K: RsaSigningSize> RsasveDecapsulator<'_, K> {
+    /// The work of `decaps_out`. Never inlined, so that what it leaves lies below its caller's
+    /// frame, where [`wipe_stack_below`] reaches it.
+    #[allow(non_snake_case)]
+    #[inline(never)]
+    fn recover_in_own_frame<const N: usize>(
+        &self,
+        ct: &[u8; N],
+        ss: &mut KeyMaterial<N>,
+    ) -> Result<usize, KEMError>
+    where
+        K: RsaSize<Modulus = [u8; N]>,
+    {
         ss.zeroize();
         let c = K::limbs_from_be_bytes(ct);
         if !in_open_range::<K>(&c, self.sk.n()) {
@@ -386,7 +414,7 @@ where
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        *out = self.0.encode_raw();
+        self.0.encode_raw_out(out);
         SK_LEN
     }
 
@@ -396,8 +424,9 @@ where
                 "an RSA private key is five components of half the modulus length and eight bytes",
             )
         })?;
-        Self::from_rsa_key(RsaPrivateComponents::from_bytes_raw(bytes).map_err(decoding_error)?)
-            .map_err(kem_decoding_error)
+        RsaPrivateComponents::from_bytes_raw_as(bytes, |components| {
+            Self::from_rsa_key(components.map_err(decoding_error)?).map_err(kem_decoding_error)
+        })
     }
 }
 

@@ -17,6 +17,7 @@
 //! readable, so a key held in a token that runs RSASVE and HKDF inside the device can be handed
 //! the same parameters; see the crate's `# Scope`.
 
+use crate::rsa_core::wipe_stack_below;
 use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
 use crate::size::{RsaSigningSize, RsaSize, min_strength};
 use bouncycastle_core::errors::KEMError;
@@ -190,8 +191,38 @@ where
 {
     /// RSASVE.RECOVER for `Z`, then HKDF over it; a ciphertext RSASVE refuses is refused here
     /// with the caller's buffer zeroized.
-    #[allow(non_snake_case)]
     fn decaps_out(&self, ct: &[u8; N], ss: &mut KeyMaterial<SS_LEN>) -> Result<usize, KEMError> {
+        let result = self.derive_in_own_frame(ct, ss);
+        // HKDF's pseudorandom key, from which every key under this `Z` follows, is left in
+        // the frames of the derivation: the whole operation's stack is overwritten.
+        wipe_stack_below::<K::Limbs, KDF_DECAPS_STACK_PER_LIMB, KDF_DECAPS_STACK_FIXED>();
+        result
+    }
+}
+
+/// What [`wipe_stack_below`] overwrites after decapsulation with HKDF: this many `K::Limbs`
+/// values and this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97) with
+/// SHA-256, the operation, RSASVE.RECOVER's own wipe included, uses 12024 bytes at RSA-2048,
+/// 16504 at RSA-3072, 20984 at RSA-4096 and 38904 at RSA-8192; these cover 12800, 17408, 22016
+/// and 40448.
+const KDF_DECAPS_STACK_PER_LIMB: usize = 36;
+const KDF_DECAPS_STACK_FIXED: usize = 448;
+
+impl<K: RsaSigningSize, H: HMACParams, const SS_LEN: usize>
+    RsasveKdfDecapsulator<'_, '_, '_, K, H, SS_LEN>
+{
+    /// The work of `decaps_out`. Never inlined, so that what it and the derivation leave lies
+    /// below its caller's frame, where [`wipe_stack_below`] reaches it.
+    #[allow(non_snake_case)]
+    #[inline(never)]
+    fn derive_in_own_frame<const N: usize>(
+        &self,
+        ct: &[u8; N],
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KEMError>
+    where
+        K: RsaSize<Modulus = [u8; N]>,
+    {
         ss.zeroize();
         let mut Z = KeyMaterial::<N>::new();
         self.sk.create_decapsulator(())?.decaps_out(ct, &mut Z)?;
