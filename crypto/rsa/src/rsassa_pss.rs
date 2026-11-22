@@ -186,7 +186,7 @@ impl<M> UnsaltedPss for NoSalt<M> {}
 ///
 /// type Alg = RSASSA_PSS<RSA2048, SHA1, Mgf1<SHA1, 20>>;
 /// let z = [0u64; 16];
-/// let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&z, &z, &z, &z, &z).unwrap();
+/// let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&z, &z, &z, &z, &z, 65537).unwrap();
 /// let sk = sk.key::<Alg>();
 /// let _ = OneShotSigningKey::<Alg, 256>::sign(&sk, &mut DefaultRNG::default(), b"message", None);
 /// ```
@@ -200,7 +200,7 @@ impl<M> UnsaltedPss for NoSalt<M> {}
 ///
 /// type Alg = RSASSA_PSS<RSA2048, SHA1, NoSalt<SHA1>>;
 /// let z = [0u64; 16];
-/// let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&z, &z, &z, &z, &z).unwrap();
+/// let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&z, &z, &z, &z, &z, 65537).unwrap();
 /// let sk = sk.key::<Alg>();
 /// let _ = DeterministicOneShotSigningKey::<Alg, 256>::sign_deterministic(&sk, b"message", None);
 /// ```

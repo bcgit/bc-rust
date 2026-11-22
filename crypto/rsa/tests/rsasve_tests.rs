@@ -108,6 +108,7 @@ macro_rules! rsasve_suite {
                     &limbs(v[dp].as_str().unwrap()),
                     &limbs(v[dq].as_str().unwrap()),
                     &limbs(v[qinv].as_str().unwrap()),
+                    v["e"].as_u64().unwrap(),
                 )
                 .expect("vector CRT key must be accepted")
             }
@@ -124,7 +125,7 @@ macro_rules! rsasve_suite {
                 assert_eq!(CT_LEN, $bits / 8);
                 assert_eq!(SS_LEN, $bits / 8);
                 assert_eq!(PK_LEN, $bits / 8 + 8);
-                assert_eq!(SK_LEN, 5 * $bits / 16);
+                assert_eq!(SK_LEN, 5 * $bits / 16 + 8);
             }
 
             #[test]
@@ -329,6 +330,7 @@ macro_rules! rsasve_suite {
                         &limbs(v["dP"].as_str().unwrap()),
                         &limbs(v["dP"].as_str().unwrap()),
                         &limbs(v["qInv"].as_str().unwrap()),
+                        65537,
                     ),
                     Err(KEMError::DecodingError(_))
                 ));
@@ -341,13 +343,42 @@ macro_rules! rsasve_suite {
                 let mut small = [0u64; $bits / 128];
                 small[0] = 1;
                 assert!(matches!(
-                    SK::from_crt_components(&p, &q, &small, &small, &small),
+                    SK::from_crt_components(&p, &q, &small, &small, &small, 65537),
                     Err(KEMError::DecodingError(_))
                 ));
                 let (_, sk) = openssl_keypair().unwrap();
                 let mut bytes = sk.encode();
                 bytes[..$bits / 16].fill(0); // p = 0, which is even
                 assert!(matches!(SK::from_bytes(&bytes), Err(KeyDecodingError(_))));
+                // SP 800-56B Rev. 2 §6.2.1: 65,537 <= e, of the private key's e as of the
+                // public key's, through the constructor and on decoding.
+                assert_eq!(sk.e(), 65537);
+                for e in [3u64, 17, 65535] {
+                    assert!(matches!(
+                        SK::from_crt_components(
+                            &limbs(v["p"].as_str().unwrap()),
+                            &limbs(v["q"].as_str().unwrap()),
+                            &limbs(v["dP"].as_str().unwrap()),
+                            &limbs(v["dQ"].as_str().unwrap()),
+                            &limbs(v["qInv"].as_str().unwrap()),
+                            e,
+                        ),
+                        Err(KEMError::DecodingError(
+                            "RSA key-establishment public exponent must be at least 65537"
+                        ))
+                    ));
+                    let mut bytes = sk.encode();
+                    bytes[SK_LEN - 8..].copy_from_slice(&e.to_be_bytes());
+                    assert_eq!(
+                        SK::from_bytes(&bytes).unwrap_err(),
+                        KeyDecodingError(
+                            "RSA key-establishment public exponent must be at least 65537"
+                        )
+                    );
+                }
+                let mut bytes = sk.encode();
+                bytes[SK_LEN - 8..].copy_from_slice(&65539u64.to_be_bytes());
+                assert_eq!(SK::from_bytes(&bytes).unwrap().e(), 65539);
             }
         }
     };
@@ -402,15 +433,16 @@ fn acvp_kas_ifc_ssc_kas1_2048() {
     let (mut passed, mut failed) = (0, 0);
     for t in group["tests"].as_array().unwrap() {
         let s = |k: &str| t[k].as_str().unwrap();
+        let e = u64::from_str_radix(s("iutE"), 16).unwrap();
         let sk = RSA2048KEMPrivateKey::from_crt_components(
             &limbs(s("iutP")),
             &limbs(s("iutQ")),
             &limbs(s("iutDmp1")),
             &limbs(s("iutDmq1")),
             &limbs(s("iutIqmp")),
+            e,
         )
         .unwrap();
-        let e = u64::from_str_radix(s("iutE"), 16).unwrap();
         let pk = RSA2048KEMPublicKey::new(&limbs(s("iutN")), e).unwrap();
         let c = be_bytes::<CT_LEN>(s("serverC"));
         let z = be_bytes::<CT_LEN>(s("serverZ"));
@@ -445,15 +477,16 @@ fn acvp_kas_ifc_ssc_kas2_3072() {
     for t in group["tests"].as_array().unwrap() {
         let s = |k: &str| t[k].as_str().unwrap();
         let key = |who: &str| {
+            let e = u64::from_str_radix(s(&format!("{who}E")), 16).unwrap();
             let sk = RSA3072KEMPrivateKey::from_crt_components(
                 &limbs(s(&format!("{who}P"))),
                 &limbs(s(&format!("{who}Q"))),
                 &limbs(s(&format!("{who}Dmp1"))),
                 &limbs(s(&format!("{who}Dmq1"))),
                 &limbs(s(&format!("{who}Iqmp"))),
+                e,
             )
             .unwrap();
-            let e = u64::from_str_radix(s(&format!("{who}E")), 16).unwrap();
             let pk = RSA3072KEMPublicKey::new(&limbs(s(&format!("{who}N"))), e).unwrap();
             (pk, sk)
         };
@@ -518,6 +551,7 @@ macro_rules! acvp_rsadp {
                     &limbs(s("dmp1")),
                     &limbs(s("dmq1")),
                     &limbs(s("iqmp")),
+                    e,
                 )
                 .unwrap();
                 let ct = be_bytes::<CT_LEN>(s("ct"));

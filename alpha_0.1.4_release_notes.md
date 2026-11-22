@@ -118,6 +118,11 @@
   one whose top bit is clear, as the key-establishment keys already did.
 * RSA keys -- the public exponent is a `u64` (it was a `u32`), and the public key's encoding is `n || e` with `e`
   in 8 bytes, 4 longer than before (breaking: `PK_LEN` is the modulus length plus 8).
+* RSA keys -- the private key carries the public exponent: `from_crt_components` takes `e`, and the encoding is
+  `p || q || dP || dQ || qInv || e` with `e` in 8 bytes (breaking: `SK_LEN` is 8 longer, 648 at RSA-2048).
+* RSA -- the result of every private-key operation (signing, RSASVE decapsulation, OAEP decryption) is checked
+  against `e` before it is released; a result that fails is an error (`SignatureError::ComputationFault`, or the
+  operation's one decryption error) and is wiped.
 
 ## Minor features / bug fixes
 

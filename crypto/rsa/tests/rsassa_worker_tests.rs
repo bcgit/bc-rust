@@ -46,7 +46,8 @@ const Q_INV: [u64; 16] = [
 
 fn key_pair() -> (RsaPublicComponents<RSA2048>, RsaPrivateComponents<RSA2048>) {
     let sk =
-        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV, 0x10001)
+            .unwrap();
     let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
     (pk, sk)
 }

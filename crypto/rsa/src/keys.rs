@@ -1,6 +1,6 @@
 //! RSA key material and the signature keys over it. [`RsaPublicComponents`] (RFC 8017 §3.1's
 //! `(n, e)`) and [`RsaPrivateComponents`] (§3.2's "second representation", the CRT quintuple
-//! `p`, `q`, `dP`, `dQ`, `qInv`), generic over the modulus size [`RsaSize`], are what a key is
+//! `p`, `q`, `dP`, `dQ`, `qInv`, with `e`), generic over the modulus size [`RsaSize`], are what a key is
 //! made of and implement no role. [`RsaPublicKey<A>`] and [`RsaPrivateKey<A>`] wrap them for one
 //! signature algorithm `A` ([`RsaSignatureAlgorithm`]: `RSASSA_PSS<RSA2048, SHA256>` and so on),
 //! so a key signs and verifies under the scheme and hash its type names, `sk.sign(..)` and
@@ -55,6 +55,16 @@ fn has_full_bit_length<K: RsaSize>(n: &K::Limbs) -> bool {
 const MODULUS_NOT_FULL_LENGTH: SignatureError =
     SignatureError::DecodingError("RSA modulus must have its top bit set");
 
+/// RFC 8017 §3.1: `e` is odd and at least 3, in the public key and in the private key's copy.
+fn check_public_exponent(e: u64) -> Result<(), SignatureError> {
+    if e < 3 || e & 1 == 0 {
+        return Err(SignatureError::DecodingError(
+            "RSA public exponent must be odd and at least 3",
+        ));
+    }
+    Ok(())
+}
+
 impl<K: RsaSize> RsaPublicComponents<K> {
     /// Builds a public key from its modulus and exponent. Returns
     /// `Err(`[`SignatureError::DecodingError`]`)` if `n` is even (a product of two odd primes
@@ -70,11 +80,7 @@ impl<K: RsaSize> RsaPublicComponents<K> {
         if !has_full_bit_length::<K>(n) {
             return Err(MODULUS_NOT_FULL_LENGTH);
         }
-        if e < 3 || e & 1 == 0 {
-            return Err(SignatureError::DecodingError(
-                "RSA public exponent must be odd and at least 3",
-            ));
-        }
+        check_public_exponent(e)?;
         Ok(Self { n: *n, e })
     }
 
@@ -118,7 +124,9 @@ impl<K: RsaSize> RsaPublicComponents<K> {
 }
 
 /// RSA private key material in RFC 8017 §3.2's CRT ("second representation") form: `p`, `q`,
-/// `dP`, `dQ`, `qInv`, at the size `K`, each component a prime-width integer (`K::HalfLimbs`).
+/// `dP`, `dQ`, `qInv`, at the size `K`, each component a prime-width integer (`K::HalfLimbs`),
+/// and the public exponent `e`, which every private-key operation checks its result against
+/// (the crate's `# Security Considerations`).
 /// Not a key: the keys over it are [`RsaPrivateKey`] and [`crate::rsasve::RsaKEMPrivateKey`].
 ///
 /// `p` and `q` need not be the same bit length: RFC 8017 §3.2 requires only that both are prime
@@ -134,10 +142,11 @@ impl<K: RsaSize> RsaPublicComponents<K> {
 /// # Encoding
 ///
 /// The keys' `PrivateKey::encode`/`from_bytes`, at a signing size, use the raw layout
-/// `p || q || dP || dQ || qInv`, each `K::K_LEN / 2` big-endian bytes, `K::SK_LEN` in all. Not an
+/// `p || q || dP || dQ || qInv || e`: the five CRT components each `K::K_LEN / 2` big-endian
+/// bytes, then `e` as 8 big-endian bytes, `K::SK_LEN = 5 * K::K_LEN / 2 + 8` in all. Not an
 /// RFC 8017 or ASN.1 format -- see [`RsaPublicKey`]'s `# Encoding` for why -- just a fixed-width
 /// layout that round-trips, for `cli/src/rsa_cmd.rs` to read and write private keys as files.
-/// Decoding validates the five components the same way [`Self::from_crt_components`] does.
+/// Decoding validates the components the same way [`Self::from_crt_components`] does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RsaPrivateComponents<K: RsaSize> {
     p: Secret<K::HalfLimbs>,
@@ -147,23 +156,29 @@ pub struct RsaPrivateComponents<K: RsaSize> {
     q_inv: Secret<K::HalfLimbs>,
     /// `p * q`, kept so signing's range check and the public key need no recomputation; public.
     n: K::Limbs,
+    /// The public exponent, kept so a private-key operation can check its result; public.
+    e: u64,
 }
 
 // The constructors are a signing size's: RSA-1024 and RSA-1536 verify only, so no private key
 // value exists at those sizes (the crate's `# Scope`).
 impl<K: RsaSigningSize> RsaPrivateComponents<K> {
-    /// Builds a private key from its CRT components, computing `n = p * q`. Returns
-    /// `Err(`[`SignatureError::DecodingError`]`)` if `p` or `q` is even, `p == q`, `dP`,
-    /// `dQ` or `qInv` is not below its prime, or `n` is not exactly `K::BITS` bits long (its
-    /// top bit is clear). Primality is not checked (see the crate's
-    /// `# Security Considerations`).
+    /// Builds a private key from its CRT components and the public exponent of its key pair,
+    /// computing `n = p * q`. Returns `Err(`[`SignatureError::DecodingError`]`)` if `p` or `q`
+    /// is even, `p == q`, `dP`, `dQ` or `qInv` is not below its prime, `n` is not exactly
+    /// `K::BITS` bits long (its top bit is clear), or `e` is even or below 3. Primality is not
+    /// checked, nor that the components and `e` belong together (see the crate's
+    /// `# Security Considerations`): a key whose parts do not is built, and every operation
+    /// with it fails its result check.
     pub fn from_crt_components(
         p: &K::HalfLimbs,
         q: &K::HalfLimbs,
         d_p: &K::HalfLimbs,
         d_q: &K::HalfLimbs,
         q_inv: &K::HalfLimbs,
+        e: u64,
     ) -> Result<Self, SignatureError> {
+        check_public_exponent(e)?;
         if p.as_ref()[0] & 1 == 0 {
             return Err(SignatureError::DecodingError("p must be odd"));
         }
@@ -197,6 +212,7 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
             d_q: Secret::new(),
             q_inv: Secret::new(),
             n,
+            e,
         };
         *key.p = *p;
         *key.q = *q;
@@ -211,6 +227,11 @@ impl<K: RsaSize> RsaPrivateComponents<K> {
     /// The modulus `n = p * q`, as little-endian limbs.
     pub fn n(&self) -> &K::Limbs {
         &self.n
+    }
+
+    /// The public exponent `e` of the key pair.
+    pub fn e(&self) -> u64 {
+        self.e
     }
 
     /// A copy of these components as the private key of `A`.
@@ -255,6 +276,7 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
             out.as_mut()[i * half..(i + 1) * half]
                 .copy_from_slice(K::half_be_bytes_from_limbs(component).as_ref());
         }
+        out.as_mut()[5 * half..].copy_from_slice(&self.e.to_be_bytes());
         out
     }
 
@@ -271,7 +293,8 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
             **component = K::half_limbs_from_be_bytes(&staged);
         }
         let [p, q, d_p, d_q, q_inv] = &components;
-        Self::from_crt_components(p, q, d_p, d_q, q_inv)
+        let e_bytes: [u8; 8] = bytes[5 * half..].try_into().expect("SK_LEN is 5 * K_LEN / 2 + 8");
+        Self::from_crt_components(p, q, d_p, d_q, q_inv, u64::from_be_bytes(e_bytes))
     }
 }
 
@@ -389,7 +412,7 @@ impl<A: RsaSignatureAlgorithm> RsaPrivateKey<A>
 where
     A::Size: RsaSigningSize,
 {
-    /// A key from its CRT components, validated as
+    /// A key from its CRT components and public exponent, validated as
     /// [`RsaPrivateComponents::from_crt_components`] validates.
     ///
     /// # Errors
@@ -400,8 +423,11 @@ where
         d_p: &<A::Size as RsaSize>::HalfLimbs,
         d_q: &<A::Size as RsaSize>::HalfLimbs,
         q_inv: &<A::Size as RsaSize>::HalfLimbs,
+        e: u64,
     ) -> Result<Self, SignatureError> {
-        Ok(Self::from_components(RsaPrivateComponents::from_crt_components(p, q, d_p, d_q, q_inv)?))
+        Ok(Self::from_components(RsaPrivateComponents::from_crt_components(
+            p, q, d_p, d_q, q_inv, e,
+        )?))
     }
 }
 
@@ -419,6 +445,11 @@ impl<A: RsaSignatureAlgorithm> RsaPrivateKey<A> {
     /// The modulus `n = p * q`, as little-endian limbs.
     pub fn n(&self) -> &<A::Size as RsaSize>::Limbs {
         self.components.n()
+    }
+
+    /// The public exponent `e` of the key pair.
+    pub fn e(&self) -> u64 {
+        self.components.e()
     }
 }
 
@@ -461,7 +492,9 @@ where
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         let bytes: &[u8; SK_LEN] = bytes.try_into().map_err(|_| {
-            KeyDecodingError("an RSA private key is five components of half the modulus length")
+            KeyDecodingError(
+                "an RSA private key is five components of half the modulus length and eight bytes",
+            )
         })?;
         Ok(Self::from_components(
             RsaPrivateComponents::from_bytes_raw(bytes).map_err(decoding_error)?,

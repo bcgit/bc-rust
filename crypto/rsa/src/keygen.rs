@@ -605,7 +605,9 @@ where
             zeroize_in_place(&mut p_minus_2);
         }
 
-        let sk = RsaPrivateComponents::<K>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)?;
+        let sk = RsaPrivateComponents::<K>::from_crt_components(
+            &p, &q, &d_p, &d_q, &q_inv, PUBLIC_EXPONENT,
+        )?;
         let pk = RsaPublicComponents::<K>::new(sk.n(), PUBLIC_EXPONENT)?;
         return Ok((pk, sk));
     }

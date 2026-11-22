@@ -22,6 +22,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{AlgorithmOID, HashAlgParams, HashOneShot, RNG};
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
+use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::{NoPadding, ZeroizablePrimitive};
 use core::fmt::Debug;
 use core::num::NonZeroUsize;
@@ -59,7 +60,7 @@ pub trait RsaSize:
     const K_LEN: usize;
     /// `K_LEN + 8`: the public key's encoding, `n || e`.
     const PK_LEN: usize;
-    /// `5 * K_LEN / 2`: the private key's encoding, `p || q || dP || dQ || qInv`.
+    /// `5 * K_LEN / 2 + 8`: the private key's encoding, `p || q || dP || dQ || qInv || e`.
     const SK_LEN: usize;
     /// The strength SP 800-57 Part 1 Rev. 5 Table 2 gives the modulus length; `None` below
     /// 2048 bits.
@@ -112,9 +113,15 @@ pub trait RsaSigningSize: RsaSize {
     fn modulus_from_primes(p: &Self::HalfLimbs, q: &Self::HalfLimbs) -> Self::Limbs;
     /// Whether `x < y`, at prime width.
     fn half_is_less(x: &Self::HalfLimbs, y: &Self::HalfLimbs) -> bool;
-    /// `m^d mod n` by the CRT (RSASP1 / RSADP's exponentiation), `m < n`, constant time in the
-    /// key.
-    fn crt_exp(sk: &RsaPrivateComponents<Self>, m: &Self::Limbs) -> Self::Limbs;
+    /// `m^d mod n` by the CRT (RSASP1 / RSADP's exponentiation), `m < n`, into `out`, constant
+    /// time in the key, with the result checked before it is released: TRUE if `out^e mod n` is
+    /// `m` again, as it is for a sound key and a sound computation. Otherwise FALSE, with
+    /// `out` zero, and the caller reports a failure.
+    fn crt_exp(
+        sk: &RsaPrivateComponents<Self>,
+        m: &Self::Limbs,
+        out: &mut Self::Limbs,
+    ) -> Condition<u64>;
 }
 
 /// Implemented on a signing size marker: a signature key pair for one scheme and hash, so a
@@ -249,7 +256,7 @@ pub const fn check_lengths<K: RsaSize>() {
         <K::PublicKeyEncoded as Array<u8>>::LEN == K::PK_LEN,
         "PublicKeyEncoded is PK_LEN bytes"
     );
-    assert!(K::SK_LEN == 5 * K::K_LEN / 2, "SK_LEN is the five CRT components");
+    assert!(K::SK_LEN == 5 * K::K_LEN / 2 + 8, "SK_LEN is the five CRT components and e");
     assert!(
         <K::PrivateKeyEncoded as Array<u8>>::LEN == K::SK_LEN,
         "PrivateKeyEncoded is SK_LEN bytes"
@@ -268,7 +275,7 @@ impl RsaSize for RSA1024 {
     const BITS: usize = 1024;
     const K_LEN: usize = 128;
     const PK_LEN: usize = 136;
-    const SK_LEN: usize = 320;
+    const SK_LEN: usize = 328;
     const STRENGTH: SecurityStrength = modulus_strength(16);
 
     type Limbs = [u64; 16];
@@ -276,7 +283,7 @@ impl RsaSize for RSA1024 {
     type Modulus = [u8; 128];
     type HalfBytes = [u8; 64];
     type PublicKeyEncoded = [u8; 136];
-    type PrivateKeyEncoded = [u8; 320];
+    type PrivateKeyEncoded = [u8; 328];
 
     fn limbs_from_be_bytes(bytes: &Self::Modulus) -> Self::Limbs {
         limbs_from_be_bytes::<16, 128>(bytes)
@@ -309,7 +316,7 @@ impl RsaSize for RSA1536 {
     const BITS: usize = 1536;
     const K_LEN: usize = 192;
     const PK_LEN: usize = 200;
-    const SK_LEN: usize = 480;
+    const SK_LEN: usize = 488;
     const STRENGTH: SecurityStrength = modulus_strength(24);
 
     type Limbs = [u64; 24];
@@ -317,7 +324,7 @@ impl RsaSize for RSA1536 {
     type Modulus = [u8; 192];
     type HalfBytes = [u8; 96];
     type PublicKeyEncoded = [u8; 200];
-    type PrivateKeyEncoded = [u8; 480];
+    type PrivateKeyEncoded = [u8; 488];
 
     fn limbs_from_be_bytes(bytes: &Self::Modulus) -> Self::Limbs {
         limbs_from_be_bytes::<24, 192>(bytes)
@@ -350,7 +357,7 @@ impl RsaSize for RSA2048 {
     const BITS: usize = 2048;
     const K_LEN: usize = 256;
     const PK_LEN: usize = 264;
-    const SK_LEN: usize = 640;
+    const SK_LEN: usize = 648;
     const STRENGTH: SecurityStrength = modulus_strength(32);
 
     type Limbs = [u64; 32];
@@ -358,7 +365,7 @@ impl RsaSize for RSA2048 {
     type Modulus = [u8; 256];
     type HalfBytes = [u8; 128];
     type PublicKeyEncoded = [u8; 264];
-    type PrivateKeyEncoded = [u8; 640];
+    type PrivateKeyEncoded = [u8; 648];
 
     fn limbs_from_be_bytes(bytes: &Self::Modulus) -> Self::Limbs {
         limbs_from_be_bytes::<32, 256>(bytes)
@@ -404,14 +411,21 @@ impl RsaSigningSize for RSA2048 {
         nat::sub(x, y).1 == 1
     }
 
-    fn crt_exp(sk: &RsaPrivateComponents<Self>, m: &Self::Limbs) -> Self::Limbs {
-        rsa_core::crt_exp::<32, 64, 65, 16, 32, 33>(
+    fn crt_exp(
+        sk: &RsaPrivateComponents<Self>,
+        m: &Self::Limbs,
+        out: &mut Self::Limbs,
+    ) -> Condition<u64> {
+        rsa_core::crt_exp_checked::<32, 64, 65, 16, 32, 33>(
             sk.p(),
             sk.q(),
             sk.d_p(),
             sk.d_q(),
             sk.q_inv(),
+            sk.n(),
+            sk.e(),
             m,
+            out,
         )
     }
 }
@@ -428,7 +442,7 @@ impl RsaSize for RSA3072 {
     const BITS: usize = 3072;
     const K_LEN: usize = 384;
     const PK_LEN: usize = 392;
-    const SK_LEN: usize = 960;
+    const SK_LEN: usize = 968;
     const STRENGTH: SecurityStrength = modulus_strength(48);
 
     type Limbs = [u64; 48];
@@ -436,7 +450,7 @@ impl RsaSize for RSA3072 {
     type Modulus = [u8; 384];
     type HalfBytes = [u8; 192];
     type PublicKeyEncoded = [u8; 392];
-    type PrivateKeyEncoded = [u8; 960];
+    type PrivateKeyEncoded = [u8; 968];
 
     fn limbs_from_be_bytes(bytes: &Self::Modulus) -> Self::Limbs {
         limbs_from_be_bytes::<48, 384>(bytes)
@@ -482,14 +496,21 @@ impl RsaSigningSize for RSA3072 {
         nat::sub(x, y).1 == 1
     }
 
-    fn crt_exp(sk: &RsaPrivateComponents<Self>, m: &Self::Limbs) -> Self::Limbs {
-        rsa_core::crt_exp::<48, 96, 97, 24, 48, 49>(
+    fn crt_exp(
+        sk: &RsaPrivateComponents<Self>,
+        m: &Self::Limbs,
+        out: &mut Self::Limbs,
+    ) -> Condition<u64> {
+        rsa_core::crt_exp_checked::<48, 96, 97, 24, 48, 49>(
             sk.p(),
             sk.q(),
             sk.d_p(),
             sk.d_q(),
             sk.q_inv(),
+            sk.n(),
+            sk.e(),
             m,
+            out,
         )
     }
 }
@@ -506,7 +527,7 @@ impl RsaSize for RSA4096 {
     const BITS: usize = 4096;
     const K_LEN: usize = 512;
     const PK_LEN: usize = 520;
-    const SK_LEN: usize = 1280;
+    const SK_LEN: usize = 1288;
     const STRENGTH: SecurityStrength = modulus_strength(64);
 
     type Limbs = [u64; 64];
@@ -514,7 +535,7 @@ impl RsaSize for RSA4096 {
     type Modulus = [u8; 512];
     type HalfBytes = [u8; 256];
     type PublicKeyEncoded = [u8; 520];
-    type PrivateKeyEncoded = [u8; 1280];
+    type PrivateKeyEncoded = [u8; 1288];
 
     fn limbs_from_be_bytes(bytes: &Self::Modulus) -> Self::Limbs {
         limbs_from_be_bytes::<64, 512>(bytes)
@@ -560,14 +581,21 @@ impl RsaSigningSize for RSA4096 {
         nat::sub(x, y).1 == 1
     }
 
-    fn crt_exp(sk: &RsaPrivateComponents<Self>, m: &Self::Limbs) -> Self::Limbs {
-        rsa_core::crt_exp::<64, 128, 129, 32, 64, 65>(
+    fn crt_exp(
+        sk: &RsaPrivateComponents<Self>,
+        m: &Self::Limbs,
+        out: &mut Self::Limbs,
+    ) -> Condition<u64> {
+        rsa_core::crt_exp_checked::<64, 128, 129, 32, 64, 65>(
             sk.p(),
             sk.q(),
             sk.d_p(),
             sk.d_q(),
             sk.q_inv(),
+            sk.n(),
+            sk.e(),
             m,
+            out,
         )
     }
 }
@@ -584,7 +612,7 @@ impl RsaSize for RSA8192 {
     const BITS: usize = 8192;
     const K_LEN: usize = 1024;
     const PK_LEN: usize = 1032;
-    const SK_LEN: usize = 2560;
+    const SK_LEN: usize = 2568;
     const STRENGTH: SecurityStrength = modulus_strength(128);
 
     type Limbs = [u64; 128];
@@ -592,7 +620,7 @@ impl RsaSize for RSA8192 {
     type Modulus = [u8; 1024];
     type HalfBytes = [u8; 512];
     type PublicKeyEncoded = [u8; 1032];
-    type PrivateKeyEncoded = [u8; 2560];
+    type PrivateKeyEncoded = [u8; 2568];
 
     fn limbs_from_be_bytes(bytes: &Self::Modulus) -> Self::Limbs {
         limbs_from_be_bytes::<128, 1024>(bytes)
@@ -638,14 +666,21 @@ impl RsaSigningSize for RSA8192 {
         nat::sub(x, y).1 == 1
     }
 
-    fn crt_exp(sk: &RsaPrivateComponents<Self>, m: &Self::Limbs) -> Self::Limbs {
-        rsa_core::crt_exp::<128, 256, 257, 64, 128, 129>(
+    fn crt_exp(
+        sk: &RsaPrivateComponents<Self>,
+        m: &Self::Limbs,
+        out: &mut Self::Limbs,
+    ) -> Condition<u64> {
+        rsa_core::crt_exp_checked::<128, 256, 257, 64, 128, 129>(
             sk.p(),
             sk.q(),
             sk.d_p(),
             sk.d_q(),
             sk.q_inv(),
+            sk.n(),
+            sk.e(),
             m,
+            out,
         )
     }
 }

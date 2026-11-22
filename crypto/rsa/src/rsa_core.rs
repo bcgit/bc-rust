@@ -1,4 +1,5 @@
-//! RSASP1 and RSAVP1 (RFC 8017 §5.2.1, §5.2.2): the raw signature and verification primitives.
+//! RSASP1 and RSAVP1 (RFC 8017 §5.2.1, §5.2.2): the raw signature and verification primitives,
+//! and the checked CRT exponentiation RSASP1 and RSADP (§5.1.2) share.
 //! Crate-private -- never exposed directly, only reachable through a padding scheme
 //! (RSASSA-PKCS1-v1_5 or RSASSA-PSS, a later addition to this crate). RFC 8017's introduction to
 //! §5 is explicit about why: "[primitives] are not intended to provide security apart from a
@@ -18,7 +19,8 @@ use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
-use bouncycastle_utils::secret::{Secret, zeroize_in_place};
+use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive, zeroize_in_place};
 
 /// RSAVP1 (RFC 8017 §5.2.2): `m = s^e mod n`, recovering the message representative from a
 /// signature representative under the public key.
@@ -49,6 +51,12 @@ pub(crate) fn public_exp<const L: usize, const L2: usize, const L21: usize>(
     mod_pow_public_exponent::<L, L2, L21>(x, e, &ctx)
 }
 
+/// RSASP1 (RFC 8017 §5.2.1): `s = m^d mod n` by the CRT, released only if `s^e mod n` is `m`
+/// again.
+///
+/// Step 1's range check is `Err(`[`SignatureError::DecodingError`]`)`. A result that fails its
+/// check is `Err(`[`SignatureError::ComputationFault`]`)`, with nothing of it returned: the
+/// key's components do not belong together, or the computation went wrong.
 pub(crate) fn rsasp1<K: RsaSigningSize>(
     sk: &RsaPrivateComponents<K>,
     m: &K::Limbs,
@@ -57,7 +65,55 @@ pub(crate) fn rsasp1<K: RsaSigningSize>(
     if !K::is_less(m, sk.n()) {
         return Err(SignatureError::DecodingError("message representative out of range"));
     }
-    Ok(K::crt_exp(sk, m))
+    let mut s = K::Limbs::ZEROED;
+    if !K::crt_exp(sk, m, &mut s).to_bool() {
+        return Err(SignatureError::ComputationFault);
+    }
+    Ok(s)
+}
+
+/// The CRT exponentiation of RSASP1 and RSADP, [`crt_exp`], with its result checked before any
+/// of it leaves: `y = x^d mod n` goes into `out` only if `y^e mod n` is `x` again, which it is
+/// whenever the key's components belong together and both half-exponentiations were computed
+/// correctly. Otherwise `out` is zero and the return is FALSE. A CRT result that is right
+/// modulo one prime and wrong modulo the other must not be seen, by a verifier or anyone else.
+///
+/// `x < n`. Constant time in the key and in `y`: the comparison is over every limb, and `out`
+/// is written through a mask either way. The size marker's `crt_exp` forwards here.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn crt_exp_checked<
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const HALF: usize,
+    const HALF2: usize,
+    const HALF21: usize,
+>(
+    p: &[u64; HALF],
+    q: &[u64; HALF],
+    d_p: &[u64; HALF],
+    d_q: &[u64; HALF],
+    q_inv: &[u64; HALF],
+    n: &[u64; L],
+    e: u64,
+    x: &[u64; L],
+    out: &mut [u64; L],
+) -> Condition<u64> {
+    let mut y = crt_exp::<L, L2, L21, HALF, HALF2, HALF21>(p, q, d_p, d_q, q_inv, x);
+    // y < n whatever the components hold (y = s_2 + q * h with s_2 < q and h < p), and the
+    // public exponentiation is constant time in its base.
+    let mut back = public_exp::<L, L2, L21>(n, e, &y);
+    let mut diff = 0u64;
+    for i in 0..L {
+        diff |= back[i] ^ x[i];
+    }
+    let ok = Condition::<u64>::is_zero(diff);
+    for i in 0..L {
+        out[i] = ok.select(y[i], 0);
+    }
+    zeroize_in_place(&mut y);
+    zeroize_in_place(&mut back);
+    ok
 }
 
 /// RFC 8017 §5.2.1 step 2.b, the CRT form of `m^d mod n`, over the five components: the size
@@ -159,7 +215,7 @@ mod tests {
             0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51,
             0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
         ];
-        RsaPrivateComponents::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+        RsaPrivateComponents::from_crt_components(&p, &q, &d_p, &d_q, &q_inv, 0x00010001)
             .expect("genuine CRT components must be accepted")
     }
 

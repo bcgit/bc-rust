@@ -37,7 +37,7 @@ use core::marker::PhantomData;
 /// use bouncycastle_sha1::SHA1;
 ///
 /// let z = [0u64; 16];
-/// let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&z, &z, &z, &z, &z).unwrap();
+/// let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&z, &z, &z, &z, &z, 65537).unwrap();
 /// let sk = sk.key::<RSASSA_PKCS1_v1_5<RSA2048, SHA1>>();
 /// let _ = DeterministicOneShotSigningKey::<RSASSA_PKCS1_v1_5<RSA2048, SHA1>, 256>::sign_deterministic(
 ///     &sk, b"message", None,

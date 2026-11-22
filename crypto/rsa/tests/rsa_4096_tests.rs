@@ -131,7 +131,7 @@ fn genuine_key() -> RsaPrivateComponents<RSA4096> {
         0x748d7b5d94cacd4d, 0xcf634f3a07cea4b7, 0x8dbcca51f4da4379, 0x80774236a54ec9dc,
         0x6a1ef00ee582d3d1, 0xdecfb14ca1e80c8e, 0xc78af5f6c807cc99, 0x484ad86e79415ea3,
     ];
-    RsaPrivateComponents::<RSA4096>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RsaPrivateComponents::<RSA4096>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv, 0x10001)
         .expect("recovered CRT components must be accepted")
 }
 

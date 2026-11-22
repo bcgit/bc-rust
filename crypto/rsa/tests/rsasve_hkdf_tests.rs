@@ -55,7 +55,7 @@ const Q_INV: [u64; 16] = [
 const INFO: &[u8] = b"rsasve hkdf tests";
 
 fn key_pair() -> Result<(RsaKEMPublicKey<RSA2048>, RsaKEMPrivateKey<RSA2048>), KEMError> {
-    let sk = RsaKEMPrivateKey::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV)?;
+    let sk = RsaKEMPrivateKey::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV, 0x10001)?;
     let pk = RsaKEMPublicKey::<RSA2048>::new(sk.n(), 65537)?;
     Ok((pk, sk))
 }

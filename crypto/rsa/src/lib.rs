@@ -89,8 +89,8 @@
 //! # const D_P: [u64; 16] = [0x209f33f09515d7c1, 0xb4a9b37656917205, 0x276933bb07e4efb9, 0x8c14019808e00414, 0x289f96da220711e5, 0xfbbd2923d31532fe, 0xc06b414e61c0e1e7, 0x4c23c4588488961d, 0x4dc48ae34514759c, 0x9c786961ae3e2c35, 0x497e8d9c650688e0, 0x18bf08472612dbe5, 0x8885fb161870ee12, 0xf21d7c1479d99d47, 0x9121d91952ffd1c7, 0xa94b528b28f29159];
 //! # const D_Q: [u64; 16] = [0xf7597ffb68011d8d, 0x7b3cc538c4bab8c9, 0xa8fa480a81a925af, 0x6d6ede7251a383bf, 0x8a63f788ce3a0f85, 0x0b920502eb478bc9, 0x7e37e755edfe70d9, 0x9cf9948422a16555, 0x0d6d9ea1f2ef71fd, 0xf7efa32ea0cb6e00, 0x0629b114ca7f780f, 0xcf51176359654348, 0x540cdcbd4ad35435, 0x31c02ff1a2bc437c, 0xff2503df78bafed5, 0x3af0e72a933aef09];
 //! # const Q_INV: [u64; 16] = [0x552fe4bfce945f7b, 0x67e50c999c67247b, 0xfb54ef17be3b2853, 0x241f5921b5ad3983, 0x02de5eccd143cf31, 0x74e45f6fcc60f216, 0xafa5428a74f12708, 0x88d42294b6a2759b, 0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51, 0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163];
-//! let sk = RsaPrivateKey::<RSASSA_PKCS1_v1_5_SHA256>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV)?;
-//! let pk = RsaPublicKey::<RSASSA_PKCS1_v1_5_SHA256>::new(sk.n(), 0x10001)?;
+//! let sk = RsaPrivateKey::<RSASSA_PKCS1_v1_5_SHA256>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV, 0x10001)?;
+//! let pk = RsaPublicKey::<RSASSA_PKCS1_v1_5_SHA256>::new(sk.n(), sk.e())?;
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //!
 //! // One-shot. RSA has no context string, so `ctx` is `None` (a `Some` is accepted and ignored).
@@ -182,8 +182,8 @@
 //! # const Q_INV: [u64; 16] = [0x552fe4bfce945f7b, 0x67e50c999c67247b, 0xfb54ef17be3b2853, 0x241f5921b5ad3983, 0x02de5eccd143cf31, 0x74e45f6fcc60f216, 0xafa5428a74f12708, 0x88d42294b6a2759b, 0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51, 0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163];
 //! // The same key material as above, as key-establishment keys. A fresh pair comes from
 //! // `RSASVE::keygen()?` instead.
-//! let sk = RSA2048KEMPrivateKey::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV)?;
-//! let pk = RSA2048KEMPublicKey::new(sk.n(), 65537)?;
+//! let sk = RSA2048KEMPrivateKey::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV, 65537)?;
+//! let pk = RSA2048KEMPublicKey::new(sk.n(), sk.e())?;
 //!
 //! // The encapsulating party: a fresh secret value Z and its ciphertext C = z^e mod n.
 //! let (z, ct) = pk.encaps(&mut DefaultRNG::default(), ())?;
@@ -276,10 +276,10 @@
 //! |-------------------|------------------|--------------------|------------------|--------------------|
 //! | RSA-1024 (verify-only) | 136        | 136                | --               | --                 |
 //! | RSA-1536 (verify-only) | 200        | 200                | --               | --                 |
-//! | RSA-2048          | 264              | 264                | 640              | 896                |
-//! | RSA-3072          | 392              | 392                | 960              | 1344               |
-//! | RSA-4096          | 520              | 520                | 1280             | 1792               |
-//! | RSA-8192          | 1032             | 1032               | 2560             | 3584               |
+//! | RSA-2048          | 264              | 264                | 648              | 904                |
+//! | RSA-3072          | 392              | 392                | 968              | 1352               |
+//! | RSA-4096          | 520              | 520                | 1288             | 1800               |
+//! | RSA-8192          | 1032             | 1032               | 2568             | 3592               |
 //!
 //! The RSASVE key types (`RsaKEMPublicKey<K>`/`RsaKEMPrivateKey<K>`) have the same encodings
 //! and the same in-memory sizes as the signature key types above: each wraps one. An RSASVE
@@ -299,7 +299,7 @@
 //!
 //! All values are in bytes. "On disk" is the `PublicKey`/`PrivateKey` raw
 //! layout ([`keys::RsaPublicKey`]'s and [`keys::RsaPrivateKey`]'s `# Encoding`: `n || e`, and
-//! `p || q || dP || dQ || qInv` respectively); "in memory" is `core::mem::size_of`. A signature
+//! `p || q || dP || dQ || qInv || e` respectively); "in memory" is `core::mem::size_of`. A signature
 //! is the same size as the modulus itself (`K::K_LEN`: 128/192/256/384/512/1024 for
 //! 1024/1536/2048/3072/4096/8192). These numbers are produced by `mem_usage_benches`'
 //! `bench_rsa_mem_usage` binary's `print_key_sizes()`; that binary is also the stack-usage
@@ -319,16 +319,26 @@
 //!   timing) against many signatures under the same key may still be able to recover information
 //!   about `p`/`q`/`dP`/`dQ`, per Kocher (1996) and Boneh & Brumley (2003) -- see [`modexp`]'s own
 //!   docs for the exact boundary of what is and is not covered.
+//! - **The result of every private-key operation is checked before it is released.** A
+//!   signature, a decapsulated secret value or a decrypted OAEP message is computed by the CRT
+//!   from two half-size exponentiations; were one of them wrong, through a damaged key or a
+//!   fault in the computation, the result would be right modulo one prime only, and such a
+//!   value must not leave the library. So the private key carries `e`, and the result `y` of
+//!   `x^d mod n` is returned only if `y^e mod n` is `x` again; otherwise signing fails with
+//!   `SignatureError::ComputationFault` and decapsulation or decryption with its one failure
+//!   error, and the result is wiped. The check costs one public exponentiation per operation.
+//!   It does not detect a fault that leaves the result correct, and it is not blinding.
 //! - **Imported keys are not validated for primality.** [`keys::RsaPrivateKey::from_crt_components`]
 //!   checks that `p`/`q` are odd and distinct, that `dP`/`dQ`/`qInv` are in range and that
 //!   `n = p * q` has exactly the size's bit length (as the public key's constructor checks of
 //!   its `n`: a modulus whose top bit is clear is refused, at every size), but does
-//!   not test `p` and `q` for primality or `e` for coprimality with `λ(n)`. Supplying non-prime or
-//!   otherwise malformed CRT components produces a key that computes *something*, silently,
-//!   rather than being rejected -- validating imported key material's number-theoretic properties
-//!   before construction is the caller's responsibility (`keygen::is_probable_prime` is available
-//!   for the primality part). Keys from this crate's own `keygen` meet FIPS 186-5 Appendix A.1.1's
-//!   criteria by construction.
+//!   not test `p` and `q` for primality, `e` for coprimality with `λ(n)`, or that the
+//!   components and `e` belong together. A key whose parts do not is built, and its operations
+//!   then fail the result check above rather than return a wrong value -- but a composite `p`
+//!   or `q` can pass that check on some inputs, so validating imported key material's
+//!   number-theoretic properties before construction remains the caller's responsibility
+//!   (`keygen::is_probable_prime` is available for the primality part). Keys from this crate's
+//!   own `keygen` meet FIPS 186-5 Appendix A.1.1's criteria by construction.
 //! - **Key generation is not constant-time.** Rejection sampling of prime candidates is
 //!   inherently data-dependent in how many candidates it draws and where each is rejected, and the
 //!   small-modulus arithmetic on candidates uses ordinary integer division -- see [`keygen`]'s docs
@@ -370,7 +380,7 @@
 //! - **Public exponents are limited to 64 bits.** SP 800-56B §6.2.1 allows
 //!   `65,537 <= e < 2^256`, but the keys hold `e` as a `u64`, so a key with a larger `e` cannot
 //!   be constructed. (ACVP's RSADP vectors use exponents of up to 56 bits.)
-//! - **RSASVE key validation is partial.** The KEM public key checks `e >= 65,537` on top of
+//! - **RSASVE key validation is partial.** The KEM keys check `e >= 65,537` on top of
 //!   the signature keys' checks, the modulus's exact bit length among them. The KEM keys do not
 //!   run SP 800-89's remaining plausibility tests, and full RSA public-key validation is not
 //!   specified by SP 800-56B at all. See [`rsasve`]'s `# Key validation`.

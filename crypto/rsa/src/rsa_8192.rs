@@ -16,7 +16,7 @@ use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 pub const PK_LEN: usize = RSA8192::PK_LEN;
 /// Length of an RSA-8192 signature: the modulus's.
 pub const SIG_LEN: usize = RSA8192::K_LEN;
-/// Encoded length of an RSA-8192 private key: `p || q || dP || dQ || qInv`.
+/// Encoded length of an RSA-8192 private key: `p || q || dP || dQ || qInv || e`.
 pub const SK_LEN: usize = RSA8192::SK_LEN;
 
 /// RSASSA-PKCS1-v1_5 with SHA-256 at RSA-8192.

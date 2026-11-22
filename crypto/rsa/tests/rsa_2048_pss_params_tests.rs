@@ -236,7 +236,8 @@ const Q_INV: [u64; 16] = [
 #[test]
 fn no_salt_is_deterministic_and_parameters_do_not_mix() {
     let sk =
-        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV, 0x10001)
+            .unwrap();
     let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
     let msg = b"the message to sign";
 
@@ -288,7 +289,8 @@ fn no_salt_is_deterministic_and_parameters_do_not_mix() {
 fn sha1_signs_only_through_the_hazmat_wrapper() {
     type Sha1 = WithoutCollisionResistance<SHA1>;
     let sk =
-        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV, 0x10001)
+            .unwrap();
     let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
     let msg = b"the message to sign";
 

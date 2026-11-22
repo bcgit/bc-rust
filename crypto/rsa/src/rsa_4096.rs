@@ -17,7 +17,7 @@ use bouncycastle_sha3::SHAKE256;
 pub const PK_LEN: usize = RSA4096::PK_LEN;
 /// Length of an RSA-4096 signature: the modulus's.
 pub const SIG_LEN: usize = RSA4096::K_LEN;
-/// Encoded length of an RSA-4096 private key: `p || q || dP || dQ || qInv`.
+/// Encoded length of an RSA-4096 private key: `p || q || dP || dQ || qInv || e`.
 pub const SK_LEN: usize = RSA4096::SK_LEN;
 
 /// RSASSA-PKCS1-v1_5 with SHA-256 at RSA-4096.

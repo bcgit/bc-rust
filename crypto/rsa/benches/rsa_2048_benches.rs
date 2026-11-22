@@ -57,7 +57,7 @@ fn genuine_key() -> RsaPrivateComponents<RSA2048> {
         0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51,
         0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
     ];
-    RsaPrivateComponents::<RSA2048>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RsaPrivateComponents::<RSA2048>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv, 0x10001)
         .expect("genuine RSA-2048 CRT components must be accepted")
 }
 

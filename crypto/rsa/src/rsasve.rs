@@ -27,8 +27,8 @@
 //! # Key validation
 //!
 //! On top of what [`RsaPublicComponents::new`]/[`RsaPrivateComponents::from_crt_components`] already check,
-//! the KEM public key enforces `65,537 <= e` (§6.2.1 item 2, "65,537 ≤ e < 2^256"; the upper
-//! bound holds by construction, because `e` is a `u64`). The CRT private key does not carry `e`.
+//! the KEM keys enforce `65,537 <= e` (§6.2.1 item 2, "65,537 ≤ e < 2^256"; the upper bound
+//! holds by construction, because `e` is a `u64`), the private key on the `e` it carries.
 //!
 //! Among the components' own checks, one matters here in particular: `n` is exactly the size's
 //! `nLen` bits long, i.e. its top bit is set. §6.2.1 item 1 gives the key an `nBits`, and
@@ -62,6 +62,10 @@ use core::marker::PhantomData;
 
 /// The smallest public exponent SP 800-56B Rev. 2 §6.2.1 item 2 allows a key-establishment key.
 pub const MIN_PUBLIC_EXPONENT: u64 = 65537;
+
+/// What both key types return for an `e` below [`MIN_PUBLIC_EXPONENT`].
+const EXPONENT_TOO_SMALL: KEMError =
+    KEMError::DecodingError("RSA key-establishment public exponent must be at least 65537");
 
 /// How many draws RSASVE.GENERATE (§7.2.1.2 step 2) makes before giving up on an RNG whose
 /// output never lands in `(1, n - 1)`: with the modulus's top bit set each draw succeeds with
@@ -112,9 +116,7 @@ impl<K: RsaSize> RsaKEMPublicKey<K> {
 
     pub(crate) fn from_rsa_key(pk: RsaPublicComponents<K>) -> Result<Self, KEMError> {
         if pk.e() < MIN_PUBLIC_EXPONENT {
-            return Err(KEMError::DecodingError(
-                "RSA key-establishment public exponent must be at least 65537",
-            ));
+            return Err(EXPONENT_TOO_SMALL);
         }
         Ok(Self(pk))
     }
@@ -148,24 +150,39 @@ impl<K: RsaSize> Display for RsaKEMPublicKey<K> {
 pub struct RsaKEMPrivateKey<K: RsaSize>(pub(crate) RsaPrivateComponents<K>);
 
 impl<K: RsaSigningSize> RsaKEMPrivateKey<K> {
-    /// Builds a private key from its CRT components. Returns
-    /// `Err(`[`KEMError::DecodingError`]`)` in the cases [`RsaPrivateComponents::from_crt_components`]
-    /// rejects.
+    /// Builds a private key from its CRT components and the public exponent of its key pair.
+    /// Returns `Err(`[`KEMError::DecodingError`]`)` in the cases
+    /// [`RsaPrivateComponents::from_crt_components`] rejects, and also if `e < 65,537` (see the
+    /// module docs' `# Key validation`).
     pub fn from_crt_components(
         p: &K::HalfLimbs,
         q: &K::HalfLimbs,
         d_p: &K::HalfLimbs,
         d_q: &K::HalfLimbs,
         q_inv: &K::HalfLimbs,
+        e: u64,
     ) -> Result<Self, KEMError> {
-        Ok(Self(
-            RsaPrivateComponents::from_crt_components(p, q, d_p, d_q, q_inv).map_err(kem_error)?,
-        ))
+        Self::from_rsa_key(
+            RsaPrivateComponents::from_crt_components(p, q, d_p, d_q, q_inv, e)
+                .map_err(kem_error)?,
+        )
+    }
+
+    pub(crate) fn from_rsa_key(sk: RsaPrivateComponents<K>) -> Result<Self, KEMError> {
+        if sk.e() < MIN_PUBLIC_EXPONENT {
+            return Err(EXPONENT_TOO_SMALL);
+        }
+        Ok(Self(sk))
     }
 
     /// The modulus `n = p * q`, as little-endian limbs.
     pub fn n(&self) -> &K::Limbs {
         self.0.n()
+    }
+
+    /// The public exponent `e` of the key pair.
+    pub fn e(&self) -> u64 {
+        self.0.e()
     }
 }
 
@@ -290,7 +307,9 @@ where
 {
     /// RSASVE.RECOVER (§7.2.1.3): `C` in `(1, n - 1)` or [`KEMError::DecapsulationFailed`]
     /// (step 1), `z = C^d mod n` by the CRT (step 2) and `Z = I2BS(z, nLen)` into `ss` (step 3),
-    /// zeroized first and left so on error.
+    /// zeroized first and left so on error. A `z` that fails the CRT result check
+    /// (`z^e mod n` is not `C`) is [`KEMError::DecapsulationFailed`] too, and none of it is
+    /// released.
     #[allow(non_snake_case)]
     fn decaps_out(&self, ct: &[u8; N], ss: &mut KeyMaterial<N>) -> Result<usize, KEMError> {
         ss.zeroize();
@@ -299,7 +318,9 @@ where
             return Err(KEMError::DecapsulationFailed);
         }
         let mut z = Secret::<K::Limbs>::new();
-        *z = K::crt_exp(&self.sk.0, &c);
+        if !K::crt_exp(&self.sk.0, &c, &mut z).to_bool() {
+            return Err(KEMError::DecapsulationFailed);
+        }
         let mut Z = Secret::<[u8; N]>::new();
         *Z = K::be_bytes_from_limbs(&z);
         secret_value_into::<K, N>(&Z, ss)?;
@@ -348,9 +369,12 @@ where
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         let bytes: &[u8; SK_LEN] = bytes.try_into().map_err(|_| {
-            KeyDecodingError("an RSA private key is five components of half the modulus length")
+            KeyDecodingError(
+                "an RSA private key is five components of half the modulus length and eight bytes",
+            )
         })?;
-        Ok(Self(RsaPrivateComponents::from_bytes_raw(bytes).map_err(decoding_error)?))
+        Self::from_rsa_key(RsaPrivateComponents::from_bytes_raw(bytes).map_err(decoding_error)?)
+            .map_err(kem_decoding_error)
     }
 }
 
@@ -382,5 +406,5 @@ pub(crate) fn keygen_from<K: RsaSigningSize>(
     pair: Result<(RsaPublicComponents<K>, RsaPrivateComponents<K>), SignatureError>,
 ) -> Result<(RsaKEMPublicKey<K>, RsaKEMPrivateKey<K>), KEMError> {
     let (pk, sk) = pair.map_err(kem_error)?;
-    Ok((RsaKEMPublicKey::from_rsa_key(pk)?, RsaKEMPrivateKey(sk)))
+    Ok((RsaKEMPublicKey::from_rsa_key(pk)?, RsaKEMPrivateKey::from_rsa_key(sk)?))
 }

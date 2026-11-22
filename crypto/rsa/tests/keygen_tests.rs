@@ -132,7 +132,7 @@ fn miller_rabin_decides_small_values_by_trial_division() {
 }
 
 /// The CRT components of an encoded private key (`p || q || dP || dQ || qInv`, each `8 * HALF`
-/// big-endian bytes) as little-endian limbs.
+/// big-endian bytes, ahead of `e`) as little-endian limbs.
 fn crt_components<const HALF: usize>(sk_bytes: &[u8]) -> [[u64; HALF]; 5] {
     let field_len = 8 * HALF;
     let mut out = [[0u64; HALF]; 5];

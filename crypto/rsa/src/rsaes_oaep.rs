@@ -20,8 +20,10 @@
 //!   key to its owner; a protocol that needs to know the sender must authenticate it.
 //! * **Every decryption failure is one error** ([`KEMError::DecapsulationFailed`],
 //!   [`KeyTransportError::DecryptionFailed`]), computed without branching on the padding, as
-//!   RFC 8017 §7.1.2's note asks. A caller must keep it that way: do not report, log or time
-//!   anything that tells a peer why a ciphertext was refused.
+//!   RFC 8017 §7.1.2's note asks; a private-key result that fails its check (the crate's
+//!   `# Security Considerations`) is that error as well, by the same path. A caller must keep
+//!   it that way: do not report, log or time anything that tells a peer why a ciphertext was
+//!   refused.
 //! * **The label is not secret and is not sent.** It binds a ciphertext to its use; a
 //!   ciphertext made under one label does not decrypt under another.
 //! * **The hashes are RFC 8017's** ([`OaepHash`]). **SHA-1** is among them, for peers that use it.
@@ -225,11 +227,16 @@ where
     if !in_open_range::<K>(&c, sk.n()) {
         return None;
     }
-    // m = RSADP(K, c), constant time in the key; step 2.c: EM = I2OSP(m, k).
+    // Step 2.b: m = RSADP(K, c), constant time in the key, and `m` zero if it failed its check
+    // (m^e mod n is not c); step 2.c: EM = I2OSP(m, k).
     let mut m = Secret::<K::Limbs>::new();
-    *m = K::crt_exp(&sk.0, &c);
+    let checked = K::crt_exp(&sk.0, &c, &mut m);
     let mut em = Secret::<[u8; N]>::new();
     *em = K::be_bytes_from_limbs(&m);
+    // A failed check must end as the one decryption error, and no sooner or later than a bad
+    // encoding does, so it is not branched on: it sets EM's first octet, which step 3.g
+    // refuses when it is not zero ("if Y is nonzero"), and the decoding runs as for any EM.
+    em[0] |= checked.select(0x00, 0xFF) as u8;
     // Step 3.
     let mut l_hash = HashBuf::new();
     let h_len = eme_oaep::label_hash::<H>(label, &mut l_hash);

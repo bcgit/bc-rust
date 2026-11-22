@@ -230,7 +230,8 @@ fn genuine_2048_key() -> RsaPrivateComponents<RSA2048> {
         0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51,
         0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
     ];
-    RsaPrivateComponents::<RSA2048>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv).unwrap()
+    RsaPrivateComponents::<RSA2048>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv, 0x10001)
+        .unwrap()
 }
 
 /// FIPS 186-5 A.1.3 key generation: the candidate buffers, the Miller-Rabin Montgomery context
@@ -354,7 +355,8 @@ fn genuine_8192_key() -> RsaPrivateComponents<RSA8192> {
         0xd1aac2fe108f98c0, 0x1e799537a42b3060, 0xdbcce6fc287e449b, 0x1985969e5afbc524,
         0x61ba61f820f83597, 0x65c8523f0767bccc, 0xde04e1644a214f9a, 0x9748f8d853be7131,
     ];
-    RsaPrivateComponents::<RSA8192>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv).unwrap()
+    RsaPrivateComponents::<RSA8192>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv, 0x10001)
+        .unwrap()
 }
 
 fn bench_8192_sign() {

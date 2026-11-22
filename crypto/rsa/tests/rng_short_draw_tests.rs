@@ -115,9 +115,10 @@ fn key_generation_refuses_a_short_draw() {
 /// one-shot or from the hash entry point, whose output buffer stays zero.
 #[test]
 fn pss_signing_refuses_a_short_salt() {
-    let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV)
-        .unwrap()
-        .into_key::<RSASSA_PSS_SHA256>();
+    let sk =
+        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV, 0x10001)
+            .unwrap()
+            .into_key::<RSASSA_PSS_SHA256>();
     assert!(matches!(
         sk.create_signer(&mut WritesHalf { draws: 0 }, None),
         Err(SignatureError::RNGError(SHORT))
@@ -143,7 +144,8 @@ fn pss_signing_refuses_a_short_salt() {
 #[test]
 fn oaep_refuses_a_short_key_and_a_short_seed() {
     let sk =
-        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV, 0x10001)
+            .unwrap();
     let pk = RSA2048KEMPublicKey::new(sk.n(), 65537).unwrap();
     let params = OaepParams::<SHA256>::new(b"label");
 
@@ -177,7 +179,8 @@ fn oaep_refuses_a_short_key_and_a_short_seed() {
 #[test]
 fn rsasve_refuses_a_short_secret_value() {
     let sk =
-        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV, 0x10001)
+            .unwrap();
     let pk = RSA2048KEMPublicKey::new(sk.n(), 65537).unwrap();
     let mut ct = [0xFFu8; 256];
     let mut ss = KeyMaterial::<256>::from_bytes(&[0xEE; 256]).unwrap();

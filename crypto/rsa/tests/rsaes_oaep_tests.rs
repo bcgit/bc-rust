@@ -34,8 +34,8 @@ use serde_json::Value;
 use std::sync::OnceLock;
 
 /// The RSA-2048 key of Wycheproof's `rsa_oaep_2048_sha256_mgf1sha256_test.json`, as
-/// `p || q || dP || dQ || qInv`, hex: printed here so that known answers run where Wycheproof is
-/// not checked out.
+/// `p || q || dP || dQ || qInv || e`, hex: printed here so that known answers run where
+/// Wycheproof is not checked out.
 const KAT_SK_HEX: &str = concat!(
     "dc431050f782e894fb5248247d98cb7d58b8d1e24f3b55d041c56e4de086b0d5",
     "bb028bda42eeb5d234d5681e5809d415e6a289ad4cfbf78f978f6c35814f50ee",
@@ -57,6 +57,7 @@ const KAT_SK_HEX: &str = concat!(
     "7993d0445f758d51933e85179c0320b0c968b48a91c38b5be923e1097c0c562f",
     "88d42294b6a2759bafa5428a74f1270874e45f6fcc60f21602de5eccd143cf31",
     "241f5921b5ad3983fb54ef17be3b285367e50c999c67247b552fe4bfce945f7b",
+    "0000000000010001",
 );
 /// Its public key, `n || e`.
 #[allow(dead_code)]
@@ -69,7 +70,7 @@ const KAT_PK_HEX: &str = concat!(
     "4c03145b5d3495d4ed5411eb878daf05fd7afc3e09ada0f1126422f590975a19",
     "69816f48698bcbba1b4d9cae79d460d8f9f85e7975005d9bc22c4e5ac0f7c1a4",
     "5d12569a62807d3b9a02e5a530e773066f453d1f5b4c2e9cf7820283f742b9d5",
-    "00010001",
+    "0000000000010001",
 );
 /// tcId 2 of that file: a ciphertext of `MSG_HEX` under the empty label.
 const CT_HEX: &str = concat!(
@@ -165,12 +166,15 @@ where
     H: OaepHash,
     M: OaepHash,
 {
-    // The private key's encoding is p || q || dP || dQ || qInv, each half the modulus long.
+    // The private key's encoding is p || q || dP || dQ || qInv, each half the modulus long,
+    // then e in eight bytes.
     let key = &group["privateKey"];
+    let e = u64::from_str_radix(key["publicExponent"].as_str().unwrap(), 16).unwrap();
     let mut raw = Vec::with_capacity(SK_LEN);
     for field in ["prime1", "prime2", "exponent1", "exponent2", "coefficient"] {
         raw.extend(be_bytes(key[field].as_str().unwrap(), N / 2));
     }
+    raw.extend(e.to_be_bytes());
     let sk = RsaKEMPrivateKey::<K>::from_bytes(&raw).expect("a Wycheproof key decodes");
 
     let (mut valid, mut invalid) = (0, 0);
@@ -211,7 +215,6 @@ where
 
     // Encryption under the group's public key, which the vectors do not cover: a key
     // transported with this size and these hashes comes back.
-    let e = u64::from_str_radix(key["publicExponent"].as_str().unwrap(), 16).unwrap();
     let pk = RsaKEMPublicKey::<K>::new(sk.n(), e).expect("a Wycheproof key is a KEM key");
     let params = OaepParams::<H, M>::new(b"round trip");
     let sent = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::MACKey).unwrap();
@@ -265,10 +268,10 @@ fn run_file(filename: &str) -> Option<Counts> {
     let mut total = (0, 0, 0);
     for group in file["testGroups"].as_array().unwrap() {
         let (valid, invalid, skipped) = match group["keySize"].as_u64().unwrap() {
-            2048 => with_sha::<RSA2048, 256, 640>(group),
-            3072 => with_sha::<RSA3072, 384, 960>(group),
-            4096 => with_sha::<RSA4096, 512, 1280>(group),
-            8192 => with_sha::<RSA8192, 1024, 2560>(group),
+            2048 => with_sha::<RSA2048, 256, 648>(group),
+            3072 => with_sha::<RSA3072, 384, 968>(group),
+            4096 => with_sha::<RSA4096, 512, 1288>(group),
+            8192 => with_sha::<RSA8192, 1024, 2568>(group),
             // No private key type below 2048 bits or at the odd sizes of the misc file.
             _ => (0, 0, group["tests"].as_array().unwrap().len()),
         };

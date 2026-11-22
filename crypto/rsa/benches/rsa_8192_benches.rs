@@ -115,7 +115,7 @@ fn genuine_key() -> RsaPrivateComponents<RSA8192> {
         0xd1aac2fe108f98c0, 0x1e799537a42b3060, 0xdbcce6fc287e449b, 0x1985969e5afbc524,
         0x61ba61f820f83597, 0x65c8523f0767bccc, 0xde04e1644a214f9a, 0x9748f8d853be7131,
     ];
-    RsaPrivateComponents::<RSA8192>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RsaPrivateComponents::<RSA8192>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv, 0x10001)
         .expect("genuine RSA-8192 CRT components must be accepted")
 }
 
