@@ -14,9 +14,10 @@
 //! plaintext is always a key, not a message. A modulus size is a marker type at the
 //! crate root, [`RSA2048`], [`RSA3072`], [`RSA4096`] and [`RSA8192`], which implement
 //! [`size::RsaSize`] (the size's lengths and limb types) and [`size::RsaSigningSize`] (key
-//! generation and the signing roles); [`RSA1024`] and [`RSA1536`] implement `RsaSize` only, so
-//! a private key, `keygen` and every signing-role impl are absent for them at compile time
-//! rather than refused at run time.
+//! generation, the signing roles and the key-establishment roles); [`RSA1024`] and [`RSA1536`]
+//! implement `RsaSize` only, so a private key, `keygen`, every signing-role impl and every
+//! key-establishment role, encapsulation and key transport toward a public key included, are
+//! absent for them at compile time rather than refused at run time: they verify signatures.
 //!
 //! The schemes are generic over the size and the hash: [`RSASSA_PKCS1_v1_5<K, H>`](rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5),
 //! [`RSASSA_PSS<K, H, P>`](rsassa_pss::RSASSA_PSS) with its parameters `P` (the mask and the
@@ -357,9 +358,10 @@
 //!   fold the context into the message itself.
 //! - **RSA-1024 and RSA-1536 are legacy sizes, exposed for verification only.** Both fall below
 //!   the 112-bit security level NIST SP 800-131A requires for new use (RSA-1024 offers roughly
-//!   80 bits, RSA-1536 roughly 96); this crate offers no way to sign with either (see `# Scope`)
+//!   80 bits, RSA-1536 roughly 96); this crate offers no way to sign with either, or to
+//!   encapsulate or transport a key toward a public key of either size (see `# Scope`),
 //!   precisely so they can only be used to check signatures against legacy/third-party data, not
-//!   to produce new ones.
+//!   to produce new ones or to protect a key.
 //! - **RSASVE's shared secret is the raw secret value `Z`, not a key.** SP 800-56B Rev. 2 uses
 //!   RSASVE only inside KAS1/KAS2, which always pass `Z` through a key-derivation method (§5.5,
 //!   SP 800-56C) together with the parties' identifiers and other context. `Z` is uniform on

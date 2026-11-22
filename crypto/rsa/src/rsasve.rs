@@ -103,6 +103,27 @@ pub(crate) fn in_open_range<K: RsaSize>(x: &K::Limbs, n: &K::Limbs) -> bool {
 
 /// An RSA key-establishment public key at the size `K`: [`RsaPublicComponents`] under the KEM roles
 /// and the `# Key validation` checks, encoded as it is.
+///
+/// The roles exist at a signing size, RSA-2048 and up, as the private key's do. RSA-1024 and
+/// RSA-1536 verify signatures and nothing else, so nothing encapsulates toward them:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::kem_key::EncapsulatingKey;
+/// use bouncycastle_rsa::RSA1024;
+/// use bouncycastle_rsa::rsasve::RsaKEMPublicKey;
+///
+/// fn encapsulates<PK: EncapsulatingKey<(), N, N>, const N: usize>() {}
+/// encapsulates::<RsaKEMPublicKey<RSA1024>, 128>();
+/// ```
+///
+/// ```
+/// use bouncycastle_core::kem_key::EncapsulatingKey;
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::rsasve::RsaKEMPublicKey;
+///
+/// fn encapsulates<PK: EncapsulatingKey<(), N, N>, const N: usize>() {}
+/// encapsulates::<RsaKEMPublicKey<RSA2048>, 256>();
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RsaKEMPublicKey<K: RsaSize>(pub(crate) RsaPublicComponents<K>);
 
@@ -229,7 +250,9 @@ impl<K: RsaSize> Algorithm for RsasveEncapsulator<'_, K> {
 
 impl<K, const N: usize> KEMEncapsulator<N, N> for RsasveEncapsulator<'_, K>
 where
-    K: RsaSize<Modulus = [u8; N]>,
+    // A signing size, as the decapsulator's is: nothing is encapsulated toward RSA-1024 or
+    // RSA-1536, which verify signatures and do nothing else (the crate's `# Scope`).
+    K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
 {
     /// RSASVE.GENERATE (§7.2.1.2): `Z` from the RNG until `1 < z < n - 1` (step 2), `C = z^e mod
     /// n` (step 3) into `ct`, and `Z` into `ss` typed `CryptographicRandom` at the size's
@@ -330,7 +353,7 @@ where
 
 impl<K, const N: usize> EncapsulatingKey<(), N, N> for RsaKEMPublicKey<K>
 where
-    K: RsaSize<Modulus = [u8; N]>,
+    K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
 {
     type Algorithm = RSASVE<K>;
     type Encapsulator<'k> = RsasveEncapsulator<'k, K>;

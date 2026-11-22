@@ -78,6 +78,50 @@ impl OaepHash for SHA512_256 {}
 /// RSAES-OAEP at the modulus size `K` with the label hash `H` and MGF1 over `M`: the algorithm
 /// the key-establishment keys run under [`OaepParams`], named
 /// `RSAES-OAEP-2048-SHA256-MGF1-SHA256` and so on.
+///
+/// The encapsulating and key-transporting roles exist at a signing size, RSA-2048 and up, as
+/// their private counterparts do. Nothing is encapsulated or transported toward RSA-1024 or
+/// RSA-1536:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::kem_key::EncapsulatingKey;
+/// use bouncycastle_rsa::RSA1024;
+/// use bouncycastle_rsa::rsaes_oaep::OaepParams;
+/// use bouncycastle_rsa::rsasve::RsaKEMPublicKey;
+/// use bouncycastle_sha2::SHA256;
+///
+/// type Params = OaepParams<'static, SHA256, SHA256, 32>;
+/// fn encapsulates<PK: EncapsulatingKey<Params, N, 32>, const N: usize>() {}
+/// encapsulates::<RsaKEMPublicKey<RSA1024>, 128>();
+/// ```
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::key_transport_key::KeyTransportEncryptingKey;
+/// use bouncycastle_rsa::RSA1024;
+/// use bouncycastle_rsa::rsaes_oaep::OaepParams;
+/// use bouncycastle_rsa::rsasve::RsaKEMPublicKey;
+/// use bouncycastle_sha2::SHA256;
+///
+/// type Params = OaepParams<'static, SHA256>;
+/// fn transports<PK: KeyTransportEncryptingKey<Params, N>, const N: usize>() {}
+/// transports::<RsaKEMPublicKey<RSA1024>, 128>();
+/// ```
+///
+/// ```
+/// use bouncycastle_core::kem_key::EncapsulatingKey;
+/// use bouncycastle_core::key_transport_key::KeyTransportEncryptingKey;
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::rsaes_oaep::OaepParams;
+/// use bouncycastle_rsa::rsasve::RsaKEMPublicKey;
+/// use bouncycastle_sha2::SHA256;
+///
+/// type Kem = OaepParams<'static, SHA256, SHA256, 32>;
+/// type Transport = OaepParams<'static, SHA256>;
+/// fn encapsulates<PK: EncapsulatingKey<Kem, N, 32>, const N: usize>() {}
+/// fn transports<PK: KeyTransportEncryptingKey<Transport, N>, const N: usize>() {}
+/// encapsulates::<RsaKEMPublicKey<RSA2048>, 256>();
+/// transports::<RsaKEMPublicKey<RSA2048>, 256>();
+/// ```
 #[allow(non_camel_case_types)]
 pub struct RSAES_OAEP<K: RsaSize, H, M = H> {
     _params: PhantomData<(K, H, M)>,
@@ -178,7 +222,7 @@ fn encrypt<K, H, M, const N: usize>(
     ct: &mut [u8; N],
 ) -> Result<(), RNGError>
 where
-    K: RsaSize<Modulus = [u8; N]>,
+    K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
     H: OaepHash,
     M: OaepHash,
 {
@@ -287,7 +331,7 @@ impl<K: RsaSize, H: OaepHash, M: OaepHash, const LEN: usize> Algorithm
 impl<K, H, M, const N: usize, const LEN: usize> KEMEncapsulator<N, LEN>
     for RsaOaepEncapsulator<'_, '_, K, H, M, LEN>
 where
-    K: RsaSize<Modulus = [u8; N]>,
+    K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
     H: OaepHash,
     M: OaepHash,
 {
@@ -359,7 +403,7 @@ where
 impl<'l, K, H, M, const N: usize, const LEN: usize>
     EncapsulatingKey<OaepParams<'l, H, M, LEN>, N, LEN> for RsaKEMPublicKey<K>
 where
-    K: RsaSize<Modulus = [u8; N]>,
+    K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
     H: OaepHash,
     M: OaepHash,
 {
@@ -413,7 +457,7 @@ where
 impl<'l, K, H, M, const N: usize, const LEN: usize>
     KeyTransportEncryptingKey<OaepParams<'l, H, M, LEN>, N> for RsaKEMPublicKey<K>
 where
-    K: RsaSize<Modulus = [u8; N]>,
+    K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
     H: OaepHash,
     M: OaepHash,
 {

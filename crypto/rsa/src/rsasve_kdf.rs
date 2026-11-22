@@ -35,6 +35,35 @@ use core::marker::PhantomData;
 /// `KdfParams<'p, HkdfDescription<'s, H>, LEN>`. Named `RSASVE-<bits>-HKDF-<hash>`, at the
 /// lesser of the size's and the hash's strength (HKDF-SHA256 caps a key at 128 bits, so
 /// RSA-2048 with it is 112 and RSA-4096 with it 128).
+///
+/// Both roles exist at a signing size, RSA-2048 and up; there is no encapsulation toward
+/// RSA-1024 or RSA-1536:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::kdf_params::KdfParams;
+/// use bouncycastle_core::kem_key::EncapsulatingKey;
+/// use bouncycastle_hkdf::HkdfDescription;
+/// use bouncycastle_rsa::RSA1024;
+/// use bouncycastle_rsa::rsasve::RsaKEMPublicKey;
+/// use bouncycastle_sha2::SHA256;
+///
+/// type Params = KdfParams<'static, HkdfDescription<'static, SHA256>, 32>;
+/// fn encapsulates<PK: EncapsulatingKey<Params, N, 32>, const N: usize>() {}
+/// encapsulates::<RsaKEMPublicKey<RSA1024>, 128>();
+/// ```
+///
+/// ```
+/// use bouncycastle_core::kdf_params::KdfParams;
+/// use bouncycastle_core::kem_key::EncapsulatingKey;
+/// use bouncycastle_hkdf::HkdfDescription;
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::rsasve::RsaKEMPublicKey;
+/// use bouncycastle_sha2::SHA256;
+///
+/// type Params = KdfParams<'static, HkdfDescription<'static, SHA256>, 32>;
+/// fn encapsulates<PK: EncapsulatingKey<Params, N, 32>, const N: usize>() {}
+/// encapsulates::<RsaKEMPublicKey<RSA2048>, 256>();
+/// ```
 #[allow(non_camel_case_types)]
 pub struct RSASVE_HKDF<K: RsaSize, H: HMACParams> {
     _params: PhantomData<(K, H)>,
@@ -115,7 +144,7 @@ impl<K: RsaSize, H: HMACParams, const SS_LEN: usize> Algorithm
 impl<K, H, const N: usize, const SS_LEN: usize> KEMEncapsulator<N, SS_LEN>
     for RsasveKdfEncapsulator<'_, '_, '_, K, H, SS_LEN>
 where
-    K: RsaSize<Modulus = [u8; N]>,
+    K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
     H: HMACParams,
 {
     /// RSASVE.GENERATE for `Z` and the ciphertext, then HKDF over `Z`. `Z` lives in one local,
@@ -175,7 +204,7 @@ impl<'p, 's, K, H, const N: usize, const SS_LEN: usize>
     EncapsulatingKey<KdfParams<'p, HkdfDescription<'s, H>, SS_LEN>, N, SS_LEN>
     for RsaKEMPublicKey<K>
 where
-    K: RsaSize<Modulus = [u8; N]>,
+    K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
     H: HMACParams,
 {
     type Algorithm = RSASVE_HKDF<K, H>;

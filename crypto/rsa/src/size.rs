@@ -89,7 +89,8 @@ pub trait RsaSize:
     fn public_exp(n: &Self::Limbs, e: u64, x: &Self::Limbs) -> Self::Limbs;
 }
 
-/// A size this crate signs and generates keys at: RSA-2048 and up (SP 800-131A's 112-bit floor).
+/// A size this crate signs, generates keys and establishes keys at: RSA-2048 and up (SP
+/// 800-131A's 112-bit floor).
 pub trait RsaSigningSize: RsaSize {
     /// The Miller-Rabin rounds FIPS 186-5 Table B.1 asks of a prime of this size.
     const MR_ROUNDS: NonZeroUsize;
