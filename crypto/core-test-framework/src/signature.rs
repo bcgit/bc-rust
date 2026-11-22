@@ -24,8 +24,8 @@ pub enum CtxBehaviour {
     Bound,
     /// The context is accepted and has no effect (ECDSA, RSA).
     Ignored,
-    /// A non-empty context is a `LengthError`; `None` and the empty context are accepted. Only the
-    /// one-shot suites support this: the streaming suites sign under a context.
+    /// A non-empty context is a `LengthError`, from the one-shots and from the constructors of
+    /// the workers; `None` and the empty context are accepted.
     Refused,
 }
 
@@ -48,6 +48,25 @@ impl TestFrameworkSignature {
     /// For an algorithm with the given treatment of the context.
     pub fn with_ctx_behaviour(ctx: CtxBehaviour) -> Self {
         Self { ctx }
+    }
+
+    /// The context the streaming suites sign and verify under: one, unless the algorithm
+    /// refuses it.
+    fn streaming_ctx(&self) -> Option<&'static [u8]> {
+        match self.ctx {
+            CtxBehaviour::Refused => None,
+            CtxBehaviour::Bound | CtxBehaviour::Ignored => Some(b"streaming"),
+        }
+    }
+
+    /// The context a constructor must refuse with a `LengthError`: the long one where a context
+    /// is bound, any at all where none is taken.
+    fn refused_ctx(&self) -> Option<&'static [u8]> {
+        match self.ctx {
+            CtxBehaviour::Bound => Some(&[0u8; 256]),
+            CtxBehaviour::Refused => Some(b"ctx A"),
+            CtxBehaviour::Ignored => None,
+        }
     }
 
     /// Every member of [`SigningKey`] and [`VerifyingKey`], of the workers they produce and of
@@ -76,20 +95,21 @@ impl TestFrameworkSignature {
         self.check_one_shots(&pk, &sk, &mut rng, run_full_bitflipping_tests);
 
         // streaming signer, in one chunk and in many; the worker names its algorithm
-        let mut signer = sk.create_signer(&mut rng, Some(b"streaming")).unwrap();
+        let ctx = self.streaming_ctx();
+        let mut signer = sk.create_signer(&mut rng, ctx).unwrap();
         assert_eq!(signer.alg_name(), A::ALG_NAME);
         assert_eq!(signer.max_security_strength(), A::MAX_SECURITY_STRENGTH);
         signer.do_update(DUMMY_SEED);
         let sig = signer.do_final().unwrap();
-        pk.verify(DUMMY_SEED, Some(b"streaming"), &sig).unwrap();
+        pk.verify(DUMMY_SEED, ctx, &sig).unwrap();
 
-        let mut signer = sk.create_signer(&mut rng, Some(b"streaming")).unwrap();
+        let mut signer = sk.create_signer(&mut rng, ctx).unwrap();
         for chunk in DUMMY_SEED.chunks(100) {
             signer.do_update(chunk);
         }
         let mut out = [0u8; SIG_LEN];
         assert_eq!(signer.do_final_out(&mut out).unwrap(), SIG_LEN);
-        pk.verify(DUMMY_SEED, Some(b"streaming"), &out).unwrap();
+        pk.verify(DUMMY_SEED, ctx, &out).unwrap();
 
         // the workers can be held as trait objects
         let mut signer = sk.create_signer(&mut rng, None).unwrap();
@@ -122,13 +142,14 @@ impl TestFrameworkSignature {
             Err(SignatureError::SignatureVerificationFailed)
         ));
 
-        // the long context is refused at construction
-        if self.ctx == CtxBehaviour::Bound {
+        // a context the algorithm does not take is refused at construction; the empty one is none
+        if let Some(refused) = self.refused_ctx() {
             assert!(matches!(
-                sk.create_signer(&mut rng, Some(&[0u8; 256])),
+                sk.create_signer(&mut rng, Some(refused)),
                 Err(SignatureError::LengthError(_))
             ));
         }
+        assert!(sk.create_signer(&mut rng, Some(&[])).is_ok());
         self.check_streaming_verifier(&pk, &sig);
     }
 
@@ -150,8 +171,9 @@ impl TestFrameworkSignature {
         self.check_deterministic_one_shots(&pk, &sk, run_full_bitflipping_tests);
 
         // streaming signer, in one chunk and in many, equals the one-shot
-        let sig = sk.sign_deterministic(DUMMY_SEED, Some(b"streaming")).unwrap();
-        let mut signer = sk.create_signer_deterministic(Some(b"streaming")).unwrap();
+        let ctx = self.streaming_ctx();
+        let sig = sk.sign_deterministic(DUMMY_SEED, ctx).unwrap();
+        let mut signer = sk.create_signer_deterministic(ctx).unwrap();
         // A deterministic variant may name how it picks its nonce (`ECDetDSA-P256` for RFC 6979
         // under the `ECDSAP256` marker), so only the strength is pinned to the marker here.
         assert!(!signer.alg_name().is_empty());
@@ -159,7 +181,7 @@ impl TestFrameworkSignature {
         signer.do_update(DUMMY_SEED);
         assert_eq!(signer.do_final().unwrap(), sig);
 
-        let mut signer = sk.create_signer_deterministic(Some(b"streaming")).unwrap();
+        let mut signer = sk.create_signer_deterministic(ctx).unwrap();
         for chunk in DUMMY_SEED.chunks(100) {
             signer.do_update(chunk);
         }
@@ -167,13 +189,16 @@ impl TestFrameworkSignature {
         assert_eq!(signer.do_final_out(&mut out).unwrap(), SIG_LEN);
         assert_eq!(out, sig);
 
-        // the long context is refused at construction
-        if self.ctx == CtxBehaviour::Bound {
+        // a context the algorithm does not take is refused at construction; the empty one is none
+        if let Some(refused) = self.refused_ctx() {
             assert!(matches!(
-                sk.create_signer_deterministic(Some(&[0u8; 256])),
+                sk.create_signer_deterministic(Some(refused)),
                 Err(SignatureError::LengthError(_))
             ));
         }
+        let mut signer = sk.create_signer_deterministic(Some(&[])).unwrap();
+        signer.do_update(MSG);
+        assert_eq!(signer.do_final().unwrap(), sk.sign_deterministic(MSG, None).unwrap());
         self.check_streaming_verifier(&pk, &sig);
     }
 
@@ -412,7 +437,7 @@ impl TestFrameworkSignature {
         Self::check_corrupted_signatures(pk, MSG, sig, every_bit);
     }
 
-    /// The streaming verifier: `sig` is over [`DUMMY_SEED`] under the context `"streaming"`.
+    /// The streaming verifier: `sig` is over [`DUMMY_SEED`] under the suites' streaming context.
     fn check_streaming_verifier<
         A: SignatureAlgorithm,
         PK: VerifyingKey<A, SIG_LEN>,
@@ -423,19 +448,20 @@ impl TestFrameworkSignature {
         sig: &[u8; SIG_LEN],
     ) {
         // in one chunk and in many
-        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
+        let ctx = self.streaming_ctx();
+        let mut verifier = pk.create_verifier(ctx).unwrap();
         assert_eq!(verifier.alg_name(), A::ALG_NAME);
         verifier.do_update(DUMMY_SEED);
         verifier.do_verify_final(sig).unwrap();
 
-        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
+        let mut verifier = pk.create_verifier(ctx).unwrap();
         for chunk in DUMMY_SEED.chunks(100) {
             verifier.do_update(chunk);
         }
         verifier.do_verify_final(sig).unwrap();
 
         // the wrong message
-        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
+        let mut verifier = pk.create_verifier(ctx).unwrap();
         verifier.do_update(b"this is the wrong message");
         assert!(matches!(
             verifier.do_verify_final(sig),
@@ -445,16 +471,25 @@ impl TestFrameworkSignature {
         // a signature of the wrong length
         let mut too_long = vec![1u8; SIG_LEN + 2];
         too_long[..SIG_LEN].copy_from_slice(sig);
-        let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
+        let mut verifier = pk.create_verifier(ctx).unwrap();
         verifier.do_update(DUMMY_SEED);
         assert!(matches!(verifier.do_verify_final(&too_long), Err(SignatureError::LengthError(_))));
 
-        // the long context is refused at construction
-        if self.ctx == CtxBehaviour::Bound {
+        // a context the algorithm does not take is refused at construction; the empty one is none
+        if let Some(refused) = self.refused_ctx() {
             assert!(matches!(
-                pk.create_verifier(Some(&[0u8; 256])),
+                pk.create_verifier(Some(refused)),
                 Err(SignatureError::LengthError(_))
             ));
+        }
+        let mut verifier = pk.create_verifier(Some(&[])).unwrap();
+        verifier.do_update(DUMMY_SEED);
+        match self.ctx {
+            CtxBehaviour::Bound => assert!(matches!(
+                verifier.do_verify_final(sig),
+                Err(SignatureError::SignatureVerificationFailed)
+            )),
+            CtxBehaviour::Ignored | CtxBehaviour::Refused => verifier.do_verify_final(sig).unwrap(),
         }
     }
     /// Every member of [`PreHashSigningKey`] and [`PreHashVerifyingKey`] for the hash `H`, and
