@@ -37,7 +37,7 @@ use bouncycastle_core::signature_key::{
 };
 use bouncycastle_core::traits::{HashOneShot, SignatureSigner};
 use bouncycastle_core_test_framework::signature::{
-    TestFrameworkSignature, TestFrameworkSignatureKeys,
+    CtxBehaviour, TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::RSA2048;
@@ -181,7 +181,7 @@ fn fixed_keypair()
 /// generic `RSASSA_PKCS1_v1_5` code under test is the same at every width.
 #[test]
 fn pkcs1_v1_5_sha256_trait_conformance_suite() {
-    TestFrameworkSignature::new(false).test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA256, RsaPublicKey<RSASSA_PKCS1_v1_5_SHA256>, RsaPrivateKey<RSASSA_PKCS1_v1_5_SHA256>, SIG_LEN>(
+    TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Refused).test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA256, RsaPublicKey<RSASSA_PKCS1_v1_5_SHA256>, RsaPrivateKey<RSASSA_PKCS1_v1_5_SHA256>, SIG_LEN>(
             || fixed_keypair().map(|(pk, sk)| (pk.into_key::<RSASSA_PKCS1_v1_5_SHA256>(), sk.into_key::<RSASSA_PKCS1_v1_5_SHA256>())), true);
 }
 

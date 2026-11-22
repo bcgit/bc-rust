@@ -124,6 +124,9 @@
   operation's one decryption error) and is wiped.
 * RSA -- `rsassa`'s `*_from_hash` functions return `SignatureError::LengthError` for a message hash or a PSS salt of
   the wrong length, in every build; the algorithm traits' `emsa_encode` returns a `Result` for the same reason.
+* Breaking: RSA signatures refuse a non-empty `ctx`, which they accepted and dropped. RSA has no context input, so
+  `SignatureError::LengthError` for anything but `None` or the empty context, from signing and verifying, one-shot
+  and streaming, as Ed25519 does. Signatures made and verified without a context are unchanged.
 * RSA -- RSA-1024 and RSA-1536 verify signatures and nothing else: RSASVE, RSASVE with a KDF and RSAES-OAEP no
   longer encapsulate or transport toward a public key of those sizes (the roles need a signing size).
 

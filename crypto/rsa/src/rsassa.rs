@@ -88,6 +88,17 @@ pub trait RsaRandomizedSignatureAlgorithm: RsaSignatureAlgorithm {
     ) -> Result<[u8; K_LEN], SignatureError>;
 }
 
+/// RSA signatures take no context: RSASSA-PSS-SIGN and RSASSA-PKCS1-V1_5-SIGN (RFC 8017 §8.1.1,
+/// §8.2.1) and their verifications are over a key and a message, and nothing else. So `None` and
+/// the empty context are accepted and a non-empty one is refused where it is given, when a
+/// worker is made, rather than dropped.
+fn refuse_context(ctx: Option<&[u8]>) -> Result<(), SignatureError> {
+    match ctx {
+        Some(ctx) if !ctx.is_empty() => Err(SignatureError::LengthError("RSA takes no context")),
+        _ => Ok(()),
+    }
+}
+
 /// The signer [`SigningKey::create_signer`] hands out for a randomized algorithm: the key,
 /// borrowed, the hash state, and the salt drawn when it was made.
 pub struct RsaSigner<'k, A: RsaRandomizedSignatureAlgorithm> {
@@ -134,17 +145,19 @@ where
         Self: 'k;
 
     /// Draws EMSA-PSS-ENCODE step 4's salt from `rng` when the signer is made, as ECDSA draws
-    /// `k`; `ctx` is accepted and ignored, RSA having no context string.
+    /// `k`. `ctx` must be `None` or empty, RSA having no context.
     ///
     /// # Errors
+    /// [`SignatureError::LengthError`] for a non-empty `ctx`, before anything is drawn;
     /// [`SignatureError::RNGError`] if the RNG fails to deliver, a draw shorter than the salt
     /// included.
     fn create_signer<'k>(
         &'k self,
         rng: &mut dyn RNG,
-        _ctx: Option<&[u8]>,
+        ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
         const { assert!(A::SALT_LEN <= MAX_HASH_LEN, "the salt fits the signer's buffer") };
+        refuse_context(ctx)?;
         let mut salt = [0u8; MAX_HASH_LEN];
         fill_bytes(rng, &mut salt[..A::SALT_LEN]).map_err(SignatureError::RNGError)?;
         Ok(RsaSigner { sk: self, hash: A::Hash::default(), salt })
@@ -178,11 +191,15 @@ where
     where
         Self: 'k;
 
-    /// Cannot fail; `ctx` is accepted and ignored, RSA having no context string.
+    /// `ctx` must be `None` or empty, RSA having no context.
+    ///
+    /// # Errors
+    /// [`SignatureError::LengthError`] for a non-empty `ctx`.
     fn create_signer_deterministic<'k>(
         &'k self,
-        _ctx: Option<&[u8]>,
+        ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
+        refuse_context(ctx)?;
         Ok(RsaDeterministicSigner { sk: self, hash: A::Hash::default() })
     }
 }
@@ -213,11 +230,15 @@ where
     where
         Self: 'k;
 
-    /// Cannot fail; `ctx` is accepted and ignored.
+    /// `ctx` must be `None` or empty, RSA having no context.
+    ///
+    /// # Errors
+    /// [`SignatureError::LengthError`] for a non-empty `ctx`.
     fn create_verifier<'k>(
         &'k self,
-        _ctx: Option<&[u8]>,
+        ctx: Option<&[u8]>,
     ) -> Result<Self::Verifier<'k>, SignatureError> {
+        refuse_context(ctx)?;
         Ok(RsaVerifier { pk: self, hash: A::Hash::default() })
     }
 }

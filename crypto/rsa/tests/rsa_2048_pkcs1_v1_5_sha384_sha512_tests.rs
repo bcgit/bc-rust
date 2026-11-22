@@ -15,7 +15,7 @@
 
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
-use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
+use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keys::{
@@ -224,7 +224,7 @@ fn fixed_keypair()
 /// suite, over the same generic code.
 #[test]
 fn pkcs1_v1_5_sha384_sha512_trait_conformance_suite() {
-    let framework = TestFrameworkSignature::new(false);
+    let framework = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Refused);
     framework.test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA384, RsaPublicKey<RSASSA_PKCS1_v1_5_SHA384>, RsaPrivateKey<RSASSA_PKCS1_v1_5_SHA384>, SIG_LEN>(
             || fixed_keypair().map(|(pk, sk)| (pk.into_key::<RSASSA_PKCS1_v1_5_SHA384>(), sk.into_key::<RSASSA_PKCS1_v1_5_SHA384>())), false);
     framework.test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA512, RsaPublicKey<RSASSA_PKCS1_v1_5_SHA512>, RsaPrivateKey<RSASSA_PKCS1_v1_5_SHA512>, SIG_LEN>(

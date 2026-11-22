@@ -16,7 +16,7 @@ use bouncycastle_core::signature_key::{
 };
 use bouncycastle_core::traits::RNG;
 use bouncycastle_core::traits::{HashOneShot, SignatureSigner, SignatureVerifier};
-use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
+use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::RSA2048;
@@ -209,7 +209,7 @@ fn fixed_keypair()
 /// flipped in turn -- run here since the generic `RSASSA_PSS` code is the same at every width.
 #[test]
 fn pss_sha256_trait_conformance_suite() {
-    TestFrameworkSignature::new(false)
+    TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Refused)
         .test_signature::<RSASSA_PSS_SHA256, RsaPublicKey<RSASSA_PSS_SHA256>, RsaPrivateKey<RSASSA_PSS_SHA256>, SIG_LEN>(
             || fixed_keypair().map(|(pk, sk)| (pk.into_key::<RSASSA_PSS_SHA256>(), sk.into_key::<RSASSA_PSS_SHA256>())), true,
         );

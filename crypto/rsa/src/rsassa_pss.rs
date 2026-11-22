@@ -171,8 +171,9 @@ impl<M> UnsaltedPss for NoSalt<M> {}
 /// for spelled ones, at the lesser of the size's and the hash's strength (§8.1: the mask's hash
 /// does not enter the proof). A key over it signs through `SigningKey`,
 /// `sk.sign(&mut rng, msg, None)`, or for [`NoSalt`] through `DeterministicSigningKey`,
-/// `sk.sign_deterministic(msg, None)`; `ctx` is accepted and ignored, since RSA has no context
-/// string.
+/// `sk.sign_deterministic(msg, None)`; `ctx` must be `None` or empty, since RSA has no
+/// context: a non-empty one is a [`SignatureError::LengthError`] from signing and from
+/// verification.
 ///
 /// Signing requires a [`CollisionResistantHash`] as `H` (the mask's hash is not bound by it);
 /// verification does not. A key over SHA-1 verifies and does not sign, salted or not:

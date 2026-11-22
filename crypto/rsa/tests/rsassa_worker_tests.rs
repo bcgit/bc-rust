@@ -1,8 +1,12 @@
-//! The signature workers name their algorithm, and the random-salt `sign_from_hash` entry
-//! points of the PSS schemes sign what `verify_from_hash` accepts.
+//! The signature workers name their algorithm, the random-salt `sign_from_hash` entry points
+//! of the PSS schemes sign what `verify_from_hash` accepts, and a non-empty context is refused.
 
-use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
-use bouncycastle_core::traits::{AlgorithmInfo, HashOneShot};
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::signature_key::{
+    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
+    OneShotVerifyingKey, SigningKey, VerifyingKey,
+};
+use bouncycastle_core::traits::{AlgorithmInfo, HashOneShot, SignatureSigner, SignatureVerifier};
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keys::{RsaPrivateComponents, RsaPublicComponents};
@@ -154,4 +158,89 @@ fn pss_sign_from_hash_draws_a_fresh_salt_and_verifies() {
         &b,
     )
     .unwrap();
+}
+
+const NO_CONTEXT: SignatureError = SignatureError::LengthError("RSA takes no context");
+
+/// RSA has no context input (RFC 8017 Section 8: the operations take a key and a message), so
+/// the absent and the empty context are the same and a non-empty one is refused, by signing and
+/// by verifying, one-shot and where a worker is made: RSASSA-PKCS1-v1_5.
+#[test]
+fn pkcs1_v1_5_refuses_a_context() {
+    type Alg = RSASSA_PKCS1_v1_5<RSA2048, SHA256>;
+    let (pk, sk) = key_pair();
+    let (pk, sk) = (pk.key::<Alg>(), sk.key::<Alg>());
+    let msg = b"no context to bind";
+
+    let sig = sk.sign_deterministic(msg, None).unwrap();
+    assert_eq!(sk.sign_deterministic(msg, Some(&[])).unwrap(), sig);
+    pk.verify(msg, None, &sig).unwrap();
+    pk.verify(msg, Some(&[]), &sig).unwrap();
+
+    for ctx in [&b"c"[..], b"a context"] {
+        assert_eq!(sk.sign_deterministic(msg, Some(ctx)), Err(NO_CONTEXT));
+        let mut out = [0xFFu8; 256];
+        assert_eq!(sk.sign_deterministic_out(msg, Some(ctx), &mut out), Err(NO_CONTEXT));
+        assert_eq!(out, [0u8; 256]);
+        assert!(matches!(sk.create_signer_deterministic(Some(ctx)), Err(NO_CONTEXT)));
+        assert_eq!(pk.verify(msg, Some(ctx), &sig), Err(NO_CONTEXT));
+        assert!(matches!(pk.create_verifier(Some(ctx)), Err(NO_CONTEXT)));
+    }
+
+    // Streaming under the empty context is streaming under none.
+    let mut signer = sk.create_signer_deterministic(Some(&[])).unwrap();
+    signer.do_update(msg);
+    assert_eq!(signer.do_final().unwrap(), sig);
+    let mut verifier = pk.create_verifier(Some(&[])).unwrap();
+    verifier.do_update(msg);
+    verifier.do_verify_final(&sig).unwrap();
+}
+
+/// The same for RSASSA-PSS, salted and unsalted, where a refused context draws no salt.
+#[test]
+fn pss_refuses_a_context() {
+    use bouncycastle_core::hazmat::FixedSeedRNG;
+    use bouncycastle_rsa::rsassa_pss::NoSalt;
+    type Alg = RSASSA_PSS<RSA2048, SHA256>;
+    let (pk, sk) = key_pair();
+    let (pk_pss, sk_pss) = (pk.key::<Alg>(), sk.key::<Alg>());
+    let msg = b"no context to bind";
+    let seed: [u8; 96] = core::array::from_fn(|i| i as u8);
+
+    let sig = sk_pss.sign(&mut FixedSeedRNG::new(seed), msg, None).unwrap();
+    // The empty context gives the signature the absent one gives, from the same draw.
+    assert_eq!(sk_pss.sign(&mut FixedSeedRNG::new(seed), msg, Some(&[])).unwrap(), sig);
+    pk_pss.verify(msg, None, &sig).unwrap();
+    pk_pss.verify(msg, Some(&[]), &sig).unwrap();
+
+    for ctx in [&b"c"[..], b"a context"] {
+        // Refused before the salt is drawn: the next signature is the one a fresh RNG gives.
+        let mut rng = FixedSeedRNG::new(seed);
+        assert_eq!(sk_pss.sign(&mut rng, msg, Some(ctx)), Err(NO_CONTEXT));
+        let mut out = [0xFFu8; 256];
+        assert_eq!(sk_pss.sign_out(&mut rng, msg, Some(ctx), &mut out), Err(NO_CONTEXT));
+        assert_eq!(out, [0u8; 256]);
+        assert!(matches!(sk_pss.create_signer(&mut rng, Some(ctx)), Err(NO_CONTEXT)));
+        assert_eq!(sk_pss.sign(&mut rng, msg, None).unwrap(), sig);
+        assert_eq!(pk_pss.verify(msg, Some(ctx), &sig), Err(NO_CONTEXT));
+        assert!(matches!(pk_pss.create_verifier(Some(ctx)), Err(NO_CONTEXT)));
+    }
+
+    let mut signer = sk_pss.create_signer(&mut FixedSeedRNG::new(seed), Some(&[])).unwrap();
+    signer.do_update(msg);
+    assert_eq!(signer.do_final().unwrap(), sig);
+    let mut verifier = pk_pss.create_verifier(Some(&[])).unwrap();
+    verifier.do_update(msg);
+    verifier.do_verify_final(&sig).unwrap();
+
+    // Unsalted PSS signs through the deterministic role.
+    type Unsalted = RSASSA_PSS<RSA2048, SHA256, NoSalt<SHA256>>;
+    let (pk_ns, sk_ns) = (pk.key::<Unsalted>(), sk.key::<Unsalted>());
+    let sig = sk_ns.sign_deterministic(msg, None).unwrap();
+    assert_eq!(sk_ns.sign_deterministic(msg, Some(&[])).unwrap(), sig);
+    pk_ns.verify(msg, Some(&[]), &sig).unwrap();
+    assert_eq!(sk_ns.sign_deterministic(msg, Some(b"a context")), Err(NO_CONTEXT));
+    assert!(matches!(sk_ns.create_signer_deterministic(Some(b"a context")), Err(NO_CONTEXT)));
+    assert_eq!(pk_ns.verify(msg, Some(b"a context"), &sig), Err(NO_CONTEXT));
+    assert!(matches!(pk_ns.create_verifier(Some(b"a context")), Err(NO_CONTEXT)));
 }

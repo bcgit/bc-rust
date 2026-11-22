@@ -26,7 +26,7 @@ use bouncycastle_core::signature_key::{
 };
 use bouncycastle_core::traits::PrivateKey;
 use bouncycastle_core::traits::RNG;
-use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
+use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
 use bouncycastle_ec::montgomery::widening_mul;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::RSA2048;
@@ -222,7 +222,7 @@ fn keygen_2048_meets_fips_186_5_criteria_and_signs() {
 /// pass theirs (the fixed-key runs elsewhere in this crate exist because keygen used not to).
 #[test]
 fn conformance_suite_with_generated_keys() {
-    TestFrameworkSignature::new(false).test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA256, RsaPublicKey<RSASSA_PKCS1_v1_5_SHA256>, RsaPrivateKey<RSASSA_PKCS1_v1_5_SHA256>, SIG_LEN>(
+    TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Refused).test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA256, RsaPublicKey<RSASSA_PKCS1_v1_5_SHA256>, RsaPrivateKey<RSASSA_PKCS1_v1_5_SHA256>, SIG_LEN>(
             || RSA2048::keygen(&mut DefaultRNG::default()).map(|(pk, sk)| (pk.into_key::<RSASSA_PKCS1_v1_5_SHA256>(), sk.into_key::<RSASSA_PKCS1_v1_5_SHA256>())), false);
 }
 

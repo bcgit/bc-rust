@@ -25,7 +25,8 @@ use core::marker::PhantomData;
 /// [`RsaPublicKey`](crate::keys::RsaPublicKey) verifies through [`VerifyingKey`](bouncycastle_core::signature_key::VerifyingKey) at any size. One key type serves every
 /// scheme and hash, so a call names the marker:
 /// a key over it signs through `DeterministicSigningKey`, `sk.sign_deterministic(msg, None)`.
-/// `ctx` is accepted and ignored, since RSA has no context string.
+/// `ctx` must be `None` or empty, since RSA has no context: a non-empty one is a
+/// [`SignatureError::LengthError`] from signing and from verification.
 ///
 /// Signing requires a [`CollisionResistantHash`]; verification does not. A key over SHA-1
 /// verifies and does not sign:

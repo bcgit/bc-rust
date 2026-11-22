@@ -9,7 +9,7 @@
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey, SigningKey};
 use bouncycastle_core::traits::SignatureSigner;
-use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
+use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::RSA2048;
@@ -215,7 +215,7 @@ fn fixed_keypair()
 /// `ctx` ignored); the bit-flip pass runs in `rsa_2048_pss_tests.rs`'s SHA-256 suite.
 #[test]
 fn pss_sha384_sha512_trait_conformance_suite() {
-    let framework = TestFrameworkSignature::new(false);
+    let framework = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Refused);
     framework.test_signature::<RSASSA_PSS_SHA384, RsaPublicKey<RSASSA_PSS_SHA384>, RsaPrivateKey<RSASSA_PSS_SHA384>, SIG_LEN>(
             || fixed_keypair().map(|(pk, sk)| (pk.into_key::<RSASSA_PSS_SHA384>(), sk.into_key::<RSASSA_PSS_SHA384>())), false,
     );

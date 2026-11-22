@@ -94,7 +94,7 @@
 //! let pk = RsaPublicKey::<RSASSA_PKCS1_v1_5_SHA256>::new(sk.n(), sk.e())?;
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //!
-//! // One-shot. RSA has no context string, so `ctx` is `None` (a `Some` is accepted and ignored).
+//! // One-shot. RSA takes no context: `ctx` is `None` or empty, and anything else is refused.
 //! // PKCS#1 v1.5 draws nothing, so it is the deterministic role.
 //! let signature = sk.sign_deterministic(b"the message to sign", None)?;
 //! pk.verify(b"the message to sign", None, &signature)?;
@@ -357,11 +357,10 @@
 //!   security argument (RFC 8017 §8.1, Appendix A.2.3's references) assumes the salt is drawn
 //!   fresh and unpredictably each time. Signing with a low-quality or unseeded RNG, or reusing a
 //!   fixed salt outside a test, weakens that argument even though it will not directly leak `d`.
-//! - **`ctx` is accepted but ignored.** RSASSA-PKCS1-v1_5 and RSASSA-PSS (RFC 8017 §8) have no
-//!   context-string input; the key traits' `ctx` parameter is accepted for trait
-//!   conformance and silently ignored, as `bouncycastle-ecdsa` does for ECDSA. A caller relying
-//!   on `ctx` to bind a signature to an application context gets no such binding here and must
-//!   fold the context into the message itself.
+//! - **`ctx` must be absent or empty.** RSASSA-PKCS1-v1_5 and RSASSA-PSS (RFC 8017 §8) have no
+//!   context input, so a non-empty `ctx` is refused with `SignatureError::LengthError` by
+//!   signing and by verifying, one-shot or streaming, rather than dropped. A protocol that
+//!   needs the binding puts the context in the message itself.
 //! - **RSA-1024 and RSA-1536 are legacy sizes, exposed for verification only.** Both fall below
 //!   the 112-bit security level NIST SP 800-131A requires for new use (RSA-1024 offers roughly
 //!   80 bits, RSA-1536 roughly 96); this crate offers no way to sign with either, or to
