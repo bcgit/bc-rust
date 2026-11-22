@@ -15,7 +15,7 @@
 //!
 //! A widening multiply of two `L`-limb operands produces `2L` limbs, and Rust's stable const
 //! generics cannot express `[u64; 2 * L]` as a type (that needs the unstable
-//! `generic_const_exprs`, which this workspace does not enable; `crypto/mldsa/src/lib.rs` has a
+//! `generic_const_exprs`, which this workspace does not enable; `crypto/pqc/src/mldsa/mod.rs` has a
 //! commented-out attempt at a different const-generic feature for the same underlying reason).
 //! So the width is passed as a second parameter `L2`, with a debug assertion that it really is
 //! `2 * L`; every caller in this crate instantiates an `<L, 2L>` pair.

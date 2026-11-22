@@ -58,6 +58,8 @@ use bouncycastle_utils::suspendable_state::{
     suspend_component,
 };
 use core::num::NonZeroUsize;
+#[cfg(feature = "std")]
+use std::vec::Vec;
 
 /// The name of the ParallelHash128 algorithm (NIST SP 800-185 Sec 6).
 pub const PARALLELHASH128_NAME: &str = "ParallelHash128";
@@ -468,6 +470,9 @@ impl<PARAMS: SHAKEParams> ParallelHashInternal<PARAMS> {
     /// One-shot: hashes `data` with this instance's parameters.
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
         self.do_final()
@@ -484,6 +489,9 @@ impl<PARAMS: SHAKEParams> ParallelHashXOFInternal<PARAMS> {
     /// One-shot: hashes `data` with this instance's parameters.
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
         self.do_final()

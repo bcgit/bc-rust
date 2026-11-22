@@ -16,8 +16,7 @@ use bouncycastle::core::signature_key::{
 };
 use bouncycastle::core::traits::{PublicKey, SignatureSigner, SignatureVerifier};
 use bouncycastle::ed::ed25519::{
-    Ed25519, Ed25519PrivateKey, Ed25519PublicKey, SIGNATURE_LEN, keygen_out,
-    keypair_consistency_check,
+    Ed25519PrivateKey, Ed25519PublicKey, SIGNATURE_LEN, keygen_out, keypair_consistency_check,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
@@ -152,13 +151,12 @@ enum SignFailure {
 /// Ed25519ph. Nothing here ends the process, the private key being alive throughout.
 fn sign(input: &SignInput, sk: &Ed25519PrivateKey) -> Result<[u8; SIGNATURE_LEN], SignFailure> {
     match input {
-        SignInput::Message(msg) => {
-            DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(sk, msg, None)
-                .map_err(SignFailure::Signature)
-        }
+        SignInput::Message(msg) => sk.sign_deterministic(msg, None).map_err(SignFailure::Signature),
         SignInput::Context(ctx) => {
-            let mut signer =
-                sk.create_signer_deterministic(Some(ctx)).map_err(SignFailure::Signature)?;
+            let mut signer = sk
+                .as_prehash()
+                .create_signer_deterministic(Some(ctx))
+                .map_err(SignFailure::Signature)?;
             let mut stdin = std::io::stdin();
             let mut buf = [0u8; CHUNK_LEN];
             loop {
@@ -181,11 +179,11 @@ fn verify(
     match variant {
         Ed25519Variant::Pure => {
             let msg = read_stdin_all();
-            OneShotVerifyingKey::<Ed25519, _>::verify(pk, &msg, None, sig)
+            pk.verify(&msg, None, sig)
         }
         Ed25519Variant::Prehash { ctxfile } => {
             let ctx = read_ctx(ctxfile);
-            let mut verifier = pk.create_verifier(Some(&ctx)).unwrap_or_else(|e| {
+            let mut verifier = pk.as_prehash().create_verifier(Some(&ctx)).unwrap_or_else(|e| {
                 // A context that is too long is the caller's mistake, not a bad signature.
                 eprintln!("Error: {e:?}");
                 exit(-1);

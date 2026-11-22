@@ -110,6 +110,9 @@ fn check<H: EcdsaHash + CollisionResistantHash>(vectors: &[Vector]) {
         expected[SCALAR_LEN..].copy_from_slice(&bytes(v.s));
         assert_eq!(sig, expected, "{} over {:?}", ECDSA::<P256, H>::ALG_NAME, v.msg);
         pk.verify(v.msg, None, &sig).unwrap();
+        // The empty context is the absent one.
+        assert_eq!(sk.sign_deterministic(v.msg, Some(&[])).unwrap(), sig);
+        pk.verify(v.msg, Some(&[]), &sig).unwrap();
     }
 }
 

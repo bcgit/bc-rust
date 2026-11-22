@@ -6,7 +6,8 @@
 //! group's crate implements that trait and exposes the result through the
 //! [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) and
 //! [`DecapsulatingKey`](bouncycastle_core::kem_key::DecapsulatingKey) roles on its own key types,
-//! with [`HpkeKem`] on their algorithm marker, which is what `bouncycastle-hpke` runs HPKE over.
+//! with [`HpkeKem`] on their algorithm marker, which is what `bouncycastle-hybrid`'s `hpke`
+//! module runs HPKE over.
 //! `AuthEncap` and `AuthDecap`, the authenticated forms that HPKE's Auth modes need, are
 //! [`DHKEM::auth_encap_rng_out`] and [`DHKEM::auth_decap_out`], exposed on the keys through
 //! [`AuthEncapsulatingKey`] and [`AuthDecapsulatingKey`].
@@ -81,7 +82,7 @@
 //!   and the SHA-256 message schedule of `prk XOR opad` on the dead stack below this crate's
 //!   frames, from which the PRK is recoverable; that residue is `hmac`'s and `sha2`'s, and the
 //!   PRK keys one `HmacKey` per expand so it is left once.
-//! * The crate's own source is `no_std`, but `bouncycastle-core` and `hmac` are not yet.
+//! * The crate's own source is `no_std`, but `bouncycastle-core`, which it depends on, is not yet.
 
 #![no_std]
 #![forbid(unsafe_code)]

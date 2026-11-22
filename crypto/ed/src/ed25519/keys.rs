@@ -1,4 +1,5 @@
-//! The Ed25519 key objects, the algorithm markers and the signature roles over them.
+//! The Ed25519 key objects, the algorithm markers, the Ed25519ph views of the keys and the
+//! signature roles over them.
 
 use super::point::PublicPoint;
 use super::scheme::{
@@ -24,47 +25,14 @@ pub const ED25519_NAME: &str = "Ed25519";
 /// String name of the Ed25519ph algorithm.
 pub const ED25519PH_NAME: &str = "Ed25519ph";
 
-/// Ed25519 (RFC 8032 Section 5.1), the algorithm that signs the message itself. It takes the
-/// whole message at once, so the keys implement only the one-shot roles under this marker:
-/// [`DeterministicOneShotSigningKey`] and [`OneShotVerifyingKey`].
+/// Ed25519 (RFC 8032 Section 5.1), the algorithm that signs the message itself, and the
+/// algorithm of [`Ed25519PrivateKey`] and [`Ed25519PublicKey`]. It takes the whole message at
+/// once, so the keys implement only the one-shot roles: [`DeterministicOneShotSigningKey`] and
+/// [`OneShotVerifyingKey`].
 ///
 /// It takes no context (RFC 8032 Section 5.1: "The context (if present at all) MUST be
 /// empty"): `None` and `Some(&[])` are accepted, and anything else is a
 /// [`SignatureError::LengthError`] from signing and from verification.
-///
-/// There is no streaming signer or verifier to ask for. These compile under [`Ed25519ph`]:
-///
-/// ```
-/// use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
-/// use bouncycastle_ed::ed25519::{Ed25519PrivateKey, Ed25519PublicKey, Ed25519ph};
-///
-/// fn signer(sk: &Ed25519PrivateKey) {
-///     let _ = DeterministicSigningKey::<Ed25519ph, 64>::create_signer_deterministic(sk, None);
-/// }
-/// fn verifier(pk: &Ed25519PublicKey) {
-///     let _ = VerifyingKey::<Ed25519ph, 64>::create_verifier(pk, None);
-/// }
-/// ```
-///
-/// and neither does under this marker:
-///
-/// ```compile_fail,E0277
-/// use bouncycastle_core::signature_key::DeterministicSigningKey;
-/// use bouncycastle_ed::ed25519::{Ed25519, Ed25519PrivateKey};
-///
-/// fn signer(sk: &Ed25519PrivateKey) {
-///     let _ = DeterministicSigningKey::<Ed25519, 64>::create_signer_deterministic(sk, None);
-/// }
-/// ```
-///
-/// ```compile_fail,E0277
-/// use bouncycastle_core::signature_key::VerifyingKey;
-/// use bouncycastle_ed::ed25519::{Ed25519, Ed25519PublicKey};
-///
-/// fn verifier(pk: &Ed25519PublicKey) {
-///     let _ = VerifyingKey::<Ed25519, 64>::create_verifier(pk, None);
-/// }
-/// ```
 pub struct Ed25519;
 
 impl Algorithm for Ed25519 {
@@ -84,8 +52,10 @@ impl AlgorithmOID for Ed25519 {
 }
 
 /// Ed25519ph (RFC 8032 Section 5.1), the algorithm that signs the SHA-512 digest of the
-/// message, under a context of at most [`CONTEXT_MAX_LEN`] octets that is empty by default. The
-/// message can arrive in pieces, so the keys implement the streaming roles under this marker,
+/// message, under a context of at most [`CONTEXT_MAX_LEN`] octets that is empty by default.
+/// Its keys are [`Ed25519phPrivateKey`] and [`Ed25519phPublicKey`], the views
+/// [`Ed25519PrivateKey::as_prehash`] and [`Ed25519PublicKey::as_prehash`] give of an Ed25519
+/// key. The message can arrive in pieces, so they implement the streaming roles,
 /// [`DeterministicSigningKey`] and [`VerifyingKey`], and the one-shot roles with them.
 ///
 /// An Ed25519ph signature is not an Ed25519 signature of the message or of its digest, and the
@@ -167,7 +137,20 @@ pub fn keypair_consistency_check(
 ///
 /// The derivation runs once, when the key is generated or decoded, so signing does not repeat
 /// it. Everything secret is wiped when the key is dropped, and the type has no `Debug`.
-/// One key signs with [`Ed25519`] and with [`Ed25519ph`].
+///
+/// It is a key of [`Ed25519`], the algorithm `id-Ed25519` names (RFC 8410 Section 3), and
+/// signs a whole message through [`DeterministicOneShotSigningKey`]. The same octets sign
+/// with [`Ed25519ph`] through the view [`as_prehash`](Self::as_prehash) gives. The key itself
+/// has no streaming signer:
+///
+/// ```compile_fail,E0599
+/// use bouncycastle_core::signature_key::DeterministicSigningKey;
+/// use bouncycastle_ed::ed25519::Ed25519PrivateKey;
+///
+/// fn signer(sk: &Ed25519PrivateKey) {
+///     let _ = sk.create_signer_deterministic(None);
+/// }
+/// ```
 pub struct Ed25519PrivateKey {
     /// The private key as RFC 8032 has it, kept for the encoding.
     private_key: Secret<[u8; PRIVATE_KEY_LEN]>,
@@ -241,6 +224,12 @@ impl Ed25519PrivateKey {
         let point = self.expanded.public_point().ok_or(KeyMaterialError::ActingOnZeroizedKey)?;
         Ok(Ed25519PublicKey { point })
     }
+
+    /// The pre-hash form of this key, an [`Ed25519ph`] signing key. The view borrows the key; no
+    /// key material is copied or moved.
+    pub fn as_prehash(&self) -> Ed25519phPrivateKey<'_> {
+        Ed25519phPrivateKey { sk: self }
+    }
 }
 
 /// The encoding is the 32 octets of the private key as RFC 8032 Section 5.1.5 defines it (the
@@ -299,7 +288,20 @@ impl PartialEq for Ed25519PrivateKey {
 impl Eq for Ed25519PrivateKey {}
 
 /// An Ed25519 public key, fully validated: a point of the curve in the prime-order subgroup,
-/// and not the neutral element. One key verifies [`Ed25519`] and [`Ed25519ph`] signatures.
+/// and not the neutral element.
+///
+/// It is a key of [`Ed25519`], and verifies over a whole message through
+/// [`OneShotVerifyingKey`]; the view [`as_prehash`](Self::as_prehash) gives verifies
+/// [`Ed25519ph`] signatures. The key itself has no streaming verifier:
+///
+/// ```compile_fail,E0599
+/// use bouncycastle_core::signature_key::VerifyingKey;
+/// use bouncycastle_ed::ed25519::Ed25519PublicKey;
+///
+/// fn verifier(pk: &Ed25519PublicKey) {
+///     let _ = pk.create_verifier(None);
+/// }
+/// ```
 ///
 /// The validation is done once, by [`from_bytes`](PublicKey::from_bytes), and costs about one
 /// variable-time scalar multiplication by the group order, comparable to verifying a signature;
@@ -309,6 +311,14 @@ impl Eq for Ed25519PrivateKey {}
 #[derive(Clone)]
 pub struct Ed25519PublicKey {
     point: PublicPoint,
+}
+
+impl Ed25519PublicKey {
+    /// The pre-hash form of this key, an [`Ed25519ph`] verifying key. The view borrows the key and
+    /// copies nothing.
+    pub fn as_prehash(&self) -> Ed25519phPublicKey<'_> {
+        Ed25519phPublicKey { pk: self }
+    }
 }
 
 /// The encoding is the 32 octets of RFC 8032 Section 5.1.5: the y-coordinate, little-endian,
@@ -370,7 +380,7 @@ impl Debug for Ed25519PublicKey {
     }
 }
 
-/*** Ed25519: the one-shot roles alone ***/
+/*** Ed25519, on the keys: the one-shot roles alone ***/
 
 /// RFC 8032 Section 5.1, of Ed25519: "The context (if present at all) MUST be empty."
 fn refuse_context(ctx: Option<&[u8]>) -> Result<(), SignatureError> {
@@ -416,7 +426,7 @@ fn signature_octets(sig: &[u8]) -> Result<&[u8; SIGNATURE_LEN], SignatureError> 
     sig.try_into().map_err(|_| SignatureError::LengthError("An Ed25519 signature is 64 bytes"))
 }
 
-/*** Ed25519ph: the streaming roles, and the one-shot roles over their workers ***/
+/*** Ed25519ph, on the views: the streaming roles, and the one-shot roles over their workers ***/
 
 /// A context as a worker holds it: checked against [`CONTEXT_MAX_LEN`] and copied, because the
 /// worker outlives the caller's borrow of it. It is public data.
@@ -442,8 +452,8 @@ impl Context {
 
 /// An Ed25519ph signature in progress (RFC 8032 Section 5.1.6 with PH = SHA-512): the message
 /// is hashed as it arrives and the digest signed at the end. Made by
-/// [`DeterministicSigningKey::create_signer_deterministic`] on an [`Ed25519PrivateKey`], which
-/// it borrows.
+/// [`DeterministicSigningKey::create_signer_deterministic`] on an [`Ed25519phPrivateKey`]; it
+/// borrows the [`Ed25519PrivateKey`] behind the view.
 pub struct Ed25519phSigner<'k> {
     sk: &'k Ed25519PrivateKey,
     prehash: SHA512,
@@ -474,8 +484,8 @@ impl SignatureSigner<SIGNATURE_LEN> for Ed25519phSigner<'_> {
 }
 
 /// An Ed25519ph verification in progress (RFC 8032 Section 5.1.7 with PH = SHA-512), by the
-/// cofactored equation. Made by [`VerifyingKey::create_verifier`] on an [`Ed25519PublicKey`],
-/// which it borrows.
+/// cofactored equation. Made by [`VerifyingKey::create_verifier`] on an
+/// [`Ed25519phPublicKey`]; it borrows the [`Ed25519PublicKey`] behind the view.
 pub struct Ed25519phVerifier<'k> {
     pk: &'k Ed25519PublicKey,
     prehash: SHA512,
@@ -503,14 +513,68 @@ impl SignatureVerifier for Ed25519phVerifier<'_> {
     }
 }
 
+/// An Ed25519ph signing key: the view [`Ed25519PrivateKey::as_prehash`] gives of an Ed25519 private
+/// key, which signs with [`Ed25519ph`] through [`DeterministicSigningKey`] and its one-shot
+/// role. It is a reference to the key and holds no key material, so copying it copies none.
+/// A signer it makes borrows the key, not the view:
+///
+/// ```
+/// use bouncycastle_core::signature_key::DeterministicSigningKey;
+/// use bouncycastle_ed::ed25519::{Ed25519PrivateKey, Ed25519phSigner};
+///
+/// fn signer(sk: &Ed25519PrivateKey) -> Ed25519phSigner<'_> {
+///     sk.as_prehash().create_signer_deterministic(None).unwrap()
+/// }
+/// ```
+///
+/// It does not sign with [`Ed25519`]:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::DeterministicOneShotSigningKey;
+/// use bouncycastle_ed::ed25519::{Ed25519, Ed25519PrivateKey};
+///
+/// fn sign(sk: &Ed25519PrivateKey) {
+///     let _ = DeterministicOneShotSigningKey::<Ed25519, 64>::sign_deterministic(
+///         &sk.as_prehash(),
+///         b"msg",
+///         None,
+///     );
+/// }
+/// ```
+#[derive(Clone, Copy)]
+pub struct Ed25519phPrivateKey<'k> {
+    sk: &'k Ed25519PrivateKey,
+}
+
+/// An Ed25519ph verifying key: the view [`Ed25519PublicKey::as_prehash`] gives of an Ed25519 public
+/// key, which verifies [`Ed25519ph`] signatures through [`VerifyingKey`] and its one-shot role.
+/// It is a reference to the key, and a verifier it makes borrows the key, not the view.
+///
+/// It does not verify [`Ed25519`] signatures:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::OneShotVerifyingKey;
+/// use bouncycastle_ed::ed25519::{Ed25519, Ed25519PublicKey};
+///
+/// fn verify(pk: &Ed25519PublicKey, sig: &[u8]) {
+///     let _ = OneShotVerifyingKey::<Ed25519, 64>::verify(&pk.as_prehash(), b"msg", None, sig);
+/// }
+/// ```
+#[derive(Clone, Copy)]
+pub struct Ed25519phPublicKey<'k> {
+    pk: &'k Ed25519PublicKey,
+}
+
 /// Ed25519ph signing, the message taken as it arrives.
 ///
 /// The errors beyond the role's are [`KeyMaterialError::ActingOnZeroizedKey`] from the
 /// constructor for a key that was never filled, and [`SignatureError::ComputationFault`] from the
 /// signer's final if a computed point fails its check, which no input causes.
-impl DeterministicSigningKey<Ed25519ph, SIGNATURE_LEN> for Ed25519PrivateKey {
+impl<'a> DeterministicSigningKey<Ed25519ph, SIGNATURE_LEN> for Ed25519phPrivateKey<'a> {
+    // The signer borrows the key the view refers to, for the key's lifetime and not the
+    // view's, so it outlives a view that was a temporary.
     type Signer<'k>
-        = Ed25519phSigner<'k>
+        = Ed25519phSigner<'a>
     where
         Self: 'k;
 
@@ -518,30 +582,27 @@ impl DeterministicSigningKey<Ed25519ph, SIGNATURE_LEN> for Ed25519PrivateKey {
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
-        self.check_filled()?;
-        Ok(Ed25519phSigner { sk: self, prehash: SHA512::new(), context: Context::new(ctx)? })
+        self.sk.check_filled()?;
+        Ok(Ed25519phSigner { sk: self.sk, prehash: SHA512::new(), context: Context::new(ctx)? })
     }
 }
 
-impl DeterministicOneShotSigningKey<Ed25519ph, SIGNATURE_LEN> for Ed25519PrivateKey {
+impl DeterministicOneShotSigningKey<Ed25519ph, SIGNATURE_LEN> for Ed25519phPrivateKey<'_> {
     fn sign_deterministic_out(
         &self,
         msg: &[u8],
         ctx: Option<&[u8]>,
         output: &mut [u8; SIGNATURE_LEN],
     ) -> Result<usize, SignatureError> {
-        let signer =
-            DeterministicSigningKey::<Ed25519ph, SIGNATURE_LEN>::create_signer_deterministic(
-                self, ctx,
-            );
-        sign_out_with_signer(signer, msg, output)
+        sign_out_with_signer(self.create_signer_deterministic(ctx), msg, output)
     }
 }
 
 /// Ed25519ph verification, the message taken as it arrives.
-impl VerifyingKey<Ed25519ph, SIGNATURE_LEN> for Ed25519PublicKey {
+impl<'a> VerifyingKey<Ed25519ph, SIGNATURE_LEN> for Ed25519phPublicKey<'a> {
+    // As the signer: the verifier borrows the key, not the view.
     type Verifier<'k>
-        = Ed25519phVerifier<'k>
+        = Ed25519phVerifier<'a>
     where
         Self: 'k;
 
@@ -549,13 +610,12 @@ impl VerifyingKey<Ed25519ph, SIGNATURE_LEN> for Ed25519PublicKey {
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Verifier<'k>, SignatureError> {
-        Ok(Ed25519phVerifier { pk: self, prehash: SHA512::new(), context: Context::new(ctx)? })
+        Ok(Ed25519phVerifier { pk: self.pk, prehash: SHA512::new(), context: Context::new(ctx)? })
     }
 }
 
-impl OneShotVerifyingKey<Ed25519ph, SIGNATURE_LEN> for Ed25519PublicKey {
+impl OneShotVerifyingKey<Ed25519ph, SIGNATURE_LEN> for Ed25519phPublicKey<'_> {
     fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
-        let verifier = VerifyingKey::<Ed25519ph, SIGNATURE_LEN>::create_verifier(self, ctx)?;
-        verify_with_verifier(verifier, msg, sig)
+        verify_with_verifier(self.create_verifier(ctx)?, msg, sig)
     }
 }

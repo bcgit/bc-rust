@@ -1,9 +1,9 @@
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
-use bouncycastle_ed::ed25519::{Ed25519, Ed25519PrivateKey, Ed25519PublicKey, keygen};
-use bouncycastle_rng::FixedSeedRNG;
+use bouncycastle_ed::ed25519::{Ed25519PrivateKey, Ed25519PublicKey, keygen};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -43,32 +43,14 @@ fn bench_ed25519(c: &mut Criterion) {
     let mut group = c.benchmark_group("ed25519");
     for len in MSG_LENS {
         let msg = vec![0xA5u8; len];
-        let sig = DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(&sk, &msg, None)
-            .unwrap();
+        let sig = sk.sign_deterministic(&msg, None).unwrap();
 
         group.throughput(Throughput::Bytes(len as u64));
         group.bench_with_input(BenchmarkId::new("sign", len), &msg, |b, msg| {
-            b.iter(|| {
-                black_box(
-                    DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(
-                        black_box(&sk),
-                        black_box(msg),
-                        None,
-                    )
-                    .unwrap(),
-                )
-            })
+            b.iter(|| black_box(black_box(&sk).sign_deterministic(black_box(msg), None).unwrap()))
         });
         group.bench_with_input(BenchmarkId::new("verify", len), &msg, |b, msg| {
-            b.iter(|| {
-                OneShotVerifyingKey::<Ed25519, _>::verify(
-                    black_box(&pk),
-                    black_box(msg),
-                    None,
-                    black_box(&sig),
-                )
-                .unwrap()
-            })
+            b.iter(|| black_box(&pk).verify(black_box(msg), None, black_box(&sig)).unwrap())
         });
     }
     group.finish();
@@ -81,21 +63,22 @@ fn bench_ed25519ph(c: &mut Criterion) {
     let mut group = c.benchmark_group("ed25519ph");
     for len in MSG_LENS {
         let msg = vec![0xA5u8; len];
-        let mut signer = sk.create_signer_deterministic(None).unwrap();
+        let mut signer = sk.as_prehash().create_signer_deterministic(None).unwrap();
         signer.do_update(&msg);
         let sig = signer.do_final().unwrap();
 
         group.throughput(Throughput::Bytes(len as u64));
         group.bench_with_input(BenchmarkId::new("sign", len), &msg, |b, msg| {
             b.iter(|| {
-                let mut signer = black_box(&sk).create_signer_deterministic(None).unwrap();
+                let mut signer =
+                    black_box(&sk).as_prehash().create_signer_deterministic(None).unwrap();
                 signer.do_update(black_box(msg));
                 black_box(signer.do_final().unwrap())
             })
         });
         group.bench_with_input(BenchmarkId::new("verify", len), &msg, |b, msg| {
             b.iter(|| {
-                let mut verifier = black_box(&pk).create_verifier(None).unwrap();
+                let mut verifier = black_box(&pk).as_prehash().create_verifier(None).unwrap();
                 verifier.do_update(black_box(msg));
                 verifier.do_verify_final(black_box(&sig)).unwrap()
             })

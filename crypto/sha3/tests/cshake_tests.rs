@@ -119,7 +119,7 @@ fn the_hash_view_writes_output_len_bytes_and_zeroes_the_rest() {
     assert_eq!(&hash_view[64..], &[0u8; 36][..], "everything past output_len is zeroized");
 }
 
-/// The algorithm names, so the factory and any registry agree with the specification's spelling.
+/// The algorithm names, so any registry agrees with the specification's spelling.
 #[test]
 fn algorithm_names() {
     assert_eq!(CSHAKE128::ALG_NAME, "CSHAKE128");

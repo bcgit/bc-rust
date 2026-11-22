@@ -11,10 +11,10 @@
 
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::GCM;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_hex as hex;
-use bouncycastle_rng::FixedSeedRNG;
 
 fn zeros(byte_len: usize) -> String {
     "00".repeat(byte_len)

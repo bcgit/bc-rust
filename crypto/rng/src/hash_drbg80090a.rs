@@ -526,10 +526,6 @@ impl<H: HashDRBG80090AParams> RNG for HashDRBG80090A<H> {
         Ok(u32::from_le_bytes(out))
     }
 
-    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
-        self.generate("next_bytes".as_bytes(), len)
-    }
-
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
         out.fill(0);
 

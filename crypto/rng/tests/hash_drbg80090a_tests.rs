@@ -361,11 +361,6 @@ mod tests {
         // Note: this will fail with some absurdly small probability if the RNG is truly random.
         assert!(out1 != out2 && out2 != out3);
 
-        /* test next_bytes */
-        let out = rng.next_bytes(32).unwrap();
-        assert_eq!(out.len(), 32);
-        assert_ne!(out, [0u8; 32]);
-
         /* test next_bytes_out */
         let mut out = [0u8; 32];
         let bytes_written = rng.next_bytes_out(&mut out).unwrap();
@@ -452,9 +447,14 @@ mod tests {
             rng
         }
         let (mut a, mut b) = (instance(), instance());
-        assert_eq!(a.next_bytes(32).unwrap(), b.next_bytes(32).unwrap());
+        let draw = |rng: &mut HashDRBG_SHA256| {
+            let mut out = [0u8; 32];
+            assert_eq!(rng.next_bytes_out(&mut out).unwrap(), 32);
+            out
+        };
+        assert_eq!(draw(&mut a), draw(&mut b));
         let fresh = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::Seed).unwrap();
         b.add_seed_keymaterial(&fresh).unwrap();
-        assert_ne!(a.next_bytes(32).unwrap(), b.next_bytes(32).unwrap());
+        assert_ne!(draw(&mut a), draw(&mut b));
     }
 }

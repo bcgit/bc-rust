@@ -15,7 +15,7 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use bouncycastle_core::traits::PublicKey;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-use bouncycastle_ed::ed448::{Ed448, Ed448PublicKey, SIGNATURE_LEN};
+use bouncycastle_ed::ed448::{Ed448PublicKey, SIGNATURE_LEN};
 
 /// The flags of the file, with whether a case that carries one is a signature of the right
 /// length.
@@ -67,7 +67,7 @@ fn wycheproof_ed448() {
             assert_eq!(sig.len() == SIGNATURE_LEN, FLAGS[index].1, "{ctx}: length under {flag}");
             assert_eq!(result == "valid", matches!(flag, "Valid" | "Ktv"), "{ctx}: {flag}");
 
-            let verdict = match OneShotVerifyingKey::<Ed448, _>::verify(&pk, &msg, None, &sig) {
+            let verdict = match pk.verify(&msg, None, &sig) {
                 Ok(()) => Ok(()),
                 Err(SignatureError::LengthError(_)) => Err("length"),
                 Err(SignatureError::SignatureVerificationFailed) => Err("verify"),
@@ -78,7 +78,7 @@ fn wycheproof_ed448() {
                     valid += 1;
                     assert_eq!(verdict, Ok(()), "{ctx}: a valid signature was refused");
                     // The empty context is the absent one, and no other.
-                    let verify = |c| OneShotVerifyingKey::<Ed448, _>::verify(&pk, &msg, c, &sig);
+                    let verify = |c| pk.verify(&msg, c, &sig);
                     assert_eq!(verify(Some(&[][..])), Ok(()), "{ctx}");
                     assert!(verify(Some(&b"c"[..])).is_err(), "{ctx}");
                 }

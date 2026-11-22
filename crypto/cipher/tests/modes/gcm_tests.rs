@@ -11,13 +11,13 @@ mod common;
 use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{GCM, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
-use bouncycastle_rng::FixedSeedRNG;
 use common::os_rng;
 use common::{ForwardOnlyToy, TOY_LEN, Toy, toy_key};
 

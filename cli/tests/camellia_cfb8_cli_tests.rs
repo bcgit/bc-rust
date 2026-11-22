@@ -9,7 +9,7 @@
 //! There is no published Camellia CFB8 vector -- OpenSSL's `evpciph_camellia.txt` says in as many
 //! words that it does not carry `CFB{1,8}-CAMELLIAxxx` -- so instead the commands are required to
 //! agree with `bouncycastle_cipher::modes::Cfb8` over the Camellia permutation, which
-//! `crypto/camellia/tests/stream_mode_tests.rs` pins against the SP 800-38A Sec 6.3 equations at
+//! `crypto/symmetric/tests/camellia_stream_mode_tests.rs` pins against the SP 800-38A Sec 6.3 equations at
 //! `s = 8`.
 
 mod common;

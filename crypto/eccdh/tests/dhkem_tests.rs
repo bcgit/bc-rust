@@ -21,6 +21,7 @@
 //! `dhkem_p384_bc_java_tests.rs`.
 
 use bouncycastle_core::errors::{KEMError, RNGError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -38,7 +39,7 @@ use bouncycastle_eccdh::dhkem::{
 };
 use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
 use bouncycastle_hex as hex;
-use bouncycastle_rng::{DefaultRNG, FixedSeedRNG, HashDRBG_SHA512};
+use bouncycastle_rng::{DefaultRNG, HashDRBG_SHA512};
 use std::collections::HashMap;
 
 /// The entries of `hpke.txt`: each starts at a `count = N` line and holds `name = hex` lines
@@ -344,9 +345,6 @@ impl RNG for StrongButFailing {
         Err(RNGError::GenericError("every draw fails"))
     }
     fn next_int(&mut self) -> Result<u32, RNGError> {
-        Err(RNGError::GenericError("every draw fails"))
-    }
-    fn next_bytes(&mut self, _: usize) -> Result<Vec<u8>, RNGError> {
         Err(RNGError::GenericError("every draw fails"))
     }
     fn next_bytes_out(&mut self, _: &mut [u8]) -> Result<usize, RNGError> {

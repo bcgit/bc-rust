@@ -16,7 +16,7 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use bouncycastle_core::traits::PublicKey;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-use bouncycastle_ed::ed25519::{Ed25519, Ed25519PublicKey, SIGNATURE_LEN};
+use bouncycastle_ed::ed25519::{Ed25519PublicKey, SIGNATURE_LEN};
 
 #[test]
 fn wycheproof_ed25519() {
@@ -45,7 +45,7 @@ fn wycheproof_ed25519() {
                 });
             assert_eq!(pk.is_err(), key_flagged, "{ctx}: key decode against the key flags");
             let verdict = pk.as_ref().map_err(|_| "key decode").and_then(|pk| {
-                match OneShotVerifyingKey::<Ed25519, _>::verify(pk, &msg, None, &sig) {
+                match pk.verify(&msg, None, &sig) {
                     Ok(()) => Ok(()),
                     Err(SignatureError::LengthError(_)) => Err("length"),
                     Err(SignatureError::SignatureVerificationFailed) => Err("verify"),

@@ -39,11 +39,11 @@
 use bouncycastle_aes::AES128Key;
 use bouncycastle_cipher::modes::CTR;
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 use bouncycastle_core::traits::StreamCipherEncryptor;
 use bouncycastle_hex as hex;
-use bouncycastle_rng::FixedSeedRNG;
 
 /// The AES-128 key used for every vector in this file: SP 800-38A Appendix F's first key.
 const KEY: &str = "2b7e151628aed2a6abf7158809cf4f3c";

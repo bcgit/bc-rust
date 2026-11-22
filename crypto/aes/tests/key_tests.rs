@@ -7,6 +7,7 @@ use bouncycastle_aes::{AES_GCM_128, AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{CTR, GCM, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{
     AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, KeyExpansion, Mode,
 };
@@ -19,7 +20,6 @@ use bouncycastle_core::symmetric_key::{
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_rng::FixedSeedRNG;
 
 fn material<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));

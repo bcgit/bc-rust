@@ -40,7 +40,7 @@ The library in general is meant to serve both embedded systems as well as workst
 alloc build everything that is not a static lives on the stack, which warrants particular attention to memory hygiene. A Claude
 skill is available in `.claude/skills/memory-hygiene-in-rust` to assist with this. Note that "memory hygiene" (good
 coding practices that reduce stack usage at no performance cost) can apply to all crates and is different from "low
-memory" (such as the mldsa-lowmemory crate), which uses a different algorithm that trades significant performance loss
+memory" (such as the `pqc::mldsa_lowmemory` module), which uses a different algorithm that trades significant performance loss
 for significant reduction in memory footprint.
 
 # Quality
@@ -63,7 +63,7 @@ testing must also be contained within the `mod tests {}` block.
 All traits in `bouncycastle-core` must have corresponding tests in `bouncycastle-core-test-framework` that exercise all
 behaviours and error conditions that are common to all implementations of that trait.
 `bouncycastle-core-test-framework` is test infrastructure only: it goes under `[dev-dependencies]` and is never a
-runtime dependency, since it ships a deterministic `FixedSeedRNG`.
+runtime dependency.
 
 All crypto algorithms must have tests against the bc-test-data repo and against wycheproof.
 

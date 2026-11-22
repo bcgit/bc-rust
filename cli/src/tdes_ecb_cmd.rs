@@ -17,7 +17,7 @@
 //! and for driving test vectors.
 //!
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
-//! the `bouncycastle-tdes` crate docs.
+//! the `bouncycastle_symmetric::tdes` module docs.
 
 use crate::helpers::block_mode_helpers::{
     CipherDirection, TDEA_LIMIT, decrypt_stream, encrypt_stream_bounded, load_key_object,

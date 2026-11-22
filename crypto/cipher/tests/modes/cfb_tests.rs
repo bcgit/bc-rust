@@ -17,6 +17,7 @@ mod common;
 use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{Blocks, CBC, CFB, Cbc, Cfb, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -28,7 +29,6 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
-use bouncycastle_rng::FixedSeedRNG;
 use common::os_rng;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 

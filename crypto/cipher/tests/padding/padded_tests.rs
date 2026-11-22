@@ -10,6 +10,7 @@ use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{Blocks, CBC, ModeNames};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -22,7 +23,6 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkSymmetricCipher;
-use bouncycastle_rng::FixedSeedRNG;
 use toy_block_cipher::{TOY_BLOCK_LEN, ToyBlockCipher};
 
 const B: usize = TOY_BLOCK_LEN;

@@ -14,12 +14,12 @@ use bouncycastle_core::signature_key::{
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, PrivateKey, PublicKey, SignatureSigner, SignatureVerifier,
 };
+use bouncycastle_digest::ripemd::RIPEMD160;
 use bouncycastle_ec::P256;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
 use bouncycastle_ecdsa::keys_common::{DerivePublicKey, SignatureKeyPair};
 use bouncycastle_hex::decode as hex_decode;
-use bouncycastle_ripemd::RIPEMD160;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::SHA256;
 

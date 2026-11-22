@@ -14,6 +14,7 @@
 mod ecb_key;
 mod electronic_code_book;
 mod finish_token;
+mod fixed_seed_rng;
 mod hazardous_operations;
 mod kdf_output;
 mod key_stream;
@@ -24,6 +25,7 @@ mod without_collision_resistance;
 pub use ecb_key::{EcbDecryptionKey, EcbEncryptionKey};
 pub use electronic_code_book::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 pub use finish_token::finish_token;
+pub use fixed_seed_rng::FixedSeedRNG;
 pub use hazardous_operations::do_hazardous_operations;
 pub use kdf_output::label_kdf_output;
 pub use key_stream::KeyStream;

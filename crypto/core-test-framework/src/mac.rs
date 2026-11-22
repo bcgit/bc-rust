@@ -3,11 +3,11 @@
 //! workers of a one-time MAC, which has no reusable key object.
 
 use bouncycastle_core::errors::MACError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::symmetric_key::{
     MacGenerationKey, MacVerificationKey, NonceMacGenerationKey, NonceMacVerificationKey,
 };
 use bouncycastle_core::traits::{AlgorithmInfo, MACGenerator, MACVerifier};
-use bouncycastle_rng::FixedSeedRNG;
 
 use crate::FailingRNG;
 

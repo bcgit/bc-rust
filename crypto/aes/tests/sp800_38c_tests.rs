@@ -23,6 +23,7 @@ use bouncycastle_cipher::modes::{
     CCM, CCM_Packet, CcmPacketDecryptor, CcmPacketEncryptor, ModeNames,
 };
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{AeadInPlaceDecryptMode, AeadInPlaceEncryptMode, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -36,7 +37,6 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_hex as hex;
-use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_rng::HashDRBG_SHA512;
 
 /// Appendix C's key, the same in all four examples: `40414243 44454647 48494a4b 4c4d4e4f`.

@@ -141,7 +141,7 @@ impl<C: Curve, H: EcdsaHash> Display for ECDSAPublicKey<C, H> {
 /// ```compile_fail,E0277
 /// use bouncycastle_ec::P256;
 /// use bouncycastle_ecdsa::keys::keygen;
-/// use bouncycastle_ripemd::RIPEMD160;
+/// use bouncycastle_digest::ripemd::RIPEMD160;
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let _ = keygen::<P256, RIPEMD160>(&mut HashDRBG_SHA512::new_from_os());

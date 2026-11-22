@@ -2,17 +2,20 @@
 //! is particular to the two algorithms.
 
 use bouncycastle_core::errors::{KeyMaterialError, SignatureError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::signature_key::{
-    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
+    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey,
+    SignatureAlgorithm, VerifyingKey,
 };
 use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
 use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
 use bouncycastle_ed::ed25519::{
     CONTEXT_MAX_LEN, ED25519_NAME, ED25519PH_NAME, Ed25519, Ed25519PrivateKey, Ed25519PublicKey,
-    Ed25519ph, SIGNATURE_LEN, keygen,
+    Ed25519ph, Ed25519phPrivateKey, Ed25519phPublicKey, Ed25519phSigner, Ed25519phVerifier,
+    SIGNATURE_LEN, keygen,
 };
-use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_sha2::SHA512;
+use std::sync::OnceLock;
 
 const MSG: &[u8] = b"The quick brown fox jumped over the lazy dog";
 const FAILED: Result<(), SignatureError> = Err(SignatureError::SignatureVerificationFailed);
@@ -27,16 +30,25 @@ fn key_pair() -> Result<(Ed25519PublicKey, Ed25519PrivateKey), SignatureError> {
     keygen(&mut FixedSeedRNG::new(core::array::from_fn::<u8, 64, _>(|i| i as u8)))
 }
 
+/// The Ed25519ph views of that pair, for the framework, whose runners take a function that
+/// returns the keys by value: a view borrows its key, so the pair lives in a static.
+fn key_pair_ph()
+-> Result<(Ed25519phPublicKey<'static>, Ed25519phPrivateKey<'static>), SignatureError> {
+    static PAIR: OnceLock<(Ed25519PublicKey, Ed25519PrivateKey)> = OnceLock::new();
+    let (pk, sk) = PAIR.get_or_init(|| key_pair().unwrap());
+    Ok((pk.as_prehash(), sk.as_prehash()))
+}
+
 fn sign(sk: &Ed25519PrivateKey, msg: &[u8]) -> [u8; SIGNATURE_LEN] {
-    DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(sk, msg, None).unwrap()
+    sk.sign_deterministic(msg, None).unwrap()
 }
 
 fn verify(pk: &Ed25519PublicKey, msg: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
-    OneShotVerifyingKey::<Ed25519, _>::verify(pk, msg, None, sig)
+    pk.verify(msg, None, sig)
 }
 
 fn sign_ph(sk: &Ed25519PrivateKey, msg: &[u8], ctx: Option<&[u8]>) -> [u8; SIGNATURE_LEN] {
-    DeterministicOneShotSigningKey::<Ed25519ph, _>::sign_deterministic(sk, msg, ctx).unwrap()
+    sk.as_prehash().sign_deterministic(msg, ctx).unwrap()
 }
 
 fn verify_ph(
@@ -45,7 +57,7 @@ fn verify_ph(
     ctx: Option<&[u8]>,
     sig: &[u8],
 ) -> Result<(), SignatureError> {
-    OneShotVerifyingKey::<Ed25519ph, _>::verify(pk, msg, ctx, sig)
+    pk.as_prehash().verify(msg, ctx, sig)
 }
 
 fn is_length_error<T>(result: Result<T, SignatureError>) -> bool {
@@ -59,13 +71,128 @@ fn ed25519_core_framework() {
         .test_deterministic_one_shot_signature::<Ed25519, _, _, SIGNATURE_LEN>(key_pair, true);
 }
 
-/// Ed25519ph streams and binds its context; the framework's long context is 256 octets, one
-/// more than [`CONTEXT_MAX_LEN`].
+/// Ed25519ph, on the views of the keys, streams and binds its context; the framework's long
+/// context is 256 octets, one more than [`CONTEXT_MAX_LEN`].
 #[test]
 fn ed25519ph_core_framework() {
     let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
-    tf.test_deterministic_signature::<Ed25519ph, _, _, SIGNATURE_LEN>(key_pair, true);
-    tf.test_deterministic_one_shot_signature::<Ed25519ph, _, _, SIGNATURE_LEN>(key_pair, false);
+    tf.test_deterministic_signature::<Ed25519ph, _, _, SIGNATURE_LEN>(key_pair_ph, true);
+    tf.test_deterministic_one_shot_signature::<Ed25519ph, _, _, SIGNATURE_LEN>(key_pair_ph, false);
+}
+
+/// The keys are Ed25519's and the views Ed25519ph's, so no call names its algorithm: the
+/// one-shots on a key and on a view, and the streaming constructors on a view that is a
+/// temporary or a variable.
+#[test]
+fn no_call_names_the_algorithm() {
+    let (pk, sk) = key_pair().unwrap();
+
+    let sig = sk.sign_deterministic(MSG, None).unwrap();
+    let mut out = [0u8; SIGNATURE_LEN];
+    assert_eq!(sk.sign_deterministic_out(MSG, None, &mut out), Ok(SIGNATURE_LEN));
+    assert_eq!(out, sig);
+    assert_eq!(pk.verify(MSG, None, &sig), Ok(()));
+
+    let sig_ph = sk.as_prehash().sign_deterministic(MSG, Some(b"ctx")).unwrap();
+    let mut out = [0u8; SIGNATURE_LEN];
+    assert_eq!(
+        sk.as_prehash().sign_deterministic_out(MSG, Some(b"ctx"), &mut out),
+        Ok(SIGNATURE_LEN)
+    );
+    assert_eq!(out, sig_ph);
+    assert_eq!(pk.as_prehash().verify(MSG, Some(b"ctx"), &sig_ph), Ok(()));
+
+    // The views are gone at the end of each statement; the workers borrow the keys.
+    let mut signer = sk.as_prehash().create_signer_deterministic(Some(b"ctx")).unwrap();
+    let mut verifier = pk.as_prehash().create_verifier(Some(b"ctx")).unwrap();
+    signer.do_update(MSG);
+    verifier.do_update(MSG);
+    assert_eq!(signer.do_final().unwrap(), sig_ph);
+    assert_eq!(verifier.do_verify_final(&sig_ph), Ok(()));
+
+    let (pk_ph, sk_ph) = (pk.as_prehash(), sk.as_prehash());
+    let mut signer = sk_ph.create_signer_deterministic(Some(b"ctx")).unwrap();
+    let mut verifier = pk_ph.create_verifier(Some(b"ctx")).unwrap();
+    signer.do_update(MSG);
+    verifier.do_update(MSG);
+    assert_eq!(signer.do_final().unwrap(), sig_ph);
+    assert_eq!(verifier.do_verify_final(&sig_ph), Ok(()));
+}
+
+/// A worker made through a view borrows the key for the key's lifetime, so a function can
+/// return one made from a view it did not keep.
+fn signer_of(sk: &Ed25519PrivateKey) -> Ed25519phSigner<'_> {
+    sk.as_prehash().create_signer_deterministic(None).unwrap()
+}
+
+fn verifier_of(pk: &Ed25519PublicKey) -> Ed25519phVerifier<'_> {
+    pk.as_prehash().create_verifier(None).unwrap()
+}
+
+#[test]
+fn the_workers_outlive_the_view() {
+    let (pk, sk) = key_pair().unwrap();
+    let mut signer = signer_of(&sk);
+    let mut verifier = verifier_of(&pk);
+    signer.do_update(MSG);
+    verifier.do_update(MSG);
+    let sig = signer.do_final().unwrap();
+    assert_eq!(sig, sign_ph(&sk, MSG, None));
+    assert_eq!(verifier.do_verify_final(&sig), Ok(()));
+}
+
+/// The view is a reference to the key and nothing else, so making one copies no key material.
+#[test]
+fn the_view_is_a_reference() {
+    use core::mem::size_of;
+    assert_eq!(size_of::<Ed25519phPrivateKey<'_>>(), size_of::<&Ed25519PrivateKey>());
+    assert_eq!(size_of::<Ed25519phPublicKey<'_>>(), size_of::<&Ed25519PublicKey>());
+    assert!(size_of::<Ed25519phPrivateKey<'_>>() < size_of::<Ed25519PrivateKey>());
+
+    // A copy of a view is a view of the same key.
+    let (pk, sk) = key_pair().unwrap();
+    let (sk_ph, pk_ph) = (sk.as_prehash(), pk.as_prehash());
+    let (sk_copy, pk_copy) = (sk_ph, pk_ph);
+    let sig = sk_ph.sign_deterministic(MSG, None).unwrap();
+    assert_eq!(sk_copy.sign_deterministic(MSG, None), Ok(sig));
+    assert_eq!(pk_copy.verify(MSG, None, &sig), Ok(()));
+    assert_eq!(pk_ph.verify(MSG, None, &sig), Ok(()));
+}
+
+/// Code generic over the streaming roles, which is handed the views.
+fn streamed<A, SK, PK, const N: usize>(sk: &SK, pk: &PK) -> [u8; N]
+where
+    A: SignatureAlgorithm,
+    SK: DeterministicSigningKey<A, N>,
+    PK: VerifyingKey<A, N>,
+{
+    let mut signer = sk.create_signer_deterministic(None).unwrap();
+    signer.do_update(MSG);
+    let sig = signer.do_final().unwrap();
+    let mut verifier = pk.create_verifier(None).unwrap();
+    verifier.do_update(MSG);
+    verifier.do_verify_final(&sig).unwrap();
+    sig
+}
+
+/// Code generic over the one-shot roles, which is handed the keys or the views.
+fn one_shot<A, SK, PK, const N: usize>(sk: &SK, pk: &PK) -> [u8; N]
+where
+    A: SignatureAlgorithm,
+    SK: DeterministicOneShotSigningKey<A, N>,
+    PK: OneShotVerifyingKey<A, N>,
+{
+    let sig = sk.sign_deterministic(MSG, None).unwrap();
+    pk.verify(MSG, None, &sig).unwrap();
+    sig
+}
+
+#[test]
+fn generic_code_takes_the_keys_and_the_views() {
+    let (pk, sk) = key_pair().unwrap();
+    assert_eq!(one_shot(&sk, &pk), sign(&sk, MSG));
+    assert_eq!(one_shot(&sk.as_prehash(), &pk.as_prehash()), sign_ph(&sk, MSG, None));
+    assert_eq!(streamed(&sk.as_prehash(), &pk.as_prehash()), sign_ph(&sk, MSG, None));
 }
 
 #[test]
@@ -84,10 +211,10 @@ fn the_markers_and_workers_name_their_algorithm() {
     assert_eq!(<Ed25519 as AlgorithmOID>::OID_DER, &[0x06, 0x03, 0x2b, 0x65, 0x70]);
 
     let (pk, sk) = key_pair().unwrap();
-    let signer = sk.create_signer_deterministic(None).unwrap();
+    let signer = sk.as_prehash().create_signer_deterministic(None).unwrap();
     assert_eq!(signer.alg_name(), "Ed25519ph");
     assert_eq!(signer.max_security_strength(), SecurityStrength::_128bit);
-    let verifier = pk.create_verifier(None).unwrap();
+    let verifier = pk.as_prehash().create_verifier(None).unwrap();
     assert_eq!(verifier.alg_name(), "Ed25519ph");
     assert_eq!(verifier.max_security_strength(), SecurityStrength::_128bit);
 }
@@ -243,7 +370,8 @@ fn ed25519ph_known_answers_with_a_context() {
 }
 
 /// The two algorithms give different signatures of one message under one key, and neither
-/// verifies as the other, over the message or over its SHA-512 digest.
+/// verifies as the other, over the message or over its SHA-512 digest: a signature made
+/// through the view verifies only through the view, and one made by the key only by the key.
 #[test]
 fn ed25519_and_ed25519ph_do_not_cross_verify() {
     let (pk, sk) = key_pair().unwrap();
@@ -262,6 +390,13 @@ fn ed25519_and_ed25519ph_do_not_cross_verify() {
     assert_eq!(verify(&pk, &digest, &ph), FAILED);
     assert_eq!(verify_ph(&pk, MSG, None, &pure), FAILED);
     assert_eq!(verify_ph(&pk, MSG, None, &sign(&sk, &digest)), FAILED);
+
+    // The view's streaming verifier, likewise.
+    for (sig, verdict) in [(ph, Ok(())), (pure, FAILED)] {
+        let mut verifier = pk.as_prehash().create_verifier(None).unwrap();
+        verifier.do_update(MSG);
+        assert_eq!(verifier.do_verify_final(&sig), verdict);
+    }
 }
 
 /// RFC 8032 Section 5.1, of Ed25519: "The context (if present at all) MUST be empty."
@@ -270,29 +405,14 @@ fn ed25519_takes_no_context() {
     let (pk, sk) = key_pair().unwrap();
     let sig = sign(&sk, MSG);
     let empty = Some(&[][..]);
-    assert_eq!(
-        DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(&sk, MSG, empty),
-        Ok(sig)
-    );
-    assert_eq!(OneShotVerifyingKey::<Ed25519, _>::verify(&pk, MSG, empty, &sig), Ok(()));
+    assert_eq!(sk.sign_deterministic(MSG, empty), Ok(sig));
+    assert_eq!(pk.verify(MSG, empty, &sig), Ok(()));
 
     for ctx in [&b"c"[..], &[0u8; 256]] {
         let mut out = [0xA5u8; SIGNATURE_LEN];
-        assert!(is_length_error(
-            DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic_out(
-                &sk,
-                MSG,
-                Some(ctx),
-                &mut out
-            )
-        ));
+        assert!(is_length_error(sk.sign_deterministic_out(MSG, Some(ctx), &mut out)));
         assert_eq!(out, [0u8; SIGNATURE_LEN]);
-        assert!(is_length_error(OneShotVerifyingKey::<Ed25519, _>::verify(
-            &pk,
-            MSG,
-            Some(ctx),
-            &sig
-        )));
+        assert!(is_length_error(pk.verify(MSG, Some(ctx), &sig)));
     }
     // A signature of the wrong length is a length error, not a failed verification.
     assert!(is_length_error(verify(&pk, MSG, &sig[..63])));
@@ -307,7 +427,7 @@ fn the_ed25519ph_context() {
 
     let sig = sign_ph(&sk, MSG, None);
     assert_eq!(sig, sign_ph(&sk, MSG, Some(&[])));
-    let mut signer = sk.create_signer_deterministic(Some(&[])).unwrap();
+    let mut signer = sk.as_prehash().create_signer_deterministic(Some(&[])).unwrap();
     signer.do_update(MSG);
     assert_eq!(signer.do_final().unwrap(), sig);
     assert_eq!(verify_ph(&pk, MSG, Some(&[]), &sig), Ok(()));
@@ -325,25 +445,18 @@ fn the_ed25519ph_context() {
     let sig = sign_ph(&sk, MSG, Some(longest));
     assert_eq!(verify_ph(&pk, MSG, Some(longest), &sig), Ok(()));
     assert_eq!(verify_ph(&pk, MSG, Some(&long[..CONTEXT_MAX_LEN - 1]), &sig), FAILED);
-    let mut signer = sk.create_signer_deterministic(Some(longest)).unwrap();
+    let mut signer = sk.as_prehash().create_signer_deterministic(Some(longest)).unwrap();
     signer.do_update(MSG);
     assert_eq!(signer.do_final().unwrap(), sig);
-    let mut verifier = pk.create_verifier(Some(longest)).unwrap();
+    let mut verifier = pk.as_prehash().create_verifier(Some(longest)).unwrap();
     verifier.do_update(MSG);
     assert_eq!(verifier.do_verify_final(&sig), Ok(()));
 
-    assert!(is_length_error(sk.create_signer_deterministic(Some(&long))));
-    assert!(is_length_error(pk.create_verifier(Some(&long))));
+    assert!(is_length_error(sk.as_prehash().create_signer_deterministic(Some(&long))));
+    assert!(is_length_error(pk.as_prehash().create_verifier(Some(&long))));
     assert!(is_length_error(verify_ph(&pk, MSG, Some(&long), &sig)));
     let mut out = [0xA5u8; SIGNATURE_LEN];
-    assert!(is_length_error(
-        DeterministicOneShotSigningKey::<Ed25519ph, _>::sign_deterministic_out(
-            &sk,
-            MSG,
-            Some(&long),
-            &mut out
-        )
-    ));
+    assert!(is_length_error(sk.as_prehash().sign_deterministic_out(MSG, Some(&long), &mut out)));
     assert_eq!(out, [0u8; SIGNATURE_LEN]);
 }
 
@@ -355,8 +468,8 @@ fn ed25519ph_streaming() {
     let msg: Vec<u8> = (0..1000u32).map(|i| (i * 7) as u8).collect();
     let sig = sign_ph(&sk, &msg, Some(b"ctx"));
     for size in [1, 63, 64, 128, 129, 999, 1000] {
-        let mut signer = sk.create_signer_deterministic(Some(b"ctx")).unwrap();
-        let mut verifier = pk.create_verifier(Some(b"ctx")).unwrap();
+        let mut signer = sk.as_prehash().create_signer_deterministic(Some(b"ctx")).unwrap();
+        let mut verifier = pk.as_prehash().create_verifier(Some(b"ctx")).unwrap();
         for chunk in msg.chunks(size) {
             signer.do_update(chunk);
             verifier.do_update(chunk);
@@ -367,13 +480,13 @@ fn ed25519ph_streaming() {
         assert_eq!(verifier.do_verify_final(&sig), Ok(()));
     }
     // Nothing fed is the empty message.
-    let signer = sk.create_signer_deterministic(None).unwrap();
+    let signer = sk.as_prehash().create_signer_deterministic(None).unwrap();
     assert_eq!(signer.do_final().unwrap(), sign_ph(&sk, b"", None));
 
-    let mut verifier = pk.create_verifier(Some(b"ctx")).unwrap();
+    let mut verifier = pk.as_prehash().create_verifier(Some(b"ctx")).unwrap();
     verifier.do_update(&msg);
     assert!(is_length_error(verifier.do_verify_final(&sig[..63])));
-    let mut verifier = pk.create_verifier(Some(b"ctx")).unwrap();
+    let mut verifier = pk.as_prehash().create_verifier(Some(b"ctx")).unwrap();
     verifier.do_update(&msg[1..]);
     assert_eq!(verifier.do_verify_final(&sig), FAILED);
 }
@@ -384,25 +497,12 @@ fn ed25519ph_streaming() {
 fn an_unfilled_key_does_not_sign() {
     let sk = Ed25519PrivateKey::zeroized();
     let mut out = [0xA5u8; SIGNATURE_LEN];
-    assert_eq!(
-        DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic_out(
-            &sk, MSG, None, &mut out
-        ),
-        Err(ZEROIZED)
-    );
+    assert_eq!(sk.sign_deterministic_out(MSG, None, &mut out), Err(ZEROIZED));
     assert_eq!(out, [0u8; SIGNATURE_LEN]);
-    assert_eq!(
-        DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(&sk, MSG, None),
-        Err(ZEROIZED)
-    );
+    assert_eq!(sk.sign_deterministic(MSG, None), Err(ZEROIZED));
 
     let mut out = [0xA5u8; SIGNATURE_LEN];
-    assert_eq!(
-        DeterministicOneShotSigningKey::<Ed25519ph, _>::sign_deterministic_out(
-            &sk, MSG, None, &mut out
-        ),
-        Err(ZEROIZED)
-    );
+    assert_eq!(sk.as_prehash().sign_deterministic_out(MSG, None, &mut out), Err(ZEROIZED));
     assert_eq!(out, [0u8; SIGNATURE_LEN]);
-    assert!(matches!(sk.create_signer_deterministic(None), Err(ZEROIZED)));
+    assert!(matches!(sk.as_prehash().create_signer_deterministic(None), Err(ZEROIZED)));
 }

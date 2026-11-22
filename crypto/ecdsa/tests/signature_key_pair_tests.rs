@@ -4,6 +4,7 @@
 //! pair it gives signs and verifies.
 
 use bouncycastle_core::errors::{RNGError, SignatureError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_core::traits::CollisionResistantHash;
@@ -11,7 +12,7 @@ use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
 use bouncycastle_ecdsa::keys::keygen;
 use bouncycastle_ecdsa::keys_common::SignatureKeyPair;
-use bouncycastle_rng::{DefaultRNG, FixedSeedRNG};
+use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_sha3::SHA3_256;
 

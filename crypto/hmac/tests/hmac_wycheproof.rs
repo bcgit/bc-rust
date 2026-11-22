@@ -15,10 +15,10 @@
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
+use bouncycastle_digest::sm3::SM3;
 use bouncycastle_hmac::{HMACParams, HmacKey};
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
-use bouncycastle_sm3::SM3;
 
 /// The longest key in any of the files is 65 bytes.
 const MAX_KEY_LEN: usize = 128;

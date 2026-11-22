@@ -10,11 +10,11 @@ mod cmac_helpers;
 
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{GCM_NONCE_LEN, GMAC};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, NonceMacGenerationKey, NonceMacVerificationKey,
 };
 use bouncycastle_core::traits::MACGenerator;
-use bouncycastle_rng::FixedSeedRNG;
 use cmac_helpers::mac_key;
 
 pub fn run_key_object_case(

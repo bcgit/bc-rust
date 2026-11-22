@@ -6,13 +6,13 @@ use bouncycastle_aes::{AES_GCM_128, AES_GMAC_128, AES_GMAC_192, AES128Key, AES19
 use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, GMAC, GcmKeyState, Gmac};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
     AeadEncryptionKey, FromKeyMaterial, NonceMacGenerationKey, NonceMacVerificationKey,
 };
 use bouncycastle_core::traits::{MACGenerator, MACVerifier};
-use bouncycastle_rng::FixedSeedRNG;
 
 const NONCE: [u8; GCM_NONCE_LEN] = [0x5A; GCM_NONCE_LEN];
 const MSG: &[u8] = b"The quick brown fox jumps over the lazy dog";

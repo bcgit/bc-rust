@@ -22,6 +22,11 @@ fn two_signers_one_verifier() {
 }
 
 #[test]
+fn context_is_refused() {
+    ecdsa_common::context_is_refused::<Secp256K1, SHA256, 64>();
+}
+
+#[test]
 fn key_loading() {
     ecdsa_common::key_loading::<Secp256K1, SHA256, 65, 32>();
 }

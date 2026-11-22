@@ -229,7 +229,7 @@ trait AESParamsInternalTrait {}
 ///
 /// Sealed via a private supertrait, so the three types below are the only implementations. The
 /// supertrait is named `*InternalTrait` after the pattern of `MLKEMPrivateKeyInternalTrait` in
-/// `bouncycastle-mlkem`, which seals its key types the same way.
+/// `bouncycastle-pqc`'s `mlkem` module, which seals its key types the same way.
 pub trait AESParams: AESParamsInternalTrait {
     /// Key length in bytes: 16, 24 or 32 (FIPS 197 Table 3).
     const KEY_LEN: usize;

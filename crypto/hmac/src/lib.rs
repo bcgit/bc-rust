@@ -13,8 +13,8 @@
 //! |-------------|------------------------------------------------------------------------------|
 //! | SHA-2       | `bouncycastle_sha2::hmac` -- `HMAC_SHA224`, `HMAC_SHA256`, `HMAC_SHA384`, `HMAC_SHA512`, `HMAC_SHA512_224`, `HMAC_SHA512_256` |
 //! | SHA-3       | `bouncycastle_sha3::hmac` -- `HMAC_SHA3_224`, `HMAC_SHA3_256`, `HMAC_SHA3_384`, `HMAC_SHA3_512` |
-//! | SM3         | `bouncycastle_sm3::hmac` -- `HMAC_SM3`                                       |
-//! | RIPEMD      | `bouncycastle_ripemd::hmac` -- `HMAC_RIPEMD160`                              |
+//! | SM3         | `bouncycastle_digest::sm3::hmac` -- `HMAC_SM3`                                       |
+//! | RIPEMD      | `bouncycastle_digest::ripemd::hmac` -- `HMAC_RIPEMD160`                              |
 //!
 //! Although users are free to implement [`Hash`] and [`HMACParams`] for a a hash function not included with the library,
 //! and will then be able to instantiate [`HMAC`] for it as well.
@@ -117,6 +117,7 @@
 //! [`MacVerificationKey::verify`]: bouncycastle_core::symmetric_key::MacVerificationKey::verify
 //! [`MACVerifier::do_verify_final`]: bouncycastle_core::traits::MACVerifier::do_verify_final
 
+#![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
@@ -440,13 +441,13 @@ pub struct HMAC<'k, HASH: HMACParams, Dir> {
 }
 
 impl<HASH: HMACParams, Dir> Debug for HMAC<'_, HASH, Dir> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{} instance", HASH::HMAC_ALG_NAME)
     }
 }
 
 impl<HASH: HMACParams, Dir> Display for HMAC<'_, HASH, Dir> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{} instance", HASH::HMAC_ALG_NAME)
     }
 }

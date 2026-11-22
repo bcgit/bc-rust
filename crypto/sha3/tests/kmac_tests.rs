@@ -289,7 +289,7 @@ fn kmacxof_one_shots_are_the_hash_view() {
 /// carries, so a 128-bit DRBG makes a key KMAC256 refuses and KMAC128 accepts.
 #[test]
 fn generate_refuses_an_rng_below_the_kmac_strength() {
-    let mut weak = bouncycastle_rng::FixedSeedRNG::new([0x5Au8; 32]);
+    let mut weak = bouncycastle_core::hazmat::FixedSeedRNG::new([0x5Au8; 32]);
     weak.set_security_strength(bouncycastle_core::security_strength::SecurityStrength::_128bit);
     assert!(matches!(
         KMAC256Key::<64>::generate(&mut weak),

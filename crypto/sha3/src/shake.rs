@@ -9,6 +9,8 @@ use bouncycastle_core::traits::{
     Algorithm, FinishToken, Hash, HashOneShot, Suspendable, XOF, XOFSqueezer,
 };
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
+#[cfg(feature = "std")]
+use std::vec::Vec;
 
 /// Internal struct for SHAKE. Use [`SHAKE128`](crate::SHAKE128) or [`SHAKE256`](crate::SHAKE256);
 /// the parameter trait is sealed.
@@ -61,6 +63,7 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         self.keccak.squeezing
     }
 
+    #[cfg(feature = "std")]
     fn hash_internal(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
         self.keccak.absorb(data);
         self.into_squeezer().do_output(result_len)
@@ -244,12 +247,6 @@ impl<PARAMS: SHAKEParams> SHAKESqueezer<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOFSqueezer for SHAKESqueezer<PARAMS> {
-    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
-        let mut out = vec![0u8; num_bytes];
-        self.do_output_out(&mut out);
-        out
-    }
-
     fn do_output_out(&mut self, output: &mut [u8]) -> usize {
         self.shake.squeeze_internal_out(output)
     }
@@ -293,12 +290,6 @@ pub struct SHAKEBorrowedSqueezer<'s, PARAMS: SHAKEParams> {
 }
 
 impl<PARAMS: SHAKEParams> XOFSqueezer for SHAKEBorrowedSqueezer<'_, PARAMS> {
-    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
-        let mut out = vec![0u8; num_bytes];
-        self.do_output_out(&mut out);
-        out
-    }
-
     fn do_output_out(&mut self, output: &mut [u8]) -> usize {
         self.shake.squeeze_internal_out(output)
     }
@@ -445,6 +436,7 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         self.into_squeezer_partial_bits_with_suffix(partial_byte, num_bits, 0x0F, 4)
     }
 
+    #[cfg(feature = "std")]
     fn xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
         self.hash_internal(data, result_len)
     }

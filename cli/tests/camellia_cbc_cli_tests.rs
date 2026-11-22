@@ -7,7 +7,7 @@
 //!
 //! Vectors are the `CAMELLIA-*-CBC` entries of OpenSSL's `evpciph_camellia.txt` (OpenSSL 3.6.2):
 //! for each key length the first three entries chain into one three-block message under the IV
-//! `000102..0f`; see `crypto/camellia/tests/openssl_cbc_tests.rs`. They are unpadded, so under
+//! `000102..0f`; see `crypto/symmetric/tests/camellia_openssl_cbc_tests.rs`. They are unpadded, so under
 //! the commands' PKCS7 framing the three blocks are followed by one block of padding, computed
 //! here from the permutation.
 

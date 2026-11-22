@@ -326,12 +326,6 @@ fn keygen_is_deterministic_given_a_deterministic_rng() {
         fn next_int(&mut self) -> Result<u32, bouncycastle_core::errors::RNGError> {
             Ok(0x42424242)
         }
-        fn next_bytes(
-            &mut self,
-            len: usize,
-        ) -> Result<Vec<u8>, bouncycastle_core::errors::RNGError> {
-            Ok(vec![0x42u8; len])
-        }
         fn next_bytes_out(
             &mut self,
             out: &mut [u8],
@@ -371,12 +365,6 @@ fn keygen_rejects_an_rng_below_the_required_strength() {
         }
         fn next_int(&mut self) -> Result<u32, bouncycastle_core::errors::RNGError> {
             Ok(0)
-        }
-        fn next_bytes(
-            &mut self,
-            len: usize,
-        ) -> Result<Vec<u8>, bouncycastle_core::errors::RNGError> {
-            Ok(vec![0u8; len])
         }
         fn next_bytes_out(
             &mut self,

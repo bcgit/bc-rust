@@ -7,9 +7,7 @@ use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
-use bouncycastle_ed::ed25519::{
-    Ed25519, Ed25519PrivateKey, Ed25519PublicKey, Ed25519ph, keypair_consistency_check,
-};
+use bouncycastle_ed::ed25519::{Ed25519PrivateKey, Ed25519PublicKey, keypair_consistency_check};
 
 // (test name, secret key, public key, message, signature)
 const RFC8032_ED25519: &[(&str, &str, &str, &str, &str)] = &[
@@ -130,13 +128,11 @@ fn rfc_8032_section_7_1_ed25519() {
         let (pk, sk) = key_pair(name, sk, pk);
         let (msg, sig) = (bytes(msg), bytes(sig));
 
-        let signed =
-            DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(&sk, &msg, None)
-                .unwrap();
+        let signed = sk.sign_deterministic(&msg, None).unwrap();
         assert_eq!(signed.as_slice(), sig, "{name}: signature");
-        OneShotVerifyingKey::<Ed25519, _>::verify(&pk, &msg, None, &sig).unwrap();
+        pk.verify(&msg, None, &sig).unwrap();
         // It is not an Ed25519ph signature.
-        assert!(OneShotVerifyingKey::<Ed25519ph, _>::verify(&pk, &msg, None, &sig).is_err());
+        assert!(pk.as_prehash().verify(&msg, None, &sig).is_err());
     }
 }
 
@@ -149,16 +145,14 @@ fn rfc_8032_section_7_3_ed25519ph() {
 
         // The vector has no context: none, and the empty one.
         for ctx in [None, Some(&[][..])] {
-            let signed =
-                DeterministicOneShotSigningKey::<Ed25519ph, _>::sign_deterministic(&sk, &msg, ctx)
-                    .unwrap();
+            let signed = sk.as_prehash().sign_deterministic(&msg, ctx).unwrap();
             assert_eq!(signed.as_slice(), sig, "{name}: signature");
-            OneShotVerifyingKey::<Ed25519ph, _>::verify(&pk, &msg, ctx, &sig).unwrap();
+            pk.as_prehash().verify(&msg, ctx, &sig).unwrap();
         }
 
         // Streamed an octet at a time.
-        let mut signer = sk.create_signer_deterministic(None).unwrap();
-        let mut verifier = pk.create_verifier(None).unwrap();
+        let mut signer = sk.as_prehash().create_signer_deterministic(None).unwrap();
+        let mut verifier = pk.as_prehash().create_verifier(None).unwrap();
         for octet in msg.chunks(1) {
             signer.do_update(octet);
             verifier.do_update(octet);
@@ -167,6 +161,6 @@ fn rfc_8032_section_7_3_ed25519ph() {
         verifier.do_verify_final(&sig).unwrap();
 
         // It is not an Ed25519 signature.
-        assert!(OneShotVerifyingKey::<Ed25519, _>::verify(&pk, &msg, None, &sig).is_err());
+        assert!(pk.verify(&msg, None, &sig).is_err());
     }
 }

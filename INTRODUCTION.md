@@ -53,17 +53,10 @@ impl<H: HMACParams> HKDF<H> {
 
 That is, including the choice of hash function `H`, 7 adjustable input parameters spread across 5 function calls, which
 is enough to make a novice cryptographer's head spin! Plenty of rope to hang yourself with. To this end, we also offer a
-much simplified KDF trait and KDFFactory that lets you do the whole operation in two very straightforward lines of code:
+much simplified KDF trait that lets you do the whole operation in one straightforward line of code:
 
 ```rust
-let mut kdf = KDFFactory::new("HKDF-SHA256") ?;
-let new_key = kdf.derive_key(&seed_key, b"additional_input", 32)?;
-```
-
-or even one line if you need a KDF and aren't picky about which one:
-
-```rust
-let new_key = KDFFactory::default().derive_key(&seed_key, b"additional_input", 32)?;
+let new_key = HKDF_SHA256::new().derive_key(&seed_key, b"additional_input", 32)?;
 ```
 
 ## Library features and functionality
@@ -83,8 +76,8 @@ Yes, in many cases you can improve performance by skirting the strict type and m
 by directly embedding assembly code. But to us, this undermines the primary reason that you're developing in Rust in the
 first place. Every crate carries `#![forbid(unsafe_code)]`, with one exception: `bouncycastle-utils` holds constant-time
 and secure-zeroization code that cannot be accomplished reliably within safe rust. Each instance of unsafe is a few
-lines with its safety argument alongside, and all unsafe is jailed to the one crate so that everything built on it stays
-in safe Rust.
+lines with its safety argument alongside, and all unsafe is jailed to the one crate (to two of its modules, `ct` and
+`secret`, which the compiler enforces) so that everything built on it stays in safe Rust.
 
 ### If it compiles, then it's safe
 

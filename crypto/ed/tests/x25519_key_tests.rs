@@ -1,4 +1,5 @@
 use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError, KeyMaterialError, RNGError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
@@ -8,7 +9,7 @@ use bouncycastle_ed::x25519::{
     keygen_from_seed_out, keygen_out,
 };
 use bouncycastle_hex as hex;
-use bouncycastle_rng::{DefaultRNG, FixedSeedRNG};
+use bouncycastle_rng::DefaultRNG;
 
 /// RFC 7748 Section 6.1: Alice's private key a and public key X25519(a, 9).
 const ALICE_SK: &str = "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a";

@@ -7,7 +7,7 @@
 //! round-trip at any length.
 //!
 //! Vectors are the `ARIA-*-CTR` entries of OpenSSL's `evpciph_aria.txt` (OpenSSL 3.6.2),
-//! which are KISA's published ARIA test vectors; see `crypto/aria/tests/stream_mode_tests.rs`.
+//! which are KISA's published ARIA test vectors; see `crypto/symmetric/tests/aria_stream_mode_tests.rs`.
 
 mod common;
 use common::{

@@ -1,6 +1,6 @@
 //! Stack usage of the RIPEMD entry points, and the in-memory sizes printed by
-//! `print_struct_sizes`, the source of the "Memory Usage" tables in the bouncycastle-ripemd crate
-//! docs.
+//! `print_struct_sizes`, the source of the "Memory Usage" tables in the
+//! `bouncycastle_digest::ripemd` module docs.
 //!
 //! As with SM3, a call needs a few hundred bytes, below the floor of the process's own start-up
 //! that `bench_aes_mem_usage` describes, so massif cannot see it. The figures in the crate docs
