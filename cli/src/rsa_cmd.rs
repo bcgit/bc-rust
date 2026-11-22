@@ -26,9 +26,9 @@
 //! has to be kept from generation time. (The private key file is RFC 8017's CRT quintuple and
 //! `e`, so a `PkFromSk` could be written; it has not been.) Private and public key files use the raw fixed-width layout
 //! `RsaPrivateKey`/`RsaPublicKey`'s `PrivateKey`/`PublicKey` impls encode
-//! (documented under `# Encoding` on those types): not PEM, not ASN.1 DER -- this crate has no
-//! encoder for either -- so a key produced by another RSA implementation cannot be fed to this
-//! CLI directly.
+//! (documented under `# Encoding` on `RsaPrivateComponents`/`RsaPublicComponents`): not PEM,
+//! not ASN.1 DER -- this crate has no encoder for either -- so a key produced by another RSA
+//! implementation cannot be fed to this CLI directly.
 //!
 //! 1024- and 1536-bit RSA are verification-only in `bouncycastle_rsa` (see its crate docs' `#
 //! Scope`), so `rsa_1024_cmd`/`rsa_1536_cmd` take no `action`/`skfile` at all: they only verify,
@@ -118,8 +118,8 @@ fn unsupported(scheme: &RSAScheme, hash: &RSAHash, alg_name: &str) -> ! {
     exit(-1);
 }
 
-/// See `RsaPrivateKey`'s `# Encoding` docs for the expected layout; a wrong-length file is one of
-/// the `DecodingError`s `PrivateKey::from_bytes` reports.
+/// See `RsaPrivateComponents`'s `# Encoding` docs for the expected layout; a wrong-length file
+/// is one of the `DecodingError`s `PrivateKey::from_bytes` reports.
 fn parse_sk<SK: PrivateKey<SK_LEN>, const SK_LEN: usize>(bytes: &[u8], alg_name: &str) -> SK {
     match SK::from_bytes(bytes) {
         Ok(sk) => sk,
@@ -133,8 +133,8 @@ fn parse_sk<SK: PrivateKey<SK_LEN>, const SK_LEN: usize>(bytes: &[u8], alg_name:
     }
 }
 
-/// See `RsaPublicKey`'s `# Encoding` docs for the expected layout; a wrong-length file is one of
-/// the `DecodingError`s `PublicKey::from_bytes` reports.
+/// See `RsaPublicComponents`'s `# Encoding` docs for the expected layout; a wrong-length file
+/// is one of the `DecodingError`s `PublicKey::from_bytes` reports.
 fn parse_pk<PK: PublicKey<PK_LEN>, const PK_LEN: usize>(bytes: &[u8], alg_name: &str) -> PK {
     match PK::from_bytes(bytes) {
         Ok(pk) => pk,

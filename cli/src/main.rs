@@ -4819,7 +4819,7 @@ enum Subcommands {
     /// `--scheme`/`--hash`. PSS draws a fresh salt from the OS RNG each time it signs. `keygen`
     /// (FIPS 186-5 A.1.3, e = 65537) writes the private key to stdout and the public key to
     /// `--pkfile`. Private/public key files use this crate's own raw fixed-width encoding (see
-    /// `RsaPrivateKey`/`RsaPublicKey`'s `# Encoding` docs), not PEM or ASN.1 DER.
+    /// `RsaPrivateComponents`/`RsaPublicComponents`'s `# Encoding` docs), not PEM or ASN.1 DER.
     RSA_2048 {
         action: RSAAction,
 
