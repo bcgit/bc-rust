@@ -16,9 +16,9 @@
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_cipher::modes::XTSKey;
 use bouncycastle_core::hazmat::BlockPermutation;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::FromKeyMaterial;
-use bouncycastle_hex as hex;
 
 /// One ACVP test case, as hex.
 struct Vector {

@@ -15,11 +15,11 @@ use bouncycastle_cipher::modes::{
 };
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::FromKeyMaterial;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
-use bouncycastle_hex as hex;
 
 /// The tweak of the known answers below.
 const TWEAK: [u8; 16] = [
