@@ -231,18 +231,22 @@ fn rsa_pss_cmd<
             rsa_keygen_cmd::<A, PK_LEN, SK_LEN>(keygen, pkfile, output_hex, alg_name)
         }
         RSAAction::Sign => {
-            let sk = parse_sk::<RsaPrivateKey<A>, SK_LEN>(
-                require_secret(skfile, "skfile").ref_to_bytes(),
-                alg_name,
-            );
-            let mut signer = SigningKey::<A, SIG_LEN>::create_signer(
-                &sk,
-                &mut HashDRBG_SHA512::new_from_os(),
-                None,
-            )
-            .unwrap();
-            stream_stdin(|chunk| signer.do_update(chunk));
-            let sig = signer.do_final().unwrap_or_else(|_| {
+            // `exit` runs no destructors, so the key is dropped before the result is looked at.
+            let sig = {
+                let sk = parse_sk::<RsaPrivateKey<A>, SK_LEN>(
+                    require_secret(skfile, "skfile").ref_to_bytes(),
+                    alg_name,
+                );
+                let mut signer = SigningKey::<A, SIG_LEN>::create_signer(
+                    &sk,
+                    &mut HashDRBG_SHA512::new_from_os(),
+                    None,
+                )
+                .unwrap();
+                stream_stdin(|chunk| signer.do_update(chunk));
+                signer.do_final()
+            };
+            let sig = sig.unwrap_or_else(|_| {
                 eprintln!("Error: signing failed.");
                 exit(-1);
             });
@@ -277,15 +281,19 @@ fn rsa_pkcs1_cmd<
             rsa_keygen_cmd::<A, PK_LEN, SK_LEN>(keygen, pkfile, output_hex, alg_name)
         }
         RSAAction::Sign => {
-            let sk = parse_sk::<RsaPrivateKey<A>, SK_LEN>(
-                require_secret(skfile, "skfile").ref_to_bytes(),
-                alg_name,
-            );
-            let mut signer =
-                DeterministicSigningKey::<A, SIG_LEN>::create_signer_deterministic(&sk, None)
-                    .unwrap();
-            stream_stdin(|chunk| signer.do_update(chunk));
-            let sig = signer.do_final().unwrap_or_else(|_| {
+            // `exit` runs no destructors, so the key is dropped before the result is looked at.
+            let sig = {
+                let sk = parse_sk::<RsaPrivateKey<A>, SK_LEN>(
+                    require_secret(skfile, "skfile").ref_to_bytes(),
+                    alg_name,
+                );
+                let mut signer =
+                    DeterministicSigningKey::<A, SIG_LEN>::create_signer_deterministic(&sk, None)
+                        .unwrap();
+                stream_stdin(|chunk| signer.do_update(chunk));
+                signer.do_final()
+            };
+            let sig = sig.unwrap_or_else(|_| {
                 eprintln!("Error: signing failed.");
                 exit(-1);
             });
