@@ -341,7 +341,8 @@
 //! - **A key the caller moves is the caller's to wipe.** Taking a private key out of the
 //!   `Result` a constructor or key generation returns (`unwrap`, `?`, `Ok(key)`, `Box::new`) is
 //!   such a move, and leaves the key's components in the caller's own frame; no public
-//!   constructor builds a key in place. A caller for whom that matters borrows the key from
+//!   constructor builds a key in place. The same holds for the bytes `encode` returns and the
+//!   key `clone` returns: the copy the caller holds is the caller's to wipe. A caller for whom that matters borrows the key from
 //!   the `Result` (`as_ref`) and lets the `Result` drop where it was returned, which left
 //!   nothing behind in the builds measured.
 //! - **Imported keys are not validated for primality.** [`keys::RsaPrivateKey::from_crt_components`]
