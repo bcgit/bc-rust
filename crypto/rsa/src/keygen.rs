@@ -283,6 +283,22 @@ fn div<const N: usize>(a: &[u64; N], d: &[u64; N]) -> [u64; N] {
     quotient
 }
 
+/// Fills the whole of `out` from `rng`, for every draw this crate makes. `RNG::next_bytes_out`
+/// returns the number of bytes it wrote, and a count short of the buffer is the RNG failing to
+/// deliver: an error, as its own error is, with `out` wiped either way, since what it holds
+/// then is part of a prime candidate, a salt, a seed or a key.
+pub(crate) fn fill_bytes(rng: &mut dyn RNG, out: &mut [u8]) -> Result<(), RNGError> {
+    let result = match rng.next_bytes_out(out) {
+        Ok(written) if written == out.len() => return Ok(()),
+        Ok(_) => Err(RNGError::GenericError("the RNG wrote fewer bytes than it was asked for")),
+        Err(e) => Err(e),
+    };
+    for byte in out.iter_mut() {
+        zeroize_in_place(byte);
+    }
+    result
+}
+
 /// Fills `out` with `64 * N` bits from `rng` (FIPS 186-5 Appendix B.2.1: the string is read as a
 /// big-endian integer; here limb `N - 1` holds its most significant 64 bits).
 fn fill_random<const N: usize>(
@@ -291,7 +307,7 @@ fn fill_random<const N: usize>(
 ) -> Result<(), SignatureError> {
     let mut buf = [0u8; 8];
     for limb in out.iter_mut() {
-        rng.next_bytes_out(&mut buf).map_err(SignatureError::RNGError)?;
+        fill_bytes(rng, &mut buf).map_err(SignatureError::RNGError)?;
         *limb = u64::from_be_bytes(buf);
     }
     Ok(())
@@ -602,9 +618,65 @@ where
 // applies. Known answers at `N = 2` (`threshold_bit = 28`): a difference below `2^28`, or exactly
 // `2^28`, is too close (Appendix A.1.1 criterion 2(d) is `|p - q| > 2^(nlen/2 - 100)`, so equality
 // fails it); `2^28 + 1` and above is not; and the order of `p` and `q` does not matter.
+//
+// `fill_bytes`'s wipe of a buffer the RNG did not fill is likewise invisible from outside: every
+// caller's buffer is a local that an error discards.
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bouncycastle_core::key_material::KeyMaterialTrait;
+
+    /// An RNG that writes `written` bytes of `0xA5` and returns `result`.
+    struct Writes {
+        written: usize,
+        result: Result<usize, RNGError>,
+    }
+
+    impl RNG for Writes {
+        fn add_seed_keymaterial(&mut self, _: &dyn KeyMaterialTrait) -> Result<(), RNGError> {
+            Err(RNGError::GenericError("not used"))
+        }
+        fn next_int(&mut self) -> Result<u32, RNGError> {
+            Err(RNGError::GenericError("not used"))
+        }
+        fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
+            out[..self.written].fill(0xA5);
+            match &self.result {
+                Ok(count) => Ok(*count),
+                Err(_) => Err(RNGError::ReseedRequired),
+            }
+        }
+        fn fill_keymaterial_out(
+            &mut self,
+            _: &mut dyn KeyMaterialTrait,
+        ) -> Result<usize, RNGError> {
+            Err(RNGError::GenericError("not used"))
+        }
+        fn security_strength(&self) -> SecurityStrength {
+            SecurityStrength::_256bit
+        }
+    }
+
+    #[test]
+    fn fill_bytes_takes_a_full_draw_and_wipes_any_other() {
+        let mut out = [0u8; 8];
+        assert_eq!(fill_bytes(&mut Writes { written: 8, result: Ok(8) }, &mut out), Ok(()));
+        assert_eq!(out, [0xA5; 8]);
+
+        let short = Err(RNGError::GenericError("the RNG wrote fewer bytes than it was asked for"));
+        // One byte short, by the count; and a count that is not the length at all.
+        for (written, count) in [(7, 7), (4, 4), (0, 0), (8, 7), (8, 9)] {
+            let mut out = [0xFFu8; 8];
+            assert_eq!(fill_bytes(&mut Writes { written, result: Ok(count) }, &mut out), short);
+            assert_eq!(out, [0u8; 8], "wrote {written}, returned {count}");
+        }
+
+        // The RNG's own error comes back as it is, over a wiped buffer.
+        let mut out = [0xFFu8; 8];
+        let mut failing = Writes { written: 3, result: Err(RNGError::ReseedRequired) };
+        assert_eq!(fill_bytes(&mut failing, &mut out), Err(RNGError::ReseedRequired));
+        assert_eq!(out, [0u8; 8]);
+    }
 
     const P: [u64; 2] = [0x1234_5678_9abc_def1, 0xc000_0000_0000_0001];
 

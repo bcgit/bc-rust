@@ -10,6 +10,7 @@
 //! the message, for a caller that already holds the digest. Sealed: the markers are the
 //! library's, so a role impl exists for every pairing and no other.
 
+use crate::keygen::fill_bytes;
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::mgf1::MAX_HASH_LEN;
 use crate::rsa_core::{rsasp1, rsavp1};
@@ -106,7 +107,8 @@ where
     /// `k`; `ctx` is accepted and ignored, RSA having no context string.
     ///
     /// # Errors
-    /// [`SignatureError::RNGError`] if the RNG fails to deliver.
+    /// [`SignatureError::RNGError`] if the RNG fails to deliver, a draw shorter than the salt
+    /// included.
     fn create_signer<'k>(
         &'k self,
         rng: &mut dyn RNG,
@@ -114,7 +116,7 @@ where
     ) -> Result<Self::Signer<'k>, SignatureError> {
         const { assert!(A::SALT_LEN <= MAX_HASH_LEN, "the salt fits the signer's buffer") };
         let mut salt = [0u8; MAX_HASH_LEN];
-        rng.next_bytes_out(&mut salt[..A::SALT_LEN]).map_err(SignatureError::RNGError)?;
+        fill_bytes(rng, &mut salt[..A::SALT_LEN]).map_err(SignatureError::RNGError)?;
         Ok(RsaSigner { sk: self, hash: A::Hash::default(), salt })
     }
 }
@@ -348,7 +350,7 @@ where
 {
     const { assert!(A::SALT_LEN <= MAX_HASH_LEN, "the salt fits the buffer") };
     let mut salt = [0u8; MAX_HASH_LEN];
-    rng.next_bytes_out(&mut salt[..A::SALT_LEN]).map_err(SignatureError::RNGError)?;
+    fill_bytes(rng, &mut salt[..A::SALT_LEN]).map_err(SignatureError::RNGError)?;
     sign_from_hash_with_salt::<A, K_LEN>(sk, m_hash, &salt[..A::SALT_LEN])
 }
 

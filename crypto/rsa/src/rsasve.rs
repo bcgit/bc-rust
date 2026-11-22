@@ -43,6 +43,7 @@
 //! amounts to full public-key validation, which §6.4.2.2 notes "is not specified in this
 //! Recommendation".
 
+use crate::keygen::fill_bytes;
 use crate::keys::{RsaPrivateComponents, RsaPublicComponents, decoding_error};
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{KEMError, KeyDecodingError, RNGError, SignatureError};
@@ -238,7 +239,7 @@ where
                 ));
             }
             attempts += 1;
-            rng.next_bytes_out(&mut *Z)?;
+            fill_bytes(rng, &mut *Z)?;
             *z = K::limbs_from_be_bytes(&Z);
             if in_open_range::<K>(&z, self.pk.n()) {
                 break;

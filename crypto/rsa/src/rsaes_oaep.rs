@@ -30,6 +30,7 @@
 //!   choice is open.
 
 use crate::eme_oaep::{self, HashBuf};
+use crate::keygen::fill_bytes;
 use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey, in_open_range};
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{KEMError, KeyMaterialError, KeyTransportError, RNGError};
@@ -186,7 +187,7 @@ where
     eme_oaep::label_hash::<H>(label, &mut l_hash);
     // Step 2.d: a random octet string seed of length hLen.
     let mut seed = HashBuf::new();
-    rng.next_bytes_out(&mut seed[..h_len])?;
+    fill_bytes(rng, &mut seed[..h_len])?;
     // Steps 2.b to 2.i: EM = 0x00 || maskedSeed || maskedDB.
     let mut em = Secret::<[u8; N]>::new();
     eme_oaep::encode::<H, M>(&l_hash[..h_len], &seed[..h_len], msg, &mut *em);
@@ -301,7 +302,7 @@ where
             return Err(KEMError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm));
         }
         let mut key = Secret::<[u8; LEN]>::new();
-        rng.next_bytes_out(&mut *key)?;
+        fill_bytes(rng, &mut *key)?;
         encrypt::<K, H, M, N>(self.pk, self.params.label, &*key, rng, ct)?;
         if let Err(e) = key_into(&*key, RSAES_OAEP::<K, H, M>::STRENGTH, ss) {
             ct.fill(0);
