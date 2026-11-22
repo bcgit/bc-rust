@@ -438,7 +438,7 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 ## CI
 
-Seven workflows under `.github/workflows/`, all triggered by pull requests:
+Eight workflows under `.github/workflows/`, all triggered by pull requests:
 
 - `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then
   `cargo test -p bouncycastle-scrypt --no-default-features`, since `--all-features` never
@@ -457,6 +457,13 @@ Seven workflows under `.github/workflows/`, all triggered by pull requests:
   `dev_scripts/oaep_ct_harness` (the EME-OAEP decode, included by path) under memcheck with the encoded
   message undefined, with a variable-time control, and greps its thumbv6m and riscv32i assembly for a
   multiply, divide or unexpected call.
+- `rsa-ct-stack.yml`: two checks of `crypto/rsa`, on the runner's stable toolchain. `dev_scripts/check_rsa_ct.sh`
+  with valgrind runs `dev_scripts/rsa_ct_harness` (the Montgomery setup over a secret modulus and the checked
+  CRT, through the crate's public API) under memcheck with the key undefined, with two controls that must be
+  reported. `dev_scripts/check_rsa_stack.sh` runs `dev_scripts/rsa_stack_harness`, which paints the stack, runs
+  each private-key operation and searches what it used for the key and what was derived from it. The second is
+  sized by measurement for an x86-64 release build, so a new compiler that lays frames out deeper fails it: that
+  is the check working, and the fix is to re-measure the wipe sizes, not to drop the step.
 - `publish_doc_benches_to_ghpages.yaml`: builds rustdoc and runs `quality_stats.sh`; on `main` it also
   publishes docs and code stats to GitHub Pages (`https://bcgit.github.io/bc-rust/`). Its bench step is
   commented out because the benches are too slow on the hosted runner, so benchmark figures come from a
@@ -464,16 +471,6 @@ Seven workflows under `.github/workflows/`, all triggered by pull requests:
 
 `cargo test --all` is the workspace run, so a failing test does block a PR; what CI does not run is
 `cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.
-
-Nor does it run the two RSA developer checks, which are for a change to `crypto/rsa/src` or to the
-toolchain:
-
-- `dev_scripts/check_rsa_ct.sh` with valgrind: runs `dev_scripts/rsa_ct_harness` (the Montgomery
-  setup over a secret modulus and the checked CRT, through the crate's public API) under memcheck
-  with the key undefined, with two controls that must be reported.
-- `dev_scripts/check_rsa_stack.sh`: runs `dev_scripts/rsa_stack_harness`, which paints the stack,
-  runs each private-key operation and searches what it used for the key and what was derived from
-  it; x86-64 release on the installed toolchain, RSA-2048 unless sizes are given.
 
 The gitea origin has its own copies of the five pull-request checks under `.gitea/workflows/`
 (there is no Pages job). They differ from the GitHub ones in two ways: the toolchain is installed
