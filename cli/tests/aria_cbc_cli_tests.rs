@@ -7,7 +7,7 @@
 //!
 //! Vectors are the `ARIA-*-CBC` entries of OpenSSL's `evpciph_aria.txt` (OpenSSL 3.6.2), which
 //! are KISA's published ARIA test vectors: a 10-block message under each key length; see
-//! `crypto/aria/tests/kisa_vectors_tests.rs`. They are unpadded, so under the commands' PKCS7
+//! `crypto/symmetric/tests/aria_kisa_vectors_tests.rs`. They are unpadded, so under the commands' PKCS7
 //! framing the ten blocks are followed by one block of padding, computed here from the
 //! permutation.
 

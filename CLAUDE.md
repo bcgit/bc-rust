@@ -98,7 +98,7 @@ way when adding a harness, or `cargo test --workspace` fails to compile them.
 
 The workspace has four top-level kinds of member:
 
-1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework` and `cipher-test-framework` described below. Most are one primitive each; some, such as `cipher`, hold generic building blocks (modes, padding) as sub-modules; `pqc` and `hybrid` are family crates, holding their primitives as modules (see [the layout below](#sub-crate-layout-convention)). The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is named `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`; the two test frameworks, `cli` and `mem_usage_benches` are `publish = false`, which works because every dev-dependency is path-only and so is dropped from a packaged crate.
+1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework` and `cipher-test-framework` described below. Most are one primitive each; some, such as `cipher`, hold generic building blocks (modes, padding) as sub-modules; `pqc`, `digest`, `symmetric` and `hybrid` are family crates, holding their primitives as modules (see [the layout below](#sub-crate-layout-convention)). The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is named `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`; the two test frameworks, `cli` and `mem_usage_benches` are `publish = false`, which works because every dev-dependency is path-only and so is dropped from a packaged crate.
 2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::sm3`, `bouncycastle::pqc`), and of a family crate's primitive modules under the names they had as crates (`bouncycastle::mlkem` is `bouncycastle_pqc::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
 3. `cli/` — the `bc-rust` binary built on top of `bouncycastle`, exposing every primitive as a streaming stdin→stdout subcommand using `clap`.
 4. `mem_usage_benches/` — stand-alone binary crates that measure peak stack usage of algorithms (cannot be done via criterion).
@@ -126,7 +126,10 @@ crypto/<name>/
 ```
 
 A family crate holds its primitives as modules, each with the layout it had as a crate:
-`bouncycastle-hybrid` (`crypto/hybrid`: `hpke`) and `bouncycastle-pqc` (`crypto/pqc`: `mldsa`,
+`bouncycastle-hybrid` (`crypto/hybrid`: `hpke`), `bouncycastle-digest` (`crypto/digest`: `blake2`,
+`concatkdf`, `pbkdf2`, `ripemd`, `scrypt`, `sm3`, `x963kdf`), `bouncycastle-symmetric`
+(`crypto/symmetric`: `aria`, `ascon`, `camellia`, `chacha20`, `chacha20_poly1305_aead`, `kbkdf`,
+`poly1305`, `sm4`, `tdes`) and `bouncycastle-pqc` (`crypto/pqc`: `mldsa`,
 `mldsa_lowmemory`, `mlkem`, `mlkem_lowmemory`, and the `mldsa_common` / `mlkem_common` modules the
 two forms of each share).
 
@@ -468,7 +471,7 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 Six workflows under `.github/workflows/`, all triggered by pull requests:
 
 - `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then
-  `cargo test -p bouncycastle-scrypt --no-default-features`, since `--all-features` never
+  `cargo test -p bouncycastle-digest --no-default-features`, since `--all-features` never
   builds a crate with a default feature off.
 - `rust-test.yml`: `cargo test --all` on stable, with `bcgit/bc-test-data` and `C2SP/wycheproof`
   checked out beside the repository. Wycheproof is pinned to a commit (`ref:` in the workflow), so

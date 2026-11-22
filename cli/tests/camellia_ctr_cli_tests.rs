@@ -9,7 +9,7 @@
 //! 8-octet IV and a counter starting at one -- so they are not ones these commands can produce (see
 //! the `Camellia_CTR_128` docs). Instead the commands are required to agree with
 //! `bouncycastle_cipher::modes::Ctr` over the Camellia permutation, which
-//! `crypto/camellia/tests/stream_mode_tests.rs` pins against the SP 800-38A Sec 6.5 equations, RFC
+//! `crypto/symmetric/tests/camellia_stream_mode_tests.rs` pins against the SP 800-38A Sec 6.5 equations, RFC
 //! 5528's vectors included.
 
 mod common;

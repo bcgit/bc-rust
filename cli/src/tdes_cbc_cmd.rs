@@ -11,7 +11,7 @@
 //! have not authenticated separately.
 //!
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
-//! the `bouncycastle-tdes` crate docs. One key bundle must not protect more than 2^20 blocks
+//! the `bouncycastle_symmetric::tdes` module docs. One key bundle must not protect more than 2^20 blocks
 //! (8 MiB) in total (SP 800-67 Rev 2 Sec 3.4): `encrypt` refuses input past that in one
 //! invocation, and nothing is counted across invocations, which is the caller's to track.
 

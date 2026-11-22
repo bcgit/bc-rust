@@ -40,7 +40,7 @@ pub trait SignatureKeyPair: Curve {
     /// ```compile_fail,E0277
     /// use bouncycastle_ec::P256;
     /// use bouncycastle_ecdsa::keys_common::SignatureKeyPair;
-    /// use bouncycastle_ripemd::RIPEMD160;
+    /// use bouncycastle_digest::ripemd::RIPEMD160;
     /// use bouncycastle_rng::HashDRBG_SHA512;
     ///
     /// let _ = P256::generate_signature_key_pair::<RIPEMD160>(&mut HashDRBG_SHA512::new_from_os());

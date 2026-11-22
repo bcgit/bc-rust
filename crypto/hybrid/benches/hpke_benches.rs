@@ -3,7 +3,6 @@
 //! are benchmarked on their own in the crates of their groups.
 
 use bouncycastle_aes::{AES128Key, AES256Key};
-use bouncycastle_chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_ed::x25519::keygen;
@@ -13,6 +12,7 @@ use bouncycastle_hybrid::hpke::{
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 

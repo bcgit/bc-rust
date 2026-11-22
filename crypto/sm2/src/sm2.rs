@@ -60,6 +60,7 @@ use bouncycastle_core::signature_key::{
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, FinishToken, Hash, RNG, SignatureSigner, SignatureVerifier,
 };
+use bouncycastle_digest::sm3::SM3;
 use bouncycastle_ec::hazmat::sm2::Sm2FieldElement;
 use bouncycastle_ec::hazmat::sm2_comb::comb_multiply_base_point;
 use bouncycastle_ec::hazmat::sm2_point::Sm2JacobianPoint;
@@ -67,7 +68,6 @@ use bouncycastle_ec::hazmat::sm2_scalar::{N_LIMBS, Sm2PublicScalar, Sm2Scalar, S
 use bouncycastle_ec::hazmat::sm2_sec1;
 use bouncycastle_ec::hazmat::sm2_wnaf::shamir_multiply;
 use bouncycastle_ec::nat;
-use bouncycastle_sm3::SM3;
 use bouncycastle_utils::secret::Secret;
 
 /// Raw `r || s` signature length: two 32-byte field-width integers. See the module docs on why

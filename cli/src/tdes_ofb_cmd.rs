@@ -13,8 +13,8 @@
 //! # Warning
 //!
 //! OFB provides confidentiality only; see [`crate::ofb_cmd`]. TDEA is a legacy algorithm,
-//! disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see the `bouncycastle-tdes`
-//! crate docs.
+//! disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see the `bouncycastle_symmetric::tdes`
+//! module docs.
 
 use crate::helpers::block_mode_helpers::TDEA_LIMIT;
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};

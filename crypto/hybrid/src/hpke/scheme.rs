@@ -13,7 +13,6 @@
 //! and [`HpkeAuthRecipient`], on keys whose KEM has `AuthEncap` and `AuthDecap`.
 
 use bouncycastle_aes::{AES128Key, AES256Key};
-use bouncycastle_chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::errors::{KEMError, KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
@@ -25,6 +24,7 @@ use bouncycastle_dhkem::hazmat::{self as labeled, MAX_NH};
 use bouncycastle_dhkem::{AuthDecapsulatingKey, AuthEncapsulatingKey, HpkeKem};
 use bouncycastle_hmac::HMACParams;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 

@@ -418,7 +418,7 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG
 /// use bouncycastle_core::signature_key::DeterministicPreHashSigningKey;
 /// use bouncycastle_pqc::mldsa_lowmemory::hazmat::AnyStrength;
 /// use bouncycastle_pqc::mldsa_lowmemory::{MLDSA44, MLDSATrait};
-/// use bouncycastle_ripemd::RIPEMD160;
+/// use bouncycastle_digest::ripemd::RIPEMD160;
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let (_pk, sk) = MLDSA44::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
@@ -430,7 +430,7 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG
 /// # use bouncycastle_core::signature_key::SigningKey;
 /// # use bouncycastle_pqc::mldsa_lowmemory::hazmat::AnyStrength;
 /// # use bouncycastle_pqc::mldsa_lowmemory::{MLDSA44, MLDSATrait};
-/// # use bouncycastle_ripemd::RIPEMD160;
+/// # use bouncycastle_digest::ripemd::RIPEMD160;
 /// # use bouncycastle_rng::HashDRBG_SHA512;
 /// # let mut rng = HashDRBG_SHA512::new_from_os();
 /// # let (_pk, sk) = MLDSA44::keygen(&mut rng).unwrap();
@@ -447,7 +447,7 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG
 /// use bouncycastle_core::signature_key::{DeterministicPreHashSigningKey, PreHashVerifyingKey};
 /// use bouncycastle_pqc::mldsa_lowmemory::hazmat::AnyStrength;
 /// use bouncycastle_pqc::mldsa_lowmemory::{MLDSA44, MLDSATrait};
-/// use bouncycastle_ripemd::RIPEMD160;
+/// use bouncycastle_digest::ripemd::RIPEMD160;
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let (pk, sk) = MLDSA44::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();

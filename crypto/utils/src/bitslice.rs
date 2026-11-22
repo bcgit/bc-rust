@@ -8,8 +8,8 @@
 //! one `&` or `^` on a plane applies that gate to every byte position at once, and no memory
 //! access is ever indexed by a secret value. How many bytes a plane holds is the word width,
 //! which is why everything here is generic over [`PlaneWord`]: `bouncycastle-aes` uses `u16`,
-//! `u32` and `u64` planes for one, two and four blocks, `bouncycastle-aria` and `bouncycastle-sm4`
-//! `u16` planes for four blocks' worth of one word each, and `bouncycastle-camellia` `u32` planes.
+//! `u32` and `u64` planes for one, two and four blocks, `bouncycastle_symmetric::aria` and `::sm4`
+//! `u16` planes for four blocks' worth of one word each, and `bouncycastle_symmetric::camellia` `u32` planes.
 //! Each crate's own `bitslice` module says which bytes it puts where; nothing here depends on it.
 //!
 //! # Provenance
