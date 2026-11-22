@@ -6,13 +6,13 @@
 //! where the padding changes shape.
 
 use bouncycastle_core::errors::{HashError, SuspendableError};
+use bouncycastle_core::hex;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, AlgorithmOID, Hash, HashAlgParams, HashOneShot,
 };
 use bouncycastle_core_test_framework::hash::TestFrameworkHash;
 use bouncycastle_digest::sha1::*;
-use bouncycastle_hex as hex;
 
 fn h(s: &str) -> Vec<u8> {
     hex::decode(s).unwrap()

@@ -14,6 +14,7 @@
 
 use bouncycastle_core::errors::{KEMError, KeyTransportError, RNGError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::key_transport_key::{KeyTransportDecryptingKey, KeyTransportEncryptingKey};
@@ -23,7 +24,6 @@ use bouncycastle_core_test_framework::kem::TestFrameworkKEM;
 use bouncycastle_core_test_framework::key_transport::TestFrameworkKeyTransport;
 use bouncycastle_core_test_framework::test_data_loaders::wycheproof_json;
 use bouncycastle_digest::sha1::SHA1;
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_rsa::rsaes_oaep::{OaepHash, OaepParams, RSAES_OAEP};
 use bouncycastle_rsa::rsasve::{RSASVE, RsaKEMPrivateKey, RsaKEMPublicKey};

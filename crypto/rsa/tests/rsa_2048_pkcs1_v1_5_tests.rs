@@ -32,6 +32,7 @@
 //! constructed edge case.
 
 use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey,
 };
@@ -39,7 +40,6 @@ use bouncycastle_core::traits::{HashOneShot, SignatureSigner};
 use bouncycastle_core_test_framework::signature::{
     CtxBehaviour, TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,

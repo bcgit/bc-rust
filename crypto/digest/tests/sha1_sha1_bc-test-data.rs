@@ -8,10 +8,10 @@
 //! The three SHAVS test types (ShortMsg, LongMsg and Monte) are run as the SHA-2 crate runs them;
 //! see `crypto/sha2/tests/sha2_bc-test-data.rs` for what each is.
 
+use bouncycastle_core::hex;
 use bouncycastle_core::traits::HashOneShot;
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_digest::sha1::SHA1;
-use bouncycastle_hex as hex;
 
 /// Splits a `Key = value` line from a `.rsp` file.
 fn kv(line: &str) -> Option<(&str, &str)> {

@@ -7,7 +7,7 @@ use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_hex::decode as hex_decode;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_rsa::RSA1024;
 use bouncycastle_rsa::keys::RsaPublicComponents;
 use bouncycastle_rsa::rsa_1024::{RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384};

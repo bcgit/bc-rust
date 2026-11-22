@@ -5,9 +5,9 @@
 //! material and this crate never constructs an RSA-1536 private key at all.
 
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use bouncycastle_core::traits::PublicKey;
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::RSA1536;
 use bouncycastle_rsa::keys::{RsaPublicComponents, RsaPublicKey};
 use bouncycastle_rsa::rsa_1536::{

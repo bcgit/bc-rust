@@ -6,13 +6,13 @@
 //! checked against all of Wycheproof's real vectors.
 
 use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::signature_key::{
     OneShotSigningKey, OneShotVerifyingKey, SigningKey, VerifyingKey,
 };
 use bouncycastle_core::traits::RNG;
 use bouncycastle_core::traits::{HashOneShot, SignatureSigner, SignatureVerifier};
 use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keys::{

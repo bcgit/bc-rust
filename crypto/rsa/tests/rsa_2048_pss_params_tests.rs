@@ -6,6 +6,7 @@
 //! parameters, so the other set's signatures are invalid under it.
 
 use bouncycastle_core::hazmat::WithoutCollisionResistance;
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
@@ -13,7 +14,6 @@ use bouncycastle_core::signature_key::{
 };
 use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, SignatureSigner, XOF};
 use bouncycastle_digest::sha1::SHA1;
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keys::{RsaPrivateComponents, RsaPublicComponents};

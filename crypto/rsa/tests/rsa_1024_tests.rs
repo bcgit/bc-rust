@@ -7,9 +7,9 @@
 //! differently-shaped file because Wycheproof has no dedicated `rsa_signature_1024_*.json`.
 
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use bouncycastle_core::traits::PublicKey;
-use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::RSA1024;
 use bouncycastle_rsa::keys::{RsaPublicComponents, RsaPublicKey};
 use bouncycastle_rsa::rsa_1024::{PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384};
