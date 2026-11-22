@@ -1,11 +1,13 @@
 //! RSASP1 and RSAVP1 (RFC 8017 §5.2.1, §5.2.2): the raw signature and verification primitives,
 //! and the checked CRT exponentiation RSASP1 and RSADP (§5.1.2) share.
-//! Crate-private -- never exposed directly, only reachable through a padding scheme
-//! (RSASSA-PKCS1-v1_5 or RSASSA-PSS, a later addition to this crate). RFC 8017's introduction to
-//! §5 is explicit about why: "[primitives] are not intended to provide security apart from a
-//! scheme" -- "textbook RSA" (signing a bare integer with no padding) is malleable and vulnerable
-//! to existential forgery, so this crate does not let a caller reach [`rsasp1`]/[`rsavp1`] without
-//! going through a scheme that fixes that.
+//! [`rsasp1`] and [`rsavp1`] are private to the crate and reached through a padding scheme
+//! only. The exponentiations beneath them are public, as
+//! [`RsaSize::public_exp`] and [`RsaSigningSize::crt_exp`]: they are methods of the sealed size
+//! traits, which is how code generic over a size reaches the arithmetic at one width, and a
+//! public trait's methods cannot be less public than it. They are the engine and not a way to
+//! sign. RFC 8017's introduction to §5 says why: "\[primitives\] are not intended to provide
+//! security apart from a scheme" -- "textbook RSA" (signing a bare integer with no padding) is
+//! malleable and vulnerable to existential forgery.
 //!
 //! Both primitives operate on the two-prime case only (RFC 8017's `u = 2`, no additional
 //! `(r_i, d_i, t_i)` triplets): [`crate::keys::RsaPrivateComponents`] has no representation for
@@ -47,7 +49,7 @@ pub(crate) fn public_exp<const L: usize, const L2: usize, const L21: usize>(
     x: &[u64; L],
 ) -> [u64; L] {
     let ctx = MontgomeryContext::<L>::for_public_modulus(n)
-        .expect("RsaPublicComponents::new already validated n is odd and nonzero");
+        .expect("the modulus is odd: a key's is, by its constructor");
     mod_pow_public_exponent::<L, L2, L21>(x, e, &ctx)
 }
 

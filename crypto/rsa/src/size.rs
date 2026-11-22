@@ -86,6 +86,11 @@ pub trait RsaSize:
     /// Whether `x < y`.
     fn is_less(x: &Self::Limbs, y: &Self::Limbs) -> bool;
     /// `x^e mod n`, the public-key operation (RSAVP1 / RSAEP's exponentiation), `x < n`.
+    ///
+    /// # Panics
+    ///
+    /// If `n` is even. A key's `n` never is, its constructor having refused it; only a caller
+    /// that hands this limbs of its own can get here.
     fn public_exp(n: &Self::Limbs, e: u64, x: &Self::Limbs) -> Self::Limbs;
 }
 
