@@ -58,28 +58,28 @@ fn print_key_sizes() {
     use core::mem::size_of;
 
     println!("\nRSA-1024 (verification only)");
-    println!("public key on disk (n || e): {} bytes", 136);
+    println!("public key on disk (n || e): {} bytes", rsa_1024::PK_LEN);
     println!(
         "size_of<RsaPublicComponents<RSA1024>>: {} bytes",
         size_of::<RsaPublicKey<rsa_1024::RSASSA_PKCS1_v1_5_SHA256>>()
     );
-    println!("signature: {} bytes", 128);
+    println!("signature: {} bytes", rsa_1024::SIG_LEN);
 
     println!("\nRSA-1536 (verification only)");
-    println!("public key on disk (n || e): {} bytes", 200);
+    println!("public key on disk (n || e): {} bytes", rsa_1536::PK_LEN);
     println!(
         "size_of<RsaPublicComponents<RSA1536>>: {} bytes",
         size_of::<RsaPublicKey<rsa_1536::RSASSA_PKCS1_v1_5_SHA256>>()
     );
-    println!("signature: {} bytes", 192);
+    println!("signature: {} bytes", rsa_1536::SIG_LEN);
 
     println!("\nRSA-2048");
-    println!("private key on disk (p||q||dP||dQ||qInv||e): {} bytes", 648);
+    println!("private key on disk (p||q||dP||dQ||qInv||e): {} bytes", rsa_2048::SK_LEN);
     println!(
         "size_of<RsaPrivateComponents<RSA2048>>: {} bytes",
         size_of::<RsaPrivateKey<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>>()
     );
-    println!("public key on disk (n || e): {} bytes", 264);
+    println!("public key on disk (n || e): {} bytes", rsa_2048::PK_LEN);
     println!(
         "size_of<RsaPublicComponents<RSA2048>>: {} bytes",
         size_of::<RsaPublicKey<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>>()
@@ -94,15 +94,15 @@ fn print_key_sizes() {
         rsa_2048::CT_LEN,
         rsa_2048::SS_LEN
     );
-    println!("signature: {} bytes", 256);
+    println!("signature: {} bytes", rsa_2048::SIG_LEN);
 
     println!("\nRSA-3072");
-    println!("private key on disk (p||q||dP||dQ||qInv||e): {} bytes", 968);
+    println!("private key on disk (p||q||dP||dQ||qInv||e): {} bytes", rsa_3072::SK_LEN);
     println!(
         "size_of<RsaPrivateComponents<RSA3072>>: {} bytes",
         size_of::<RsaPrivateKey<rsa_3072::RSASSA_PKCS1_v1_5_SHA256>>()
     );
-    println!("public key on disk (n || e): {} bytes", 392);
+    println!("public key on disk (n || e): {} bytes", rsa_3072::PK_LEN);
     println!(
         "size_of<RsaPublicComponents<RSA3072>>: {} bytes",
         size_of::<RsaPublicKey<rsa_3072::RSASSA_PKCS1_v1_5_SHA256>>()
@@ -117,15 +117,15 @@ fn print_key_sizes() {
         rsa_3072::CT_LEN,
         rsa_3072::SS_LEN
     );
-    println!("signature: {} bytes", 384);
+    println!("signature: {} bytes", rsa_3072::SIG_LEN);
 
     println!("\nRSA-4096");
-    println!("private key on disk (p||q||dP||dQ||qInv||e): {} bytes", 1288);
+    println!("private key on disk (p||q||dP||dQ||qInv||e): {} bytes", rsa_4096::SK_LEN);
     println!(
         "size_of<RsaPrivateComponents<RSA4096>>: {} bytes",
         size_of::<RsaPrivateKey<rsa_4096::RSASSA_PKCS1_v1_5_SHA256>>()
     );
-    println!("public key on disk (n || e): {} bytes", 520);
+    println!("public key on disk (n || e): {} bytes", rsa_4096::PK_LEN);
     println!(
         "size_of<RsaPublicComponents<RSA4096>>: {} bytes",
         size_of::<RsaPublicKey<rsa_4096::RSASSA_PKCS1_v1_5_SHA256>>()
@@ -140,15 +140,15 @@ fn print_key_sizes() {
         rsa_4096::CT_LEN,
         rsa_4096::SS_LEN
     );
-    println!("signature: {} bytes", 512);
+    println!("signature: {} bytes", rsa_4096::SIG_LEN);
 
     println!("\nRSA-8192");
-    println!("private key on disk (p||q||dP||dQ||qInv||e): {} bytes", 2568);
+    println!("private key on disk (p||q||dP||dQ||qInv||e): {} bytes", rsa_8192::SK_LEN);
     println!(
         "size_of<RsaPrivateComponents<RSA8192>>: {} bytes",
         size_of::<RsaPrivateKey<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>>()
     );
-    println!("public key on disk (n || e): {} bytes", 1032);
+    println!("public key on disk (n || e): {} bytes", rsa_8192::PK_LEN);
     println!(
         "size_of<RsaPublicComponents<RSA8192>>: {} bytes",
         size_of::<RsaPublicKey<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>>()
@@ -163,7 +163,7 @@ fn print_key_sizes() {
         rsa_8192::CT_LEN,
         rsa_8192::SS_LEN
     );
-    println!("signature: {} bytes", 1024);
+    println!("signature: {} bytes", rsa_8192::SIG_LEN);
 }
 
 /// This exists that /usr/bin/time can be used to measure the base memory footprint of the cargo bench harness
