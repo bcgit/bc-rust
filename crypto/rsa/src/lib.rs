@@ -292,16 +292,16 @@
 //!
 //! | Operation                  | RSA-2048 | RSA-8192 |
 //! |----------------------------|----------|----------|
-//! | PKCS#1 v1.5 sign (SHA-256) | 10120    | 34216    |
-//! | RSASVE encaps              | 10696    | 35464    |
-//! | RSASVE decaps              | 10744    | 40776    |
-//! | OAEP encaps (SHA-256)      | 10280    | 31000    |
-//! | OAEP decaps (SHA-256)      | 10264    | 39976    |
+//! | PKCS#1 v1.5 sign (SHA-256) | 14968    | 51096    |
+//! | RSASVE encaps              | 12920    | 39304    |
+//! | RSASVE decaps              | 19032    | 55080    |
+//! | OAEP encaps (SHA-256)      | 12264    | 36248    |
+//! | OAEP decaps (SHA-256)      | 14728    | 54344    |
 //!
 //! All values are in bytes. "On disk" is the `PublicKey`/`PrivateKey` raw
 //! layout ([`keys::RsaPublicKey`]'s and [`keys::RsaPrivateKey`]'s `# Encoding`: `n || e`, and
-//! `p || q || dP || dQ || qInv || e` respectively); "in memory" is `core::mem::size_of`. A signature
-//! is the same size as the modulus itself (`K::K_LEN`: 128/192/256/384/512/1024 for
+//! `p || q || dP || dQ || qInv || e` respectively); "in memory" is `core::mem::size_of`. A
+//! signature is the same size as the modulus itself (`K::K_LEN`: 128/192/256/384/512/1024 for
 //! 1024/1536/2048/3072/4096/8192). These numbers are produced by `mem_usage_benches`'
 //! `bench_rsa_mem_usage` binary's `print_key_sizes()`; that binary is also the stack-usage
 //! measurement harness (see its own doc comment for the `valgrind`/`massif` invocation) -- only
