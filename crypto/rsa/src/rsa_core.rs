@@ -117,9 +117,10 @@ mod tests {
     //! `rsasp1`/`rsavp1` are deliberately crate-private (see the module docs), so they cannot be
     //! reached from `tests/` the way every other primitive in this crate is exercised -- this is
     //! the "high-risk code that ... cannot be reached through the public API" exception
-    //! `CLAUDE.md`'s testing notes describe. Every value below is a genuine 2048-bit RSA keypair
-    //! (two independently generated, Miller-Rabin-tested ~1024-bit primes, `e = 65537`), and every
-    //! expected signature was cross-checked two ways in Python before being pasted here: CRT
+    //! `CLAUDE.md`'s testing notes describe. The key is a genuine RSA-2048 key pair, the first
+    //! SHA-256 group of Wycheproof's `rsa_pkcs1_2048_sig_gen_test.json` (`e = 65537`; see
+    //! `tests/rsa_2048_pkcs1_v1_5_tests.rs` for its provenance), and every expected signature
+    //! was computed in Python and cross-checked two ways before being pasted here: CRT
     //! recombination against plain `pow(m, d, n)`, and `pow(pow(m, d, n), e, n) == m`.
 
     use super::*;
@@ -128,34 +129,34 @@ mod tests {
 
     fn keypair() -> RsaPrivateComponents<RSA2048> {
         let p: [u64; 16] = [
-            0xfec673c1b07d4997, 0x98c9e3737faecc8b, 0x01369d6bebcfd19b, 0x8aadc1799d493a6e,
-            0x958ca74fe2a455a1, 0x686e62c9e375661d, 0xbf73814b7bf6fe14, 0x791ffe2d364719e4,
-            0xc82e25af581825a1, 0x716d239de20732c7, 0xdb517e266b0c15bc, 0xe92c721464fa1e50,
-            0x683e7fcc3898a002, 0xc7f69cb8c57e630f, 0xc467ab3a006acdf7, 0xe189725eddf8ccb3,
+            0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9,
+            0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788,
+            0x978f6c35814f50ee, 0xe6a289ad4cfbf78f, 0x34d5681e5809d415, 0xbb028bda42eeb5d2,
+            0x41c56e4de086b0d5, 0x58b8d1e24f3b55d0, 0xfb5248247d98cb7d, 0xdc431050f782e894,
         ];
         let q: [u64; 16] = [
-            0x7b4cf8c928cc535f, 0x59f055409b91aa89, 0xcd0ba689661c56d5, 0xe4659bfb595039f4,
-            0x751842ab04e21054, 0xe2c2655760ebb5fc, 0xb2f71094e48dc76b, 0x2efed995e680919d,
-            0x83c35ffcfdb9ee9d, 0xfe4a5fdb9f28a01b, 0x0ebf4a61e23c7524, 0x8cc355a69e45d7e6,
-            0x9589828fca436940, 0x4cd1bfe875cddd70, 0x203e0d5e8d4d3acb, 0x86278c27281306ec,
+            0x669f140cfbc20f25, 0xb97bb03677207d95, 0xfd4e06f3ed7299d4, 0x160f90536abc9492,
+            0xf5b131f39098f7bc, 0xae8d72c57088d7ab, 0x89b94fbde542aba9, 0x3d3f9880ec47d5e0,
+            0x1378a6868af3b7a0, 0x5544070beb057c94, 0x16611debc472fac4, 0xe500ffb79f5b8868,
+            0x308a5e32196603b2, 0xea5fb19eb4eabc38, 0x122273ae3222b598, 0xbd1a81e7977f9898,
         ];
         let d_p: [u64; 16] = [
-            0xa7c48ae44e99dd99, 0xa6794425077c6c01, 0x0f7f8dfabf278380, 0xb481c3d6cf359f60,
-            0xa5b5efbc5d9f744a, 0x91b95de874b741a1, 0xea3152a3da97ddf5, 0xe180bda330e9eba0,
-            0xbcbfcc51e73a7a34, 0x019d0405e258c3c0, 0x0b08c52c187e3667, 0x84a723999981f7c1,
-            0x5e50dc3287b126ff, 0xd0204fd4674f4ac6, 0x6e786ef11d0686f6, 0xa82c39200c1c4d67,
+            0x209f33f09515d7c1, 0xb4a9b37656917205, 0x276933bb07e4efb9, 0x8c14019808e00414,
+            0x289f96da220711e5, 0xfbbd2923d31532fe, 0xc06b414e61c0e1e7, 0x4c23c4588488961d,
+            0x4dc48ae34514759c, 0x9c786961ae3e2c35, 0x497e8d9c650688e0, 0x18bf08472612dbe5,
+            0x8885fb161870ee12, 0xf21d7c1479d99d47, 0x9121d91952ffd1c7, 0xa94b528b28f29159,
         ];
         let d_q: [u64; 16] = [
-            0x0bc1fcecb5c853bf, 0x2000c1caf24e96d2, 0xb423419c07e0736a, 0x90bcb6fb03d68029,
-            0xd811d2e24994ff2e, 0x5a89a6b7c7c83737, 0xbdea803dc4157f87, 0xffe93a09240b9b65,
-            0xe6f584c8dc80c30a, 0x5e66076e22c91c3c, 0xb41221e6b67af91b, 0x2e3d8c36b1d9d161,
-            0x7b1309bb3857cb1f, 0xee8de5186c920235, 0x5e4785a534bec7a3, 0x85883dd007ea907c,
+            0xf7597ffb68011d8d, 0x7b3cc538c4bab8c9, 0xa8fa480a81a925af, 0x6d6ede7251a383bf,
+            0x8a63f788ce3a0f85, 0x0b920502eb478bc9, 0x7e37e755edfe70d9, 0x9cf9948422a16555,
+            0x0d6d9ea1f2ef71fd, 0xf7efa32ea0cb6e00, 0x0629b114ca7f780f, 0xcf51176359654348,
+            0x540cdcbd4ad35435, 0x31c02ff1a2bc437c, 0xff2503df78bafed5, 0x3af0e72a933aef09,
         ];
         let q_inv: [u64; 16] = [
-            0xf1be36246c217ae1, 0x079e038ceb7506d7, 0x2021f982bc5f6713, 0x55fa8fdd926a4d0f,
-            0xb927b5edab1a24b8, 0xc2a1d37632cfb70e, 0x9ef39b4a3f144e8a, 0x70efa5974ed43d2f,
-            0x6ea50741414ce321, 0x7df35889e34d4f38, 0x859106459f51850b, 0xd59e422a92f4a7a2,
-            0x0c1e16e70fcbe362, 0xcf95cadb6a1f450d, 0x106a4e948e405012, 0x95a3415bfb9b5ff6,
+            0x552fe4bfce945f7b, 0x67e50c999c67247b, 0xfb54ef17be3b2853, 0x241f5921b5ad3983,
+            0x02de5eccd143cf31, 0x74e45f6fcc60f216, 0xafa5428a74f12708, 0x88d42294b6a2759b,
+            0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51,
+            0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
         ];
         RsaPrivateComponents::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
             .expect("genuine CRT components must be accepted")
@@ -181,14 +182,14 @@ mod tests {
             0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
         ];
         let expected_s: [u64; 32] = [
-            0x364cc26d0358bbf4, 0xe66706a5c785ddb2, 0x988d10d740263405, 0x8730f3278e45205e,
-            0xaf89fbc49c9a1249, 0x9eb8f7a84273ca48, 0xabaf5851d3f5426c, 0x0ba36a5d9c8c66a3,
-            0x4ed17840c5f6e1da, 0x9e2acb65a840fecb, 0x738ba4ec9cdd22f7, 0x9f55aaf16f290bac,
-            0x0882623816565d42, 0x0377a272e9477155, 0x479e6d3b5fc7cdf0, 0x982fc26936177b5a,
-            0x0b5865236931b18c, 0xf013b20ea0f2a40b, 0xa30f42ffc4e00f37, 0xac385621648ddc31,
-            0x1516eadafe0e2d2e, 0xa1241270647a6b51, 0x682d73ffca96c494, 0x6f2ab34339689b72,
-            0x9cc67858bfcb237c, 0x3ca10b66cf56d9dc, 0x9e2aecc899fa34b9, 0x87ae32e45faca1d8,
-            0xe6407b5fa454d3c9, 0x7c66144074c5739e, 0x72db535464e48005, 0x3e7bf2011ccdf96c,
+            0xd5bc2d48a83b31e5, 0xd48a52b64b6b96b5, 0xdc4ca2421de42187, 0x4c6118a19591ea09,
+            0xe849ca6daac6241f, 0x2678c5b1e6e79065, 0xee29c430e55bc557, 0xf302e3591357ce98,
+            0x686f541f63912448, 0x439b31f48f6dc764, 0xf3e71f9194357f28, 0x42de8ac88d93e447,
+            0x6827ee7425c4211b, 0x7827dcf7d9dd02e5, 0xcdbd9c101bd7827e, 0xac2df3ab2f1b6d57,
+            0x22530d053b2c62c2, 0x97d455fb10d0016f, 0xda0173ac606bf822, 0xde58560afb5b0a77,
+            0x0b5863a4b0a2a080, 0x310470fcb7994b88, 0x7edc02bc4dba6d65, 0x62357119beba7486,
+            0x6c6680551d7b3fda, 0x085593ca5407542f, 0xd28b00187aea208d, 0x8043e9a53c324baf,
+            0x7e10dc6aefa091e0, 0xe23d3889a371d248, 0x01c491dd0a01f0c4, 0x4e47e60636bb4dac,
         ];
 
         let s = rsasp1::<RSA2048>(&sk, &m).expect("m is in range");
@@ -205,24 +206,24 @@ mod tests {
 
         // m2 = n - 12345, exercising a message representative close to the top of the range.
         let m2: [u64; 32] = [
-            0xbc9607fe59ae13d0, 0x33fb0be666401931, 0x29fe66e068d6028b, 0xf4225b99e1483032,
-            0x3e05752e447f3448, 0x3621f382f494e49c, 0xb12e1f7bd18e9f62, 0xba911df383b4764d,
-            0x206002df096d6863, 0x07e881cdab73cfe3, 0x4e9ca660d04d6b6c, 0xfdd0169786ca06a2,
-            0xffc09630c54f5731, 0x79ff3ac5ce73cc72, 0x72dd018024dd28a7, 0x4155291016140929,
-            0x21a0943f3500f009, 0xd386df1b9afb0808, 0xd06dca00e14b1311, 0x31ed2137effa6d2a,
-            0xb914de4e6361f98f, 0x181ad8797a7574fb, 0x98285be3abda6248, 0xcce5cb7a03c57a7d,
-            0x3bdb7daa02c2b084, 0x8bb59db9b76bd95d, 0x95e3a77cea5ff912, 0x841d24a921abd3db,
-            0x2895f5b063db401c, 0xe57dc21fc3866988, 0xb88f89afa429e300, 0x7630c947be6e9710,
+            0xf7820283f742899c, 0x6f453d1f5b4c2e9c, 0x9a02e5a530e77306, 0x5d12569a62807d3b,
+            0xc22c4e5ac0f7c1a4, 0xf9f85e7975005d9b, 0x1b4d9cae79d460d8, 0x69816f48698bcbba,
+            0x126422f590975a19, 0xfd7afc3e09ada0f1, 0xed5411eb878daf05, 0x4c03145b5d3495d4,
+            0x12be82de4d1ece6b, 0x21d0fceca08d945a, 0x7d9658594266f5c0, 0x4c22da610428e09c,
+            0x90ed81299615d981, 0x7a1fa26a8dce26f4, 0x3eff8f17e1a02939, 0x254a2fe9765313a0,
+            0x3d3e42e46e48c98e, 0xcd20f79c15e8247f, 0x2ed8a7711a1253fa, 0xb5ab393189db9251,
+            0x9e89d6eac8845097, 0x1700f65903b46942, 0x1878d80325b6ef5a, 0x37f9746d3f7cafd3,
+            0x094fa1fee82224e6, 0x4a8a5b462ebef717, 0x6e45567151355051, 0xa2b451a07d0aa5f9,
         ];
         let expected_s2: [u64; 32] = [
-            0x279fb473681292dc, 0x90dd3361616e1fba, 0x4be153bf0cc9bc54, 0xc182310ffe516be1,
-            0xde08597f0526ba7f, 0x0ecf2548fd2becbd, 0xf100a0d8ab9cac48, 0x7e79521337c90850,
-            0x642ecb9c26db1f8b, 0x888c707e26d47319, 0x3fe925626dabfde5, 0x5e374b37fa2875b2,
-            0x57afec45ed3a06de, 0xa2184c3a6deb8156, 0x466017505ec5110d, 0x6b462b5d6f8c46f8,
-            0x22b90fde8ff49648, 0xe6b9526894cfffba, 0xf5193a402a3c063c, 0xdc2d25c6ec27f87b,
-            0x272f960bef731aed, 0xb8d7c2a5e9ef52cf, 0x5e82a247d76a2bbe, 0x018d6155cbc9c0fd,
-            0x16f1861e4a32fa83, 0xab553b4f2fe5e561, 0x1c55445d8e2e8530, 0xa08e2522099e36e7,
-            0xbcda0d67e80f74f5, 0xe8b549b81d5eb31d, 0xf1d74cf682145c5d, 0x74643dc08434c3e1,
+            0x21aaf584e305ddf7, 0x21f3dccf3e5072ee, 0xf5e0eb3cd82ad5d7, 0x1754c77f5c4bd685,
+            0x8c396d2e90dd96b8, 0x4535e22014c3503d, 0x0159ab66fe04959d, 0xecfe054486820710,
+            0x7a27dbbfe19204e9, 0x02c060ac0fdc597f, 0xd2def08324675a05, 0x28d6ecd14d476bed,
+            0xf81f1e10e1198c2d, 0x8d343c8f7f43413c, 0x578f55bc4294e74d, 0x5755f9ad526bce2d,
+            0xc9ca96c13523a148, 0x513f3dadc0bb6784, 0xab72f632a4f73988, 0x59005fd0f7af24ef,
+            0x4f197c87199b0283, 0x66b27811e159eb5f, 0xfa688afc1b45df99, 0xc07a9c95704d1dde,
+            0x52b56f684cd42de3, 0x8c9d4bbaad4fafb8, 0x6954ceced63aa41b, 0x08b40e0ff164edff,
+            0x6e93ed6bdb3aa4d0, 0xd95b97bc72531c4e, 0x3bdde22a09aea05c, 0x062ce3e60377e92e,
         ];
 
         let s2 = rsasp1::<RSA2048>(&sk, &m2).expect("m2 is in range");

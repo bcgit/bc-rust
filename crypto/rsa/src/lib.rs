@@ -320,7 +320,9 @@
 //!   about `p`/`q`/`dP`/`dQ`, per Kocher (1996) and Boneh & Brumley (2003) -- see [`modexp`]'s own
 //!   docs for the exact boundary of what is and is not covered.
 //! - **Imported keys are not validated for primality.** [`keys::RsaPrivateKey::from_crt_components`]
-//!   checks that `p`/`q` are odd and distinct and that `dP`/`dQ`/`qInv` are in range, but does
+//!   checks that `p`/`q` are odd and distinct, that `dP`/`dQ`/`qInv` are in range and that
+//!   `n = p * q` has exactly the size's bit length (as the public key's constructor checks of
+//!   its `n`: a modulus whose top bit is clear is refused, at every size), but does
 //!   not test `p` and `q` for primality or `e` for coprimality with `λ(n)`. Supplying non-prime or
 //!   otherwise malformed CRT components produces a key that computes *something*, silently,
 //!   rather than being rejected -- validating imported key material's number-theoretic properties
@@ -370,10 +372,10 @@
 //!   key with a larger `e` cannot be constructed. (ACVP's RSADP vectors use exponents of up to 56
 //!   bits, which is why only their decapsulation side is tested here: decapsulation never needs
 //!   `e`.)
-//! - **RSASVE key validation is partial.** The KEM key types check `e >= 65,537` and that `n` has
-//!   exactly the size's bit length, on top of the signature keys' checks. They do not run SP
-//!   800-89's remaining plausibility tests, and full RSA public-key validation is not specified by
-//!   SP 800-56B at all. See [`rsasve`]'s `# Key validation`.
+//! - **RSASVE key validation is partial.** The KEM public key checks `e >= 65,537` on top of
+//!   the signature keys' checks, the modulus's exact bit length among them. The KEM keys do not
+//!   run SP 800-89's remaining plausibility tests, and full RSA public-key validation is not
+//!   specified by SP 800-56B at all. See [`rsasve`]'s `# Key validation`.
 //! - **RSASSA-PSS's mask and salt length are the key's.** The conventional parameters are MGF1
 //!   over the message hash and a salt one hash output long (RFC 8017 §8.1's recommendation, §9.1
 //!   note 4's "typical" choice); another MGF1 hash, another salt length or no salt is spelled in

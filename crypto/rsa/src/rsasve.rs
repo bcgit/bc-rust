@@ -27,17 +27,16 @@
 //! # Key validation
 //!
 //! On top of what [`RsaPublicComponents::new`]/[`RsaPrivateComponents::from_crt_components`] already check,
-//! the KEM key types enforce two things:
+//! the KEM public key enforces `65,537 <= e` (§6.2.1 item 2, "65,537 ≤ e < 2^256"; the upper
+//! bound holds by construction, because `e` is a `u32`). The CRT private key does not carry `e`.
 //!
-//! * `65,537 <= e` (§6.2.1 item 2, "65,537 ≤ e < 2^256"; the upper bound holds by construction,
-//!   because `e` is a `u32`). This applies to the public key only: the CRT private key does not
-//!   carry `e`.
-//! * `n` is exactly the size's `nLen` bits long, i.e. its top bit is set. §6.2.1 item 1 gives the key an
-//!   `nBits`, and §6.4.2.2's partial public-key validation requires "that the bit length of the
-//!   modulus shall be a length that is approved in this Recommendation". A 2048-bit key type holding
-//!   a shorter modulus would also break RSASVE.GENERATE's `nLen`, which is fixed at `K::K_LEN` bytes
-//!   here. And with the top bit set, each draw of step 2's rejection loop succeeds with probability
-//!   above one half.
+//! Among the components' own checks, one matters here in particular: `n` is exactly the size's
+//! `nLen` bits long, i.e. its top bit is set. §6.2.1 item 1 gives the key an `nBits`, and
+//! §6.4.2.2's partial public-key validation requires "that the bit length of the modulus shall
+//! be a length that is approved in this Recommendation". A 2048-bit key type holding a shorter
+//! modulus would also break RSASVE.GENERATE's `nLen`, which is fixed at `K::K_LEN` bytes here.
+//! And with the top bit set, each draw of step 2's rejection loop succeeds with probability
+//! above one half.
 //!
 //! The rest of SP 800-89 §5.3.3's plausibility tests, which §6.4.2.2 also requires, are not
 //! performed (beyond `n` odd and `e` odd, which [`RsaPublicComponents::new`] checks). Nothing here
@@ -86,11 +85,6 @@ fn kem_decoding_error(e: KEMError) -> KeyDecodingError {
     }
 }
 
-/// Whether the modulus's top bit is set: `n` has exactly the size's bit length.
-fn has_full_bit_length<K: RsaSize>(n: &K::Limbs) -> bool {
-    n.as_ref()[n.as_ref().len() - 1] >> 63 == 1
-}
-
 /// Whether `1 < x < n - 1` (§7.2.1.2 step 2's range, §7.2.1.3 step 1's check).
 pub(crate) fn in_open_range<K: RsaSize>(x: &K::Limbs, n: &K::Limbs) -> bool {
     // `n` is odd (every key type here checks it), so `n - 1` is `n` with its low bit cleared and
@@ -110,7 +104,7 @@ pub struct RsaKEMPublicKey<K: RsaSize>(pub(crate) RsaPublicComponents<K>);
 impl<K: RsaSize> RsaKEMPublicKey<K> {
     /// Builds a public key from its modulus and exponent. Returns
     /// `Err(`[`KEMError::DecodingError`]`)` in the cases [`RsaPublicComponents::new`] rejects, and also
-    /// if `e < 65,537` or `n`'s top bit is clear (see the module docs' `# Key validation`).
+    /// if `e < 65,537` (see the module docs' `# Key validation`).
     pub fn new(n: &K::Limbs, e: u32) -> Result<Self, KEMError> {
         Self::from_rsa_key(RsaPublicComponents::new(n, e).map_err(kem_error)?)
     }
@@ -120,9 +114,6 @@ impl<K: RsaSize> RsaKEMPublicKey<K> {
             return Err(KEMError::DecodingError(
                 "RSA key-establishment public exponent must be at least 65537",
             ));
-        }
-        if !has_full_bit_length::<K>(pk.n()) {
-            return Err(KEMError::DecodingError("RSA modulus must have its top bit set"));
         }
         Ok(Self(pk))
     }
@@ -158,8 +149,7 @@ pub struct RsaKEMPrivateKey<K: RsaSize>(pub(crate) RsaPrivateComponents<K>);
 impl<K: RsaSigningSize> RsaKEMPrivateKey<K> {
     /// Builds a private key from its CRT components. Returns
     /// `Err(`[`KEMError::DecodingError`]`)` in the cases [`RsaPrivateComponents::from_crt_components`]
-    /// rejects, and also if `n = p * q`'s top bit is clear (see the module docs'
-    /// `# Key validation`).
+    /// rejects.
     pub fn from_crt_components(
         p: &K::HalfLimbs,
         q: &K::HalfLimbs,
@@ -167,16 +157,9 @@ impl<K: RsaSigningSize> RsaKEMPrivateKey<K> {
         d_q: &K::HalfLimbs,
         q_inv: &K::HalfLimbs,
     ) -> Result<Self, KEMError> {
-        Self::from_rsa_key(
+        Ok(Self(
             RsaPrivateComponents::from_crt_components(p, q, d_p, d_q, q_inv).map_err(kem_error)?,
-        )
-    }
-
-    pub(crate) fn from_rsa_key(sk: RsaPrivateComponents<K>) -> Result<Self, KEMError> {
-        if !has_full_bit_length::<K>(sk.n()) {
-            return Err(KEMError::DecodingError("RSA modulus must have its top bit set"));
-        }
-        Ok(Self(sk))
+        ))
     }
 
     /// The modulus `n = p * q`, as little-endian limbs.
@@ -366,8 +349,7 @@ where
         let bytes: &[u8; SK_LEN] = bytes.try_into().map_err(|_| {
             KeyDecodingError("an RSA private key is five components of half the modulus length")
         })?;
-        Self::from_rsa_key(RsaPrivateComponents::from_bytes_raw(bytes).map_err(decoding_error)?)
-            .map_err(kem_decoding_error)
+        Ok(Self(RsaPrivateComponents::from_bytes_raw(bytes).map_err(decoding_error)?))
     }
 }
 
@@ -399,5 +381,5 @@ pub(crate) fn keygen_from<K: RsaSigningSize>(
     pair: Result<(RsaPublicComponents<K>, RsaPrivateComponents<K>), SignatureError>,
 ) -> Result<(RsaKEMPublicKey<K>, RsaKEMPrivateKey<K>), KEMError> {
     let (pk, sk) = pair.map_err(kem_error)?;
-    Ok((RsaKEMPublicKey::from_rsa_key(pk)?, RsaKEMPrivateKey::from_rsa_key(sk)?))
+    Ok((RsaKEMPublicKey::from_rsa_key(pk)?, RsaKEMPrivateKey(sk)))
 }

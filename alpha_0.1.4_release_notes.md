@@ -114,6 +114,8 @@
   are RFC 8017's seven (SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, SHA-512/256), a sealed trait
   `OaepHash`. `dev_scripts/check_oaep_ct.sh`, run on pull requests, puts the decoding under memcheck with the encoded
   message undefined and reads its Cortex-M0 and RISC-V 32I assembly.
+* RSA keys -- a key's modulus has exactly its size's bit length: the signature key constructors and decoders refuse
+  one whose top bit is clear, as the key-establishment keys already did.
 
 ## Minor features / bug fixes
 

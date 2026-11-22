@@ -8,10 +8,14 @@
 //! RFC 8017 encodes into `emLen = ceil(emBits / 8)` octets, where `emBits = modBits - 1`, and
 //! steps 11/9 clear the leftmost `8 * emLen - emBits` bits of the encoded message's first octet
 //! so that `OS2IP(EM) < 2^emBits <= n`. Every modulus size this crate offers is a whole number of
-//! 64-bit limbs, so `modBits` (and therefore `emLen = K_LEN`) is always a multiple of 8; that
-//! makes `8 * K_LEN - emBits = 8 * K_LEN - (8 * K_LEN - 1) = 1` for every concrete instantiation
-//! here, so this module hard-codes "clear the top bit of the first octet" instead of threading a
-//! generic bit-count parameter through for a case that cannot arise.
+//! 64-bit limbs, and a key's modulus has exactly its size's bit length: the constructors
+//! [`RsaPublicComponents::new`](crate::keys::RsaPublicComponents::new) and
+//! [`RsaPrivateComponents::from_crt_components`](crate::keys::RsaPrivateComponents::from_crt_components),
+//! which every key and every decoding goes through, refuse a modulus whose top bit is clear. So
+//! `modBits = 8 * K_LEN` and `emLen = K_LEN`, which makes
+//! `8 * K_LEN - emBits = 8 * K_LEN - (8 * K_LEN - 1) = 1` for every key there is, and this
+//! module hard-codes "clear the top bit of the first octet" instead of threading a generic
+//! bit-count parameter through for a case that cannot arise.
 
 use crate::mgf1::MAX_HASH_LEN;
 use crate::rsassa_pss::PssParams;

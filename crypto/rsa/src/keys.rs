@@ -46,13 +46,29 @@ pub struct RsaPublicComponents<K: RsaSize> {
     e: u32,
 }
 
+/// Whether the modulus's top bit is set: `n` has exactly the size's bit length, `K::BITS`.
+fn has_full_bit_length<K: RsaSize>(n: &K::Limbs) -> bool {
+    n.as_ref()[n.as_ref().len() - 1] >> 63 == 1
+}
+
+/// What both constructors return for a modulus shorter than its size.
+const MODULUS_NOT_FULL_LENGTH: SignatureError =
+    SignatureError::DecodingError("RSA modulus must have its top bit set");
+
 impl<K: RsaSize> RsaPublicComponents<K> {
     /// Builds a public key from its modulus and exponent. Returns
     /// `Err(`[`SignatureError::DecodingError`]`)` if `n` is even (a product of two odd primes
-    /// never is) or `e` is even or below 3 (RFC 8017 §3.1: `e` is odd and at least 3).
+    /// never is), if `n` is not exactly `K::BITS` bits long (its top bit is clear), or if `e`
+    /// is even or below 3 (RFC 8017 §3.1: `e` is odd and at least 3).
     pub fn new(n: &K::Limbs, e: u32) -> Result<Self, SignatureError> {
         if n.as_ref()[0] & 1 == 0 {
             return Err(SignatureError::DecodingError("RSA modulus must be odd"));
+        }
+        // A size is its modulus's exact bit length. RSASSA-PSS depends on it: RFC 8017 §8.1.1
+        // step 1 and §8.1.2 step 3 encode and verify at emBits = modBits - 1, which
+        // `emsa_pss` takes as 8 * K_LEN - 1.
+        if !has_full_bit_length::<K>(n) {
+            return Err(MODULUS_NOT_FULL_LENGTH);
         }
         if e < 3 || e & 1 == 0 {
             return Err(SignatureError::DecodingError(
@@ -137,8 +153,9 @@ pub struct RsaPrivateComponents<K: RsaSize> {
 // value exists at those sizes (the crate's `# Scope`).
 impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     /// Builds a private key from its CRT components, computing `n = p * q`. Returns
-    /// `Err(`[`SignatureError::DecodingError`]`)` if `p` or `q` is even, `p == q`, or `dP`,
-    /// `dQ` or `qInv` is not below its prime. Primality is not checked (see the crate's
+    /// `Err(`[`SignatureError::DecodingError`]`)` if `p` or `q` is even, `p == q`, `dP`,
+    /// `dQ` or `qInv` is not below its prime, or `n` is not exactly `K::BITS` bits long (its
+    /// top bit is clear). Primality is not checked (see the crate's
     /// `# Security Considerations`).
     pub fn from_crt_components(
         p: &K::HalfLimbs,
@@ -166,8 +183,12 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
             return Err(SignatureError::DecodingError("qInv must be less than p"));
         }
 
-        // `p * q` is exact, never reduced, since it is the modulus itself.
+        // `p * q` is exact, never reduced, since it is the modulus itself, and must be full
+        // length for the reason `RsaPublicComponents::new` gives.
         let n = K::modulus_from_primes(p, q);
+        if !has_full_bit_length::<K>(&n) {
+            return Err(MODULUS_NOT_FULL_LENGTH);
+        }
 
         let mut key = Self {
             p: Secret::new(),
