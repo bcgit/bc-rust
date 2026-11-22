@@ -26,7 +26,7 @@
 
 use crate::keys::{RsaPrivateComponents, RsaPublicComponents};
 use crate::modexp::{MontgomeryContext, check_widths, mod_pow, mul_mod, reduce_wide};
-use crate::rsa_core::WipeStackBelowOnReturn;
+use crate::rsa_core::{WipeStackBelowOnReturn, wipe_stack_below};
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -385,6 +385,30 @@ pub fn is_probable_prime<const N: usize, const N2: usize, const N21: usize>(
     rng: &mut dyn RNG,
 ) -> Result<bool, SignatureError> {
     const { check_widths::<N, N2, N21>() };
+    let verdict = is_probable_prime_in_own_frame::<N, N2, N21>(w, rounds, rng);
+    // `w` may be a prime of a private key (the crate docs suggest this test for an imported
+    // key's): the context over it and the powers of the bases pass through frames that no
+    // `Secret` names, as in the CRT.
+    wipe_stack_below::<[u64; N], PRIMALITY_STACK_PER_LIMB, PRIMALITY_STACK_FIXED>();
+    verdict
+}
+
+/// What `wipe_stack_below` overwrites after [`is_probable_prime`]: this many `[u64; N]` values
+/// and this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97) with the
+/// workspace's hash DRBG as the RNG, the test uses 4600 bytes at 16 limbs (a prime of RSA-2048),
+/// 6488 at 24, 8328 at 32 and 13768 at 64; these cover 5504, 7552, 9600 and 17792, the
+/// difference being room for a compiler that lays the frames out less tightly.
+const PRIMALITY_STACK_PER_LIMB: usize = 32;
+const PRIMALITY_STACK_FIXED: usize = 176;
+
+/// [`is_probable_prime`] for a caller that wipes: key generation, whose own frame covers every
+/// test it makes. Never inlined, so that what the test leaves lies below its caller's frame.
+#[inline(never)]
+fn is_probable_prime_in_own_frame<const N: usize, const N2: usize, const N21: usize>(
+    w: &[u64; N],
+    rounds: NonZeroUsize,
+    rng: &mut dyn RNG,
+) -> Result<bool, SignatureError> {
     let mut one = [0u64; N];
     one[0] = 1;
     let mut two = [0u64; N];
@@ -504,7 +528,7 @@ fn random_prime<const N: usize, const N2: usize, const N21: usize>(
         if mod_u64(out, PUBLIC_EXPONENT) == 1 {
             continue;
         }
-        if is_probable_prime::<N, N2, N21>(out, rounds, rng)? {
+        if is_probable_prime_in_own_frame::<N, N2, N21>(out, rounds, rng)? {
             return Ok(());
         }
     }

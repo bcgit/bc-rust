@@ -335,6 +335,8 @@
 //!   the key pass through locals, return slots and spilled registers that no `Secret` names.
 //!   The wipes are sized by measurement for an optimised build on x86-64: an unoptimised
 //!   build's larger frames are not covered, and a key the caller moves is the caller's.
+//!   `keygen::is_probable_prime` wipes likewise; the bare [`modexp`] functions are building
+//!   blocks and do not.
 //! - **Imported keys are not validated for primality.** [`keys::RsaPrivateKey::from_crt_components`]
 //!   checks that `p`/`q` are odd and distinct, that `dP`/`dQ`/`qInv` are in range and that
 //!   `n = p * q` has exactly the size's bit length (as the public key's constructor checks of
