@@ -191,8 +191,10 @@ pub enum SignatureError {
     /// The pre-hash is weaker than the parameter set (FIPS 204 Section 5.4 for HashML-DSA).
     PreHashTooWeak,
     /// A value the algorithm computed failed the check the algorithm makes on its own results
-    /// before releasing them, such as a point that is not on the curve. No input causes it: it
-    /// means a fault in the computation, and nothing was written.
+    /// before releasing them, such as a point that is not on the curve, or an RSA result that
+    /// the public exponent does not take back to its input. No message causes it: it means a
+    /// fault in the computation, or a private key whose parts do not belong together, and
+    /// nothing was written.
     ComputationFault,
     ///
     EncodingError(&'static str),
