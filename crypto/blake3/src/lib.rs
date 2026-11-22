@@ -116,11 +116,14 @@
 //! assert_eq!(resumed.do_final(), BLAKE3::hash(b"part one, part two"));
 //! ```
 
-// todo #![no_std]
-//      waiting for the no_std refactor that removes the `-> Vec<u8>` from core::traits::Hash
-
+#![no_std]
+// Docs link to the `Vec` one-shots, which a build without `std` does not have.
+#![cfg_attr(not(feature = "std"), allow(rustdoc::broken_intra_doc_links))]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
+
+#[cfg(feature = "std")]
+extern crate std;
 
 mod blake3;
 mod compress;

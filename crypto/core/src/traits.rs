@@ -1714,12 +1714,22 @@ pub trait SymmetricCipherEncryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
 /// [`do_output_final`](Self::do_output_final) means something weaker than `do_final` does on
 /// [`Hash`] and [`MACGenerator`]. There it is load-bearing -- the only way to get output, and it must
 /// consume the value because finalizing pads the state. An XOF squeeze has nothing to finalize, so
-/// it produces exactly the bytes [`do_output`](Self::do_output) would and differs only in taking
-/// ownership: it is how a caller says "this read is my last", and it ends the stream at the point
-/// of the call rather than leaving a `mut` binding alive for the rest of the scope.
+/// it produces the bytes [`do_output`](Self::do_output) would and differs in taking ownership: it
+/// is how a caller says "this read is my last", and it ends the stream at the point of the call
+/// rather than leaving a `mut` binding alive for the rest of the scope. The exception is an XOF
+/// that encodes its output length, as SP 800-185's KMACXOF, TupleHashXOF and ParallelHashXOF do:
+/// there a final read that is also the first binds its length, and so differs from the stream.
 pub trait XOFSqueezer {
     /// Produces the next `num_bytes` bytes of the output stream.
-    fn do_output(&mut self, num_bytes: usize) -> Vec<u8>;
+    ///
+    /// Provided over [`do_output_out`](Self::do_output_out). Only available with the `std`
+    /// feature.
+    #[cfg(feature = "std")]
+    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
+        let mut out = vec![0u8; num_bytes];
+        self.do_output_out(&mut out);
+        out
+    }
 
     /// As [`do_output`](Self::do_output), filling the caller's buffer, which is zeroized first.
     /// Returns the number of bytes written.
@@ -1727,24 +1737,27 @@ pub trait XOFSqueezer {
 
     /// Produces the last `num_bytes` bytes of the output stream and ends the object.
     ///
-    /// Consumes self, so this must be the final call to this object. The default is a plain last
-    /// read -- the bytes [`do_output`](Self::do_output) would give, continuing from wherever
-    /// earlier reads left the stream. An implementation with an output length still to bind
-    /// overrides it to bind `num_bytes` when nothing has been read yet; see the trait docs.
+    /// Consumes self, so this must be the final call to this object. Provided over
+    /// [`do_output_final_out`](Self::do_output_final_out).
     ///
     /// Only available with the `std` feature.
     #[cfg(feature = "std")]
-    fn do_output_final(mut self, num_bytes: usize) -> Vec<u8>
+    fn do_output_final(self, num_bytes: usize) -> Vec<u8>
     where
         Self: Sized,
     {
-        self.do_output(num_bytes)
+        let mut out = vec![0u8; num_bytes];
+        self.do_output_final_out(&mut out);
+        out
     }
 
     /// As [`do_output_final`](Self::do_output_final), filling the caller's buffer, which is
     /// zeroized first. Returns the number of bytes written.
     ///
-    /// Defaulted as [`do_output_final`](Self::do_output_final) is.
+    /// The default is a plain last read -- the bytes [`do_output_out`](Self::do_output_out)
+    /// would give, continuing from wherever earlier reads left the stream. An implementation with
+    /// an output length still to bind overrides it to bind `output.len()` when nothing has been
+    /// read yet, as the trait docs describe.
     fn do_output_final_out(mut self, output: &mut [u8]) -> usize
     where
         Self: Sized,

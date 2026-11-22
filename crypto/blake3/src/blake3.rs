@@ -20,6 +20,8 @@ use bouncycastle_core::traits::{
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{ct, min, secret::Secret};
 use core::marker::PhantomData;
+#[cfg(feature = "std")]
+use std::vec::Vec;
 
 /// BLAKE3 spec s. 2.1: "The chaining value of the root node, encoded as 32 bytes in little-endian
 /// order, is the default-length BLAKE3 hash of the input."
@@ -764,12 +766,6 @@ impl BLAKE3Squeezer {
 }
 
 impl XOFSqueezer for BLAKE3Squeezer {
-    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
-        let mut out = vec![0u8; num_bytes];
-        self.do_output_out(&mut out);
-        out
-    }
-
     fn do_output_out(&mut self, output: &mut [u8]) -> usize {
         // Zeroized first per the house rule, although every byte is then overwritten.
         output.fill(0);
@@ -930,6 +926,9 @@ impl BLAKE3DeriveKey {
 
     /// One-shot: the 32-byte derived key for the key material `data`. [`HashOneShot`] is for
     /// hashes that take no parameters; this one takes its context string at construction.
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
         self.do_final()
@@ -994,10 +993,6 @@ impl XOF for BLAKE3DeriveKey {
 pub struct BLAKE3DeriveKeySqueezer(BLAKE3Squeezer);
 
 impl XOFSqueezer for BLAKE3DeriveKeySqueezer {
-    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
-        self.0.do_output(num_bytes)
-    }
-
     fn do_output_out(&mut self, output: &mut [u8]) -> usize {
         self.0.do_output_out(output)
     }
@@ -1180,10 +1175,6 @@ impl MACVerifier<OUT_LEN> for BLAKE3KeyedHash<'_, Decrypting> {
 pub struct BLAKE3KeyedSqueezer(BLAKE3Squeezer);
 
 impl XOFSqueezer for BLAKE3KeyedSqueezer {
-    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
-        self.0.do_output(num_bytes)
-    }
-
     fn do_output_out(&mut self, output: &mut [u8]) -> usize {
         self.0.do_output_out(output)
     }

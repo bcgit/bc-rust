@@ -218,8 +218,14 @@
 //! * A suspended KMAC or KMACXOF state inverts to the key, as a suspended HMAC-SHA3 state does
 //!   (see [hmac]): store it as securely as the key.
 
+#![no_std]
+// Docs link to the `Vec` one-shots, which a build without `std` does not have.
+#![cfg_attr(not(feature = "std"), allow(rustdoc::broken_intra_doc_links))]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
+
+#[cfg(feature = "std")]
+extern crate std;
 
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, AlgorithmOID, CollisionResistantHash, HashAlgParams};

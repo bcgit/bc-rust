@@ -16,6 +16,8 @@ use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
 use crate::ASCON_CXOF128_NAME;
 use crate::sponge::{RATE, Sponge};
+#[cfg(feature = "std")]
+use std::vec::Vec;
 
 /// Maximum customization-string length in bytes (2048 bits, per SP 800-232 §5.3).
 const MAX_CUSTOMIZATION_BYTES: usize = 256;
@@ -117,12 +119,6 @@ pub struct AsconCXof128Squeezer {
 }
 
 impl XOFSqueezer for AsconCXof128Squeezer {
-    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
-        let mut out = vec![0u8; num_bytes];
-        self.do_output_out(&mut out);
-        out
-    }
-
     fn do_output_out(&mut self, output: &mut [u8]) -> usize {
         self.xof.squeeze_into(output)
     }
@@ -345,6 +341,9 @@ impl AsconCXof128 {
     /// One-shot: hashes `data` with this instance's parameters.
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
         self.do_final()

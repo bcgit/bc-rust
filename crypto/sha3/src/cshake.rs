@@ -9,6 +9,8 @@ use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, Suspendable, XOF, 
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
 };
+#[cfg(feature = "std")]
+use std::vec::Vec;
 
 // imports needed for docs
 #[allow(unused_imports)]
@@ -553,21 +555,9 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN>
 }
 
 impl<PARAMS: SHAKEParams> XOFSqueezer for CSHAKESqueezer<PARAMS> {
-    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
-        let mut out = vec![0u8; num_bytes];
-        self.do_output_out(&mut out);
-        out
-    }
-
     /// Reading as a XOF, so `right_encode(0)` if this is the first read (s. 4.3.1, 5.3.1, 6.3.1).
     fn do_output_out(&mut self, output: &mut [u8]) -> usize {
         self.read(0, output)
-    }
-
-    fn do_output_final(self, num_bytes: usize) -> Vec<u8> {
-        let mut out = vec![0u8; num_bytes];
-        self.do_output_final_out(&mut out);
-        out
     }
 
     /// The last read, so if it is also the first, `L` is its length in bits and this is the
@@ -602,21 +592,9 @@ impl<PARAMS: SHAKEParams> CSHAKEBorrowedSqueezer<'_, PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOFSqueezer for CSHAKEBorrowedSqueezer<'_, PARAMS> {
-    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
-        let mut out = vec![0u8; num_bytes];
-        self.do_output_out(&mut out);
-        out
-    }
-
     /// Reading as a XOF, so `right_encode(0)` if this is the first read (s. 4.3.1).
     fn do_output_out(&mut self, output: &mut [u8]) -> usize {
         self.read(0, output)
-    }
-
-    fn do_output_final(self, num_bytes: usize) -> Vec<u8> {
-        let mut out = vec![0u8; num_bytes];
-        self.do_output_final_out(&mut out);
-        out
     }
 
     /// The last read, so if it is also the first, `L` is its length in bits and this is the
@@ -630,6 +608,9 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
     /// One-shot: hashes `data` with this instance's parameters.
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
         self.do_final()

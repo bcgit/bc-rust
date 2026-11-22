@@ -72,12 +72,6 @@ pub struct AsconXof128Squeezer {
 }
 
 impl XOFSqueezer for AsconXof128Squeezer {
-    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
-        let mut out = vec![0u8; num_bytes];
-        self.do_output_out(&mut out);
-        out
-    }
-
     fn do_output_out(&mut self, output: &mut [u8]) -> usize {
         self.xof.squeeze_into(output)
     }

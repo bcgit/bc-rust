@@ -210,11 +210,14 @@
 //!   application streaming a large plaintext must have a way to cancel the operation or
 //!   transaction if finalization returns an error.
 
-// `bouncycastle-core` still uses `Vec` internally (see the TODO at the top of
-// crypto/core/src/lib.rs), which blocks this crate from being `#![no_std]` as long as it depends
-// on core's `std`-gated APIs.
+#![no_std]
+// Docs link to the `Vec` one-shots, which a build without `std` does not have.
+#![cfg_attr(not(feature = "std"), allow(rustdoc::broken_intra_doc_links))]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
+
+#[cfg(feature = "std")]
+extern crate std;
 
 mod permutation;
 mod sponge;
