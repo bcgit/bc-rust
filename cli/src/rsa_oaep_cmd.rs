@@ -263,17 +263,25 @@ fn with_hash<K, const N: usize, const PK_LEN: usize, const SK_LEN: usize>(
 }
 
 pub(crate) fn rsa_oaep_2048_cmd(args: &OaepArgs) {
-    with_hash::<RSA2048, 256, 260, 640>(args, "RSAES-OAEP-2048");
+    with_hash::<RSA2048, { RSA2048::K_LEN }, { RSA2048::PK_LEN }, { RSA2048::SK_LEN }>(
+        args, "RSAES-OAEP-2048",
+    );
 }
 
 pub(crate) fn rsa_oaep_3072_cmd(args: &OaepArgs) {
-    with_hash::<RSA3072, 384, 388, 960>(args, "RSAES-OAEP-3072");
+    with_hash::<RSA3072, { RSA3072::K_LEN }, { RSA3072::PK_LEN }, { RSA3072::SK_LEN }>(
+        args, "RSAES-OAEP-3072",
+    );
 }
 
 pub(crate) fn rsa_oaep_4096_cmd(args: &OaepArgs) {
-    with_hash::<RSA4096, 512, 516, 1280>(args, "RSAES-OAEP-4096");
+    with_hash::<RSA4096, { RSA4096::K_LEN }, { RSA4096::PK_LEN }, { RSA4096::SK_LEN }>(
+        args, "RSAES-OAEP-4096",
+    );
 }
 
 pub(crate) fn rsa_oaep_8192_cmd(args: &OaepArgs) {
-    with_hash::<RSA8192, 1024, 1028, 2560>(args, "RSAES-OAEP-8192");
+    with_hash::<RSA8192, { RSA8192::K_LEN }, { RSA8192::PK_LEN }, { RSA8192::SK_LEN }>(
+        args, "RSAES-OAEP-8192",
+    );
 }
