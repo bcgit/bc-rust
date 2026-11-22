@@ -101,9 +101,7 @@
 //! let h: Vec<u8> = resumed.do_final();
 //! ```
 
-// todo #![no_std]
-//      waiting for the no_std refactor that removes the `-> Vec<u8>` from core::traits::Hash
-
+#![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 

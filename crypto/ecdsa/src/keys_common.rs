@@ -4,8 +4,9 @@
 //! `Q = [d]G` can be recomputed on demand rather than only ever obtained from `keys::keygen` at
 //! generation time. Exists for the CLI's
 //! `PkFromSk`/`CheckConsistency` actions, mirroring the shape (if not the name) of
-//! `bouncycastle_mldsa::MLDSAPrivateKeyTrait::derive_pk`/`bouncycastle_mlkem::MLKEMPrivateKeyTrait::pk`,
-//! which those crates' own CLI commands already use for the same purpose -- kept local to this
+//! `bouncycastle_pqc::mldsa::MLDSAPrivateKeyTrait::derive_pk` /
+//! `bouncycastle_pqc::mlkem::MLKEMPrivateKeyTrait::pk`,
+//! which those modules' own CLI commands already use for the same purpose -- kept local to this
 //! crate rather than added to `bouncycastle_core::traits`, since no other primitive in this
 //! workspace shares this exact shape (a public key that is *always* a fixed, cheap function of the
 //! private key alone, with no additional state).

@@ -1,0 +1,173 @@
+//! This is a set of helper function to support a low-memory implementation that "streams" the private key
+//! and other intermediate values by never holding the whole thing in memory at once, but re-constructing
+//! what it needs in pieces, which generally means handling the matrices and vectors row-wise or entry-wise.
+
+use crate::mldsa_common::aux_functions::{bit_unpack_eta_out, expand_mask_poly, rej_ntt_poly};
+use crate::mldsa_common::polynomial::Polynomial;
+use crate::mldsa_lowmemory::aux_functions::unpack_z_row;
+use crate::mldsa_lowmemory::params::MLDSAParams;
+use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
+
+#[inline(always)]
+pub(in crate::mldsa_lowmemory) fn expandA_elem(rho: &[u8; 32], i: usize, j: usize) -> Polynomial {
+    rej_ntt_poly(rho, &[j as u8, i as u8])
+}
+
+/// Compute a row of the core signing operation
+/// Alg 7: 12: 𝐰 ← NTT−1(𝐀_hat ∘ NTT(𝐲))
+pub(in crate::mldsa_lowmemory) fn compute_w_row<P: MLDSAParams>(
+    rho: &[u8; 32],
+    rho_p_p: &[u8; 64],
+    kappa: u16,
+    row: usize,
+) -> Polynomial {
+    // One loop body for every column, the first added to a zero accumulator; see
+    // `compute_wp_approx_row`.
+    let mut acc = Polynomial::new();
+    for col in 0..P::l {
+        let mut y_hat = expand_mask_poly::<P>(rho_p_p, kappa + col as u16);
+        y_hat.ntt();
+        let mut tmp = rej_ntt_poly(rho, &[col as u8, row as u8]);
+        tmp.multiply_ntt(&y_hat);
+        acc.add_ntt(&tmp);
+    }
+
+    // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+    acc.reduce32();
+    acc.inv_ntt();
+    acc.conditional_add_q();
+    acc
+}
+
+/// Algorithm 8 Line 9
+pub(in crate::mldsa_lowmemory) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
+    rho: &[u8; 32],
+    sig: &[u8; SIG_LEN],
+    t1: Polynomial,
+    c_hat: &Polynomial,
+    idx: usize,
+) -> Option<Polynomial> {
+    // Algorithm 8: line 9: 𝐰′_approx ← NTT−1(𝐀_hat ∘ NTT(𝐳) − NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑))
+    //   broken out for clarity:
+    //   NTT−1(
+    //      𝐀_hat ∘ NTT(𝐳) −
+    //                  NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑)
+    //   )
+    // ▷ 𝐰'_approx = 𝐀𝐳 − 𝑐𝐭1 ⋅ 2^𝑑
+    //
+    // NTT(𝑐) is the same for every row, so the caller computes it once and passes `c_hat`. NTT(𝐳)
+    // is also the same for every row, but holding all l of its coordinates would cost l KiB
+    // (7 KiB for ML-DSA-87), so each row unpacks and transforms 𝐳 again: the trade this module
+    // makes is memory over time.
+
+    // Every column goes through the one loop body, the first added to a zero accumulator: with
+    // column 0 handled before the loop its temporaries had stack slots of their own, which cost
+    // 1 to 2 kB of peak stack (measured for ML-DSA-44 and -87).
+    let mut Az_acc = Polynomial::new();
+    for col in 0..P::l {
+        let mut z_i = unpack_z_row::<P, SIG_LEN>(col, sig)?;
+        z_i.ntt();
+
+        // The element of the public matrix 𝐀_hat is re-derived here; the matrix is never held.
+        let mut tmp = rej_ntt_poly(rho, &[col as u8, idx as u8]);
+        tmp.multiply_ntt(&z_i);
+        Az_acc.add_ntt(&tmp);
+    }
+
+    // NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑), computed in place in the buffer `t1` arrived in.
+    let ct1 = {
+        let mut ct1 = t1;
+        ct1.shift_left_d();
+        ct1.ntt();
+        ct1.multiply_ntt(c_hat);
+
+        ct1
+    };
+
+    Az_acc.sub(&ct1);
+    // Bound-keeping step before NTT⁻¹, not in FIPS 204: see `Polynomial::reduce32`. Here it is
+    // security-critical: 𝐳 and 𝐭1 are attacker-controlled, and without it a crafted signature
+    // overflows the butterflies (<https://eprint.iacr.org/2026/1032>, Wycheproof mldsa_87_verify tcId 240/241).
+    Az_acc.reduce32();
+    Az_acc.inv_ntt();
+    Az_acc.conditional_add_q();
+
+    Some(Az_acc)
+}
+
+/// 𝐳 is written into `z_out`, and `true` returned. `false` means the norm check rejected this
+/// component, and `z_out` then holds a partial value that the caller must discard.
+pub(in crate::mldsa_lowmemory) fn compute_z_component<P: MLDSAParams>(
+    s1: Polynomial,
+    rho_p_p: &[u8; 64],
+    c_hat: &Polynomial,
+    kappa: u16,
+    col: usize,
+    z_out: &mut Polynomial,
+) -> bool {
+    let y = expand_mask_poly::<P>(rho_p_p, kappa + col as u16);
+
+    // 𝑐𝐬1 ← NTT−1(𝑐_hat ∘ NTT(𝐬1)), built in place in the caller's buffer.
+    *z_out = s1;
+    z_out.ntt();
+    z_out.multiply_ntt(c_hat);
+    z_out.inv_ntt();
+
+    // 𝐳 ← 𝐲 + 𝑐𝐬1
+    z_out.add_ntt(&y);
+
+    !z_out.check_norm(P::gamma1_minus_beta)
+}
+
+pub(in crate::mldsa_lowmemory) fn compute_w0cs2_component<P: MLDSAParams>(
+    s2: Polynomial,
+    w: &Polynomial,
+    c_hat: &Polynomial,
+    w0cs2_out: &mut Polynomial,
+) -> bool {
+    let mut cs2 = s2;
+    cs2.ntt();
+    cs2.multiply_ntt(c_hat);
+    cs2.inv_ntt();
+
+    // The shortcut of the Dilithium round-3 specification, Section 5.1
+    // (https://pq-crystals.org/dilithium/data/dilithium-specification-round3-20210208.pdf): "instead
+    // of computing (r1, r0) = Decompose_q(w − cs2, α) and checking whether ‖r0‖∞ < γ2 − β and
+    // r1 = w1, it is equivalent to just check that ‖w0 − cs2‖∞ < γ2 − β, where w0 is the low part
+    // of w. If this check passes, w0 − cs2 is the low part of w − cs2." That is what the lines
+    // below do: FIPS 204 Algorithm 7 lines 21 and 23 without a second Decompose. `w` is still
+    // needed by the caller, so its low half is taken in the out-buffer.
+    *w0cs2_out = *w;
+    w0cs2_out.low_bits_inplace::<P>();
+    w0cs2_out.sub(&cs2);
+
+    !w0cs2_out.check_norm(P::gamma2_minus_beta)
+}
+
+pub(in crate::mldsa_lowmemory) fn compute_ct0_component<P: MLDSAParams>(
+    t0_row: Polynomial,
+    c_hat: &Polynomial,
+    ct0_out: &mut Polynomial,
+) -> bool {
+    *ct0_out = t0_row;
+    ct0_out.ntt();
+    ct0_out.multiply_ntt(c_hat);
+    ct0_out.inv_ntt();
+
+    !ct0_out.check_norm(P::gamma2)
+}
+
+/// Unpack a single s value from the packed representation.
+///
+/// `B` is the packed buffer type, which is `P::S1Packed` or `P::S2Packed` depending on which of
+/// the two secret vectors is being unpacked.
+pub(in crate::mldsa_lowmemory) fn s_unpack<P: MLDSAParams, B: ZeroizablePrimitive + AsRef<[u8]>>(
+    s_packed: &Secret<B>,
+    idx: usize,
+) -> Polynomial {
+    let mut s = Polynomial::new();
+    let packed = (**s_packed).as_ref();
+    let width = P::POLY_ETA_PACKED_LEN;
+    bit_unpack_eta_out::<P>(&packed[idx * width..(idx + 1) * width], &mut s);
+    s
+}

@@ -434,7 +434,12 @@ impl<PARAMS: RIPEMDFamily> HashOneShot for RIPEMDInternal<PARAMS> {}
 
 #[cfg(test)]
 mod tests {
+    // The crate is no_std; its unit tests build messages on the heap.
+    extern crate std;
+
     use super::*;
+    use std::vec;
+    use std::vec::Vec;
 
     #[test]
     fn test_tables_are_permutations() {

@@ -40,7 +40,7 @@ The library in general is meant to serve both embedded systems as well as workst
 alloc build everything that is not a static lives on the stack, which warrants particular attention to memory hygiene. A Claude
 skill is available in `.claude/skills/memory-hygiene-in-rust` to assist with this. Note that "memory hygiene" (good
 coding practices that reduce stack usage at no performance cost) can apply to all crates and is different from "low
-memory" (such as the mldsa-lowmemory crate), which uses a different algorithm that trades significant performance loss
+memory" (such as the `pqc::mldsa_lowmemory` module), which uses a different algorithm that trades significant performance loss
 for significant reduction in memory footprint.
 
 # Quality

@@ -39,7 +39,7 @@
   roles: `X25519PrivateKey` implements `AgreementKey` over `()` for the raw shared secret and over
   `KdfParams<HkdfDescription<SHA256>, LEN>` for a derived key (`X25519_HKDF_SHA256`), and with `X25519PublicKey` the KEM roles
   as DHKEM(X25519, HKDF-SHA256) of RFC 9180 Section 4.1 (`DHKEM_X25519_HKDF_SHA256`), through the new
-  `bouncycastle-hpke` crate's generic DHKEM;
+  `bouncycastle-dhkem` crate's generic DHKEM;
   `keygen` draws the key from the caller's RNG; checked against RFC 7748's vectors, RFC 9180 Appendix A.1.1, A.1.2, A.2.1, A.2.2, A.7.1 and A.7.2, and
   Wycheproof's X25519 set; the `x25519` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree, encaps
   and decaps.
@@ -76,7 +76,7 @@
   and DHKEM(P-521, HKDF-SHA512) (`kem_id` 0x0010 to 0x0012) on the ECC CDH keys: `ECCDHPublicKey<C>` and
   `ECCDHPrivateKey<C>` over `P256`, `P384` and `P521` carry the KEM roles with `()` as the parameters, under the
   markers `DHKEM_P256_HKDF_SHA256`, `DHKEM_P384_HKDF_SHA384` and `DHKEM_P521_HKDF_SHA512` (`ECDHKEM<C>`), with
-  `dhkem::derive_key_pair` for Section 7.1.3's `DeriveKeyPair`. `bouncycastle-hpke` gains the rejection-sampling
+  `dhkem::derive_key_pair` for Section 7.1.3's `DeriveKeyPair`. `bouncycastle-dhkem` gains the rejection-sampling
   form of `DeriveKeyPair` beside the expand form: `DHKEMParams::DERIVE_KEY_PAIR_BY_EXPAND` is replaced by
   `DERIVE_KEY_PAIR`, a `DeriveKeyPairForm`, and `DHKEMParams::private_key_from_bytes` returns an `Option`, a change
   for implementors of a DHKEM group. Checked against the RFC's machine-readable vectors for P-256 and P-521 (32
@@ -88,8 +88,8 @@
 * scrypt -- RFC 7914, as `bouncycastle-scrypt`: `SCrypt` over working memory the caller supplies
   (`derive_with_memory_out`, `ScryptParams::work_len`), and on the `KDF` trait with the `std` feature, allocating up to
   a limit. The `scrypt` CLI command takes `--log2-n`, `-r`, `-p` and `--max-memory`.
-* HPKE -- RFC 9180 Sections 5 and 6 in all four modes, as `bouncycastle-hpke`, on the X25519, X448, P-256, P-384
-  and P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
+* HPKE -- RFC 9180 Sections 5 and 6 in all four modes, as `bouncycastle-hybrid::hpke`, on the X25519, X448, P-256,
+  P-384 and P-521 keys: `setup_sender` / `setup_recipient` (Base, PSK) and `setup_auth_sender` / `setup_auth_recipient`
   (Auth, AuthPSK) give contexts with `seal_out` / `open_out` and `export_out`; HKDF over SHA-256, SHA-384 or
   SHA-512 with AES-128-GCM, AES-256-GCM, ChaCha20Poly1305 or export-only. No CLI command yet.
 * AES-GCM-SIV -- the nonce misuse-resistant AEAD of RFC 8452, as `AES128Key<GCM_SIV>` and `AES256Key<GCM_SIV>`
@@ -100,9 +100,8 @@
   Counter, Feedback and Double-Pipeline Mode over HMAC (SHA-2, SHA-3) or CMAC (AES), and the KDF Using KMAC, on the
   `KDF` trait; six parameterless instantiations in `KDFFactory`; the `kbkdf-counter`, `kbkdf-feedback`,
   `kbkdf-double-pipeline`, `kbkdf-kmac128` and `kbkdf-kmac256` CLI commands.
-* `bouncycastle-dhkem` -- the generic DHKEM leaves `bouncycastle-hpke` for a crate of its own
-  (`bouncycastle_hpke::dhkem::*` is now `bouncycastle_dhkem::*`), and gains `AuthEncap` and `AuthDecap`. Its
-  `_out` functions return the number of bytes written.
+* `bouncycastle-dhkem` -- the generic DHKEM is a crate of its own, apart from HPKE, and gains `AuthEncap` and
+  `AuthDecap`. Its `_out` functions return the number of bytes written.
 * SHA-1 -- `bouncycastle-sha1`, FIPS 180-4's SHA-1 on the `Hash` traits, for interoperation with what already
   uses it (an older peer's RSA-OAEP hash or MGF1, a fingerprint): not collision resistant, so it is credited with
   no security strength (`SecurityStrength::None`). Checked against NIST's CAVP SHAVS vectors and RFC 3174's; the
@@ -335,10 +334,12 @@
 * `bouncycastle-utils`: `ct_eq_bytes_mask` is renamed `ct_eq_bytes_condition`.
 * `core::hazmat::label_kdf_output` is the `KDF` trait's rule for typing derived keying material as one function; KBKDF, the Concat KDF, the X9.63 KDF and PBKDF2 call it where each had its own copy. No change in behaviour.
 * HashML-DSA can use a pre-hash weaker than the parameter set when the caller names it as `hazmat::AnyStrength<H>` (in `mldsa` and `mldsa-lowmemory`; `--allow-weak-hash` in the CLI), which lowers the signature's strength to the hash's; the default still refuses it. The ACVP pre-hash vectors, which pair every hash with every parameter set, now run. `HashAlgParams` gains `PRE_HASH_STRENGTH_RULE`, which a hash function leaves at its default.
+* HashML-DSA is a key of its own (`mldsa` and `mldsa-lowmemory`). An ML-DSA key, plain or expanded, keeps the roles over `MLDSA<P>` alone; `sk.as_prehash::<H>()` and `pk.as_prehash::<H>()` give `HashMLDSAPrivateKey` and `HashMLDSAPublicKey`, views that borrow the key and copy nothing, with the ordinary signing and verifying roles over the marker `HashMLDSA<P, H>` and the digest-supplied `sign_ph` / `verify_ph`. For a 0.1.3 caller, `sk.create_ph_signer::<H>(rng, ctx)` becomes `sk.as_prehash::<H>().create_signer(rng, ctx)` and `sk.sign_ph::<H>(..)` becomes `sk.as_prehash::<H>().sign_ph(..)`, likewise when verifying; `core`'s `PreHashSigningKey`, `DeterministicPreHashSigningKey` and `PreHashVerifyingKey` keep only the digest-supplied methods, over an algorithm marker that names its hash (`PreHashAlgorithm::Hash`), which the two signing traits require to be a `CollisionResistantHash`; the HashML-DSA workers report the pairing's name (`HashML-DSA-44_with_SHA512`) where they reported the parameter set's. The parameter-set types `MLDSA44Params`, `MLDSA65Params` and `MLDSA87Params` are exported from both crates, to name the marker and the views with.
 * `bouncycastle-sha3`: `finish_squeezer` on SHAKE, cSHAKE and KMACXOF ends the input where the sponge sits and lends out its squeezer, for a sponge that has absorbed a secret: `XOF::into_squeezer` moves the sponge, and a release build was seen to leave copies of it on the stack (Ed448's private key, KMAC's keyed state in the KMAC KDF, the state of ML-KEM's implicit-rejection hash). ML-DSA, ML-KEM, the KMAC KDF and Ed448 finish their secret hashes that way.
 * `bouncycastle-sha3` overwrites the stack frame of each Keccak-f permutation after it: the permutation spills lanes of the state there (14 of the 25 output lanes on x86-64), which a scan found on the dead stack after the KMAC KDF, ML-DSA and Ed448. The overwrite is sized for an optimised build (checked on x86-64 and aarch64), and an unoptimised build's larger frame is not covered. It costs 3 to 4% of SHA-3 time and 336 bytes of stack; the ML-DSA, ML-KEM, KBKDF, PBKDF2 and Ed448 memory tables are re-measured.
-* A signature is generated only over a hash that carries the new marker `core::traits::CollisionResistantHash`, required by ECDSA's signing roles and key-pair generation and by the pre-hash signing roles (HashML-DSA), and not by verification. The SHA-2, SHA-3, SHAKE, SM3, BLAKE2, BLAKE3 and Ascon-Hash256 hashes carry it; the RIPEMD functions do not, so `ECDSA<C, RIPEMD160>` now verifies and no longer signs, and `AnyStrength<RIPEMD160>` no longer signs. `core::hazmat::WithoutCollisionResistance<H>` opts back in: the same algorithm and the same signature bytes.
+* A signature is generated only over a hash that carries the new marker `core::traits::CollisionResistantHash`, required by ECDSA's signing roles and key-pair generation and by a HashML-DSA key's signing roles, and not by verification. The SHA-2, SHA-3, SHAKE, SM3, BLAKE2, BLAKE3 and Ascon-Hash256 hashes carry it; the RIPEMD functions do not, so `ECDSA<C, RIPEMD160>` now verifies and no longer signs, and `AnyStrength<RIPEMD160>` no longer signs. `core::hazmat::WithoutCollisionResistance<H>` opts back in: the same algorithm and the same signature bytes.
 * `FixedSeedRNG` moved from `bouncycastle-rng` to `bouncycastle_core::hazmat`, with no re-export left behind, and `cipher`, `ascon`, `ecdsa`, `sm2`, `mldsa`, `mldsa-lowmemory`, `mlkem` and `mlkem-lowmemory` no longer depend on `bouncycastle-rng` at build time (it is a dev-dependency, for their docs and tests).
 * `RNG::next_bytes`, which returned a `Vec`, is removed from the trait; draw into a buffer with `next_bytes_out`. The `Vec`- and `Box`-returning one-shots of `Hash`, `HashOneShot`, `KDF`, `XOFSqueezer` and `XOF` are behind `bouncycastle-core`'s default `std` feature, as the symmetric ones were; nothing changes with default features.
-* `bouncycastle-sha2`, `bouncycastle-hmac` and `bouncycastle-hkdf` are `#![no_std]`: the crates themselves use nothing from `std`. `bouncycastle-core`, which they depend on, is not yet, so this is not by itself a build for a target without `std`.
+* `bouncycastle-sha2`, `bouncycastle-sm3`, `bouncycastle-ripemd`, `bouncycastle-blake2`, `bouncycastle-hmac` and `bouncycastle-hkdf` are `#![no_std]`: the crates themselves use nothing from `std`. `bouncycastle-core`, which they depend on, is not yet, so this is not by itself a build for a target without `std`.
 * `bouncycastle-factory` is removed, and with it `bouncycastle::factory`: selection of a hash, XOF, KDF, MAC or RNG by name at run time (`HashFactory::new("SHA256")` and the like), the `default_128_bit` / `default_256_bit` defaults of `AlgorithmFactory`, and `MACFactory`, which was the library's home for a MAC with a tag length chosen at run time. Nothing in the library or the CLI used it; algorithms are named by type. Entries elsewhere in these notes that mention a `*Factory` entry describe the tree before the removal. `bouncycastle-rng` loses `HASH_DRBG_SHA256_NAME` and `HASH_DRBG_SHA512_NAME`, which only the factory used.
+* `bouncycastle-mldsa-common`, `bouncycastle-mldsa`, `bouncycastle-mldsa-lowmemory`, `bouncycastle-mlkem-common`, `bouncycastle-mlkem` and `bouncycastle-mlkem-lowmemory` are one crate, `bouncycastle-pqc`, each a module of it under its old name (`bouncycastle_pqc::mldsa`, `::mldsa_lowmemory`, `::mlkem`, `::mlkem_lowmemory`, and the shared `::mldsa_common` and `::mlkem_common`), with every item at the path it had and no change in behaviour. A 0.1.3 user of one of those crates depends on `bouncycastle-pqc` instead and writes `bouncycastle_pqc::mldsa::` for `bouncycastle_mldsa::`, and likewise for the others; a user of the umbrella changes nothing, since `bouncycastle::mldsa`, `::mldsa_lowmemory`, `::mlkem` and `::mlkem_lowmemory` are as they were, and `bouncycastle::pqc` is added. Entries elsewhere in these notes that name those crates describe the tree before the merge.

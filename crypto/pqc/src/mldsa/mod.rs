@@ -1,0 +1,233 @@
+//! This module implements the Module Lattice Digital Signature Algorithm (ML-DSA) as per FIPS 204.
+//!
+//! # Usage Examples
+//!
+//! This module has been designed to serve a wide range of use cases, from people dabbling in
+//! cryptography for the first time, to cryptographic protocol designers who need access to the internal and advanced
+//! functionality of the ML-DSA algorithm, to embedded systems developers who want access to memory
+//! and performance optimized functions.
+//!
+//! This page gives examples of simple usage for generating keys and signatures, and verifying signatures.
+//!
+//! More examples on advanced usage can be found on the [`mldsa`] and [`hash_mldsa`] pages.
+//!
+//! ## Generating Keys
+//!
+//! ```rust
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_pqc::mldsa::{MLDSA65, MLDSATrait};
+//!
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! ```
+//! That's it. That will use the library's default OS-backend RNG.
+//!
+//! Commonly with the ML-DSA algorithm, a 32-byte seed is used as the private key, and expanded into
+//! a full private key as needed. This is offered through the library's [`KeyMaterialTrait`] object:
+//!
+//! ```rust
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
+//! use bouncycastle_pqc::mldsa::{MLDSA65, MLDSATrait};
+//! use bouncycastle_hex as hex;
+//!
+//! let seed = KeyMaterial256::from_bytes_as_type(
+//!     &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
+//!     KeyType::Seed,
+//! ).unwrap();
+//!
+//! let (pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
+//! ```
+//!
+//! Into keys the caller holds, so that the private key is built where it will live and no copy
+//! of it is left behind by a move:
+//!
+//! ```rust
+//! use bouncycastle_pqc::mldsa::{MLDSA65, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSATrait};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! let mut pk = MLDSA65PublicKey::zeroized();
+//! let mut sk = MLDSA65PrivateKey::zeroized();
+//! MLDSA65::keygen_out(&mut HashDRBG_SHA512::new_from_os(), &mut pk, &mut sk).unwrap();
+//! ```
+//!
+//! A key stored as its seed is expanded with [`MLDSATrait::keygen_from_seed`] each time it is
+//! needed, so a caller that signs more than once should keep the expanded private key.
+//!
+//! ## Generating and Verifying Signatures
+//!
+//! ```rust
+//! use bouncycastle_pqc::mldsa::{MLDSA65, MLDSATrait};
+//! use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_core::errors::SignatureError;
+//!
+//! let msg = b"The quick brown fox";
+//!
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//!
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let sig = sk.sign(&mut rng, msg, None).unwrap();
+//! // This is the signature value that you can save to a file or whatever you need.
+//!
+//! match pk.verify(msg, None, &sig) {
+//!     Ok(()) => println!("Signature is valid!"),
+//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
+//!     Err(e) => panic!("Something else went wrong: {:?}", e),
+//! }
+//! ```
+//!
+//! And that's the basic usage! There are lots more bells-and-whistles in the form of exposed algorithm
+//! parameters, streaming APIs and other goodies that you can find by poking around this documentation.
+//!
+//! # Memory Usage
+//!
+//! The following table lists the size of the on-disk bytes encoding and the in-memory struct size of the
+//! standard key objects:
+//!
+//! | Key Object | PK size on disk | PK size in memory | SK Size on disk | SK size in memory |
+//! |------------|-----------------|-------------------|-----------------|-------------------|
+//! | ML-DSA-44  | 1312            | 4128              | 2560            | 12464             |
+//! | ML-DSA-65  | 1952            | 6176              | 4032            | 17584             |
+//! | ML-DSA-87  | 2592            | 8224              | 4896            | 23728             |
+//!
+//! The expanded key objects, which pre-expand the public matrix A for faster repeated sign() and
+//! verify() operations, borrow the key above and add the matrix; their in-memory size is that
+//! matrix plus a reference, on top of the key they borrow:
+//!
+//! | Key Object          | PK size in memory | SK size in memory |
+//! |---------------------|-------------------|-------------------|
+//! | ML-DSA-44_expanded  | 16392             | 16392             |
+//! | ML-DSA-65_expanded  | 30728             | 30728             |
+//! | ML-DSA-87_expanded  | 57352             | 57352             |
+//!
+//! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
+//!
+//! Peak stack usage of each operation, measured with `mem_usage_benches/bench_mldsa_mem_usage` under
+//! `valgrind --tool=massif --heap=no --stacks=yes` on 2026-11-21 (release build, one call):
+//!
+//! | Operation             | ML-DSA-44 | ML-DSA-65 | ML-DSA-87 |
+//! |-----------------------|-----------|-----------|-----------|
+//! | KeyGen                | 40,792    | 63,768    | 99,528    |
+//! | KeyGen, `keygen_out`  | 40,344    | 62,840    | 97,960    |
+//! | Sign                  | 76,152    | 112,704   | 165,896   |
+//! | Verify                | 58,584    | 88,792    | 133,160   |
+//! | Sign, expanded key    | 78,536    | 115,648   | 170,488   |
+//! | Verify, expanded key  | 59,896    | 89,960    | 139,952   |
+//!
+//! Values are in bytes and include the harness's own frames; the expanded-key rows include building the
+//! expanded key from the key it borrows. [`MLDSATrait::keygen_out`] writes into keys the caller holds,
+//! so no copy of the private key is left behind by a move.
+//!
+//! # 🚨 Security Considerations 🚨
+//!
+//! This module intends to expose only APIs that are secure to use.
+//! There are, however, a few exceptions that are worth mentioning.
+//!
+//! If using a [`MLDSA::keygen_from_seed`], then it is your responsibility to ensure that the seed is
+//! cryptographically random and unpredictable at a security strength that matches the MLDSA parameter set.
+//!
+//! ML-DSA and HashML-DSA take several parameters: `seed`, `mu`, `ph`, `ctx`, and `rnd`.
+//! They fall into two groups with very different failure modes.
+//!
+//! `seed` and `rnd` are secret or entropy inputs and must be handled with care:
+//!
+//! - `seed` *is* the private key, i.e. the entire key is derived from it. It must be generated
+//!   with a strong cryptographically secure PRNG, it must be kept secret, and it must never be reused.
+//!   A low-entropy, predictable, or disclosed seed yields a full key compromise,
+//!   not merely an unverifiable signature.
+//!
+//! - `rnd` is the signing randomizer. ML-DSA is designed to be nonce-misuse-resistant, i.e. the
+//!   signing mask is derived from a secret key value together with `rnd` and `mu`, so
+//!   reusing `rnd`, or using the all-zero "deterministic" mode, does NOT
+//!   leak the private key (unlike ECDSA). Deterministic signing is FIPS-approved and safe. The randomized
+//!   mode exists to add resistance to fault and side-channel attacks, so `rnd`
+//!   should come from a good RNG when that threat model applies.
+//!
+//! `mu`, `ph`, and `ctx` are binding values that the verifier must reproduce. This means that getting
+//! them wrong does not compromise security, it just yields a signature the intended
+//! verifier won't accept (a correctness/interoperability failure).
+//! One caveat: `ctx` can still be security-relevant at the protocol level (domain separation, replay and
+//! cross-protocol binding), so choosing it incorrectly can weaken those properties.
+//!
+//! ## When signing fails
+//!
+//! FIPS 204 Section 6.2 lets an implementation bound the rejection-sampling loop, and this one
+//! does, at 1000·k iterations. Reaching it has negligible probability; when it happens, signing
+//! returns [`SignatureError::RejectionLimitExceeded`] and writes nothing. The hedged variant
+//! succeeds on a retry with fresh randomness; the deterministic one fails the same way again.
+//!
+//! [`SignatureError::RejectionLimitExceeded`]: bouncycastle_core::errors::SignatureError::RejectionLimitExceeded
+//!
+//! ## What is zeroized
+//!
+//! FIPS 204 Section 3.6.3 asks that "any potentially sensitive intermediate data is destroyed as
+//! soon as it is no longer needed". Here the private key's `K`, `s1_hat` and `s2_hat` are `Secret`
+//! and the seed is `KeyMaterial`, and the key-generation seed `rho'` and the signing randomizer
+//! `rho''` are `Secret`, all wiped on drop, on the error paths included. The per-signature vectors
+//! `y`, `w`, `cs1`, `cs2`, `ct0` and `r0`, and the polynomials and buffer `sk_encode_out` packs
+//! through, are plain stack values that are not wiped when their scope ends.
+
+// These are because the code is matching variable names exactly against FIPS 204, for example both 'K' and 'k',
+// or 'A' and 'a' are used and have specific meanings.
+// But need to tell the rust linter to not care.
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+// so that private traits can be used to hide internal stuff that needs to be generic within the
+// MLDSA implementation, but should not get accessed from outside, such as FIPS-internal functions.
+#![allow(private_bounds)]
+#![allow(private_interfaces)]
+// Used in HashMLDSA for oid: &'static [u8] params.
+// #![allow(incomplete_features)] // needed because currently unsized_const_params is experimental
+// #![feature(adt_const_params)]
+// #![feature(unsized_const_params)]
+
+// imports needed just for docs
+#[allow(unused_imports)]
+use bouncycastle_core::key_material::KeyMaterialTrait;
+#[allow(unused_imports)]
+use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+
+mod aux_functions;
+pub mod hash_mldsa;
+pub mod hazmat;
+mod matrix;
+pub mod mldsa;
+mod mldsa_keys;
+mod params;
+
+/*** Exported types ***/
+pub use hash_mldsa::HashMLDSA44_with_SHA256;
+pub use hash_mldsa::{HashMLDSA, HashMLDSAPrivateKey, HashMLDSAPublicKey};
+pub use hash_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
+pub use mldsa::MuBuilder;
+pub use mldsa::{MLDSA, MLDSA44, MLDSA65, MLDSA87, MLDSATrait};
+pub use mldsa_keys::{MLDSA44PrivateKey, MLDSA65PrivateKey, MLDSA87PrivateKey, MLDSAPrivateKey};
+pub use mldsa_keys::{
+    MLDSA44PrivateKeyExpanded, MLDSA65PrivateKeyExpanded, MLDSA87PrivateKeyExpanded,
+    MLDSAPrivateKeyExpanded,
+};
+pub use mldsa_keys::{MLDSA44PublicKey, MLDSA65PublicKey, MLDSA87PublicKey, MLDSAPublicKey};
+pub use mldsa_keys::{
+    MLDSA44PublicKeyExpanded, MLDSA65PublicKeyExpanded, MLDSA87PublicKeyExpanded,
+    MLDSAPublicKeyExpanded,
+};
+pub use mldsa_keys::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
+pub use params::{MLDSA44Params, MLDSA65Params, MLDSA87Params};
+pub use params::{PrivateKeyLen, PublicKeyLen, SignatureLen};
+
+/*** Exported constants ***/
+pub use mldsa::ML_DSA_44_NAME;
+pub use mldsa::ML_DSA_65_NAME;
+pub use mldsa::ML_DSA_87_NAME;
+
+pub use mldsa::{MLDSA_MU_LEN, MLDSA_RND_LEN, MLDSA_SEED_LEN, MLDSA_TR_LEN};
+pub use mldsa::{MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN};
+pub use mldsa::{MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
+pub use mldsa::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
+
+pub use mldsa::SUSPENDED_MU_BUILDER_STATE_LEN;
+
+pub use hash_mldsa::HASH_ML_DSA_44_with_SHA256_NAME;
+
+pub use hash_mldsa::HASH_ML_DSA_44_with_SHA512_NAME;
+pub use hash_mldsa::HASH_ML_DSA_65_with_SHA512_NAME;
+pub use hash_mldsa::HASH_ML_DSA_87_with_SHA512_NAME;

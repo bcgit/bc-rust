@@ -76,8 +76,8 @@ Yes, in many cases you can improve performance by skirting the strict type and m
 by directly embedding assembly code. But to us, this undermines the primary reason that you're developing in Rust in the
 first place. Every crate carries `#![forbid(unsafe_code)]`, with one exception: `bouncycastle-utils` holds constant-time
 and secure-zeroization code that cannot be accomplished reliably within safe rust. Each instance of unsafe is a few
-lines with its safety argument alongside, and all unsafe is jailed to the one crate so that everything built on it stays
-in safe Rust.
+lines with its safety argument alongside, and all unsafe is jailed to the one crate (to two of its modules, `ct` and
+`secret`, which the compiler enforces) so that everything built on it stays in safe Rust.
 
 ### If it compiles, then it's safe
 
