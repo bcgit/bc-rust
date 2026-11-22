@@ -301,8 +301,8 @@ pub trait Algorithm {
 
 /// What a worker can say about itself at run time: the name and maximum strength
 /// [`Algorithm`] carries as constants, as methods, so that a trait object can be asked.
-/// Every `Algorithm` implements it; a type that is not one algorithm (a factory enum, which
-/// picks its algorithm at run time) implements it directly.
+/// Every `Algorithm` implements it; a type that is not one algorithm (a signature worker
+/// generic over its curve and hash, say) implements it directly.
 pub trait AlgorithmInfo {
     /// [`Algorithm::ALG_NAME`] of the algorithm this value runs.
     fn alg_name(&self) -> &'static str;

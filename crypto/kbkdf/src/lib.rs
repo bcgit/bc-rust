@@ -367,8 +367,7 @@ pub fn fixed_input_out_len(label: &[u8], context: &[u8]) -> usize {
     label.len() + 1 + context.len() + 4
 }
 
-// Names exist for the instantiations `bouncycastle-factory` registers, which are these six; the
-// other aliases are reached by type.
+// Names exist for these six instantiations; the other aliases are reached by type.
 /// The name of the KDF in Counter Mode over HMAC-SHA256.
 pub const KDF_COUNTER_HMAC_SHA256_NAME: &str = KDF_Counter_HMAC_SHA256::ALG_NAME;
 /// The name of the KDF in Counter Mode over HMAC-SHA384.

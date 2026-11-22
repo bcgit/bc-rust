@@ -30,6 +30,8 @@ mod hkdf_sm3_tests {
     #[test]
     fn algorithm() {
         assert_eq!(HKDF_SM3::ALG_NAME, HKDF_SM3_NAME);
+        assert_eq!(HKDF_SM3_NAME, "HKDF-SM3");
+        assert_eq!(bouncycastle_sm3::hmac::HMAC_SM3_NAME, "HMAC-SM3");
         assert_eq!(HKDF_SM3::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
         assert_eq!(HKDF_SM3::new().alg_name(), "HKDF-SM3");
     }

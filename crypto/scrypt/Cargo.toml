@@ -6,8 +6,8 @@ edition.workspace = true
 [features]
 # `std` gates the [`KDF`] and `KdfDescription` impls, which allocate the working memory; without
 # it the crate is the caller-supplied-memory function alone. That is a narrower API, not yet a
-# `no_std` build: `bouncycastle-core`, `hmac` and `sha2` still link `std`, and the forwarding
-# below changes nothing while the workspace dependency on `core` keeps its default features.
+# `no_std` build: `bouncycastle-core` still links `std`, and the forwarding below changes
+# nothing while the workspace dependency on `core` keeps its default features.
 default = ["std"]
 std = ["bouncycastle-core/std"]
 

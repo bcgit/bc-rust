@@ -196,9 +196,8 @@
 //!   the keystream, exactly as nonce reuse does. A second worker is made from the key.
 //! - **No partial-byte input:** Ascon-Hash256, Ascon-XOF128 and Ascon-CXOF128 are byte-oriented;
 //!   their `do_final_partial_bits`/`do_final_partial_bits_out` (and the equivalent XOF methods)
-//!   return `HashError::InvalidInput` for 1 to 7 bits, including when reached through
-//!   `HashFactory`; 0 bits is an ordinary final. A caller that needs a partial-byte final block
-//!   should reach for SHA-3, which supports one.
+//!   return `HashError::InvalidInput` for 1 to 7 bits; 0 bits is an ordinary final. A caller
+//!   that needs a partial-byte final block should reach for SHA-3, which supports one.
 //! - **Decryption tag check failure:** a ciphertext decryption whose finalization returns
 //!   `Err(SymmetricCipherError::AEADTagCheckFailed)` must be treated as tampered, and the entire
 //!   plaintext rejected. The key's one-shots

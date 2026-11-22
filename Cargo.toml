@@ -32,7 +32,6 @@ bouncycastle-ec = { path = "./crypto/ec" }
 bouncycastle-eccdh = { path = "./crypto/eccdh" }
 bouncycastle-ecdsa = { path = "./crypto/ecdsa" }
 bouncycastle-ed = { path = "crypto/ed" }
-bouncycastle-factory = { path = "./crypto/factory" }
 bouncycastle-hex = { path = "./crypto/hex" }
 bouncycastle-hkdf = { path = "./crypto/hkdf" }
 bouncycastle-hmac = { path = "./crypto/hmac" }
@@ -102,7 +101,6 @@ bouncycastle-ec.workspace = true
 bouncycastle-eccdh.workspace = true
 bouncycastle-ecdsa.workspace = true
 bouncycastle-ed.workspace = true
-bouncycastle-factory.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-hkdf.workspace = true
 bouncycastle-hmac.workspace = true

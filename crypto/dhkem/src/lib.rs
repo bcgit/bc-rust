@@ -81,7 +81,7 @@
 //!   and the SHA-256 message schedule of `prk XOR opad` on the dead stack below this crate's
 //!   frames, from which the PRK is recoverable; that residue is `hmac`'s and `sha2`'s, and the
 //!   PRK keys one `HmacKey` per expand so it is left once.
-//! * The crate's own source is `no_std`, but `bouncycastle-core` and `hmac` are not yet.
+//! * The crate's own source is `no_std`, but `bouncycastle-core`, which it depends on, is not yet.
 
 #![no_std]
 #![forbid(unsafe_code)]

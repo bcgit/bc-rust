@@ -47,12 +47,6 @@ use bouncycastle_core::key_material::KeyType;
 pub mod hash_drbg80090a;
 pub mod hazmat;
 
-/*** String constants ***/
-///
-pub const HASH_DRBG_SHA256_NAME: &str = "HashDRBG-SHA256";
-///
-pub const HASH_DRBG_SHA512_NAME: &str = "HashDRBG-SHA512";
-
 /*** pub types ***/
 /// Public type for HashDRBG using SHA256.
 #[allow(non_camel_case_types)]

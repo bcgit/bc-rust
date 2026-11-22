@@ -2,8 +2,7 @@
 //! RFC 5869, as allowed by NIST SP 800-56Cr2.
 //!
 //! Uses [`bouncycastle_hkdf`] to provide the HKDF-SHA2 instantiations: [`HKDF_SHA256`],
-//! [`HKDF_SHA384`] and [`HKDF_SHA512`]. The KDF factory and the CLI expose HKDF-SHA256 and
-//! HKDF-SHA512.
+//! [`HKDF_SHA384`] and [`HKDF_SHA512`]. The CLI exposes HKDF-SHA256 and HKDF-SHA512.
 //!
 //! HKDF is implemented generically in [`bouncycastle_hkdf`]; this module pins its const parameters
 //! to the SHA-2 hashes and publishes the resulting type aliases, so that HKDF over a SHA-2 hash is

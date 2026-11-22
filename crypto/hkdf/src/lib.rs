@@ -81,6 +81,7 @@
 //! * RFC 5869 Section 3.1 recommends a random salt where one is available. SP 800-56Cr2 permits an
 //!   all-zero salt, and the extract phase accepts one, but a salt that the caller believes to be
 //!   random and is not provides none of the benefit the recommendation is aimed at.
+#![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
@@ -95,7 +96,7 @@ use bouncycastle_hmac::hazmat as hmac_hazmat;
 use bouncycastle_hmac::{HMACParams, HmacKey, LARGEST_HASHER_BLOCK_LEN};
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::{max, min};
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 // Imports needed only for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::XOF;
