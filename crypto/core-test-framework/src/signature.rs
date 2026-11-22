@@ -19,11 +19,8 @@ const MSG: &[u8] = b"The quick brown fox jumped over the lazy dog";
 /// What a signature algorithm does with the `ctx` argument of its constructors and one-shots.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CtxBehaviour {
-    /// The context is bound into the signature, and one longer than 255 bytes is refused
-    /// (ML-DSA).
+    /// The context is bound into the signature, and one longer than 255 bytes is refused.
     Bound,
-    /// The context is accepted and has no effect.
-    Ignored,
     /// A non-empty context is a `LengthError`, from the one-shots and from the constructors of
     /// the workers; `None` and the empty context are accepted.
     Refused,
@@ -36,12 +33,13 @@ pub struct TestFrameworkSignature {
 
 impl TestFrameworkSignature {
     /// For an algorithm that binds the context into the signature (`true`,
-    /// [`CtxBehaviour::Bound`]) or ignores it (`false`, [`CtxBehaviour::Ignored`]).
+    /// [`CtxBehaviour::Bound`]) or takes none and refuses one (`false`,
+    /// [`CtxBehaviour::Refused`]).
     pub fn new(alg_accepts_ctx: bool) -> Self {
         Self::with_ctx_behaviour(if alg_accepts_ctx {
             CtxBehaviour::Bound
         } else {
-            CtxBehaviour::Ignored
+            CtxBehaviour::Refused
         })
     }
 
@@ -55,17 +53,16 @@ impl TestFrameworkSignature {
     fn streaming_ctx(&self) -> Option<&'static [u8]> {
         match self.ctx {
             CtxBehaviour::Refused => None,
-            CtxBehaviour::Bound | CtxBehaviour::Ignored => Some(b"streaming"),
+            CtxBehaviour::Bound => Some(b"streaming"),
         }
     }
 
     /// The context a constructor must refuse with a `LengthError`: the long one where a context
     /// is bound, any at all where none is taken.
-    fn refused_ctx(&self) -> Option<&'static [u8]> {
+    fn refused_ctx(&self) -> &'static [u8] {
         match self.ctx {
-            CtxBehaviour::Bound => Some(&[0u8; 256]),
-            CtxBehaviour::Refused => Some(b"ctx A"),
-            CtxBehaviour::Ignored => None,
+            CtxBehaviour::Bound => &[0u8; 256],
+            CtxBehaviour::Refused => b"ctx A",
         }
     }
 
@@ -143,12 +140,10 @@ impl TestFrameworkSignature {
         ));
 
         // a context the algorithm does not take is refused at construction; the empty one is none
-        if let Some(refused) = self.refused_ctx() {
-            assert!(matches!(
-                sk.create_signer(&mut rng, Some(refused)),
-                Err(SignatureError::LengthError(_))
-            ));
-        }
+        assert!(matches!(
+            sk.create_signer(&mut rng, Some(self.refused_ctx())),
+            Err(SignatureError::LengthError(_))
+        ));
         assert!(sk.create_signer(&mut rng, Some(&[])).is_ok());
         self.check_streaming_verifier(&pk, &sig);
     }
@@ -190,12 +185,10 @@ impl TestFrameworkSignature {
         assert_eq!(out, sig);
 
         // a context the algorithm does not take is refused at construction; the empty one is none
-        if let Some(refused) = self.refused_ctx() {
-            assert!(matches!(
-                sk.create_signer_deterministic(Some(refused)),
-                Err(SignatureError::LengthError(_))
-            ));
-        }
+        assert!(matches!(
+            sk.create_signer_deterministic(Some(self.refused_ctx())),
+            Err(SignatureError::LengthError(_))
+        ));
         let mut signer = sk.create_signer_deterministic(Some(&[])).unwrap();
         signer.do_update(MSG);
         assert_eq!(signer.do_final().unwrap(), sk.sign_deterministic(MSG, None).unwrap());
@@ -291,9 +284,7 @@ impl TestFrameworkSignature {
                 ));
                 None
             }
-            CtxBehaviour::Bound | CtxBehaviour::Ignored => {
-                Some(sk.sign(rng, MSG, Some(b"ctx A")).unwrap())
-            }
+            CtxBehaviour::Bound => Some(sk.sign(rng, MSG, Some(b"ctx A")).unwrap()),
         };
         if self.ctx == CtxBehaviour::Bound {
             let mut out = [0xA5u8; SIG_LEN];
@@ -350,23 +341,17 @@ impl TestFrameworkSignature {
                 ));
                 None
             }
-            CtxBehaviour::Bound | CtxBehaviour::Ignored => {
-                Some(sk.sign_deterministic(MSG, Some(b"ctx A")).unwrap())
-            }
+            CtxBehaviour::Bound => Some(sk.sign_deterministic(MSG, Some(b"ctx A")).unwrap()),
         };
-        match self.ctx {
-            CtxBehaviour::Bound => {
-                assert_ne!(Some(sig), sig_ctx);
-                // ... and `_out` leaves nothing stale in the buffer when it refuses a long one
-                let mut out = [0xA5u8; SIG_LEN];
-                assert!(matches!(
-                    sk.sign_deterministic_out(MSG, Some(&[0u8; 256]), &mut out),
-                    Err(SignatureError::LengthError(_))
-                ));
-                assert_eq!(out, [0u8; SIG_LEN]);
-            }
-            CtxBehaviour::Ignored => assert_eq!(Some(sig), sig_ctx),
-            CtxBehaviour::Refused => {}
+        if self.ctx == CtxBehaviour::Bound {
+            assert_ne!(Some(sig), sig_ctx);
+            // ... and `_out` leaves nothing stale in the buffer when it refuses a long one
+            let mut out = [0xA5u8; SIG_LEN];
+            assert!(matches!(
+                sk.sign_deterministic_out(MSG, Some(&[0u8; 256]), &mut out),
+                Err(SignatureError::LengthError(_))
+            ));
+            assert_eq!(out, [0u8; SIG_LEN]);
         }
 
         self.check_one_shot_verify(pk, &sig, sig_ctx.as_ref(), every_bit);
@@ -410,11 +395,6 @@ impl TestFrameworkSignature {
                     pk.verify(MSG, Some(&[0u8; 256]), sig_ctx),
                     Err(SignatureError::LengthError(_))
                 ));
-            }
-            (CtxBehaviour::Ignored, Some(sig_ctx)) => {
-                pk.verify(MSG, Some(b"ctx A"), sig_ctx).unwrap();
-                pk.verify(MSG, Some(b"ctx B"), sig_ctx).unwrap();
-                pk.verify(MSG, None, sig_ctx).unwrap();
             }
             (CtxBehaviour::Refused, None) => {
                 assert!(matches!(
@@ -476,12 +456,10 @@ impl TestFrameworkSignature {
         assert!(matches!(verifier.do_verify_final(&too_long), Err(SignatureError::LengthError(_))));
 
         // a context the algorithm does not take is refused at construction; the empty one is none
-        if let Some(refused) = self.refused_ctx() {
-            assert!(matches!(
-                pk.create_verifier(Some(refused)),
-                Err(SignatureError::LengthError(_))
-            ));
-        }
+        assert!(matches!(
+            pk.create_verifier(Some(self.refused_ctx())),
+            Err(SignatureError::LengthError(_))
+        ));
         let mut verifier = pk.create_verifier(Some(&[])).unwrap();
         verifier.do_update(DUMMY_SEED);
         match self.ctx {
@@ -489,7 +467,7 @@ impl TestFrameworkSignature {
                 verifier.do_verify_final(sig),
                 Err(SignatureError::SignatureVerificationFailed)
             )),
-            CtxBehaviour::Ignored | CtxBehaviour::Refused => verifier.do_verify_final(sig).unwrap(),
+            CtxBehaviour::Refused => verifier.do_verify_final(sig).unwrap(),
         }
     }
     /// Every member of [`PreHashSigningKey`] and [`PreHashVerifyingKey`] for the hash `H`, and

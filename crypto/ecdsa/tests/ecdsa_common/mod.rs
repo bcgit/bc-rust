@@ -9,11 +9,15 @@ use bouncycastle_core::errors::{KeyDecodingError, RNGError, SignatureError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
-    DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
+    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
+    OneShotVerifyingKey, SigningKey, VerifyingKey,
 };
-use bouncycastle_core::traits::{Algorithm, CollisionResistantHash, PrivateKey, PublicKey};
+use bouncycastle_core::traits::{
+    Algorithm, CollisionResistantHash, PrivateKey, PublicKey, SignatureSigner, SignatureVerifier,
+};
+use bouncycastle_core_test_framework::FailingRNG;
 use bouncycastle_core_test_framework::signature::{
-    TestFrameworkSignature, TestFrameworkSignatureKeys,
+    CtxBehaviour, TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
@@ -31,7 +35,7 @@ fn keygen_default<C: Curve, H: EcdsaHash + CollisionResistantHash>()
 /// the algorithm's names and strength. The random signer draws a fresh `k` per signature
 /// (FIPS 186-5 Appendix A.3.1), so the suite expects two signatures of one message to differ;
 /// the deterministic one reproduces `(r, s)` (RFC 6979 Sections 3.4 and 3.6). ECDSA has no
-/// `ctx` input, so it ignores the one the traits offer.
+/// `ctx` input, so it refuses a non-empty one.
 pub fn framework_and_metadata<
     C,
     H,
@@ -47,7 +51,7 @@ pub fn framework_and_metadata<
         + Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
     H: EcdsaHash + CollisionResistantHash,
 {
-    let framework = TestFrameworkSignature::new(false);
+    let framework = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Refused);
     framework.test_signature::<ECDSA<C, H>, ECDSAPublicKey<C, H>, ECDSAPrivateKey<C, H>, SIG_LEN>(
         keygen_default::<C, H>, true,
     );
@@ -103,6 +107,69 @@ where
     match OneShotVerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&other_pk, msg, None, &random) {
         Err(SignatureError::SignatureVerificationFailed) => {}
         other => panic!("expected SignatureVerificationFailed, got {other:?}"),
+    }
+}
+
+/// ECDSA has no context input (FIPS 186-5 Sections 6.4.1 and 6.4.2 list none): the absent and
+/// the empty context are the same, and a non-empty one is a `LengthError` from both signers and
+/// the verifier, one-shot and streaming, whatever else is true of the call.
+pub fn context_is_refused<C, H, const SIG_LEN: usize>()
+where
+    C: Curve<Signature = [u8; SIG_LEN]>,
+    H: EcdsaHash + CollisionResistantHash,
+{
+    fn refused<T>(result: Result<T, SignatureError>) -> bool {
+        matches!(result, Err(SignatureError::LengthError("ECDSA takes no context")))
+    }
+
+    let (pk, sk) = keygen_default::<C, H>().unwrap();
+    let mut rng = DefaultRNG::default();
+    let msg = b"no context to bind";
+    let empty = Some(&[][..]);
+
+    // Absent and empty: the deterministic signature is the same, and both signers' verify.
+    let deterministic = sk.sign_deterministic(msg, None).unwrap();
+    assert_eq!(sk.sign_deterministic(msg, empty).unwrap(), deterministic);
+    let random = sk.sign(&mut rng, msg, empty).unwrap();
+    for sig in [&deterministic, &random] {
+        pk.verify(msg, None, sig).unwrap();
+        pk.verify(msg, empty, sig).unwrap();
+    }
+    let mut signer = sk.create_signer(&mut rng, empty).unwrap();
+    signer.do_update(msg);
+    let streamed = signer.do_final().unwrap();
+    let mut signer = sk.create_signer_deterministic(empty).unwrap();
+    signer.do_update(msg);
+    assert_eq!(signer.do_final().unwrap(), deterministic);
+    let mut verifier = pk.create_verifier(empty).unwrap();
+    verifier.do_update(msg);
+    verifier.do_verify_final(&streamed).unwrap();
+
+    for ctx in [&b"c"[..], &[0u8; 256]] {
+        let ctx = Some(ctx);
+
+        // The random signer, which leaves zeros in the caller's buffer and draws nothing: the
+        // refusal comes before the RNG's own failure.
+        let mut out = [0xA5u8; SIG_LEN];
+        assert!(refused(sk.sign_out(&mut rng, msg, ctx, &mut out)));
+        assert_eq!(out, [0u8; SIG_LEN]);
+        assert!(refused(sk.sign(&mut rng, msg, ctx)));
+        assert!(refused(sk.sign(&mut FailingRNG, msg, ctx)));
+        assert!(refused(sk.create_signer(&mut rng, ctx)));
+
+        // The RFC 6979 signer.
+        let mut out = [0xA5u8; SIG_LEN];
+        assert!(refused(sk.sign_deterministic_out(msg, ctx, &mut out)));
+        assert_eq!(out, [0u8; SIG_LEN]);
+        assert!(refused(sk.sign_deterministic(msg, ctx)));
+        assert!(refused(sk.create_signer_deterministic(ctx)));
+
+        // The verifier, over a signature that is good without the context, and over one of
+        // the wrong length.
+        assert!(refused(pk.verify(msg, ctx, &deterministic)));
+        assert!(refused(pk.verify(msg, ctx, &random)));
+        assert!(refused(pk.verify(msg, ctx, &deterministic[..SIG_LEN - 1])));
+        assert!(refused(pk.create_verifier(ctx)));
     }
 }
 

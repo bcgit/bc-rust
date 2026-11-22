@@ -2,6 +2,7 @@
 name = "bouncycastle-core-test-framework"
 version.workspace = true
 edition.workspace = true
+publish = false
 
 [dependencies]
 bouncycastle-core.workspace = true

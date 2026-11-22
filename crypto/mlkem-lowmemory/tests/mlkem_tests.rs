@@ -522,7 +522,9 @@ mod mlkem_tests {
 
         // failure case: flip some bits
         let mut pk_bytes = pk.encode();
-        pk_bytes[17] ^= 0x01;
+        // The last octet is in rho, where any value decodes; a flip inside the 12-bit
+        // coefficients can push one to q or above, which decoding refuses.
+        *pk_bytes.last_mut().unwrap() ^= 0x01;
         let pk2 = MLKEM512PublicKey::from_bytes(&pk_bytes).unwrap();
         match MLKEM512::keypair_consistency_check(&pk2, &sk) {
             Err(KEMError::ConsistencyCheckFailed(_)) => { /* good */ }

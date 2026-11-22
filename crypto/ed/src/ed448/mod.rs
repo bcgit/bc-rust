@@ -1,6 +1,7 @@
 //! Ed448 and Ed448ph (RFC 8032 Section 5.2; EdDSA and HashEdDSA over edwards448 in FIPS 186-5
-//! Section 7), on the signature roles: [`Ed448PrivateKey`] and [`Ed448PublicKey`] serve both
-//! algorithms, named by the markers [`Ed448`] and [`Ed448ph`]. The module has the shape of
+//! Section 7), on the signature roles. [`Ed448PrivateKey`] and [`Ed448PublicKey`] are keys of
+//! [`Ed448`], and [`Ed448ph`] is reached through a key's `as_prehash()`, which gives a view that
+//! borrows the key: [`Ed448phPrivateKey`], [`Ed448phPublicKey`]. The module has the shape of
 //! [`ed25519`](crate::ed25519); what differs is that both algorithms take a context, and the
 //! lengths.
 //!
@@ -30,57 +31,58 @@
 //!
 //! ## Ed448
 //!
-//! Ed448 takes the whole message, through the one-shot roles, under an optional context. The
-//! keys implement those roles for both algorithms, so the call names the one it means:
+//! Ed448 takes the whole message, through the one-shot roles, under an optional context:
 //!
 //! ```rust
 //! use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
-//! use bouncycastle_ed::ed448::{Ed448, keygen};
+//! use bouncycastle_ed::ed448::keygen;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
 //!
-//! let sig = DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(&sk, b"msg", None)?;
-//! OneShotVerifyingKey::<Ed448, _>::verify(&pk, b"msg", None, &sig)?;
+//! let sig = sk.sign_deterministic(b"msg", None)?;
+//! pk.verify(b"msg", None, &sig)?;
 //!
 //! let ctx = Some(&b"my protocol"[..]);
-//! let sig = DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(&sk, b"msg", ctx)?;
-//! OneShotVerifyingKey::<Ed448, _>::verify(&pk, b"msg", ctx, &sig)?;
-//! assert!(OneShotVerifyingKey::<Ed448, _>::verify(&pk, b"msg", None, &sig).is_err());
+//! let sig = sk.sign_deterministic(b"msg", ctx)?;
+//! pk.verify(b"msg", ctx, &sig)?;
+//! assert!(pk.verify(b"msg", None, &sig).is_err());
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
 //! ## Ed448ph
 //!
 //! Ed448ph signs the first 64 octets of SHAKE256 of the message, so the message can be
-//! streamed. Only Ed448ph has the streaming roles, so these calls need no marker; its
-//! one-shots do, as above.
+//! streamed. It is asked for by name, with `as_prehash()` on either key; the workers borrow the
+//! key, so the view need not be kept.
 //!
 //! ```rust
 //! use bouncycastle_core::signature_key::{
 //!     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 //! };
 //! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
-//! use bouncycastle_ed::ed448::{Ed448ph, keygen};
+//! use bouncycastle_ed::ed448::keygen;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
 //!
-//! let mut signer = sk.create_signer_deterministic(Some(b"my protocol"))?;
+//! let mut signer = sk.as_prehash().create_signer_deterministic(Some(b"my protocol"))?;
 //! signer.do_update(b"a message ");
 //! signer.do_update(b"in two parts");
 //! let sig = signer.do_final()?;
 //!
-//! let mut verifier = pk.create_verifier(Some(b"my protocol"))?;
+//! let mut verifier = pk.as_prehash().create_verifier(Some(b"my protocol"))?;
 //! verifier.do_update(b"a message in two parts");
 //! verifier.do_verify_final(&sig)?;
 //!
 //! // The one-shots give and take the same signature.
 //! let msg = b"a message in two parts";
 //! let ctx = Some(&b"my protocol"[..]);
-//! let one_shot = DeterministicOneShotSigningKey::<Ed448ph, _>::sign_deterministic(&sk, msg, ctx)?;
-//! assert_eq!(one_shot, sig);
-//! OneShotVerifyingKey::<Ed448ph, _>::verify(&pk, msg, ctx, &sig)?;
+//! assert_eq!(sk.as_prehash().sign_deterministic(msg, ctx)?, sig);
+//! pk.as_prehash().verify(msg, ctx, &sig)?;
+//!
+//! // It is not an Ed448 signature, under the same context or none.
+//! assert!(pk.verify(msg, ctx, &sig).is_err());
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
@@ -149,9 +151,11 @@
 //! **Ed448ph trades strength for streaming.** RFC 8032 Section 8.5 says of the prehashed
 //! variants that they "SHOULD NOT be used"; prefer Ed448 unless the message cannot be held. A
 //! streaming verifier has read the whole message before it can say whether the signature is
-//! good (Section 8.7). One key pair may serve both algorithms (Section 8.6). The digest is
-//! computed here, from the message: a caller that holds only a digest cannot sign or verify it
-//! as Ed448ph.
+//! good (Section 8.7). One key pair may serve both algorithms (Section 8.6), and the two never
+//! verify each other's signatures; a key is Ed448's unless `as_prehash()` is called on it, so
+//! no call selects Ed448ph unasked. RFC 8410 gives Ed448ph no identifier, so both sides have
+//! to know it is meant. The digest is computed here, from the message: a caller that holds only
+//! a digest cannot sign or verify it as Ed448ph.
 //!
 //! **Strength.** RFC 8032 Section 8.5 gives Ed448 and Ed448ph "the strength of 224". The
 //! library has no 224-bit level, so they are classed at 192 bits, which is what [`keygen`]
@@ -194,7 +198,8 @@ mod scalar;
 mod scheme;
 
 pub use keys::{
-    ED448_NAME, ED448PH_NAME, Ed448, Ed448PrivateKey, Ed448PublicKey, Ed448ph, Ed448phSigner,
-    Ed448phVerifier, keygen, keygen_out, keypair_consistency_check,
+    ED448_NAME, ED448PH_NAME, Ed448, Ed448PrivateKey, Ed448PublicKey, Ed448ph, Ed448phPrivateKey,
+    Ed448phPublicKey, Ed448phSigner, Ed448phVerifier, keygen, keygen_out,
+    keypair_consistency_check,
 };
 pub use scheme::{CONTEXT_MAX_LEN, PRIVATE_KEY_LEN, PUBLIC_KEY_LEN, SIGNATURE_LEN};

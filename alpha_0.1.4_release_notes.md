@@ -53,8 +53,9 @@
   file, at the KEM and through HPKE; the `x448` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree,
   encaps and decaps; with criterion benches and a stack harness in `mem_usage_benches`.
 * Ed25519 and Ed25519ph -- `bouncycastle-ed::ed25519`, the EdDSA signatures of RFC 8032 Section 5.1 (FIPS 186-5
-  Section 7) on the signature roles: `Ed25519PrivateKey` and `Ed25519PublicKey` serve both algorithms, under the
-  markers `Ed25519` (one-shot roles only, no context) and `Ed25519ph` (streaming and one-shot, with a context).
+  Section 7) on the signature roles: `Ed25519PrivateKey` and `Ed25519PublicKey` are keys of `Ed25519` (one-shot
+  roles only, no context), and `as_prehash()` on either gives the `Ed25519ph` key (streaming and one-shot, with a
+  context).
   Verification is cofactored, and a decoded public key is validated in full, so one outside the prime-order subgroup
   is refused. `keygen` and `keygen_out` draw the key from the caller's RNG; checked against RFC 8032 Sections 7.1
   and 7.3, Wycheproof's Ed25519 set and the vectors of "Taming the many EdDSAs"; the `ed25519` and `ed25519ph` CLI
@@ -63,12 +64,12 @@
   and `Ed448` carry `id-Ed25519` and `id-Ed448` (RFC 8410); the pre-hash forms have no identifier. `core` gains
   `SignatureError::ComputationFault`, for a computed point that fails its own check.
 * Ed448 and Ed448ph -- `bouncycastle-ed::ed448`, the EdDSA signatures of RFC 8032 Section 5.2 (FIPS 186-5 Section 7)
-  on the signature roles, in the shape of Ed25519's: `Ed448PrivateKey` and `Ed448PublicKey` serve both algorithms,
-  under the markers `Ed448` (one-shot roles only) and `Ed448ph` (streaming and one-shot). Both take a context of up
-  to 255 octets, which is where Ed448 differs from Ed25519. Verification is cofactored, a decoded public key is
-  validated in full, and the one private key whose public key would be the neutral element is refused. Classed at
-  192 bits, `SecurityStrength` having no 224-bit level. Checked against RFC 8032 Sections 7.4 and 7.5 and
-  Wycheproof's Ed448 set; the `ed448` and `ed448ph` CLI subcommands cover keygen, pk-from-sk, check-consistency,
+  on the signature roles, in the shape of Ed25519's: `Ed448PrivateKey` and `Ed448PublicKey` are keys of `Ed448`
+  (one-shot roles only), and `as_prehash()` on either gives the `Ed448ph` key (streaming and one-shot). Both take a
+  context of up to 255 octets, which is where Ed448 differs from Ed25519. Verification is cofactored, a decoded
+  public key is validated in full, and the one private key whose public key would be the neutral element is
+  refused. Classed at 192 bits, `SecurityStrength` having no 224-bit level. Checked against RFC 8032 Sections 7.4
+  and 7.5 and Wycheproof's Ed448 set; the `ed448` and `ed448ph` CLI subcommands cover keygen, pk-from-sk, check-consistency,
   sign and verify, each under an optional `--ctxfile`, `ed448ph` streaming the message; with criterion benches and
   a stack harness in `mem_usage_benches`.
 * DHKEM over P-256, P-384 and P-521 -- RFC 9180 Section 4.1's DHKEM(P-256, HKDF-SHA256), DHKEM(P-384, HKDF-SHA384)
@@ -319,7 +320,8 @@
   its general form. The algorithm names change from `ECDSA-P256` to `ECDSA-P256-SHA256` (and `ECDetDSA-` likewise);
   encodings and the default pairings' outputs are unchanged. The tests now cover the CAVP SigGen and SigVer matrix
   for P-256, P-384 and P-521 under SHA-224 to SHA-512, RFC 6979's appendix under the same hashes, and every
-  Wycheproof ECDSA file for these curves, SHA-3 included.
+  Wycheproof ECDSA file for these curves, SHA-3 included. A non-empty `ctx` is refused with
+  `SignatureError::LengthError`, as Ed25519 does, ECDSA having no context input; it was accepted and dropped.
 * The six per-role key encoding traits are one pair, `PrivateKey<N>` / `PublicKey<N>`, with `from_bytes` returning
   `KeyDecodingError`, which converts into each role's error as its `DecodingError`. A key that serves two roles, such
   as X25519 in key agreement and as a KEM, implements it once, so `encode` and `from_bytes` are no longer ambiguous

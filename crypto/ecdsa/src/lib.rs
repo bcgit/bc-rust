@@ -42,7 +42,7 @@
 //! let (pk, sk) = P256::generate_signature_key_pair::<SHA256>(&mut rng)?;
 //! let message = b"the message to sign";
 //!
-//! // ECDSA has no context string; the traits' `ctx` parameter is accepted and ignored.
+//! // ECDSA takes no context: the traits' `ctx` is `None` or empty, and anything else is refused.
 //! let random = sk.sign(&mut rng, message, None)?;
 //! assert_ne!(random, sk.sign(&mut rng, message, None)?, "a fresh k each time");
 //!
@@ -248,10 +248,11 @@
 //!   key-pair generation require
 //!   [`CollisionResistantHash`](bouncycastle_core::traits::CollisionResistantHash), which
 //!   RIPEMD-160 lacks; see [`ECDSA`](ecdsa::ECDSA) for the hazmat wrapper that opts back in.
-//! - **`ctx` is accepted but ignored.** ECDSA (FIPS 186-5, SEC 1) has no context-string input;
-//!   the key traits' `ctx` parameter is accepted for trait conformance and silently discarded. A
-//!   caller relying on `ctx` to bind a signature to an application context gets no such binding
-//!   from ECDSA.
+//! - **`ctx` must be absent or empty.** ECDSA has no context input (FIPS 186-5 Sections 6.4.1
+//!   and 6.4.2 list none), so nothing could bind one into a signature. A non-empty `ctx` is
+//!   refused with `SignatureError::LengthError` by every constructor and one-shot, signing and
+//!   verifying, rather than dropped. A protocol that needs the binding puts the context in the
+//!   message it signs.
 
 #![no_std]
 #![forbid(unsafe_code)]

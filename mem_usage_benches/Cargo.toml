@@ -2,6 +2,7 @@
 name = "mem_usage_benches"
 version.workspace = true
 edition.workspace = true
+publish = false
 
 [dependencies]
 bouncycastle.workspace = true

@@ -2,6 +2,7 @@
 name = "bouncycastle-cipher-test-framework"
 version.workspace = true
 edition.workspace = true
+publish = false
 
 [dependencies]
 bouncycastle-cipher.workspace = true
