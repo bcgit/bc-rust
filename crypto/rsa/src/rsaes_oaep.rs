@@ -179,7 +179,7 @@ impl<K: RsaSize, H: OaepHash, M: OaepHash> KeyTransportAlgorithm for RSAES_OAEP<
 /// SHA-256 carries at most 190 bytes, so 190 builds (`tests/rsaes_oaep_tests.rs`) and 191 does
 /// not:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0080
 /// use bouncycastle_core::kem_key::EncapsulatingKey;
 /// use bouncycastle_rng::HashDRBG_SHA512;
 /// use bouncycastle_rsa::rsa_2048::RSASVE;
