@@ -15,9 +15,9 @@
 //! `DeterministicSigningKey`) is monomorphised once per pairing below, and the message streams
 //! from stdin through the workers' `do_update` in this CLI's usual ~1 KB chunks rather than
 //! being read whole. A key file is decoded under the pairing of the command that reads it: the
-//! bytes carry no scheme, and the key type the command names is the one it is for. `ctx` (accepted by the traits for
-//! conformance) is not exposed as a flag: RSA has no context-string input, and `bouncycastle_rsa`
-//! documents the parameter as ignored, so every call below passes `None`.
+//! bytes carry no scheme, and the key type the command names is the one it is for. The traits'
+//! `ctx` is not exposed as a flag: RSA has no context input, and `bouncycastle_rsa` refuses a
+//! non-empty one, so every call below passes `None`.
 //!
 //! `keygen` (FIPS 186-5 Appendix A.1.3 through the size marker's per-scheme generators,
 //! `RSA2048::generate_pss_signature_key_pair::<SHA256>` and siblings) writes the private key
