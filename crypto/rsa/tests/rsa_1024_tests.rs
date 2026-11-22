@@ -63,7 +63,7 @@ fn run_sig_gen_group_as_verify_vectors(
 
     let n: [u64; 16] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
     let e =
-        u32::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
+        u64::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
     let pk = RsaPublicComponents::<RSA1024>::new(&n, e).expect("group public key must be valid");
 
     let mut num_tests = 0usize;
@@ -106,7 +106,7 @@ fn run_sig_gen_group_rejects_wrong_message(
         .unwrap();
     let n: [u64; 16] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
     let e =
-        u32::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
+        u64::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
     let pk = RsaPublicComponents::<RSA1024>::new(&n, e).unwrap();
     let test = &group["tests"][0];
     let sig_bytes = hex_decode(test["sig"].as_str().unwrap()).unwrap();
@@ -157,7 +157,7 @@ fn public_key_trait_encoding_round_trips_and_rejects_wrong_lengths() {
     let group = &doc["testGroups"][0];
     let n: [u64; 16] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
     let e =
-        u32::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
+        u64::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
     let pk =
         RsaPublicComponents::<RSA1024>::new(&n, e).unwrap().into_key::<RSASSA_PKCS1_v1_5_SHA256>();
 

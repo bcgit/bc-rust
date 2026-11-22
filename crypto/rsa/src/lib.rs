@@ -274,12 +274,12 @@
 //!
 //! | Key Object       | PK size on disk | PK size in memory | SK size on disk | SK size in memory |
 //! |-------------------|------------------|--------------------|------------------|--------------------|
-//! | RSA-1024 (verify-only) | 132        | 136                | --               | --                 |
-//! | RSA-1536 (verify-only) | 196        | 200                | --               | --                 |
-//! | RSA-2048          | 260              | 264                | 640              | 896                |
-//! | RSA-3072          | 388              | 392                | 960              | 1344               |
-//! | RSA-4096          | 516              | 520                | 1280             | 1792               |
-//! | RSA-8192          | 1028             | 1032               | 2560             | 3584               |
+//! | RSA-1024 (verify-only) | 136        | 136                | --               | --                 |
+//! | RSA-1536 (verify-only) | 200        | 200                | --               | --                 |
+//! | RSA-2048          | 264              | 264                | 640              | 896                |
+//! | RSA-3072          | 392              | 392                | 960              | 1344               |
+//! | RSA-4096          | 520              | 520                | 1280             | 1792               |
+//! | RSA-8192          | 1032             | 1032               | 2560             | 3584               |
 //!
 //! The RSASVE key types (`RsaKEMPublicKey<K>`/`RsaKEMPrivateKey<K>`) have the same encodings
 //! and the same in-memory sizes as the signature key types above: each wraps one. An RSASVE
@@ -367,11 +367,9 @@
 //!   bit security) is the related concern: the recovered `Z` must not leak through timing either.
 //!   `decaps` itself is constant-time in `Z`, but what the caller does with `Z` is up to the
 //!   caller.
-//! - **RSASVE public exponents are limited to 32 bits.** SP 800-56B §6.2.1 allows
-//!   `65,537 <= e < 2^256`, but [`keys::RsaPublicKey`] holds `e` as a `u32`, so an RSASVE public
-//!   key with a larger `e` cannot be constructed. (ACVP's RSADP vectors use exponents of up to 56
-//!   bits, which is why only their decapsulation side is tested here: decapsulation never needs
-//!   `e`.)
+//! - **Public exponents are limited to 64 bits.** SP 800-56B §6.2.1 allows
+//!   `65,537 <= e < 2^256`, but the keys hold `e` as a `u64`, so a key with a larger `e` cannot
+//!   be constructed. (ACVP's RSADP vectors use exponents of up to 56 bits.)
 //! - **RSASVE key validation is partial.** The KEM public key checks `e >= 65,537` on top of
 //!   the signature keys' checks, the modulus's exact bit length among them. The KEM keys do not
 //!   run SP 800-89's remaining plausibility tests, and full RSA public-key validation is not

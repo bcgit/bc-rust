@@ -28,7 +28,7 @@
 //!
 //! On top of what [`RsaPublicComponents::new`]/[`RsaPrivateComponents::from_crt_components`] already check,
 //! the KEM public key enforces `65,537 <= e` (§6.2.1 item 2, "65,537 ≤ e < 2^256"; the upper
-//! bound holds by construction, because `e` is a `u32`). The CRT private key does not carry `e`.
+//! bound holds by construction, because `e` is a `u64`). The CRT private key does not carry `e`.
 //!
 //! Among the components' own checks, one matters here in particular: `n` is exactly the size's
 //! `nLen` bits long, i.e. its top bit is set. §6.2.1 item 1 gives the key an `nBits`, and
@@ -61,7 +61,7 @@ use core::fmt::{Display, Formatter};
 use core::marker::PhantomData;
 
 /// The smallest public exponent SP 800-56B Rev. 2 §6.2.1 item 2 allows a key-establishment key.
-pub const MIN_PUBLIC_EXPONENT: u32 = 65537;
+pub const MIN_PUBLIC_EXPONENT: u64 = 65537;
 
 /// How many draws RSASVE.GENERATE (§7.2.1.2 step 2) makes before giving up on an RNG whose
 /// output never lands in `(1, n - 1)`: with the modulus's top bit set each draw succeeds with
@@ -106,7 +106,7 @@ impl<K: RsaSize> RsaKEMPublicKey<K> {
     /// Builds a public key from its modulus and exponent. Returns
     /// `Err(`[`KEMError::DecodingError`]`)` in the cases [`RsaPublicComponents::new`] rejects, and also
     /// if `e < 65,537` (see the module docs' `# Key validation`).
-    pub fn new(n: &K::Limbs, e: u32) -> Result<Self, KEMError> {
+    pub fn new(n: &K::Limbs, e: u64) -> Result<Self, KEMError> {
         Self::from_rsa_key(RsaPublicComponents::new(n, e).map_err(kem_error)?)
     }
 
@@ -125,7 +125,7 @@ impl<K: RsaSize> RsaKEMPublicKey<K> {
     }
 
     /// The public exponent `e`.
-    pub fn e(&self) -> u32 {
+    pub fn e(&self) -> u64 {
         self.0.e()
     }
 }
@@ -369,7 +369,7 @@ where
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         let bytes: &[u8; PK_LEN] = bytes.try_into().map_err(|_| {
-            KeyDecodingError("an RSA public key is the modulus length plus four bytes")
+            KeyDecodingError("an RSA public key is the modulus length plus eight bytes")
         })?;
         Self::from_rsa_key(RsaPublicComponents::from_bytes_raw(bytes).map_err(decoding_error)?)
             .map_err(kem_decoding_error)

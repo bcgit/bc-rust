@@ -41,12 +41,12 @@ pub(crate) fn rsavp1<K: RsaSize>(
 /// time in `n` and `e`, which are public, and constant time in `x`, which RSAEP's is not.
 pub(crate) fn public_exp<const L: usize, const L2: usize, const L21: usize>(
     n: &[u64; L],
-    e: u32,
+    e: u64,
     x: &[u64; L],
 ) -> [u64; L] {
     let ctx = MontgomeryContext::<L>::for_public_modulus(n)
         .expect("RsaPublicComponents::new already validated n is odd and nonzero");
-    mod_pow_public_exponent::<L, L2, L21>(x, u64::from(e), &ctx)
+    mod_pow_public_exponent::<L, L2, L21>(x, e, &ctx)
 }
 
 pub(crate) fn rsasp1<K: RsaSigningSize>(

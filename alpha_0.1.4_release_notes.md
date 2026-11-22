@@ -116,6 +116,8 @@
   message undefined and reads its Cortex-M0 and RISC-V 32I assembly.
 * RSA keys -- a key's modulus has exactly its size's bit length: the signature key constructors and decoders refuse
   one whose top bit is clear, as the key-establishment keys already did.
+* RSA keys -- the public exponent is a `u64` (it was a `u32`), and the public key's encoding is `n || e` with `e`
+  in 8 bytes, 4 longer than before (breaking: `PK_LEN` is the modulus length plus 8).
 
 ## Minor features / bug fixes
 

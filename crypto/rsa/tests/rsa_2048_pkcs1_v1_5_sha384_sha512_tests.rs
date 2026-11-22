@@ -137,8 +137,8 @@ fn run_verify_vectors(
     for group in doc["testGroups"].as_array().unwrap() {
         assert_eq!(group["sha"], expected_sha);
         let n: [u64; 32] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
-        let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
-            .expect("publicExponent fits in u32 for every group here");
+        let e = u64::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
+            .expect("publicExponent fits in u64 for every group here");
         let pk =
             RsaPublicComponents::<RSA2048>::new(&n, e).expect("group public key must be valid");
 

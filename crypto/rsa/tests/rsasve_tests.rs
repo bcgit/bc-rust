@@ -12,7 +12,9 @@
 //! * `acvp/RSA-DecryptionPrimitive-Sp800-56Br2.json`: ACVP-Server's RSADP vector set
 //!   (`gen-val/json-files/RSA-DecryptionPrimitive-Sp800-56Br2/internalProjection.json`). Its CRT
 //!   groups (2048/3072/4096) are RSASVE.RECOVER's step 3.b, including the out-of-range
-//!   ciphertexts (`c <= 1` or `c >= n - 1`) that step 3.c must reject. The basic-format groups
+//!   ciphertexts (`c <= 1` or `c >= n - 1`) that step 3.c must reject. Their public exponents
+//!   are 30 to 56 bits wide, so the passing cases also pin RSAEP under such an `e`, through
+//!   `encaps` with an RNG that emits the vector's `pt`. The basic-format groups
 //!   (`keyMode: standard`, no CRT components) are skipped, since this crate has no `(n, d)` key
 //!   type.
 //! * `openssl/openssl_rsasve_<bits>.json`: produced by `openssl/ossl_rsasve.c` against OpenSSL
@@ -121,7 +123,7 @@ macro_rules! rsasve_suite {
             fn lengths_are_nlen() {
                 assert_eq!(CT_LEN, $bits / 8);
                 assert_eq!(SS_LEN, $bits / 8);
-                assert_eq!(PK_LEN, $bits / 8 + 4);
+                assert_eq!(PK_LEN, $bits / 8 + 8);
                 assert_eq!(SK_LEN, 5 * $bits / 16);
             }
 
@@ -293,7 +295,7 @@ macro_rules! rsasve_suite {
                 // SP 800-56B Rev. 2 §6.2.1: 65,537 <= e.
                 assert!(PK::new(&n, 65537).is_ok());
                 assert!(PK::new(&n, 65539).is_ok());
-                for e in [3u32, 17, 65535] {
+                for e in [3u64, 17, 65535] {
                     assert!(matches!(PK::new(&n, e), Err(KEMError::DecodingError(_))));
                 }
                 // Still rejected for being even (RsaPublicKey's own check).
@@ -312,7 +314,7 @@ macro_rules! rsasve_suite {
                 bytes[0] &= 0x7F;
                 assert!(matches!(PK::from_bytes(&bytes), Err(KeyDecodingError(_))));
                 let mut bytes = pk.encode();
-                bytes[PK_LEN - 4..].copy_from_slice(&3u32.to_be_bytes());
+                bytes[PK_LEN - 8..].copy_from_slice(&3u64.to_be_bytes());
                 assert!(matches!(PK::from_bytes(&bytes), Err(KeyDecodingError(_))));
             }
 
@@ -408,7 +410,7 @@ fn acvp_kas_ifc_ssc_kas1_2048() {
             &limbs(s("iutIqmp")),
         )
         .unwrap();
-        let e = u32::from_str_radix(s("iutE"), 16).unwrap();
+        let e = u64::from_str_radix(s("iutE"), 16).unwrap();
         let pk = RSA2048KEMPublicKey::new(&limbs(s("iutN")), e).unwrap();
         let c = be_bytes::<CT_LEN>(s("serverC"));
         let z = be_bytes::<CT_LEN>(s("serverZ"));
@@ -451,7 +453,7 @@ fn acvp_kas_ifc_ssc_kas2_3072() {
                 &limbs(s(&format!("{who}Iqmp"))),
             )
             .unwrap();
-            let e = u32::from_str_radix(s(&format!("{who}E")), 16).unwrap();
+            let e = u64::from_str_radix(s(&format!("{who}E")), 16).unwrap();
             let pk = RSA3072KEMPublicKey::new(&limbs(s(&format!("{who}N"))), e).unwrap();
             (pk, sk)
         };
@@ -488,13 +490,16 @@ fn acvp_kas_ifc_ssc_kas2_3072() {
 
 /// ACVP's SP 800-56B Rev. 2 RSADP vectors, CRT groups: RSASVE.RECOVER is RSADP plus I2BS, so
 /// `decaps(ct)` must be `pt` at `nLen` bytes, or `DecapsulationFailed` for the out-of-range
-/// ciphertexts ACVP marks as failing.
+/// ciphertexts ACVP marks as failing; and for the passing cases RSASVE.GENERATE over a draw of
+/// `pt` must give `ct` under the vector's `(n, e)`, all but three of whose exponents are wider
+/// than 32 bits.
 macro_rules! acvp_rsadp {
-    ($name:ident, $size:ident, $marker:ident, $bits:literal) => {
+    ($name:ident, $size:ident, $marker:ident, $bits:literal, $wide:literal) => {
         #[test]
         fn $name() {
             use bouncycastle_rsa::$size::CT_LEN;
             type SK = bouncycastle_rsa::rsasve::RsaKEMPrivateKey<bouncycastle_rsa::$marker>;
+            type PK = bouncycastle_rsa::rsasve::RsaKEMPublicKey<bouncycastle_rsa::$marker>;
             let d = get_test_data("acvp/RSA-DecryptionPrimitive-Sp800-56Br2.json");
             let group = d["testGroups"]
                 .as_array()
@@ -502,9 +507,11 @@ macro_rules! acvp_rsadp {
                 .iter()
                 .find(|g| g["keyMode"] == "crt" && g["modulo"] == $bits)
                 .expect("CRT group");
-            let (mut passed, mut failed) = (0, 0);
+            let (mut passed, mut failed, mut wide) = (0, 0, 0);
             for t in group["tests"].as_array().unwrap() {
                 let s = |k: &str| t[k].as_str().unwrap();
+                let e = u64::from_str_radix(s("e"), 16).expect("every exponent here fits a u64");
+                wide += usize::from(e > u64::from(u32::MAX));
                 let sk = SK::from_crt_components(
                     &limbs(s("p")),
                     &limbs(s("q")),
@@ -522,6 +529,10 @@ macro_rules! acvp_rsadp {
                         "tcId {}",
                         t["tcId"]
                     );
+                    let pk = PK::new(&limbs(s("n")), e).unwrap();
+                    let (_, c) =
+                        pk.encaps(&mut rng_emitting(pt, SecurityStrength::_256bit), ()).unwrap();
+                    assert_eq!(c, ct, "tcId {}", t["tcId"]);
                     passed += 1;
                 } else {
                     assert!(
@@ -532,15 +543,15 @@ macro_rules! acvp_rsadp {
                     failed += 1;
                 }
             }
-            assert_eq!(passed + failed, 15);
-            assert!(failed > 0, "the group's out-of-range cases must have been exercised");
+            assert_eq!((passed, failed), (11, 4));
+            assert_eq!(wide, $wide, "exponents wider than 32 bits");
         }
     };
 }
 
-acvp_rsadp!(acvp_rsadp_crt_2048, rsa_2048, RSA2048, 2048);
-acvp_rsadp!(acvp_rsadp_crt_3072, rsa_3072, RSA3072, 3072);
-acvp_rsadp!(acvp_rsadp_crt_4096, rsa_4096, RSA4096, 4096);
+acvp_rsadp!(acvp_rsadp_crt_2048, rsa_2048, RSA2048, 2048, 14);
+acvp_rsadp!(acvp_rsadp_crt_3072, rsa_3072, RSA3072, 3072, 15);
+acvp_rsadp!(acvp_rsadp_crt_4096, rsa_4096, RSA4096, 4096, 13);
 
 /// `RSASVE::keygen`'s pairs are usable KEM keys (a genuine generation, at the smallest size
 /// only: key generation is the slow part), and `keygen` enforces the RNG strength.

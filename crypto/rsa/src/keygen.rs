@@ -40,7 +40,7 @@ use core::num::NonZeroUsize;
 /// prior to generating the primes"; this is the smallest such value and the near-universal choice
 /// (it is what Wycheproof's and BC Java's test keys use). Its primality is what lets criterion
 /// 2(a), `GCD(p - 1, e) = 1`, be checked as "`e` does not divide `p - 1`" (step 4.5 below).
-pub const PUBLIC_EXPONENT: u32 = 65537;
+pub const PUBLIC_EXPONENT: u64 = 65537;
 
 /// Trial-division bound: every prime below this is divided out of a candidate before the
 /// Miller-Rabin test runs (FIPS 186-5 Appendix B.7, "if convenient, `c` may be divided by
@@ -141,7 +141,7 @@ fn inv_mod_u64_prime(r: u64, e: u64) -> u64 {
 /// and `0 < d < m` since `0 < k < e`. The only multi-limb operations are one multiply by `k` and
 /// one exact division by `e`.
 fn inverse_of_e_mod<const N: usize>(m: &[u64; N]) -> [u64; N] {
-    let e = u64::from(PUBLIC_EXPONENT);
+    let e = PUBLIC_EXPONENT;
     let r = mod_u64(m, e);
     // `GCD(m, e) = 1` is the caller's invariant: `keygen` discards any `p` (or `q`) with
     // `e | p - 1` at step 4.5, and `LCM(p - 1, q - 1)` then cannot be divisible by `e` either.
@@ -476,7 +476,7 @@ fn random_prime<const N: usize, const N2: usize, const N21: usize>(
             continue;
         }
         // Step 4.5: GCD(p - 1, e) = 1, i.e. p mod e != 1 for prime e.
-        if mod_u64(out, u64::from(PUBLIC_EXPONENT)) == 1 {
+        if mod_u64(out, PUBLIC_EXPONENT) == 1 {
             continue;
         }
         if is_probable_prime::<N, N2, N21>(out, rounds, rng)? {

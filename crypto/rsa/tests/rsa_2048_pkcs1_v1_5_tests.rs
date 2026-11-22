@@ -242,7 +242,7 @@ fn rsa_signature_sha256_all_groups() {
 
     for group in doc["testGroups"].as_array().unwrap() {
         let n: [u64; 32] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
-        let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
+        let e = u64::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
             .unwrap();
         let pk = RsaPublicComponents::<RSA2048>::new(&n, e).unwrap();
 

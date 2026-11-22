@@ -211,7 +211,7 @@ where
 
     // Encryption under the group's public key, which the vectors do not cover: a key
     // transported with this size and these hashes comes back.
-    let e = u32::from_str_radix(key["publicExponent"].as_str().unwrap(), 16).unwrap();
+    let e = u64::from_str_radix(key["publicExponent"].as_str().unwrap(), 16).unwrap();
     let pk = RsaKEMPublicKey::<K>::new(sk.n(), e).expect("a Wycheproof key is a KEM key");
     let params = OaepParams::<H, M>::new(b"round trip");
     let sent = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::MACKey).unwrap();

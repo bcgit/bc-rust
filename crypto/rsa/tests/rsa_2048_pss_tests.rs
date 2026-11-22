@@ -158,8 +158,8 @@ fn rsa_pss_sha256_mgf1_32_wycheproof_vectors() {
         assert_eq!(group["mgfSha"], "SHA-256");
         assert_eq!(group["sLen"], 32);
         let n: [u64; 32] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
-        let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
-            .expect("publicExponent fits in u32 for every group here");
+        let e = u64::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
+            .expect("publicExponent fits in u64 for every group here");
         let pk =
             RsaPublicComponents::<RSA2048>::new(&n, e).expect("group public key must be valid");
 

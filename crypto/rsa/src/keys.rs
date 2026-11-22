@@ -36,14 +36,14 @@ use core::marker::PhantomData;
 /// # Encoding
 ///
 /// The keys' `PublicKey::encode`/`from_bytes` use the raw layout `n || e`: `n` as `K::K_LEN`
-/// big-endian bytes (RFC 8017 §4.1's I2OSP), then `e` as 4 big-endian bytes, `K::PK_LEN` in all.
+/// big-endian bytes (RFC 8017 §4.1's I2OSP), then `e` as 8 big-endian bytes, `K::PK_LEN` in all.
 /// Not an RFC 8017 or ASN.1 format -- this crate has no DER encoder/decoder -- just a fixed-width
 /// layout that round-trips, for `cli/src/rsa_cmd.rs` to read and write public keys as files.
 /// Decoding validates `(n, e)` the same way [`Self::new`] does; the scheme is not encoded.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RsaPublicComponents<K: RsaSize> {
     n: K::Limbs,
-    e: u32,
+    e: u64,
 }
 
 /// Whether the modulus's top bit is set: `n` has exactly the size's bit length, `K::BITS`.
@@ -60,7 +60,7 @@ impl<K: RsaSize> RsaPublicComponents<K> {
     /// `Err(`[`SignatureError::DecodingError`]`)` if `n` is even (a product of two odd primes
     /// never is), if `n` is not exactly `K::BITS` bits long (its top bit is clear), or if `e`
     /// is even or below 3 (RFC 8017 §3.1: `e` is odd and at least 3).
-    pub fn new(n: &K::Limbs, e: u32) -> Result<Self, SignatureError> {
+    pub fn new(n: &K::Limbs, e: u64) -> Result<Self, SignatureError> {
         if n.as_ref()[0] & 1 == 0 {
             return Err(SignatureError::DecodingError("RSA modulus must be odd"));
         }
@@ -84,7 +84,7 @@ impl<K: RsaSize> RsaPublicComponents<K> {
     }
 
     /// The public exponent `e`.
-    pub fn e(&self) -> u32 {
+    pub fn e(&self) -> u64 {
         self.e
     }
 
@@ -112,8 +112,8 @@ impl<K: RsaSize> RsaPublicComponents<K> {
         let mut n_bytes = K::Modulus::ZEROED;
         n_bytes.as_mut().copy_from_slice(&bytes[..K::K_LEN]);
         let n = K::limbs_from_be_bytes(&n_bytes);
-        let e_bytes: [u8; 4] = bytes[K::K_LEN..].try_into().expect("PK_LEN is K_LEN + 4");
-        Self::new(&n, u32::from_be_bytes(e_bytes))
+        let e_bytes: [u8; 8] = bytes[K::K_LEN..].try_into().expect("PK_LEN is K_LEN + 8");
+        Self::new(&n, u64::from_be_bytes(e_bytes))
     }
 }
 
@@ -288,7 +288,7 @@ impl<A: RsaSignatureAlgorithm> RsaPublicKey<A> {
     ///
     /// # Errors
     /// As [`RsaPublicComponents::new`].
-    pub fn new(n: &<A::Size as RsaSize>::Limbs, e: u32) -> Result<Self, SignatureError> {
+    pub fn new(n: &<A::Size as RsaSize>::Limbs, e: u64) -> Result<Self, SignatureError> {
         Ok(Self::from_components(RsaPublicComponents::new(n, e)?))
     }
 
@@ -308,7 +308,7 @@ impl<A: RsaSignatureAlgorithm> RsaPublicKey<A> {
     }
 
     /// The public exponent `e`.
-    pub fn e(&self) -> u32 {
+    pub fn e(&self) -> u64 {
         self.components.e()
     }
 }
@@ -353,7 +353,7 @@ where
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         let bytes: &[u8; PK_LEN] = bytes.try_into().map_err(|_| {
-            KeyDecodingError("an RSA public key is the modulus length plus four bytes")
+            KeyDecodingError("an RSA public key is the modulus length plus eight bytes")
         })?;
         Ok(Self::from_components(
             RsaPublicComponents::from_bytes_raw(bytes).map_err(decoding_error)?,

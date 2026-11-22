@@ -193,7 +193,7 @@ fn run_pkcs1_v1_5_verify_vectors(
     for group in doc["testGroups"].as_array().unwrap() {
         assert_eq!(group["sha"], expected_sha);
         let n: [u64; 64] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
-        let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
+        let e = u64::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
             .unwrap();
         let pk = RsaPublicComponents::<RSA4096>::new(&n, e).unwrap();
 
@@ -283,7 +283,7 @@ fn run_pss_verify_vectors(
         assert_eq!(group["mgfSha"], expected_sha);
         assert_eq!(group["sLen"], expected_slen);
         let n: [u64; 64] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
-        let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
+        let e = u64::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
             .unwrap();
         let pk = RsaPublicComponents::<RSA4096>::new(&n, e).unwrap();
 

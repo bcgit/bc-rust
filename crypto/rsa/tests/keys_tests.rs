@@ -122,10 +122,12 @@ fn public_key_accepts_e_65537() {
 
 #[test]
 fn public_key_rejects_even_exponent() {
-    assert!(matches!(
-        RsaPublicComponents::<RSA2048>::new(&N, 65536),
-        Err(SignatureError::DecodingError(_))
-    ));
+    for e in [0, 2, 4, 65536, 1 << 32, u64::MAX - 1] {
+        assert!(matches!(
+            RsaPublicComponents::<RSA2048>::new(&N, e),
+            Err(SignatureError::DecodingError(_))
+        ));
+    }
 }
 
 #[test]
@@ -134,6 +136,7 @@ fn public_key_rejects_exponent_below_three() {
         RsaPublicComponents::<RSA2048>::new(&N, 1),
         Err(SignatureError::DecodingError(_))
     ));
+    assert!(RsaPublicComponents::<RSA2048>::new(&N, 3).is_ok());
 }
 
 #[test]
@@ -148,31 +151,37 @@ fn public_key_rejects_even_modulus() {
 
 #[test]
 fn public_key_encode_round_trips() {
-    let pk = RsaPublicComponents::<RSA2048>::new(&N, 0x10001).unwrap().into_key::<Pss256>();
-    let bytes: [u8; 260] = pk.encode();
-    let decoded = RsaPublicKey::<Pss256>::from_bytes(&bytes).expect("must decode");
-    assert_eq!(decoded, pk);
+    // 65537, a 33-bit and a 56-bit exponent, and the largest there is.
+    for e in [0x10001, 0x1_0000_0001, 0x00c0_ffee_1234_5677, u64::MAX] {
+        let pk = RsaPublicComponents::<RSA2048>::new(&N, e).unwrap().into_key::<Pss256>();
+        let bytes: [u8; 264] = pk.encode();
+        assert_eq!(bytes[256..], e.to_be_bytes());
+        let decoded = RsaPublicKey::<Pss256>::from_bytes(&bytes).expect("must decode");
+        assert_eq!(decoded, pk);
+        assert_eq!(decoded.e(), e);
+    }
 }
 
 /// `PublicKey`'s `n || e` layout, checked field by field rather than only by round
-/// trip: `n` big-endian (its most significant limb's top byte first), then `e` big-endian.
+/// trip: `n` big-endian (its most significant limb's top byte first), then `e` big-endian in
+/// eight bytes.
 #[test]
 fn public_key_encode_layout_is_n_then_e_big_endian() {
     let pk = RsaPublicComponents::<RSA2048>::new(&N, 0x10001).unwrap().into_key::<Pss256>();
     let bytes = pk.encode();
     assert_eq!(bytes[..8], N[31].to_be_bytes());
     assert_eq!(bytes[248..256], N[0].to_be_bytes());
-    assert_eq!(bytes[256..], [0x00, 0x01, 0x00, 0x01]);
+    assert_eq!(bytes[256..], [0, 0, 0, 0, 0x00, 0x01, 0x00, 0x01]);
 
-    let mut out = [0xaau8; 260];
-    assert_eq!(pk.encode_out(&mut out), 260);
+    let mut out = [0xaau8; 264];
+    assert_eq!(pk.encode_out(&mut out), 264);
     assert_eq!(out, bytes);
 }
 
 #[test]
 fn public_key_from_bytes_rejects_even_modulus() {
     let pk = RsaPublicComponents::<RSA2048>::new(&N, 0x10001).unwrap().into_key::<Pss256>();
-    let mut bytes: [u8; 260] = pk.encode();
+    let mut bytes: [u8; 264] = pk.encode();
     bytes[255] &= !1; // clear n's low bit (last byte, big-endian)
     assert!(matches!(RsaPublicKey::<Pss256>::from_bytes(&bytes), Err(KeyDecodingError(_))));
 }
@@ -181,7 +190,7 @@ fn public_key_from_bytes_rejects_even_modulus() {
 fn public_key_from_bytes_rejects_wrong_lengths() {
     let pk = RsaPublicComponents::<RSA2048>::new(&N, 0x10001).unwrap().into_key::<Pss256>();
     let bytes = pk.encode();
-    assert!(matches!(RsaPublicKey::<Pss256>::from_bytes(&bytes[..259]), Err(KeyDecodingError(_))));
+    assert!(matches!(RsaPublicKey::<Pss256>::from_bytes(&bytes[..263]), Err(KeyDecodingError(_))));
     let mut too_long = bytes.to_vec();
     too_long.push(0);
     assert!(matches!(RsaPublicKey::<Pss256>::from_bytes(&too_long), Err(KeyDecodingError(_))));

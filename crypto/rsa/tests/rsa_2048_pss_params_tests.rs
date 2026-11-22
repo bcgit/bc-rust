@@ -80,7 +80,7 @@ fn wycheproof<A: RsaSignatureAlgorithm<Size = RSA2048>>(
         assert_eq!(group["mgfSha"], mgf_sha);
         assert_eq!(group["sLen"], s_len);
         let n: [u64; 32] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
-        let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
+        let e = u64::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
             .unwrap();
         let pk = RsaPublicComponents::<RSA2048>::new(&n, e).unwrap().into_key::<A>();
         for test in group["tests"].as_array().unwrap() {

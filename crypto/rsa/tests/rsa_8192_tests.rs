@@ -341,7 +341,7 @@ fn run_sampled_pkcs1_v1_5_verify_vectors(
     assert_eq!(group["sha"], expected_sha);
     let n: [u64; 128] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
     let e =
-        u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
+        u64::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
     let pk = RsaPublicComponents::<RSA8192>::new(&n, e).unwrap();
 
     let tests = group["tests"].as_array().unwrap();
