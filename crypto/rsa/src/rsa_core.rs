@@ -41,7 +41,7 @@ pub(crate) fn public_exp<const L: usize, const L2: usize, const L21: usize>(
     e: u32,
     x: &[u64; L],
 ) -> [u64; L] {
-    let ctx = MontgomeryContext::<L>::new(n)
+    let ctx = MontgomeryContext::<L>::for_public_modulus(n)
         .expect("RsaPublicComponents::new already validated n is odd and nonzero");
     let mut e_limbs = [0u64; L];
     e_limbs[0] = e as u64;
@@ -60,8 +60,9 @@ pub(crate) fn rsasp1<K: RsaSigningSize>(
 }
 
 /// RFC 8017 §5.2.1 step 2.b, the CRT form of `m^d mod n`, over the five components: the size
-/// marker's `crt_exp` forwards here with the size's widths. Constant time in the key: every
-/// exponentiation is `mod_pow`'s ladder, every reduction `reduce_wide`'s bit-serial loop.
+/// marker's `crt_exp` forwards here with the size's widths. Constant time in the key: the two
+/// contexts are built by `MontgomeryContext::for_secret_modulus`, every exponentiation is
+/// `mod_pow`'s ladder, every reduction `reduce_wide`'s bit-serial loop.
 pub(crate) fn crt_exp<
     const L: usize,
     const L2: usize,
@@ -78,10 +79,10 @@ pub(crate) fn crt_exp<
     m: &[u64; L],
 ) -> [u64; L] {
     let mut ctx_p = Secret::<MontgomeryContext<HALF>>::new();
-    *ctx_p = MontgomeryContext::<HALF>::new(p)
+    *ctx_p = MontgomeryContext::<HALF>::for_secret_modulus(p)
         .expect("RsaPrivateComponents::from_crt_components already validated p is odd and nonzero");
     let mut ctx_q = Secret::<MontgomeryContext<HALF>>::new();
-    *ctx_q = MontgomeryContext::<HALF>::new(q)
+    *ctx_q = MontgomeryContext::<HALF>::for_secret_modulus(q)
         .expect("RsaPrivateComponents::from_crt_components already validated q is odd and nonzero");
     // Step 2.b.i: s_1 = m^dP mod p, s_2 = m^dQ mod q, each on m reduced to the prime's width.
     let mut m_mod_p = reduce_wide::<L, HALF>(m, p);

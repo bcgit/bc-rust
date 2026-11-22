@@ -8,13 +8,15 @@
 //! * [`mont_n_prime`] derives `n' = -n0^-1 mod 2^64` from the modulus's low limb by Newton's
 //!   method (six doublings of precision from a one-bit-correct seed), rather than requiring it
 //!   precomputed.
-//! * [`MontgomeryContext::new`] additionally derives `R mod n` and `R^2 mod n` (`R = 2^(64L)`) by
-//!   repeated doubling-and-reduction, rather than requiring them precomputed.
+//! * [`MontgomeryContext`]'s constructors additionally derive `R mod n` and `R^2 mod n`
+//!   (`R = 2^(64L)`) by repeated doubling-and-reduction, rather than requiring them precomputed.
 //!
-//! Both of these operate on the modulus alone, which is public in RSA (shared between the public
-//! and private key), so they run in variable time -- the same reasoning
+//! The modulus is public when it is RSA's `n` and secret when it is one of the primes `p`, `q`
+//! of the CRT or a candidate prime in key generation, so the context has one constructor for
+//! each: [`MontgomeryContext::for_secret_modulus`], constant time in the modulus, and
+//! [`MontgomeryContext::for_public_modulus`], whose doublings branch on it -- the same reasoning
 //! [`bouncycastle_ec::inverse_vartime`] documents for operating on public curve/scalar values.
-//! [`mod_pow`] is the one piece here that operates on a value that can be secret (the private
+//! [`mod_pow`] operates on an exponent that can be secret (the private
 //! exponent `d`): it processes every one of the modulus's `64 * L` bits regardless of the
 //! exponent's actual value or bit length, using Joye & Yen's Montgomery powering ladder (CHES
 //! 2002, "The Montgomery Powering Ladder"), so it performs exactly one multiplication and one
@@ -52,20 +54,33 @@ pub fn mont_n_prime(n0: u64) -> u64 {
 
 /// `(a * 2) mod n` for `a < n` and odd `n`, in variable time: doubling `a` can carry out of the
 /// top limb or land in `[n, 2n)`, either of which means exactly one subtraction of `n` restores
-/// the `< n` representative (it cannot need a second: `a < n` implies `2a < 2n`).
-fn double_mod_n<const L: usize>(a: &[u64; L], n: &[u64; L]) -> [u64; L] {
+/// the `< n` representative (it cannot need a second: `a < n` implies `2a < 2n`). The branch
+/// reveals how `2a` compares with `n`, so `n` must be public.
+fn double_mod_n_vartime<const L: usize>(a: &[u64; L], n: &[u64; L]) -> [u64; L] {
     let (doubled, carry) = nat::add(a, a);
     let (diff, borrow) = nat::sub(&doubled, n);
     if carry == 1 || borrow == 0 { diff } else { doubled }
 }
 
-/// `2^bits mod n` for odd `n`, by `bits` repeated doublings from `1`. Variable time, like
-/// `double_mod_n`: the modulus is public.
-fn pow2_mod<const L: usize>(bits: u32, n: &[u64; L]) -> [u64; L] {
+/// `2^bits mod n` for odd `n > 1`, by `bits` repeated doublings from `1`. Variable time in `n`,
+/// like `double_mod_n_vartime`: for a public modulus only.
+fn pow2_mod_vartime<const L: usize>(bits: u32, n: &[u64; L]) -> [u64; L] {
     let mut acc = [0u64; L];
     acc[0] = 1;
     for _ in 0..bits {
-        acc = double_mod_n(&acc, n);
+        acc = double_mod_n_vartime(&acc, n);
+    }
+    acc
+}
+
+/// `2^bits mod n` for odd `n > 1`, as `pow2_mod_vartime` computes it, in constant time in `n`:
+/// each doubling is [`ct_shift_in_bit_mod`]'s masked subtraction, and the trip count is `bits`,
+/// which is public.
+fn pow2_mod_ct<const L: usize>(bits: u32, n: &[u64; L]) -> [u64; L] {
+    let mut acc = [0u64; L];
+    acc[0] = 1;
+    for _ in 0..bits {
+        acc = ct_shift_in_bit_mod(&acc, 0, n);
     }
     acc
 }
@@ -169,8 +184,8 @@ pub fn mul_mod<const L: usize, const L2: usize, const L21: usize>(
 
 /// `(a - b) mod modulus` for `a, b < modulus`, in constant time with respect to `modulus`: RSA's
 /// CRT recombination (RFC 8017 §5.2.1 step 2.b.3) needs `(s1 - s2) mod p`, and `p` is private key
-/// material, so -- unlike `double_mod_n`'s public-modulus reasoning -- this must not branch on
-/// it.
+/// material, so -- unlike `double_mod_n_vartime`'s public-modulus reasoning -- this must not
+/// branch on it.
 pub fn sub_mod<const N: usize>(a: &[u64; N], b: &[u64; N], modulus: &[u64; N]) -> [u64; N] {
     let (diff, borrow) = nat::sub(a, b);
     let (corrected, _) = nat::add(&diff, modulus);
@@ -178,8 +193,8 @@ pub fn sub_mod<const N: usize>(a: &[u64; N], b: &[u64; N], modulus: &[u64; N]) -
     ct_select_array(mask, &corrected, &diff)
 }
 
-/// `(acc * 2 + bit) mod modulus` for `acc < modulus` and odd `modulus`, in constant time: see
-/// [`reduce_wide`] for why (the modulus can be secret, unlike `pow2_mod`'s).
+/// `(acc * 2 + bit) mod modulus` for `acc < modulus` and odd `modulus`, in constant time in
+/// all three: the modulus can be secret (see [`reduce_wide`] and `pow2_mod_ct`).
 fn ct_shift_in_bit_mod<const N: usize>(acc: &[u64; N], bit: u64, modulus: &[u64; N]) -> [u64; N] {
     let mut doubled = [0u64; N];
     let mut carry = bit;
@@ -201,7 +216,7 @@ fn ct_shift_in_bit_mod<const N: usize>(acc: &[u64; N], bit: u64, modulus: &[u64;
 }
 
 /// `value mod modulus` for a `WIDE`-limb `value` and a `NARROW`-limb odd `modulus`, in constant
-/// time with respect to `modulus`. Unlike `pow2_mod`/`double_mod_n`, which assume a *public*
+/// time with respect to `modulus`. Unlike `pow2_mod_vartime`, which assumes a *public*
 /// modulus (true of RSA's own `n`), this brings a value down to a CRT prime's width and the primes
 /// are private key material: branching on their value here would leak them the same way branching
 /// on the exponent would leak `d`. Used two ways in RSA's CRT recombination (RFC 8017 §5.2.1 step
@@ -209,8 +224,8 @@ fn ct_shift_in_bit_mod<const N: usize>(acc: &[u64; N], bit: u64, modulus: &[u64;
 /// exponentiating (step 2.b.1); and with `WIDE == NARROW`, to reduce `s2` (a residue mod `q`) down
 /// to `s2 mod p` before the CRT subtraction (step 2.b.3) -- `s2 < q` gives no useful bound
 /// relative to `p` in general (RFC 8017 does not require `p` and `q` to be close in magnitude),
-/// so this does not special-case a single conditional subtraction the way `double_mod_n` does
-/// for the (public, and by construction `< n`) doubling case. Bit-serial schoolbook long division:
+/// so this does not special-case a single conditional subtraction the way
+/// `double_mod_n_vartime` does for the doubling case. Bit-serial schoolbook long division:
 /// every one of `value`'s `64 * WIDE` bits contributes one constant-time doubling-and-conditional-
 /// subtract step.
 pub fn reduce_wide<const WIDE: usize, const NARROW: usize>(
@@ -250,17 +265,40 @@ impl<const L: usize> ZeroizablePrimitive for MontgomeryContext<L> {
     const ZEROED: Self = Self { modulus: [0; L], n_prime: 0, r_mod_n: [0; L], r2_mod_n: [0; L] };
 }
 
+// There is no plain `new`: a call names what its modulus is, so that a secret one handed to the
+// variable-time constructor is wrong on the line that does it.
 impl<const L: usize> MontgomeryContext<L> {
-    /// Builds the Montgomery context for `modulus`. Returns `None` if `modulus` is even or zero;
-    /// Montgomery reduction requires an odd modulus, and RSA's is always odd (a product of two
-    /// odd primes).
-    pub fn new(modulus: &[u64; L]) -> Option<Self> {
-        if modulus[0] & 1 == 0 || nat::is_zero(modulus).to_bool() {
+    /// Builds the Montgomery context for a modulus that is secret: `p` or `q` of the CRT, or a
+    /// candidate prime. Returns `None` if `modulus` is even (zero included); Montgomery
+    /// reduction requires an odd modulus. `modulus` must be greater than 1.
+    ///
+    /// Constant time in `modulus` apart from that test of its low bit: no branch, memory
+    /// access or loop count depends on any other bit of it.
+    pub fn for_secret_modulus(modulus: &[u64; L]) -> Option<Self> {
+        // The one branch on the modulus. It is on bit 0, which is set in every modulus a
+        // caller holds (a prime, or a candidate forced odd), so it tells an observer nothing.
+        if modulus[0] & 1 == 0 {
             return None;
         }
         let n_prime = mont_n_prime(modulus[0]);
-        let r_mod_n = pow2_mod(64 * L as u32, modulus);
-        let r2_mod_n = pow2_mod(128 * L as u32, modulus);
+        let r_mod_n = pow2_mod_ct(64 * L as u32, modulus);
+        let r2_mod_n = pow2_mod_ct(128 * L as u32, modulus);
+        Some(Self { modulus: *modulus, n_prime, r_mod_n, r2_mod_n })
+    }
+
+    /// Builds the Montgomery context for a modulus that is public: RSA's `n`. Returns `None`
+    /// if `modulus` is even (zero included). `modulus` must be greater than 1. The same context
+    /// as [`Self::for_secret_modulus`] builds.
+    ///
+    /// Variable time in `modulus`: its doublings branch on how the running value compares with
+    /// it. Never for `p`, `q` or anything else that is secret.
+    pub fn for_public_modulus(modulus: &[u64; L]) -> Option<Self> {
+        if modulus[0] & 1 == 0 {
+            return None;
+        }
+        let n_prime = mont_n_prime(modulus[0]);
+        let r_mod_n = pow2_mod_vartime(64 * L as u32, modulus);
+        let r2_mod_n = pow2_mod_vartime(128 * L as u32, modulus);
         Some(Self { modulus: *modulus, n_prime, r_mod_n, r2_mod_n })
     }
 }
@@ -305,4 +343,127 @@ pub fn mod_pow<const L: usize, const L2: usize, const L21: usize>(
     zeroize_in_place(&mut new_r0);
     zeroize_in_place(&mut new_r1);
     result
+}
+
+// A context's constants are private, so that the two constructors build the same context --
+// and that each is right -- is not something `tests/` can see: the QUALITY_AND_STYLE.md
+// exception for private state with known answers. The answers are Python's (`-pow(n, -1,
+// 2**64) % 2**64`, `2**(64*L) % n`, `2**(128*L) % n`).
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A modulus, then its `n'`, `R mod n` and `R^2 mod n`.
+    type Case<const L: usize> = ([u64; L], u64, [u64; L], [u64; L]);
+
+    fn assert_both_constructors_give<const L: usize>(cases: &[Case<L>]) {
+        for (n, n_prime, r_mod_n, r2_mod_n) in cases {
+            for ctx in [
+                MontgomeryContext::for_secret_modulus(n).unwrap(),
+                MontgomeryContext::for_public_modulus(n).unwrap(),
+            ] {
+                assert_eq!(ctx.modulus, *n);
+                assert_eq!(ctx.n_prime, *n_prime, "n' for {n:x?}");
+                assert_eq!(ctx.r_mod_n, *r_mod_n, "R mod n for {n:x?}");
+                assert_eq!(ctx.r2_mod_n, *r2_mod_n, "R^2 mod n for {n:x?}");
+            }
+        }
+    }
+
+    #[test]
+    fn both_constructors_give_the_known_constants() {
+        assert_both_constructors_give::<2>(&[
+            // 2^128 - 1: every limb all ones.
+            ([0xffffffffffffffff, 0xffffffffffffffff], 0x0000000000000001, [1, 0], [1, 0]),
+            // 2^127 + 1: just above 2^(k-1), the low limb all but zero.
+            (
+                [0x0000000000000001, 0x8000000000000000],
+                0xffffffffffffffff,
+                [0xffffffffffffffff, 0x7fffffffffffffff],
+                [4, 0],
+            ),
+            // The top limb all ones, the low limb 1.
+            (
+                [0x0000000000000001, 0xffffffffffffffff],
+                0xffffffffffffffff,
+                [0xffffffffffffffff, 0x0000000000000000],
+                [0x0000000000000001, 0xfffffffffffffffe],
+            ),
+            // The top limb all ones over an arbitrary low limb.
+            (
+                [0x123456789abcdef1, 0xffffffffffffffff],
+                0x8848c2974d33adef,
+                [0xedcba9876543210f, 0x0000000000000000],
+                [0xca4ab582281edee1, 0xdce2b9eafe7ceefa],
+            ),
+            // 2^127 - 1: the top bit clear.
+            ([0xffffffffffffffff, 0x7fffffffffffffff], 0x0000000000000001, [2, 0], [4, 0]),
+            // 3: far short of the width.
+            ([3, 0], 0x5555555555555555, [1, 0], [1, 0]),
+            // An arbitrary full-length value.
+            (
+                [0x9e3779b97f4a7c15, 0xd1b54a32d192ed03],
+                0x0e217c1e66c88cc3,
+                [0x61c8864680b583eb, 0x2e4ab5cd2e6d12fc],
+                [0xefccadf490c04b25, 0xb0ba6db3c8cd9e51],
+            ),
+        ]);
+        assert_both_constructors_give::<4>(&[
+            // 2^255 + 1: just above 2^(k-1), the low limbs zero but for bit 0.
+            (
+                [1, 0, 0, 0x8000000000000000],
+                0xffffffffffffffff,
+                [0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0x7fffffffffffffff],
+                [4, 0, 0, 0],
+            ),
+            // The top limb all ones, the low limbs zero but for bit 0.
+            (
+                [1, 0, 0, 0xffffffffffffffff],
+                0xffffffffffffffff,
+                [0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0],
+                [0x0000000000000001, 0xffffffffffffffff, 0xfffffffffffffffe, 0xfffffffffffffffd],
+            ),
+            // 2^256 - 189.
+            (
+                [0xffffffffffffff43, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+                0xa53fa94fea53fa95,
+                [0xbd, 0, 0, 0],
+                [0x8b89, 0, 0, 0],
+            ),
+        ]);
+    }
+
+    /// The two constructors agree limb for limb at a CRT prime's width, RSA-2048's 16 limbs,
+    /// over 64 moduli stepped from a fixed seed (SplitMix64's increment and mixer, as a source
+    /// of varied limbs, not of randomness), each forced odd and, on alternate rounds, given a
+    /// top limb of all ones or of only its top bit.
+    #[test]
+    fn both_constructors_agree_at_a_prime_width() {
+        let mut state = 0x243f6a8885a308d3u64;
+        let mut next = || {
+            state = state.wrapping_add(0x9e3779b97f4a7c15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
+            z ^ (z >> 31)
+        };
+        for round in 0..64 {
+            let mut n = [0u64; 16];
+            for limb in n.iter_mut() {
+                *limb = next();
+            }
+            n[0] |= 1;
+            match round % 4 {
+                1 => n[15] = u64::MAX,
+                2 => n[15] = 1 << 63,
+                _ => {}
+            }
+            let secret = MontgomeryContext::for_secret_modulus(&n).unwrap();
+            let public = MontgomeryContext::for_public_modulus(&n).unwrap();
+            assert_eq!(secret.modulus, public.modulus);
+            assert_eq!(secret.n_prime, public.n_prime);
+            assert_eq!(secret.r_mod_n, public.r_mod_n, "R mod n for {n:x?}");
+            assert_eq!(secret.r2_mod_n, public.r2_mod_n, "R^2 mod n for {n:x?}");
+        }
+    }
 }

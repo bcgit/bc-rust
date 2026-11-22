@@ -8,6 +8,15 @@ use bouncycastle_rsa::modexp::{
     MontgomeryContext, mod_pow, mont_n_prime, mul_mod, reduce_wide, sub_mod,
 };
 
+/// The context for `n` from each constructor, the constant-time one for a secret modulus and the
+/// variable-time one for a public modulus: every known answer below holds under both.
+fn both_contexts<const L: usize>(n: &[u64; L]) -> [MontgomeryContext<L>; 2] {
+    [
+        MontgomeryContext::for_secret_modulus(n).expect("modulus is odd"),
+        MontgomeryContext::for_public_modulus(n).expect("modulus is odd"),
+    ]
+}
+
 /// `n' = -n0^-1 mod 2^64` must satisfy `n0 * n' ≡ -1 (mod 2^64)` -- the exact identity
 /// [`bouncycastle_ec::montgomery::redc`] relies on. Checked directly by wrapping multiplication,
 /// across small, large, and adversarial (all-ones) odd values.
@@ -34,12 +43,13 @@ fn textbook_rsa_l1() {
     let m: [u64; 1] = [0x0000000000000041];
     let expected_c: [u64; 1] = [0x0000000000000ae6];
 
-    let ctx = MontgomeryContext::<1>::new(&n).expect("3233 is odd");
-    let c = mod_pow::<1, 2, 3>(&m, &e, &ctx);
-    assert_eq!(c, expected_c);
+    for ctx in both_contexts(&n) {
+        let c = mod_pow::<1, 2, 3>(&m, &e, &ctx);
+        assert_eq!(c, expected_c);
 
-    let decrypted = mod_pow::<1, 2, 3>(&c, &d, &ctx);
-    assert_eq!(decrypted, m);
+        let decrypted = mod_pow::<1, 2, 3>(&c, &d, &ctx);
+        assert_eq!(decrypted, m);
+    }
 }
 
 /// `L = 1`: `n = 2^64 - 59`, `pow(123456789, 987654321, n)`, via Python.
@@ -50,8 +60,9 @@ fn kat_l1_large_modulus() {
     let exp: [u64; 1] = [0x000000003ade68b1];
     let expected: [u64; 1] = [0xb922a86ec0ff6fe7];
 
-    let ctx = MontgomeryContext::<1>::new(&n).expect("modulus is odd");
-    assert_eq!(mod_pow::<1, 2, 3>(&base, &exp, &ctx), expected);
+    for ctx in both_contexts(&n) {
+        assert_eq!(mod_pow::<1, 2, 3>(&base, &exp, &ctx), expected);
+    }
 }
 
 /// `L = 2` (128-bit modulus `2^127 - 1`), via Python.
@@ -62,8 +73,9 @@ fn kat_l2_128_bit() {
     let exp: [u64; 2] = [0x0000000000000003, 0x0000000000000000];
     let expected: [u64; 2] = [0xc327da61b1a46a17, 0x02d0b2240ebf02da];
 
-    let ctx = MontgomeryContext::<2>::new(&n).expect("modulus is odd");
-    assert_eq!(mod_pow::<2, 4, 5>(&base, &exp, &ctx), expected);
+    for ctx in both_contexts(&n) {
+        assert_eq!(mod_pow::<2, 4, 5>(&base, &exp, &ctx), expected);
+    }
 }
 
 /// `L = 4` (256-bit random odd, non-prime modulus), via Python (`random.seed(42)`).
@@ -78,8 +90,9 @@ fn kat_l4_256_bit() {
     let expected: [u64; 4] =
         [0x9c1037426d1f8616, 0x7a21504a60dc2678, 0x8f54fb0513201d76, 0x1d2469f43bb3a703];
 
-    let ctx = MontgomeryContext::<4>::new(&n).expect("modulus is odd");
-    assert_eq!(mod_pow::<4, 8, 9>(&base, &exp, &ctx), expected);
+    for ctx in both_contexts(&n) {
+        assert_eq!(mod_pow::<4, 8, 9>(&base, &exp, &ctx), expected);
+    }
 }
 
 /// `L = 2`, a genuine 128-bit RSA keypair (two random 64-bit primes, `e = 65537`), sign/verify
@@ -92,16 +105,16 @@ fn genuine_toy_rsa_keypair_round_trip_l2() {
     let m: [u64; 2] = [0xa040024187f1a6ad, 0x624948139eab75cd];
     let expected_c: [u64; 2] = [0x0827db8b026ab9ca, 0x756a056f15b29f68];
 
-    let ctx = MontgomeryContext::<2>::new(&n).expect("modulus is odd");
+    for ctx in both_contexts(&n) {
+        // Public exponent (17 bits) padded into 2 limbs -- mod_pow processes the full 64*L width
+        // regardless, so a short public exponent works the same way as a full-width one.
+        let e_padded: [u64; 2] = [e[0], 0];
+        let c = mod_pow::<2, 4, 5>(&m, &e_padded, &ctx);
+        assert_eq!(c, expected_c);
 
-    // Public exponent (17 bits) padded into 2 limbs -- mod_pow processes the full 64*L width
-    // regardless, so a short public exponent works the same way as a full-width one.
-    let e_padded: [u64; 2] = [e[0], 0];
-    let c = mod_pow::<2, 4, 5>(&m, &e_padded, &ctx);
-    assert_eq!(c, expected_c);
-
-    let decrypted = mod_pow::<2, 4, 5>(&c, &d, &ctx);
-    assert_eq!(decrypted, m);
+        let decrypted = mod_pow::<2, 4, 5>(&c, &d, &ctx);
+        assert_eq!(decrypted, m);
+    }
 }
 
 /// `L = 32` (2048-bit modulus, RSA-shaped), via Python (`random.seed(7)`). Exercises the
@@ -149,8 +162,9 @@ fn kat_l32_2048_bit() {
         0x0f3cba5f0d7fa3a6, 0x8e6e44eaac15c7e5, 0x62bd4e9b9ccd49c3, 0x915f6c85d08df86a,
     ];
 
-    let ctx = MontgomeryContext::<32>::new(&n).expect("modulus is odd");
-    assert_eq!(mod_pow::<32, 64, 65>(&base, &exp, &ctx), expected);
+    for ctx in both_contexts(&n) {
+        assert_eq!(mod_pow::<32, 64, 65>(&base, &exp, &ctx), expected);
+    }
 }
 
 /// An even modulus is never valid for Montgomery reduction; RSA moduli are always odd, so this
@@ -158,7 +172,10 @@ fn kat_l32_2048_bit() {
 #[test]
 fn even_modulus_is_rejected() {
     let n: [u64; 1] = [4];
-    assert!(MontgomeryContext::<1>::new(&n).is_none());
+    assert!(MontgomeryContext::<1>::for_secret_modulus(&n).is_none());
+    assert!(MontgomeryContext::<1>::for_public_modulus(&n).is_none());
+    assert!(MontgomeryContext::<1>::for_secret_modulus(&[0]).is_none());
+    assert!(MontgomeryContext::<1>::for_public_modulus(&[0]).is_none());
 }
 
 /// `reduce_wide` with `WIDE = 4 > NARROW = 2`, RSA's own use for reducing an `n`-width message
@@ -205,6 +222,7 @@ fn mul_mod_with_unreduced_first_operand() {
     let n: [u64; 2] = [0xffffffffffffff61, 0xffffffffffffffff];
     let expected: [u64; 2] = [0x7e4b17e4b17da35e, 0xdcba9876543211b0];
 
-    let ctx = MontgomeryContext::<2>::new(&n).expect("modulus is odd");
-    assert_eq!(mul_mod::<2, 4, 5>(&a, &b, &ctx), expected);
+    for ctx in both_contexts(&n) {
+        assert_eq!(mul_mod::<2, 4, 5>(&a, &b, &ctx), expected);
+    }
 }

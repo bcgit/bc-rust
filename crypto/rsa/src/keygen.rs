@@ -21,8 +21,8 @@
 //! position BC Java's `BigInteger`-based generator takes, for a one-off operation with no
 //! attacker-supplied input. The secret-exponent work generation does do, `qInv = q^(p - 2) mod p`,
 //! goes through [`crate::modexp::mod_pow`]'s constant-time ladder, the same one every signature
-//! uses; and the `MontgomeryContext` built over each candidate is the same construction
-//! `rsa_core::rsasp1` already builds over the secret primes on every signature.
+//! uses; and the `MontgomeryContext` built over each candidate is the constant-time construction
+//! `rsa_core::rsasp1` builds over the secret primes on every signature.
 
 use crate::keys::{RsaPrivateComponents, RsaPublicComponents};
 use crate::modexp::{MontgomeryContext, mod_pow, mul_mod, reduce_wide};
@@ -369,10 +369,10 @@ pub fn is_probable_prime<const N: usize, const N2: usize, const N21: usize>(
     let a = trailing_zeros(&w_minus_1);
     let mut m = Secret::<[u64; N]>::new();
     *m = shr(&w_minus_1, a);
-    // w is odd and nonzero here (both checked above), which is all `MontgomeryContext::new`
-    // requires, so this cannot fail.
+    // w is odd here (checked above), which is all the constructor requires, so this cannot
+    // fail.
     let mut ctx = Secret::<MontgomeryContext<N>>::new();
-    *ctx = MontgomeryContext::new(w).expect("w is odd and nonzero");
+    *ctx = MontgomeryContext::for_secret_modulus(w).expect("w is odd");
 
     // Step 3: wlen = len(w), the bit length of w -- the bases are drawn at that length (not the
     // full limb width), so that for a w well short of the width a draw still lands below w - 1
@@ -583,7 +583,7 @@ where
             let mut p_minus_2 = sub_u64(&p, 2);
             // p is odd by construction (step 4.3), so the context exists.
             let mut ctx_p = Secret::<MontgomeryContext<HALF>>::new();
-            *ctx_p = MontgomeryContext::new(&p).expect("p is odd");
+            *ctx_p = MontgomeryContext::for_secret_modulus(&p).expect("p is odd");
             *q_inv = mod_pow::<HALF, HALF2, HALF21>(&q_mod_p, &p_minus_2, &ctx_p);
             zeroize_in_place(&mut q_mod_p);
             zeroize_in_place(&mut p_minus_2);
