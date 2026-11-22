@@ -3,6 +3,12 @@ name = "bouncycastle-hex"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# `std` gates `encode` and `decode`, which return a `String` and a `Vec`; the `_out` forms need
+# no allocator.
+default = ["std"]
+std = []
+
 [dependencies]
 bouncycastle-utils.workspace = true
 

@@ -388,8 +388,8 @@ impl Base64Decoder {
             + (held.saturating_add(input_len) % 4).saturating_sub(1)
     }
 
-    /// Streaming API that performs Base64 encoding of the provided input, but does not apply
-    /// the final padding and will hold an incomplete block while waiting for more input.
+    /// Streaming API that decodes the provided Base64 input, holding an incomplete block of
+    /// symbols while waiting for more input. Padding is for [`do_final`](Self::do_final).
     ///
     /// Only available with the `std` feature.
     #[cfg(feature = "std")]

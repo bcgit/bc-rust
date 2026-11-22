@@ -1,3 +1,6 @@
+// Through the allocating forms.
+#![cfg(feature = "std")]
+
 use bouncycastle_hex as hex;
 use bouncycastle_hex::HexError;
 
