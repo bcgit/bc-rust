@@ -87,9 +87,7 @@
 //! * Message length: FIPS 180-4 permits messages shorter than 2^64 bits, so this implementation
 //!   supports 2^61 - 1 bytes.
 
-// todo #![no_std]
-//      waiting for the no_std refactor that removes the `-> Vec<u8>` from core::traits::Hash
-
+#![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
