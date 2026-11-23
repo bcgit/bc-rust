@@ -991,10 +991,10 @@ where
 ///
 /// ...and not when it would be drawn:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0080
 /// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
-/// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
+/// use bouncycastle_core::hazmat::{AeadEncryptMode, KeyExpansion, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_symmetric::modes::CCM_Packet;
 /// use bouncycastle_rng::HashDRBG_SHA512;
@@ -1007,10 +1007,10 @@ where
 ///
 /// Nor does a `DATA_LEN` that `B0` could not carry under this `NONCE_LEN` (A.1's `p < 2^8q`):
 ///
-/// ```compile_fail
+/// ```compile_fail,E0080
 /// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
-/// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
+/// use bouncycastle_core::hazmat::{AeadEncryptMode, KeyExpansion, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_symmetric::modes::CCM_Packet;
 /// use bouncycastle_rng::HashDRBG_SHA512;
@@ -1029,10 +1029,10 @@ where
 ///
 /// A nonce length A.1 does not permit does not compile, whichever form is used:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0080
 /// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
-/// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
+/// use bouncycastle_core::hazmat::{AeadEncryptMode, KeyExpansion, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_symmetric::modes::CCM_Packet;
 ///
@@ -1045,10 +1045,10 @@ where
 ///
 /// Nor does an odd tag length:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0080
 /// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
-/// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
+/// use bouncycastle_core::hazmat::{AeadEncryptMode, KeyExpansion, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_symmetric::modes::CCM_Packet;
 ///
