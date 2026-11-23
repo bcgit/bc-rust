@@ -87,7 +87,7 @@
   but publishes no vectors for, against BC Java 1.84 in both directions.
 * PBKDF2 -- RFC 8018 Section 5.2 over HMAC (SHA-2, SHA-3), as `bouncycastle-pbkdf2`, on the `KDF` trait with the salt
   and the iteration count on the instance; a key derived from a password is typed `Unknown`. The `pbkdf2` CLI command
-  reads the password from a file or stdin.
+  reads the password from `--password-file` or stdin; the option has no short form, `-p` being scrypt's parameter p.
 * scrypt -- RFC 7914, as `bouncycastle-scrypt`: `SCrypt` over working memory the caller supplies
   (`derive_with_memory_out`, `ScryptParams::work_len`), and on the `KDF` trait with the `std` feature, allocating up to
   a limit. The `scrypt` CLI command takes `--log2-n`, `-r`, `-p` and `--max-memory`.

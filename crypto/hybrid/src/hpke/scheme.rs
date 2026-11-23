@@ -354,6 +354,18 @@ pub struct Recipient;
 ///
 /// The key, the base nonce and the exporter secret are wiped when the context is dropped.
 ///
+/// Not `Clone`: two copies of a sender's context would seal two messages under one nonce.
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_symmetric::aes::AES128Key;
+/// use bouncycastle_symmetric::modes::GCM;
+/// use bouncycastle_hybrid::hpke::{HpkeContext, Sender};
+/// use bouncycastle_digest::sha2::SHA256;
+///
+/// fn cloneable<T: Clone>() {}
+/// cloneable::<HpkeContext<Sender, SHA256, AES128Key<GCM>>>();
+/// ```
+///
 /// # 🚨 Security Considerations 🚨
 ///
 /// The messages of a context must be opened in the order they were sealed: the nonce of each is

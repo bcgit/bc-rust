@@ -2273,7 +2273,7 @@ enum Subcommands {
         prf: pbkdf2_cmd::Pbkdf2Prf,
 
         /// A file containing the password (raw bytes; hex with --hex-input). Stdin when absent.
-        #[arg(short, long)]
+        #[arg(long)]
         password_file: Option<String>,
 
         /// The salt in hex.

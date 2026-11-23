@@ -21,12 +21,13 @@ use bouncycastle_symmetric::aes::hazmat::AES128Internal;
 use bouncycastle_symmetric::modes::hazmat::ecb::Ecb;
 use bouncycastle_symmetric::modes::{
     CBC, Cbc, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor, CcmPacketEncryptor, Cfb, Cfb8, Cmac,
-    Ctr, Gcm, Gmac, Kw, Kwp, Ofb,
+    Ctr, Gcm, Gmac, Kw, Kwp, Ofb, Tkw,
 };
 use bouncycastle_symmetric::padding::{
     PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
 use bouncycastle_symmetric::stream::StreamCipher;
+use bouncycastle_symmetric::tdes::hazmat::TDESInternal;
 use bouncycastle_symmetric::{Decrypting, Encrypting};
 
 trait NotClone<A> {
@@ -125,6 +126,9 @@ fn mac_and_key_wrap_workers_are_not_clone() {
         Kw<'static, P, Decrypting>,
         Kwp<'static, P, Encrypting>,
         Kwp<'static, P, Decrypting>,
+        // TKW is over a 64-bit block, so over TDEA.
+        Tkw<'static, TDESInternal, Encrypting>,
+        Tkw<'static, TDESInternal, Decrypting>,
     );
 }
 
