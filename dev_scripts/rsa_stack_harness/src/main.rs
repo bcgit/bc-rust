@@ -490,6 +490,11 @@ macro_rules! scan_size {
             assert_eq!(verdict, Ok(true));
             scan.clean("is_probable_prime (p)", &secrets);
 
+            // Validation of the key pair, as a caller would ask of an imported key.
+            let verdict = scan.run(|| components.validate(&mut *rng));
+            assert_eq!(verdict, Ok(()));
+            scan.clean("validate", &secrets);
+
             scan.failures
         }
     };

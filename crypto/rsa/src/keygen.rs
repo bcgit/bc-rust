@@ -8,8 +8,8 @@
 //!
 //! The concrete sizes wire this up as `keygen(rng)` in their own modules
 //! (`RsaSigningSize::keygen`, which the size markers' generators wrap): `nlen` is fixed by the width, `e` by
-//! [`PUBLIC_EXPONENT`], and the Miller-Rabin round count and required RNG strength by each size's
-//! row of FIPS 186-5 Table B.1 and SP 800-57 Part 1 Table 2.
+//! [`PUBLIC_EXPONENT`], the Miller-Rabin round count by `RsaSigningSize::MR_ROUNDS` and the required
+//! RNG strength by each size's row of SP 800-57 Part 1 Table 2.
 //!
 //! # What is and is not constant-time here
 //!
@@ -117,38 +117,37 @@ fn div_u64<const N: usize>(hi: u64, a: &[u64; N], d: u64) -> ([u64; N], u64) {
     (quotient, rem as u64)
 }
 
-/// `r^-1 mod e` for prime `e` and `0 < r < e`, as `r^(e - 2) mod e` (Fermat), by a fixed 32-step
-/// square-and-multiply.
-fn inv_mod_u64_prime(r: u64, e: u64) -> u64 {
+/// `r^-1 mod e` for `0 < r < e` with `GCD(r, e) = 1`, by the extended Euclidean algorithm of
+/// FIPS 186-5 Appendix B.1 on single words.
+fn inv_mod_u64(r: u64, e: u64) -> u64 {
     debug_assert!(r != 0 && r < e);
-    let exp = e - 2;
-    let mut acc: u128 = 1;
-    let base = u128::from(r);
-    let m = u128::from(e);
-    for bit in (0..32).rev() {
-        acc = (acc * acc) % m;
-        if (exp >> bit) & 1 == 1 {
-            acc = (acc * base) % m;
-        }
+    // Invariant: t0 * r == r0 and t1 * r == r1 (mod e), with |t0|, |t1| <= e.
+    let (mut r0, mut r1) = (i128::from(e), i128::from(r));
+    let (mut t0, mut t1) = (0i128, 1i128);
+    while r1 != 0 {
+        let quotient = r0 / r1;
+        (r0, r1) = (r1, r0 - quotient * r1);
+        (t0, t1) = (t1, t0 - quotient * t1);
     }
-    acc as u64
+    debug_assert_eq!(r0, 1, "r and e must be coprime");
+    t0.rem_euclid(i128::from(e)) as u64
 }
 
-/// `e^-1 mod m` for `m > 1` with `GCD(m, e) = 1`, where `e` is [`PUBLIC_EXPONENT`].
+/// `e^-1 mod m` for `m > 1` and an `e > 1` with `GCD(m, e) = 1`.
 ///
 /// FIPS 186-5 Appendix B.1 gives the extended Euclidean algorithm for reference and allows
-/// "other algorithms that produce an equivalent result". Because `e` is small and prime, the
+/// "other algorithms that produce an equivalent result". Because `e` is one word, the
 /// inverse comes without a multi-limb division: with `r = m mod e` and `k = -r^-1 mod e` (so
 /// `k*m + 1 ≡ 0 mod e`), `d = (k*m + 1) / e` is an exact integer with `e*d = 1 + k*m ≡ 1 mod m`,
 /// and `0 < d < m` since `0 < k < e`. The only multi-limb operations are one multiply by `k` and
 /// one exact division by `e`.
-fn inverse_of_e_mod<const N: usize>(m: &[u64; N]) -> [u64; N] {
-    let e = PUBLIC_EXPONENT;
+fn inverse_of_e_mod<const N: usize>(m: &[u64; N], e: u64) -> [u64; N] {
     let r = mod_u64(m, e);
-    // `GCD(m, e) = 1` is the caller's invariant: `keygen` discards any `p` (or `q`) with
-    // `e | p - 1` at step 4.5, and `LCM(p - 1, q - 1)` then cannot be divisible by `e` either.
+    // `GCD(m, e) = 1` is the caller's invariant. `keygen` discards any `p` (or `q`) with
+    // `e | p - 1` at step 4.5, and `LCM(p - 1, q - 1)` then cannot be divisible by `e` either;
+    // a key's constructor has checked that `e` has an inverse modulo `p - 1` and `q - 1`.
     debug_assert_ne!(r, 0, "e must not divide m");
-    let k = e - inv_mod_u64_prime(r, e);
+    let k = e - inv_mod_u64(r, e);
     let (lo, hi) = mul_u64_add(m, k, 1);
     let (d, rem) = div_u64(hi, &lo, e);
     debug_assert_eq!(rem, 0, "k*m + 1 is divisible by e by construction");
@@ -561,6 +560,126 @@ fn primes_too_close<const N: usize>(p: &[u64; N], q: &[u64; N]) -> bool {
     too_close
 }
 
+/// FIPS 186-5 Appendix A.1.1 criterion 3(a) on the `d` of criterion 3(b): whether
+/// `d = e^-1 mod LCM(p - 1, q - 1)` exceeds `2^(nlen/2)`, `nlen/2` being `64 * HALF`. `e` has an
+/// inverse modulo `p - 1` and modulo `q - 1`, which is the caller's to have established.
+fn private_exponent_exceeds_half<const HALF: usize, const HALF2: usize>(
+    p_minus_1: &[u64; HALF],
+    q_minus_1: &[u64; HALF],
+    e: u64,
+) -> bool {
+    let mut lcm = Secret::<[u64; HALF2]>::new();
+    {
+        let mut g = gcd(p_minus_1, q_minus_1);
+        let mut q_minus_1_over_g = div(q_minus_1, &g);
+        *lcm = montgomery::widening_mul::<HALF, HALF2>(p_minus_1, &q_minus_1_over_g);
+        zeroize_in_place(&mut g);
+        zeroize_in_place(&mut q_minus_1_over_g);
+    }
+    let mut d = Secret::<[u64; HALF2]>::new();
+    *d = inverse_of_e_mod(&lcm, e);
+    let d_high = &d[HALF..];
+    let d_low = &d[..HALF];
+    let mut one_high = [0u64; HALF];
+    one_high[0] = 1;
+    d_high.iter().any(|&l| l != 0) && !(d_high == one_high && d_low.iter().all(|&l| l == 0))
+}
+
+/// Whether `x >= sqrt(2) * 2^(64 * HALF - 1)`, the lower bound FIPS 186-5 Appendix A.1.1
+/// criteria 2(b) and 2(c) put on a prime of `64 * HALF` bits. `sqrt(2) * 2^k` is not an
+/// integer, so this is `x^2 >= 2^(128 * HALF - 1)`: the square's top bit.
+fn at_least_sqrt2_scaled<const HALF: usize, const HALF2: usize>(x: &[u64; HALF]) -> bool {
+    let mut square = montgomery::widening_square::<HALF, HALF2>(x);
+    let top_bit_set = square[HALF2 - 1] >> 63 == 1;
+    zeroize_in_place(&mut square);
+    top_bit_set
+}
+
+/// SP 800-56B Rev. 2 §6.4.1.4.3, `crt_pkv`: validation of a key pair held in the CRT form,
+/// whichever way its public exponent was chosen. The steps are §6.4.1.2.1's with that
+/// section's replacements, and the ones not computed here hold of every
+/// [`RsaPrivateComponents`]: its constructor has checked them, or the type cannot hold a key
+/// that fails them. `HALF2` is `2 * HALF` and `HALF21` is `2 * HALF + 1`.
+///
+/// Not constant time in the key, as key generation is not: the same primality test, GCD and
+/// division run over `p` and `q`.
+pub(crate) fn validate_key_pair<K, const HALF: usize, const HALF2: usize, const HALF21: usize>(
+    sk: &RsaPrivateComponents<K>,
+    rng: &mut dyn RNG,
+) -> Result<(), SignatureError>
+where
+    K: RsaSigningSize + RsaSize<HalfLimbs = [u64; HALF], Limbs = [u64; HALF2]>,
+{
+    const { check_widths::<HALF, HALF2, HALF21>() };
+    let verdict = validate_key_pair_in_own_frame::<K, HALF, HALF2, HALF21>(sk, rng);
+    // Key generation's wipe: validation makes the same computations over the primes, less
+    // the search, and measured 5344, 7304, 9656 and 16392 bytes at the four sizes.
+    wipe_stack_below::<[u64; HALF2], KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED>();
+    verdict
+}
+
+/// The work of [`validate_key_pair`]. Never inlined, so that what it leaves lies below its
+/// caller's frame, where `wipe_stack_below` reaches it.
+#[inline(never)]
+fn validate_key_pair_in_own_frame<K, const HALF: usize, const HALF2: usize, const HALF21: usize>(
+    sk: &RsaPrivateComponents<K>,
+    rng: &mut dyn RNG,
+) -> Result<(), SignatureError>
+where
+    K: RsaSigningSize + RsaSize<HalfLimbs = [u64; HALF], Limbs = [u64; HALF2]>,
+{
+    // The Miller-Rabin bases of step 5 come from the RNG (FIPS 186-5 Appendix B.3.1, "an
+    // approved deterministic random bit generator"), held to the strength key generation
+    // asks of it.
+    if rng.security_strength() < K::STRENGTH {
+        return Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm));
+    }
+    // Step 1.a, 1.b: the targeted strength is the size's, which is at least 112 bits.
+    // Step 1.c: "If epub is not an odd integer such that 65,537 <= epub < 2^256". Odd by the
+    // key's constructor, and below 2^64 by its type.
+    if sk.e() < PUBLIC_EXPONENT {
+        return Err(SignatureError::DecodingError("the public exponent is below 65537"));
+    }
+    // Step 3: n = p * q of exactly nBits bits, by the key's constructor.
+    let (p, q) = (sk.p(), sk.q());
+    // Step 5.a, 5.b: sqrt(2) * 2^(nBits/2 - 1) <= p, q <= 2^(nBits/2) - 1. The upper bound is
+    // the width of a prime.
+    if !at_least_sqrt2_scaled::<HALF, HALF2>(p) || !at_least_sqrt2_scaled::<HALF, HALF2>(q) {
+        return Err(SignatureError::DecodingError(
+            "a prime factor is below sqrt(2) * 2^(nBits/2 - 1)",
+        ));
+    }
+    // Step 5.c: "If |p - q| <= 2^(nBits/2 - 100)".
+    if primes_too_close(p, q) {
+        return Err(SignatureError::DecodingError("the prime factors are too close together"));
+    }
+    // Step 5.d, 5.e: GCD(p - 1, e) = GCD(q - 1, e) = 1, since e has the inverses dP and dQ
+    // modulo p - 1 and q - 1 (step 7.d, 7.e, checked by the key's constructor).
+    // Step 5.f, 5.g: "The probability that p or q may be incorrectly classified as prime by
+    // the test used in step 5 shall be less than or equal to 2^-ES(nBits)". The key is someone
+    // else's, so the bound is the one that holds of every composite: at most 1/4 of the bases
+    // pass one, and ES / 2 rounds give 4^-(ES/2).
+    let rounds = NonZeroUsize::new((K::STRENGTH.as_int() as usize).div_ceil(2))
+        .expect("a signing size has a strength of at least 112 bits");
+    if !is_probable_prime_in_own_frame::<HALF, HALF2, HALF21>(p, rounds, rng)?
+        || !is_probable_prime_in_own_frame::<HALF, HALF2, HALF21>(q, rounds, rng)?
+    {
+        return Err(SignatureError::DecodingError("a prime factor is composite"));
+    }
+    // Step 6: 2^(nBits/2) < d < LCM(p - 1, q - 1) and 1 = (d * e) mod LCM(p - 1, q - 1). The
+    // key holds no d: it is the inverse 6.b defines, which is below the LCM, so 6.a's lower
+    // bound is what is left.
+    let mut p_minus_1 = Secret::<[u64; HALF]>::new();
+    *p_minus_1 = sub_u64(p, 1);
+    let mut q_minus_1 = Secret::<[u64; HALF]>::new();
+    *q_minus_1 = sub_u64(q, 1);
+    if !private_exponent_exceeds_half::<HALF, HALF2>(&p_minus_1, &q_minus_1, sk.e()) {
+        return Err(SignatureError::DecodingError("the private exponent is not above 2^(nBits/2)"));
+    }
+    // Step 7: the CRT components, by the key's constructor.
+    Ok(())
+}
+
 /// FIPS 186-5 Appendix A.1.3, the whole process, for a modulus of `HALF2` limbs (`nlen = 64 *
 /// HALF2` bits) built from two `HALF`-limb primes. `rounds` is the Miller-Rabin iteration count
 /// (Table B.1) and `required_strength` the security strength SP 800-57 Part 1 associates with
@@ -693,23 +812,7 @@ where
         *p_minus_1 = sub_u64(&p, 1);
         let mut q_minus_1 = Secret::<[u64; HALF]>::new();
         *q_minus_1 = sub_u64(&q, 1);
-        let mut lcm = Secret::<[u64; HALF2]>::new();
-        {
-            let mut g = gcd(&p_minus_1, &q_minus_1);
-            let mut q_minus_1_over_g = div(&q_minus_1, &g);
-            *lcm = montgomery::widening_mul::<HALF, HALF2>(&p_minus_1, &q_minus_1_over_g);
-            zeroize_in_place(&mut g);
-            zeroize_in_place(&mut q_minus_1_over_g);
-        }
-        let mut d = Secret::<[u64; HALF2]>::new();
-        *d = inverse_of_e_mod(&lcm);
-        let d_high = &d[HALF..];
-        let d_low = &d[..HALF];
-        let mut one_high = [0u64; HALF];
-        one_high[0] = 1;
-        let d_exceeds_half = d_high.iter().any(|&l| l != 0)
-            && !(d_high == one_high && d_low.iter().all(|&l| l == 0));
-        if !d_exceeds_half {
+        if !private_exponent_exceeds_half::<HALF, HALF2>(&p_minus_1, &q_minus_1, PUBLIC_EXPONENT) {
             // "then new values for p, q, and d shall be determined."
             continue;
         }
@@ -717,9 +820,9 @@ where
         // The CRT quintuple (RFC 8017 §3.2). dP and dQ are the same inverse taken modulo p - 1
         // and q - 1 directly, which is what `d mod (p - 1)` and `d mod (q - 1)` come to.
         let mut d_p = Secret::<[u64; HALF]>::new();
-        *d_p = inverse_of_e_mod(&p_minus_1);
+        *d_p = inverse_of_e_mod(&p_minus_1, PUBLIC_EXPONENT);
         let mut d_q = Secret::<[u64; HALF]>::new();
-        *d_q = inverse_of_e_mod(&q_minus_1);
+        *d_q = inverse_of_e_mod(&q_minus_1, PUBLIC_EXPONENT);
         // qInv = q^-1 mod p = q^(p - 2) mod p (Fermat; p is prime and does not divide q), through
         // the constant-time ladder with p - 2 as the exponent.
         let mut q_inv = Secret::<[u64; HALF]>::new();

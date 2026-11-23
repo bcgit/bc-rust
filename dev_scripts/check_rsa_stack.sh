@@ -7,7 +7,7 @@
 # derives). The operations are key generation, the construction, decoding, encoding and cloning
 # of a private key, signing (PKCS#1 v1.5 and PSS; one-shot, streaming and from a hash), RSASVE
 # decapsulation raw and through HKDF, RSAES-OAEP decapsulation and recovery, RSASVE
-# encapsulation through HKDF, and `keygen::is_probable_prime`.
+# encapsulation through HKDF, `keygen::is_probable_prime`, and the validation of a key pair.
 #
 # Two controls: nothing run must leave nothing, and a copy of p left in a frame must be found,
 # so that a search that finds nothing is noticed.

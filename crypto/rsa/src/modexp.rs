@@ -220,8 +220,9 @@ pub fn sub_mod<const N: usize>(a: &[u64; N], b: &[u64; N], modulus: &[u64; N]) -
     ct_select_array(mask, &corrected, &diff)
 }
 
-/// `(acc * 2 + bit) mod modulus` for `acc < modulus` and odd `modulus`, in constant time in
-/// all three: the modulus can be secret (see [`reduce_wide`] and `pow2_mod_ct`).
+/// `(acc * 2 + bit) mod modulus` for `acc < modulus`, in constant time in all three: the
+/// modulus can be secret (see [`reduce_wide`] and `pow2_mod_ct`). The modulus need not be odd:
+/// [`mul_u64_mod`] reduces modulo `p - 1`.
 fn ct_shift_in_bit_mod<const N: usize>(acc: &[u64; N], bit: u64, modulus: &[u64; N]) -> [u64; N] {
     let mut doubled = [0u64; N];
     let mut carry = bit;
@@ -242,7 +243,7 @@ fn ct_shift_in_bit_mod<const N: usize>(acc: &[u64; N], bit: u64, modulus: &[u64;
     ct_select_array(subtract, &diff, &doubled)
 }
 
-/// `value mod modulus` for a `WIDE`-limb `value` and a `NARROW`-limb odd `modulus`, in constant
+/// `value mod modulus` for a `WIDE`-limb `value` and a `NARROW`-limb nonzero `modulus`, in constant
 /// time with respect to `modulus`. Unlike `pow2_mod_vartime`, which assumes a *public*
 /// modulus (true of RSA's own `n`), this brings a value down to a CRT prime's width and the primes
 /// are private key material: branching on their value here would leak them the same way branching
@@ -266,6 +267,33 @@ pub fn reduce_wide<const WIDE: usize, const NARROW: usize>(
             acc = ct_shift_in_bit_mod(&acc, bit, modulus);
         }
     }
+    acc
+}
+
+/// `x * k mod modulus` for a small multiplier `k` and a nonzero `modulus` that need not be odd,
+/// in constant time in `x` and `modulus`: the `N + 1`-limb product is reduced bit-serially, as
+/// [`reduce_wide`] reduces. This is how a private key's constructor checks RFC 8017 §3.2's
+/// `e * dP == 1 (mod (p - 1))`, whose modulus is even and so has no Montgomery context.
+pub(crate) fn mul_u64_mod<const N: usize>(x: &[u64; N], k: u64, modulus: &[u64; N]) -> [u64; N] {
+    let mut low = [0u64; N];
+    let mut carry = 0u128;
+    for i in 0..N {
+        let t = u128::from(x[i]) * u128::from(k) + carry;
+        low[i] = t as u64;
+        carry = t >> 64;
+    }
+    let mut top = carry as u64;
+    let mut acc = [0u64; N];
+    for bit_index in (0..64u32).rev() {
+        acc = ct_shift_in_bit_mod(&acc, (top >> bit_index) & 1, modulus);
+    }
+    for limb_index in (0..N).rev() {
+        for bit_index in (0..64u32).rev() {
+            acc = ct_shift_in_bit_mod(&acc, (low[limb_index] >> bit_index) & 1, modulus);
+        }
+    }
+    zeroize_in_place(&mut low);
+    zeroize_in_place(&mut top);
     acc
 }
 

@@ -9,7 +9,7 @@
 //! from `K`.
 
 use crate::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
-use crate::keygen::{keygen_as, keygen_from_rng};
+use crate::keygen::{keygen_as, keygen_from_rng, validate_key_pair};
 use crate::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey, modulus_strength,
 };
@@ -97,7 +97,9 @@ pub trait RsaSize:
 /// A size this crate signs, generates keys and establishes keys at: RSA-2048 and up (SP
 /// 800-131A's 112-bit floor).
 pub trait RsaSigningSize: RsaSize {
-    /// The Miller-Rabin rounds FIPS 186-5 Table B.1 asks of a prime of this size.
+    /// The Miller-Rabin rounds run on a prime of this size: 25 at every size, the count the FIPS
+    /// 140-3 Implementation Guidance (IG C.F, option 2) strongly recommends in place of FIPS 186-5
+    /// Table B.1's minimum, which is 5 for a 1024-bit prime and 4 for larger ones.
     const MR_ROUNDS: NonZeroUsize;
     /// FIPS 186-5 Appendix A.1.3 key generation from `rng`, which must offer the size's
     /// [`STRENGTH`](RsaSize::STRENGTH).
@@ -120,6 +122,23 @@ pub trait RsaSigningSize: RsaSize {
     fn modulus_from_primes(p: &Self::HalfLimbs, q: &Self::HalfLimbs) -> Self::Limbs;
     /// Whether `x < y`, at prime width.
     fn half_is_less(x: &Self::HalfLimbs, y: &Self::HalfLimbs) -> bool;
+    /// Whether the CRT components and `e` belong together, RFC 8017 §3.2, for odd `p` and
+    /// `q`: `e * dP == 1 (mod (p - 1))`, `e * dQ == 1 (mod (q - 1))` and
+    /// `q * qInv == 1 (mod p)`, in that order. Constant time in the components.
+    fn crt_congruences(
+        p: &Self::HalfLimbs,
+        q: &Self::HalfLimbs,
+        d_p: &Self::HalfLimbs,
+        d_q: &Self::HalfLimbs,
+        q_inv: &Self::HalfLimbs,
+        e: u64,
+    ) -> [Condition<u64>; 3];
+    /// SP 800-56B Rev. 2 §6.4.1.4.3 validation of the key pair `sk` holds;
+    /// [`RsaPrivateComponents::validate`] is the way to it.
+    fn validate_key_pair(
+        sk: &RsaPrivateComponents<Self>,
+        rng: &mut dyn RNG,
+    ) -> Result<(), SignatureError>;
     /// `m^d mod n` by the CRT (RSASP1 / RSADP's exponentiation), `m < n`, into `out`, constant
     /// time in the key, with the result checked before it is released: TRUE if `out^e mod n` is
     /// `m` again, as it is for a sound key and a sound computation. Otherwise FALSE, with
@@ -400,7 +419,7 @@ impl RsaSize for RSA2048 {
 const _: () = check_lengths::<RSA2048>();
 
 impl RsaSigningSize for RSA2048 {
-    const MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(5).unwrap();
+    const MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(25).unwrap();
 
     fn keygen(
         rng: &mut dyn RNG,
@@ -422,6 +441,24 @@ impl RsaSigningSize for RSA2048 {
 
     fn half_is_less(x: &Self::HalfLimbs, y: &Self::HalfLimbs) -> bool {
         nat::sub(x, y).1 == 1
+    }
+
+    fn crt_congruences(
+        p: &Self::HalfLimbs,
+        q: &Self::HalfLimbs,
+        d_p: &Self::HalfLimbs,
+        d_q: &Self::HalfLimbs,
+        q_inv: &Self::HalfLimbs,
+        e: u64,
+    ) -> [Condition<u64>; 3] {
+        rsa_core::crt_congruences::<16, 32>(p, q, d_p, d_q, q_inv, e)
+    }
+
+    fn validate_key_pair(
+        sk: &RsaPrivateComponents<Self>,
+        rng: &mut dyn RNG,
+    ) -> Result<(), SignatureError> {
+        validate_key_pair::<Self, 16, 32, 33>(sk, rng)
     }
 
     fn crt_exp(
@@ -485,7 +522,7 @@ impl RsaSize for RSA3072 {
 const _: () = check_lengths::<RSA3072>();
 
 impl RsaSigningSize for RSA3072 {
-    const MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(4).unwrap();
+    const MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(25).unwrap();
 
     fn keygen(
         rng: &mut dyn RNG,
@@ -507,6 +544,24 @@ impl RsaSigningSize for RSA3072 {
 
     fn half_is_less(x: &Self::HalfLimbs, y: &Self::HalfLimbs) -> bool {
         nat::sub(x, y).1 == 1
+    }
+
+    fn crt_congruences(
+        p: &Self::HalfLimbs,
+        q: &Self::HalfLimbs,
+        d_p: &Self::HalfLimbs,
+        d_q: &Self::HalfLimbs,
+        q_inv: &Self::HalfLimbs,
+        e: u64,
+    ) -> [Condition<u64>; 3] {
+        rsa_core::crt_congruences::<24, 48>(p, q, d_p, d_q, q_inv, e)
+    }
+
+    fn validate_key_pair(
+        sk: &RsaPrivateComponents<Self>,
+        rng: &mut dyn RNG,
+    ) -> Result<(), SignatureError> {
+        validate_key_pair::<Self, 24, 48, 49>(sk, rng)
     }
 
     fn crt_exp(
@@ -570,7 +625,7 @@ impl RsaSize for RSA4096 {
 const _: () = check_lengths::<RSA4096>();
 
 impl RsaSigningSize for RSA4096 {
-    const MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(4).unwrap();
+    const MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(25).unwrap();
 
     fn keygen(
         rng: &mut dyn RNG,
@@ -592,6 +647,24 @@ impl RsaSigningSize for RSA4096 {
 
     fn half_is_less(x: &Self::HalfLimbs, y: &Self::HalfLimbs) -> bool {
         nat::sub(x, y).1 == 1
+    }
+
+    fn crt_congruences(
+        p: &Self::HalfLimbs,
+        q: &Self::HalfLimbs,
+        d_p: &Self::HalfLimbs,
+        d_q: &Self::HalfLimbs,
+        q_inv: &Self::HalfLimbs,
+        e: u64,
+    ) -> [Condition<u64>; 3] {
+        rsa_core::crt_congruences::<32, 64>(p, q, d_p, d_q, q_inv, e)
+    }
+
+    fn validate_key_pair(
+        sk: &RsaPrivateComponents<Self>,
+        rng: &mut dyn RNG,
+    ) -> Result<(), SignatureError> {
+        validate_key_pair::<Self, 32, 64, 65>(sk, rng)
     }
 
     fn crt_exp(
@@ -655,7 +728,7 @@ impl RsaSize for RSA8192 {
 const _: () = check_lengths::<RSA8192>();
 
 impl RsaSigningSize for RSA8192 {
-    const MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(4).unwrap();
+    const MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(25).unwrap();
 
     fn keygen(
         rng: &mut dyn RNG,
@@ -677,6 +750,24 @@ impl RsaSigningSize for RSA8192 {
 
     fn half_is_less(x: &Self::HalfLimbs, y: &Self::HalfLimbs) -> bool {
         nat::sub(x, y).1 == 1
+    }
+
+    fn crt_congruences(
+        p: &Self::HalfLimbs,
+        q: &Self::HalfLimbs,
+        d_p: &Self::HalfLimbs,
+        d_q: &Self::HalfLimbs,
+        q_inv: &Self::HalfLimbs,
+        e: u64,
+    ) -> [Condition<u64>; 3] {
+        rsa_core::crt_congruences::<64, 128>(p, q, d_p, d_q, q_inv, e)
+    }
+
+    fn validate_key_pair(
+        sk: &RsaPrivateComponents<Self>,
+        rng: &mut dyn RNG,
+    ) -> Result<(), SignatureError> {
+        validate_key_pair::<Self, 64, 128, 129>(sk, rng)
     }
 
     fn crt_exp(

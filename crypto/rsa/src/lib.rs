@@ -322,8 +322,8 @@
 //!   docs for the exact boundary of what is and is not covered.
 //! - **The result of every private-key operation is checked before it is released.** A
 //!   signature, a decapsulated secret value or a decrypted OAEP message is computed by the CRT
-//!   from two half-size exponentiations; were one of them wrong, through a damaged key or a
-//!   fault in the computation, the result would be right modulo one prime only, and such a
+//!   from two half-size exponentiations; were one of them wrong, through a fault in the
+//!   computation, the result would be right modulo one prime only, and such a
 //!   value must not leave the library. So the private key carries `e`, and the result `y` of
 //!   `x^d mod n` is returned only if `y^e mod n` is `x` again; otherwise signing fails with
 //!   `SignatureError::ComputationFault` and decapsulation or decryption with its one failure
@@ -346,16 +346,15 @@
 //!   the `Result` (`as_ref`) and lets the `Result` drop where it was returned, which left
 //!   nothing behind in the builds measured.
 //! - **Imported keys are not validated for primality.** [`keys::RsaPrivateKey::from_crt_components`]
-//!   checks that `p`/`q` are odd and distinct, that `dP`/`dQ`/`qInv` are in range and that
-//!   `n = p * q` has exactly the size's bit length (as the public key's constructor checks of
-//!   its `n`: a modulus whose top bit is clear is refused, at every size), but does
-//!   not test `p` and `q` for primality, `e` for coprimality with `λ(n)`, or that the
-//!   components and `e` belong together. A key whose parts do not is built, and its operations
-//!   then fail the result check above rather than return a wrong value -- but a composite `p`
-//!   or `q` can pass that check on some inputs, so validating imported key material's
-//!   number-theoretic properties before construction remains the caller's responsibility
-//!   (`keygen::is_probable_prime` is available for the primality part). Keys from this crate's
-//!   own `keygen` meet FIPS 186-5 Appendix A.1.1's criteria by construction.
+//!   and decoding check that `p`/`q` are odd and distinct, that `dP`/`dQ`/`qInv` are in range,
+//!   that `n = p * q` has exactly the size's bit length (as the public key's constructor checks
+//!   of its `n`: a modulus whose top bit is clear is refused, at every size), and that the
+//!   components and `e` belong together (RFC 8017 §3.2's three congruences, in constant time).
+//!   They do not test `p` and `q` for primality, and a composite `p` or `q` can pass the result
+//!   check above on some inputs. [`keys::RsaPrivateComponents::validate`] is SP 800-56B Rev. 2
+//!   §6.4.1.4.3's validation of a key pair, primality included, for a key from elsewhere; it
+//!   costs about a hundred private-key operations, so it is the caller's to ask for. Keys
+//!   from this crate's own `keygen` meet FIPS 186-5 Appendix A.1.1's criteria by construction.
 //! - **Key generation is not constant-time.** Rejection sampling of prime candidates is
 //!   inherently data-dependent in how many candidates it draws and where each is rejected, and the
 //!   small-modulus arithmetic on candidates uses ordinary integer division -- see [`keygen`]'s docs

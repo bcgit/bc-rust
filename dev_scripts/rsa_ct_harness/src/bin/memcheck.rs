@@ -8,8 +8,10 @@
 //!
 //!   context          `MontgomeryContext::for_secret_modulus` over an undefined modulus
 //!   crt              `RSA2048::crt_exp` with p, q, dP, dQ and qInv undefined
+//!   import           `RSA2048::crt_congruences` with p, q, dP, dQ and qInv undefined
 //!   control-context  `for_public_modulus`, which is variable time, over the same modulus
 //!   control-crt      `crt`, then a branch on its result, which is computed from the key
+//!   control-import   `import`, then a branch on its verdicts
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keys::RsaPrivateComponents;
 use bouncycastle_rsa::modexp::MontgomeryContext;
@@ -68,12 +70,22 @@ unsafe fn make_undefined(at: *mut u8, len: usize) {
     }
 }
 
-/// p, undefined.
-fn undefined_modulus() -> [u64; 16] {
-    let mut n = P;
+/// `value`, undefined.
+fn undefined(value: &[u64; 16]) -> [u64; 16] {
+    let mut n = *value;
     // SAFETY: `n` is 128 bytes of `u64`.
     unsafe { make_undefined(n.as_mut_ptr().cast(), 128) };
     n
+}
+
+/// p, undefined.
+fn undefined_modulus() -> [u64; 16] {
+    undefined(&P)
+}
+
+/// p, q, dP, dQ and qInv, undefined, for the congruences a private key's constructor checks.
+fn undefined_components() -> [[u64; 16]; 5] {
+    [&P, &Q, &D_P, &D_Q, &Q_INV].map(undefined)
 }
 
 /// The key, with its five secret components undefined and `n` and `e` left defined: the
@@ -137,6 +149,20 @@ fn main() {
                 black_box(&out);
             }
         }
-        _ => panic!("usage: memcheck context|crt|control-context|control-crt"),
+        "import" => {
+            let [p, q, d_p, d_q, q_inv] = black_box(undefined_components());
+            // The verdicts are not turned into `bool`s, as `crt`'s result is not.
+            let _ = black_box(RSA2048::crt_congruences(&p, &q, &d_p, &d_q, &q_inv, 65537));
+        }
+        "control-import" => {
+            let [p, q, d_p, d_q, q_inv] = black_box(undefined_components());
+            let verdicts = RSA2048::crt_congruences(&p, &q, &d_p, &d_q, &q_inv, 65537);
+            if verdicts.into_iter().all(|ok| ok.to_bool()) {
+                black_box(());
+            }
+        }
+        _ => {
+            panic!("usage: memcheck context|crt|import|control-context|control-crt|control-import")
+        }
     }
 }

@@ -350,8 +350,9 @@ macro_rules! rsasve_suite {
                 let mut bytes = sk.encode();
                 bytes[..$bits / 16].fill(0); // p = 0, which is even
                 assert!(matches!(SK::from_bytes(&bytes), Err(KeyDecodingError(_))));
-                // SP 800-56B Rev. 2 §6.2.1: 65,537 <= e, of the private key's e as of the
-                // public key's, through the constructor and on decoding.
+                // SP 800-56B Rev. 2 §6.2.1: 65,537 <= e. These components are not a key under
+                // a smaller e, so the refusal is not pinned to that rule here:
+                // `keys_tests.rs` has genuine keys under small exponents.
                 assert_eq!(sk.e(), 65537);
                 for e in [3u64, 17, 65535] {
                     assert!(matches!(
@@ -363,22 +364,12 @@ macro_rules! rsasve_suite {
                             &limbs(v["qInv"].as_str().unwrap()),
                             e,
                         ),
-                        Err(KEMError::DecodingError(
-                            "RSA key-establishment public exponent must be at least 65537"
-                        ))
+                        Err(KEMError::DecodingError(_))
                     ));
                     let mut bytes = sk.encode();
                     bytes[SK_LEN - 8..].copy_from_slice(&e.to_be_bytes());
-                    assert_eq!(
-                        SK::from_bytes(&bytes).unwrap_err(),
-                        KeyDecodingError(
-                            "RSA key-establishment public exponent must be at least 65537"
-                        )
-                    );
+                    assert!(matches!(SK::from_bytes(&bytes), Err(KeyDecodingError(_))));
                 }
-                let mut bytes = sk.encode();
-                bytes[SK_LEN - 8..].copy_from_slice(&65539u64.to_be_bytes());
-                assert_eq!(SK::from_bytes(&bytes).unwrap().e(), 65539);
             }
         }
     };

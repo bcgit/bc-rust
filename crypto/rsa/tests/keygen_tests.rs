@@ -311,6 +311,27 @@ fn keygen_rejects_an_rng_below_the_required_strength() {
     ));
 }
 
+/// A generated key pair is a valid one (SP 800-56B Rev. 2 Section 6.4.1.4.3), and validation
+/// holds its RNG to what key generation does: the size's strength, and an error where no
+/// Miller-Rabin base can be drawn.
+#[test]
+fn a_generated_key_validates_and_validation_checks_its_rng() {
+    let (_, sk) = RSA2048::keygen(&mut DefaultRNG::default()).unwrap();
+    assert_eq!(sk.validate(&mut DefaultRNG::default()), Ok(()));
+
+    let mut weak = ConstantRng { fill: 0x42, strength: SecurityStrength::None };
+    assert_eq!(
+        sk.validate(&mut weak),
+        Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm))
+    );
+    // Every base drawn is zero, which is outside [2, w - 2].
+    let mut zeros = ConstantRng { fill: 0, strength: SecurityStrength::_256bit };
+    assert_eq!(
+        sk.validate(&mut zeros),
+        Err(SignatureError::GenericError("RNG produced no usable Miller-Rabin base in 128 draws"))
+    );
+}
+
 /// Steps 4.7/5.8: an RNG that keeps producing the same candidate cannot make progress -- the one
 /// candidate is either composite, or equal to `p` and so rejected as too close (5.5) -- and the
 /// candidate limits (`5 * nlen`, then `10 * nlen`) turn that into an error instead of a hang.

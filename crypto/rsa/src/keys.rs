@@ -25,7 +25,7 @@ use crate::rsassa::RsaSignatureAlgorithm;
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{PrivateKey, PublicKey};
+use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -164,10 +164,10 @@ pub struct RsaPrivateComponents<K: RsaSize> {
 
 /// What [`wipe_stack_below`] overwrites after a private key is constructed or decoded: this
 /// many `K::Limbs` values and this many words. Measured in x86-64 release builds (rustc 1.88
-/// and 1.97), decoding, the deeper of the two, uses 5320 bytes at RSA-2048, 7800 at RSA-3072,
-/// 10168 at RSA-4096 and 20328 at RSA-8192; these cover 6208, 9152, 12096 and 23872, the
-/// difference being room for a compiler that lays the frames out less tightly.
-const KEY_STACK_PER_LIMB: usize = 23;
+/// and 1.97), decoding, the deeper of the two, uses at most 6016 bytes at RSA-2048, 9040 at
+/// RSA-3072, 11832 at RSA-4096 and 24104 at RSA-8192; these cover 7232, 10688, 14144 and
+/// 27968, the difference being room for a compiler that lays the frames out less tightly.
+const KEY_STACK_PER_LIMB: usize = 27;
 const KEY_STACK_FIXED: usize = 40;
 
 /// The same after a private key is encoded or cloned, which use 1944, 2856, 3752 and 7336
@@ -208,10 +208,10 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     /// Builds a private key from its CRT components and the public exponent of its key pair,
     /// computing `n = p * q`. Returns `Err(`[`SignatureError::DecodingError`]`)` if `p` or `q`
     /// is even, `p == q`, `dP`, `dQ` or `qInv` is not below its prime, `n` is not exactly
-    /// `K::BITS` bits long (its top bit is clear), or `e` is even or below 3. Primality is not
-    /// checked, nor that the components and `e` belong together (see the crate's
-    /// `# Security Considerations`): a key whose parts do not is built, and every operation
-    /// with it fails its result check.
+    /// `K::BITS` bits long (its top bit is clear), `e` is even or below 3, or the components
+    /// and `e` do not belong together: `dP` and `dQ` are not the inverses of `e` modulo `p - 1`
+    /// and `q - 1`, or `qInv` is not the inverse of `q` modulo `p` (RFC 8017 §3.2). Primality
+    /// is not checked (see the crate's `# Security Considerations`); [`Self::validate`] does.
     pub fn from_crt_components(
         p: &K::HalfLimbs,
         q: &K::HalfLimbs,
@@ -294,6 +294,18 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
         if !has_full_bit_length::<K>(&n) {
             return Err(MODULUS_NOT_FULL_LENGTH);
         }
+        // RFC 8017 §3.2: the components and `e` are one key. All three verdicts are computed
+        // before any is looked at.
+        let [d_p_ok, d_q_ok, q_inv_ok] = K::crt_congruences(p, q, d_p, d_q, q_inv, e);
+        if !d_p_ok.to_bool() {
+            return Err(SignatureError::DecodingError("dP is not the inverse of e modulo p - 1"));
+        }
+        if !d_q_ok.to_bool() {
+            return Err(SignatureError::DecodingError("dQ is not the inverse of e modulo q - 1"));
+        }
+        if !q_inv_ok.to_bool() {
+            return Err(SignatureError::DecodingError("qInv is not the inverse of q modulo p"));
+        }
 
         let mut key = Self {
             p: Secret::new(),
@@ -310,6 +322,33 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
         *key.d_q = *d_q;
         *key.q_inv = *q_inv;
         Ok(key)
+    }
+}
+
+impl<K: RsaSigningSize> RsaPrivateComponents<K> {
+    /// Validates the key pair these components and their `n` and `e` make, as SP 800-56B Rev. 2
+    /// §6.4.1.4.3 (`crt_pkv`) does: beyond what the constructor checked, that `e` is at least
+    /// 65,537, that `p` and `q` are each at least `sqrt(2) * 2^(nBits/2 - 1)`, more than
+    /// `2^(nBits/2 - 100)` apart and probably prime, and that the private exponent
+    /// `d = e^-1 mod LCM(p - 1, q - 1)` is above `2^(nBits/2)`. A key from this crate's key
+    /// generation passes; this is for a key from elsewhere.
+    ///
+    /// Primality is the Miller-Rabin test with bases from `rng`, at half as many rounds as the
+    /// size's security strength has bits, so that a composite passes with probability at most
+    /// `2^-strength` however it was chosen. That is about a hundred private-key operations at
+    /// RSA-2048.
+    ///
+    /// # Errors
+    /// [`SignatureError::DecodingError`], naming the criterion, if the key pair is not valid;
+    /// [`SignatureError::RNGError`] if `rng` is weaker than the size's
+    /// [`STRENGTH`](RsaSize::STRENGTH) or fails to deliver; [`SignatureError::GenericError`] if
+    /// it gave no usable Miller-Rabin base in 128 draws.
+    ///
+    /// # 🚨 Security Considerations 🚨
+    ///
+    /// Not constant time in the key, as key generation is not.
+    pub fn validate(&self, rng: &mut dyn RNG) -> Result<(), SignatureError> {
+        K::validate_key_pair(self, rng)
     }
 }
 
@@ -664,5 +703,42 @@ pub(crate) fn decoding_error(e: SignatureError) -> KeyDecodingError {
     match e {
         SignatureError::DecodingError(msg) => KeyDecodingError(msg),
         _ => KeyDecodingError("invalid RSA key encoding"),
+    }
+}
+
+// A private-key operation checks its result (`rsa_core::crt_exp_checked`), and the constructor
+// above refuses every key that would fail that check, so the tests of the check need a key
+// built past the constructor: the QUALITY_AND_STYLE.md exception for behaviour that cannot be
+// reached through the public API.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    impl<K: RsaSigningSize> RsaPrivateComponents<K> {
+        /// The components as a key, with `n = p * q` and nothing checked.
+        pub(crate) fn unvalidated(
+            p: &K::HalfLimbs,
+            q: &K::HalfLimbs,
+            d_p: &K::HalfLimbs,
+            d_q: &K::HalfLimbs,
+            q_inv: &K::HalfLimbs,
+            e: u64,
+        ) -> Self {
+            let mut key = Self {
+                p: Secret::new(),
+                q: Secret::new(),
+                d_p: Secret::new(),
+                d_q: Secret::new(),
+                q_inv: Secret::new(),
+                n: K::modulus_from_primes(p, q),
+                e,
+            };
+            *key.p = *p;
+            *key.q = *q;
+            *key.d_p = *d_p;
+            *key.d_q = *d_q;
+            *key.q_inv = *q_inv;
+            key
+        }
     }
 }
