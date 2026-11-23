@@ -69,7 +69,7 @@ fn known_answer_at_the_n_minus_1_boundary() {
 /// back in as `2^384 mod (n-1) = 2^384 - (n-1)`. Slow, obviously correct, and sharing no
 /// code with the Barrett path beyond `nat`'s add and sub.
 fn reference_bit_serial(bytes: &[u8]) -> [u8; 48] {
-    use bouncycastle_ec::nat;
+    use bouncycastle_utils::nat;
     let n = bouncycastle_ec::hazmat::bp384r1_scalar::N_LIMBS;
     let mut m = n;
     m[0] -= 1; // n is odd

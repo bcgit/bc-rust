@@ -67,7 +67,7 @@ use bouncycastle_ec::hazmat::sm2_point::Sm2JacobianPoint;
 use bouncycastle_ec::hazmat::sm2_scalar::{N_LIMBS, Sm2PublicScalar, Sm2Scalar, Sm2ScalarField};
 use bouncycastle_ec::hazmat::sm2_sec1;
 use bouncycastle_ec::hazmat::sm2_wnaf::shamir_multiply;
-use bouncycastle_ec::nat;
+use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::Secret;
 
 /// Raw `r || s` signature length: two 32-byte field-width integers. See the module docs on why

@@ -1,7 +1,8 @@
 //! Constant-time elliptic-curve arithmetic over compile-time-selected Weierstrass curves.
 //!
-//! This crate is the "custom curve" math substrate: fixed-width limb arithmetic ([`nat`]) and,
-//! per curve, a base-field implementation with a reduction tailored to that curve's prime.
+//! This crate is the "custom curve" math substrate: per curve, a base-field implementation with a
+//! reduction tailored to that curve's prime, over the fixed-width limb arithmetic of
+//! [`bouncycastle_utils::nat`].
 //!
 //! It deliberately does not support a runtime-described generic curve, and that is a
 //! constant-time decision rather than a scope one. Field arithmetic on a secret value has to run
@@ -204,7 +205,5 @@ pub mod curve;
 mod curves;
 pub mod hazmat;
 pub mod inverse_vartime;
-pub mod montgomery;
-pub mod nat;
 
 pub use curves::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};

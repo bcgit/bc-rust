@@ -34,20 +34,20 @@ these public APIs of BC-Rust's HKDF implementation:
 
 ```rust
 impl<H: HMACParams> HKDF<H> {
-    do_extract_init(salt: & impl KeyMaterial) -> Result<usize, MACError>;
+    fn do_extract_init(&mut self, salt: &impl KeyMaterialTrait) -> Result<usize, MACError>;
 
-    do_extract_update_key(ikm: & impl KeyMaterial) -> Result<usize, MACError>;
+    fn do_extract_update_key(&mut self, ikm: &impl KeyMaterialTrait) -> Result<usize, MACError>;
 
-    do_extract_update_bytes(ikm_chunk: & [u8]) -> Result<usize, MACError>;
+    fn do_extract_update_bytes(&mut self, ikm_chunk: &[u8]) -> Result<usize, MACError>;
 
-    do_extract_final() -> Result<impl KeyMaterial, MACError>;
+    fn do_extract_final(self) -> Result<KeyMaterial<MAX_HMAC_OUTPUT_LEN>, MACError>;
 
-    expand_out(
-    prk: & impl KeyMaterial,
-    info: & [u8],
-    L: usize,
-    okm: & mut impl KeyMaterial,
-    ) -> Result<usize, KDFError>
+    fn expand_out(
+        prk: &impl KeyMaterialTrait,
+        info: &[u8],
+        L: usize,
+        okm: &mut impl KeyMaterialTrait,
+    ) -> Result<usize, KDFError>;
 }
 ```
 
@@ -89,22 +89,22 @@ Instead, we take the approach of hiding the parameters in a system of private tr
 construction of NIST-approved and secure instances. For example, consider how our SHA3 object is constructed internally:
 
 ```rust
-impl<PARAMS: SHA3Params> SHA3<PARAMS> {
+impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
     pub fn new() -> Self;
 }
 ```
 
-where `SHA3Params` carries all the fiddly parameters. We've made it a private trait so you can't make one, even if you
+where `SHA3Params` carries all the fiddly parameters. We've made it a sealed trait so you can't make one, even if you
 wanted to; you have to choose from the ones built-in to the library. We then hide all of this behind simplified public
 types:
 
 ```rust
-pub type SHA3_224 = SHA3<SHA3_224Params>;
-pub type SHA3_256 = SHA3<SHA3_256Params>;
-pub type SHA3_384 = SHA3<SHA3_384Params>;
-pub type SHA3_512 = SHA3<SHA3_512Params>;
-pub type SHAKE128 = SHAKE<SHAKE128Params>;
-pub type SHAKE256 = SHAKE<SHAKE256Params>;
+pub type SHA3_224 = SHA3Internal<SHA3_224Params>;
+pub type SHA3_256 = SHA3Internal<SHA3_256Params>;
+pub type SHA3_384 = SHA3Internal<SHA3_384Params>;
+pub type SHA3_512 = SHA3Internal<SHA3_512Params>;
+pub type SHAKE128 = SHAKEInternal<SHAKE128Params>;
+pub type SHAKE256 = SHAKEInternal<SHAKE256Params>;
 ```
 
 so that in the end `SHA3_256::hash(&data)` just does what you expect. The "If it compiles, then it's safe"
@@ -114,7 +114,7 @@ continue to find ways to refine our type system to turn ever more runtime error 
 There is one deliberate exception. A mode of operation has to be built on a raw block permutation, and a stream cipher
 on a raw keystream, and those primitives are correct, tested, and insecure if used on data directly. Sealed parameters
 like `SHA3Params` keep the caller inside the safe set; these hand the caller the raw operation. They live under a
-`hazmat` module in their crate (`bouncycastle_core::hazmat` defines the term), so that the path says what the docs
+`hazmat` module beside the safe API (`bouncycastle_core::hazmat` defines the term), so that the path says what the docs
 say, and `grep -rn hazmat` finds every such use in a code base. Everything outside `hazmat` keeps the contract above.
 
 ### KeyMaterial wrapper
@@ -132,9 +132,9 @@ key material misuses.
 The core stucture is:
 
 ```rust
-pub struct KeyMaterialInternal<const KEY_LEN: usize> {
-    buf: [u8; KEY_LEN],
-    key_len: usize,
+pub struct KeyMaterial<const KEY_LEN: usize> {
+    buf: Secret<[u8; KEY_LEN]>,
+    key_len: Secret<usize>,
     key_type: KeyType,
     security_strength: SecurityStrength,
     allow_hazardous_operations: bool,
@@ -146,11 +146,12 @@ along with the following matadata tracking enums:
 ```rust
 pub enum KeyType {
     Zeroized,
-    BytesLowEntropy,
-    BytesFullEntropy,
+    Unknown,
+    CryptographicRandom,
     Seed,
     MACKey,
     SymmetricCipherKey,
+    SharedSecret,
 }
 
 pub enum SecurityStrength { None, _112bit, _128bit, _192bit, _256bit, }
@@ -171,16 +172,15 @@ ML-DSA-87.
 Of course, there will always be things developers need to do that the library did not provide a utility function for,
 for example, you may actually need an all-zero MACKey in order to implement certain standardized MAC algorithms. To the
 end, the library will allow you to, for example, force a key type to any full-entropy key type and security strength, or
-even get a direct immutable or mutable reference to the underlying buffer via `.ref_to_bytes()` and
-`ref_to_bytes_mut()`, but only with use of the `allow_hazardous_operations` flag:
+even get a direct mutable reference to the underlying buffer via `ref_to_bytes_mut()` (reading it, via
+`.ref_to_bytes()`, is always allowed), but only inside a `do_hazardous_operations` block:
 
 ```rust
-key.allow_hazardous_operations();
-
-// In here, you can do whatever you want to the key,
-// but you are responsible for updating its metadata.
-
-key.drop_hazardous_operations();
+do_hazardous_operations(&mut key, |key| {
+    // In here, you can do whatever you want to the key,
+    // but you are responsible for updating its metadata.
+    Ok(())
+})?;
 ```
 
 In keeping with Rust's general philosophy around unsafe code, the idea is not to prevent developers from doing what they
@@ -202,28 +202,31 @@ care and try to reproduce functionality internally where practical.
 Most people don't put "Java" or "DotNet" in the same sentence as "embedded microcontroller". This is not entirely fair
 as there are some incredibly lightweight JVMs, such as [Java Card](https://www.oracle.com/java/java-card/), but
 generally speaking, you'd be right to think that any device too small to run linux will not have a fun time with a
-java-based library. BC-Rust, however, is designed to go as small as you need. First, is the code structure breaking
-everything into its own sub-crate. For example, if you only need SHA2, then you can build only SHA2 (plus the small
-number of support and utility crates such as error types and math functions). Over time we plan to further granularize
-this by making use of rust cargo's excellent features system. Speaking of features, most rust applications are perfectly
-fine to compile against the rust standard runtime library (libstd); after all it brings great convenience features such
-as dynamically-sized arrays (Vec), stack overflow protection, and so forth. But when you get down to devices so small
-that they don't offer dynamic memory allocation (heap memory), then libstd doesn't work -- so no Vec for you! BC-Rust is
-designed towards eventually supporting a no_std build. For example, most of the public APIs in BC-Rust are twinned into
-a more ergonomic version that will return the result in a newly-allocated Vec of bytes, and also a version that takes a
-mutable slice of memory into which to write the result, as exemplified by the Hash trait:
+java-based library. BC-Rust, however, is designed to go as small as you need. First, is the code structure: the library
+is a small set of family crates (`bouncycastle-digest`, `bouncycastle-symmetric`, `bouncycastle-ec`, `bouncycastle-pqc`
+and so on) with each primitive a module of its family. For example, if you only need SHA2, then you depend on the digest
+family alone (plus the small number of support and utility crates such as error types and math functions), and the
+linker drops the modules you never call. Over time we plan to further granularize this by making use of rust cargo's
+excellent features system. Speaking of features, most rust applications are perfectly fine to compile against the rust
+standard runtime library (libstd); after all it brings great convenience features such as dynamically-sized arrays
+(Vec), stack overflow protection, and so forth. But when you get down to devices so small that they don't offer dynamic
+memory allocation (heap memory), then libstd doesn't work -- so no Vec for you! BC-Rust is designed towards a no_std
+build: the algorithm crates already declare `#![no_std]`, and what remains is in `bouncycastle-core`, where a `std`
+feature gates the allocating convenience APIs. For example, most of the public APIs in BC-Rust are twinned into a more
+ergonomic version that will return the result in a newly-allocated Vec of bytes, and also a version that takes a mutable
+slice of memory into which to write the result, as exemplified by the one-shot hash trait:
 
 ```rust
-pub trait Hash {
+pub trait HashOneShot: Hash + Default {
     //...
     /// A static one-shot API that hashes the provided data.
     /// `data` can be of any length, including zero bytes.
-    fn hash(self, data: &[u8]) -> Vec<u8>;
+    fn hash(data: &[u8]) -> Vec<u8>;
 
     /// A static one-shot API that hashes the provided data into the provided output slice.
     /// `data` can be of any length, including zero bytes.
     /// The return value is the number of bytes written.
-    fn hash_out(self, data: &[u8], output: &mut [u8]) -> Result<usize, HashError>;
+    fn hash_out(data: &[u8], output: &mut [u8]) -> usize;
     //...
 }
 ```
@@ -238,23 +241,23 @@ This alpha release includes the following cryptographic primitives:
 
 * Hex (constant-time)
 * Base64 (both performant and constant-time variants)
-* SHA-2
-* SHA-3
-* HMAC
-* HKDF
+* Hashes: SHA-2, SHA-3 and its derived functions (SHAKE, cSHAKE, KMAC, TupleHash, ParallelHash), BLAKE2, BLAKE3,
+  RIPEMD, SM3, and SHA-1 for existing protocols
+* MACs and KDFs: HMAC, HKDF, CMAC, GMAC, Poly1305, PBKDF2, scrypt, the SP 800-56C and X9.63 KDFs, and the SP 800-108
+  KDFs
 * The NIST HashDRBG random number generator
+* Block ciphers (AES, ARIA, Camellia, SM4, Triple-DES) under the usual modes, including GCM, GCM-SIV, CCM and key
+  wrap, plus ChaCha20-Poly1305 and Ascon
+* Signatures (Ed25519, Ed448, ML-DSA, ECDSA, SM2, RSA)
+* Key Establishment (X25519, X448, ML-KEM, ECDH, RSA, and HPKE over them)
 
 But more than anything, the alpha release focuses on the design of the public trait and error type system contained in
-the `core-interface` sub-crate.
+the `bouncycastle-core` crate.
 
-Next up will be to round out the set of cryptographic primitives:
+Next up will be to round out the set of cryptographic primitives, SLH-DSA being the main one still missing.
 
-* Block ciphers (AES, ARIA, Camellia, SM4)
-* Signatures (Ed25519, Ed448, ML-DSA, SLH-DSA, ECDSA, RSA)
-* Key Establishment (X25519, X448, ML-KEM, ECDH)
-
-(an earlier draft of this list left out RSA, ECDSA and ECDH on purpose; there has been a change of heart, and they
-are being implemented on the same terms as everything else: fixed-width constant-time arithmetic, no runtime-described
+(an earlier draft of this roadmap left out RSA, ECDSA and ECDH on purpose; there has been a change of heart, and they
+are implemented on the same terms as everything else: fixed-width constant-time arithmetic, no runtime-described
 parameters.)
 
 After that, we'll tackle in some kind of order (depending on public interest and funding):

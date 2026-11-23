@@ -5,7 +5,6 @@ edition.workspace = true
 
 [dependencies]
 bouncycastle-core.workspace = true
-bouncycastle-ec.workspace = true
 bouncycastle-digest.workspace = true
 bouncycastle-utils.workspace = true
 

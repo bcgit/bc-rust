@@ -37,7 +37,7 @@ use crate::hazmat::sm2::Sm2FieldElement;
 use crate::hazmat::sm2_point::Sm2JacobianPoint;
 use crate::hazmat::sm2_scalar::Sm2PublicScalar;
 use crate::hazmat::sm2_wnaf_table::{G_ODD_MULTIPLES_X, G_ODD_MULTIPLES_Y};
-use crate::nat;
+use bouncycastle_utils::nat;
 
 /// Window for `Q`, whose odd multiples are computed per call: 8 point additions to build the
 /// table, one addition per ~6 digits to use it.

@@ -1,9 +1,9 @@
 //! RSA digital signatures, RSASSA-PKCS1-v1_5 and RSASSA-PSS (RFC 8017 §8), the RSASVE
 //! key-encapsulation mechanism (NIST SP 800-56B Rev. 2 §7.2.1) and RSAES-OAEP key transport
 //! (RFC 8017 §7.1, SP 800-56B Rev. 2 §7.2.2), built on
-//! [`bouncycastle_ec`]'s constant-time limb arithmetic ([`bouncycastle_ec::nat`],
-//! [`bouncycastle_ec::montgomery`]) rather than a dedicated bignum type, for the same
-//! constant-time reasoning that motivates that crate's own custom-curve arithmetic: a modular
+//! [`bouncycastle_utils`]'s constant-time limb arithmetic ([`bouncycastle_utils::nat`],
+//! [`bouncycastle_utils::montgomery`]) rather than a dedicated bignum type, for the same
+//! constant-time reasoning that motivates `bouncycastle-ec`'s custom-curve arithmetic: a modular
 //! exponentiation over a secret exponent has to run in the same time regardless of the exponent's
 //! value, which needs limbs of a fixed width known at compile time.
 //!

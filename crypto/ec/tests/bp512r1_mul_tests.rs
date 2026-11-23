@@ -14,7 +14,7 @@ use bouncycastle_ec::hazmat::bp512r1_scalar::{
     Bp512r1PublicScalar, Bp512r1Scalar, Bp512r1ScalarField, N_LIMBS,
 };
 use bouncycastle_ec::hazmat::bp512r1_wnaf::shamir_multiply;
-use bouncycastle_ec::nat;
+use bouncycastle_utils::nat;
 
 const LIMBS: usize = 8;
 

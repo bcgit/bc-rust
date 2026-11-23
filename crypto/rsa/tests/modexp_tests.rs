@@ -19,7 +19,7 @@ fn both_contexts<const L: usize>(n: &[u64; L]) -> [MontgomeryContext<L>; 2] {
 }
 
 /// `n' = -n0^-1 mod 2^64` must satisfy `n0 * n' ≡ -1 (mod 2^64)` -- the exact identity
-/// [`bouncycastle_ec::montgomery::redc`] relies on. Checked directly by wrapping multiplication,
+/// [`bouncycastle_utils::montgomery::redc`] relies on. Checked directly by wrapping multiplication,
 /// across small, large, and adversarial (all-ones) odd values.
 #[test]
 fn mont_n_prime_satisfies_redc_identity() {

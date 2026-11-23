@@ -28,7 +28,6 @@ use bouncycastle_core::traits::PrivateKey;
 use bouncycastle_core::traits::RNG;
 use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
 use bouncycastle_digest::sha2::SHA256;
-use bouncycastle_ec::montgomery::widening_mul;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::RSA3072;
@@ -40,6 +39,7 @@ use bouncycastle_rsa::rsa_2048::{RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256, SI
 use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use bouncycastle_rsa::size::RsaSigningSize;
 use bouncycastle_rsa::{rsa_3072, rsa_4096, rsa_8192};
+use bouncycastle_utils::montgomery::widening_mul;
 use core::num::NonZeroUsize;
 
 /// The documented Wycheproof RSA-2048 key's `p` and `q` (see `rsa_2048_pkcs1_v1_5_tests.rs` for
@@ -179,8 +179,8 @@ fn assert_fips_186_5_criteria<const HALF: usize, const HALF2: usize, const HALF2
     // 2(d): |p - q| > 2^(nlen/2 - 100). nlen/2 - 100 = 64 * (HALF - 2) + 28, so the bits at and
     // above that position are limb HALF - 1 and the top 36 bits of limb HALF - 2; some must be set
     // (the "exactly 2^(nlen/2 - 100)" edge is a 2^-924 event, not worth a test branch).
-    let (diff, borrow) = bouncycastle_ec::nat::sub(&p, &q);
-    let diff = if borrow == 1 { bouncycastle_ec::nat::sub(&q, &p).0 } else { diff };
+    let (diff, borrow) = bouncycastle_utils::nat::sub(&p, &q);
+    let diff = if borrow == 1 { bouncycastle_utils::nat::sub(&q, &p).0 } else { diff };
     assert!(
         diff[HALF - 1] != 0 || diff[HALF - 2] >> 28 != 0,
         "|p - q| must exceed 2^(nlen/2 - 100)"
@@ -188,9 +188,9 @@ fn assert_fips_186_5_criteria<const HALF: usize, const HALF2: usize, const HALF2
     // n = p * q.
     assert_eq!(widening_mul::<HALF, HALF2>(&p, &q), *n);
     // The CRT exponents are reduced (RFC 8017 §3.2) and nonzero.
-    assert!(bouncycastle_ec::nat::sub(&d_p, &p).1 == 1 && d_p != [0u64; HALF]);
-    assert!(bouncycastle_ec::nat::sub(&d_q, &q).1 == 1 && d_q != [0u64; HALF]);
-    assert!(bouncycastle_ec::nat::sub(&q_inv, &p).1 == 1 && q_inv != [0u64; HALF]);
+    assert!(bouncycastle_utils::nat::sub(&d_p, &p).1 == 1 && d_p != [0u64; HALF]);
+    assert!(bouncycastle_utils::nat::sub(&d_q, &q).1 == 1 && d_q != [0u64; HALF]);
+    assert!(bouncycastle_utils::nat::sub(&q_inv, &p).1 == 1 && q_inv != [0u64; HALF]);
 }
 
 #[test]

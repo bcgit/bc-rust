@@ -1,4 +1,4 @@
-use bouncycastle_ec::nat;
+use bouncycastle_utils::nat;
 
 #[test]
 fn add_no_carry() {

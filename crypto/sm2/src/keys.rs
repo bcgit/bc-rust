@@ -16,7 +16,7 @@ use bouncycastle_ec::hazmat::sm2::Sm2FieldElement;
 use bouncycastle_ec::hazmat::sm2_comb::comb_multiply_base_point;
 use bouncycastle_ec::hazmat::sm2_scalar::{Sm2Scalar, Sm2ScalarField};
 use bouncycastle_ec::hazmat::sm2_sec1;
-use bouncycastle_ec::nat;
+use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};

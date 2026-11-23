@@ -7,7 +7,7 @@
 use bouncycastle_ec::hazmat::p521_extra_bits::reduce_wide_bits_mod_n_minus_1;
 use bouncycastle_ec::hazmat::p521_scalar::{N_LIMBS, P521Scalar};
 use bouncycastle_ec::hazmat::p521_sec1;
-use bouncycastle_ec::nat;
+use bouncycastle_utils::nat;
 
 /// The width `bouncycastle-ecdsa` draws for P-521: `ceil((521 + 64) / 8)`.
 const DRBG_OUTPUT_LEN: usize = 74;

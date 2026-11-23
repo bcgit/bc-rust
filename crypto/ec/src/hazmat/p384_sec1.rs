@@ -9,7 +9,7 @@
 use crate::hazmat::p384::{P_LIMBS, P384FieldElement};
 use crate::hazmat::p384_domain::B_LIMBS;
 use crate::hazmat::p384_point::P384JacobianPoint;
-use crate::nat;
+use bouncycastle_utils::nat;
 
 /// `(p + 1) / 4`, the exponent [`decode`]'s compressed-point square root raises `α` to.
 const SQRT_EXPONENT: [u64; 6] = [

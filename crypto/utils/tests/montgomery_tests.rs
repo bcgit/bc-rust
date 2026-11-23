@@ -1,4 +1,4 @@
-//! Cross-validation for [`bouncycastle_ec::montgomery`]'s generic `widening_mul`/`redc` against
+//! Cross-validation for [`bouncycastle_utils::montgomery`]'s generic `widening_mul`/`redc` against
 //! [`P256ScalarField`], whose own hand-written Montgomery arithmetic is already independently
 //! verified (KATs, RFC 6979 vectors, wycheproof, and its own mutation-testing pass). `N_PRIME` and
 //! `R_SQUARED_LIMBS` below are derived independently (`-n⁻¹ mod 2^64`, `R² mod n` computed directly
@@ -8,15 +8,15 @@
 //! any particular brainpool curve's own parameters.
 
 use bouncycastle_ec::hazmat::p256_scalar::{N_LIMBS, P256ScalarField};
-use bouncycastle_ec::montgomery::{redc, widening_mul, widening_mul_into, widening_square};
-use bouncycastle_ec::nat;
+use bouncycastle_utils::montgomery::{redc, widening_mul, widening_mul_into, widening_square};
+use bouncycastle_utils::nat;
 
 const N_PRIME: u64 = 0xccd1c8aaee00bc4f;
 const R_SQUARED_LIMBS: [u64; 4] =
     [0x83244c95be79eea2, 0x4699799c49bd6fa6, 0x2845b2392b6bec59, 0x66e12d94f3d95620];
 /// `R mod n` (`R = 2^256`), independently computed the same way as `N_PRIME`/`R_SQUARED_LIMBS`
 /// above -- used by [`reduce_once`]'s `extra == 1` case exactly as every hand-written per-curve
-/// `redc` in this crate uses its own identically-derived constant (e.g.
+/// `redc` in `bouncycastle-ec` uses its own identically-derived constant (e.g.
 /// [`bouncycastle_ec::hazmat::p256_scalar`]'s private `R_LIMBS`).
 const R_MOD_N_LIMBS: [u64; 4] =
     [0x0c46353d039cdaaf, 0x4319055258e8617b, 0x0000000000000000, 0x00000000ffffffff];

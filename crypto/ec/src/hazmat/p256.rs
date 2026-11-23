@@ -28,9 +28,9 @@
 //! so the whole routine is trivially constant-time in the operands.
 
 use crate::curve::FieldElement;
-use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::nat;
 
 /// `p`, little-endian `u64` limbs (SP 800-186 §3.2.1.3).
 pub const P_LIMBS: [u64; 4] =
@@ -103,7 +103,7 @@ impl P256FieldElement {
     /// downstream; the range is checked in debug builds.
     pub(crate) fn from_internal_limbs(limbs: [u64; 4]) -> Self {
         debug_assert_eq!(
-            crate::nat::sub(&limbs, &P_LIMBS).1,
+            bouncycastle_utils::nat::sub(&limbs, &P_LIMBS).1,
             1,
             "from_internal_limbs given a value >= p"
         );
