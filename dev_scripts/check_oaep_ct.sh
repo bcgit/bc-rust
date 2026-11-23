@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks that the EME-OAEP decoding (`decode_out` in crypto/rsa/src/eme_oaep.rs) does nothing
+# Checks that the EME-OAEP decoding (`decode_out` in crypto/modexp/src/rsa/eme_oaep.rs) does nothing
 # that depends on the encoded message, in two ways, over dev_scripts/oaep_ct_harness, which
 # includes that file by path.
 #

@@ -1,6 +1,6 @@
 //! Runs the RSA private-key arithmetic over a key memcheck regards as undefined, so that
 //! memcheck reports any conditional jump or address computed from it. That arithmetic is not
-//! public: `bouncycastle-rsa` shows it to this program under `--cfg
+//! public: `bouncycastle_modexp::rsa` shows it to this program under `--cfg
 //! bouncycastle_rsa_ct_harness`, which `check_rsa_ct.sh` sets. A secret is made
 //! undefined without changing its value by XOR with fresh heap memory, which memcheck tracks
 //! as undefined and `--malloc-fill=0x00` makes zero. The controls must be reported, or a
@@ -14,11 +14,11 @@
 //!   control-context  `for_public_modulus`, which is variable time, over the same modulus
 //!   control-crt      `crt`, then a branch on its result, which is computed from the key
 //!   control-import   `import`, then a branch on its verdicts
-use bouncycastle_rsa::RSA2048;
-use bouncycastle_rsa::ct_harness::{PrivateKeyEngine, token};
-use bouncycastle_rsa::keys::RsaPrivateComponents;
-use bouncycastle_rsa::modexp::MontgomeryContext;
-use bouncycastle_rsa::size::RsaSigningSize;
+use bouncycastle_modexp::rsa::RSA2048;
+use bouncycastle_modexp::rsa::ct_harness::{PrivateKeyEngine, token};
+use bouncycastle_modexp::rsa::keys::RsaPrivateComponents;
+use bouncycastle_modexp::rsa::modexp::MontgomeryContext;
+use bouncycastle_modexp::rsa::size::RsaSigningSize;
 use std::alloc::{Layout, alloc};
 use std::hint::black_box;
 

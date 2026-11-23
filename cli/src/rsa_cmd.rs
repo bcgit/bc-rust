@@ -8,7 +8,7 @@
 //! (`RSA_2048_PSS_SHA384`, ...) would mean over thirty near-identical subcommands for what is
 //! fundamentally one primitive per modulus size.
 //!
-//! Every (size, scheme, hash) pairing is one of `bouncycastle_rsa`'s algorithm marker
+//! Every (size, scheme, hash) pairing is one of `bouncycastle_modexp::rsa`'s algorithm marker
 //! types (`rsa_2048::RSASSA_PKCS1_v1_5_SHA256` and siblings), and a key is a key for one of
 //! them, `RsaPrivateKey<A>` / `RsaPublicKey<A>`, so, as `ecdsa_cmd.rs` does for its curves, one
 //! generic command per role ([`rsa_pss_cmd`] over `SigningKey`, [`rsa_pkcs1_cmd`] over
@@ -16,7 +16,7 @@
 //! from stdin through the workers' `do_update` in this CLI's usual ~1 KB chunks rather than
 //! being read whole. A key file is decoded under the pairing of the command that reads it: the
 //! bytes carry no scheme, and the key type the command names is the one it is for. The traits'
-//! `ctx` is not exposed as a flag: RSA has no context input, and `bouncycastle_rsa` refuses a
+//! `ctx` is not exposed as a flag: RSA has no context input, and `bouncycastle_modexp::rsa` refuses a
 //! non-empty one, so every call below passes `None`.
 //!
 //! `keygen` (FIPS 186-5 Appendix A.1.3 through the size marker's per-scheme generators,
@@ -29,7 +29,7 @@
 //! not ASN.1 DER -- this crate has no encoder for either -- so a key produced by another RSA
 //! implementation cannot be fed to this CLI directly.
 //!
-//! 1024- and 1536-bit RSA are verification-only in `bouncycastle_rsa` (see its crate docs' `#
+//! 1024- and 1536-bit RSA are verification-only in `bouncycastle_modexp::rsa` (see its module docs' `#
 //! Scope`), so `rsa_1024_cmd`/`rsa_1536_cmd` take no `action`/`skfile` at all: they only verify,
 //! through [`do_verify`], which needs only a `VerifyingKey` -- exactly the trait those sizes'
 //! types implement.

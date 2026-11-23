@@ -1,7 +1,7 @@
 //! Generic branch-free Montgomery multiplication primitives (widening multiply and REDC),
 //! shared by moduli with no special (Solinas) structure to exploit for reduction: in
 //! `bouncycastle-ec` the brainpool curves (RFC 5639), whose primes are "random" with no algebraic
-//! shortcut, unlike every NIST curve or secp256k1 there, and in `bouncycastle-rsa` a modulus
+//! shortcut, unlike every NIST curve or secp256k1 there, and in `bouncycastle_modexp::rsa` a modulus
 //! supplied at run time.
 //!
 //! Every other curve in `bouncycastle-ec` hand-writes its own `widening_mul`/`redc` (see e.g.

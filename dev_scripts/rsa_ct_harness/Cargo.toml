@@ -1,4 +1,4 @@
-# The RSA private-key arithmetic, reached through bouncycastle-rsa's public API, for
+# The RSA private-key arithmetic, reached through bouncycastle_modexp::rsa's public API, for
 # `../check_rsa_ct.sh` to run under memcheck with the key undefined. Its own workspace, so the
 # root `cargo build --workspace` never builds it.
 [package]
@@ -8,7 +8,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-bouncycastle-rsa = { path = "../../crypto/rsa" }
+bouncycastle-modexp = { path = "../../crypto/modexp" }
 
 # The root workspace's release profile, so that memcheck runs the code a release build of the
 # library is; `debug` for the line numbers in a report.

@@ -98,7 +98,7 @@ way when adding a harness, or `cargo test --workspace` fails to compile them.
 
 The workspace has four top-level kinds of member:
 
-1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework` and `cipher-test-framework` described below. Most are one primitive each; `pqc`, `digest`, `symmetric`, `ec` and `hybrid` are family crates, holding their primitives as modules (see [the layout below](#sub-crate-layout-convention)). The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is named `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`; the two test frameworks, `cli` and `mem_usage_benches` are `publish = false`, which works because every dev-dependency is path-only and so is dropped from a packaged crate.
+1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework` and `cipher-test-framework` described below. Most are one primitive each; `pqc`, `digest`, `symmetric`, `ec`, `modexp` and `hybrid` are family crates, holding their primitives as modules (see [the layout below](#sub-crate-layout-convention)). The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is named `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`; the two test frameworks, `cli` and `mem_usage_benches` are `publish = false`, which works because every dev-dependency is path-only and so is dropped from a packaged crate.
 2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::sm3`, `bouncycastle::pqc`), and of a family crate's primitive modules under the names they had as crates (`bouncycastle::mlkem` is `bouncycastle_pqc::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
 3. `cli/` — the `bc-rust` binary built on top of `bouncycastle`, exposing every primitive as a streaming stdin→stdout subcommand using `clap`.
 4. `mem_usage_benches/` — stand-alone binary crates that measure peak stack usage of algorithms (cannot be done via criterion).
@@ -126,7 +126,8 @@ crypto/<name>/
 ```
 
 A family crate holds its primitives as modules, each with the layout it had as a crate:
-`bouncycastle-hybrid` (`crypto/hybrid`: `hpke`), `bouncycastle-digest` (`crypto/digest`: `blake2`,
+`bouncycastle-hybrid` (`crypto/hybrid`: `hpke`), `bouncycastle-modexp` (`crypto/modexp`: `rsa`),
+`bouncycastle-digest` (`crypto/digest`: `blake2`,
 `blake3`, `concatkdf`, `hkdf`, `hmac`, `pbkdf2`, `ripemd`, `scrypt`, `sha1`, `sha2`, `sha3`, `sm3`,
 `x963kdf`), `bouncycastle-ec` (`crypto/ec`: `dhkem`, `eccdh`, `ecdsa`, `ed`, `sm2`, beside the
 curve arithmetic at the crate root), `bouncycastle-symmetric`
@@ -493,9 +494,9 @@ Eight workflows under `.github/workflows/`, all triggered by pull requests:
   `dev_scripts/oaep_ct_harness` (the EME-OAEP decode, included by path) under memcheck with the encoded
   message undefined, with a variable-time control, and greps its thumbv6m and riscv32i assembly for a
   multiply, divide or unexpected call.
-- `rsa-ct-stack.yml`: two checks of `crypto/rsa`, on the runner's stable toolchain. `dev_scripts/check_rsa_ct.sh`
+- `rsa-ct-stack.yml`: two checks of `crypto/modexp`'s `rsa` module, on the runner's stable toolchain. `dev_scripts/check_rsa_ct.sh`
   with valgrind runs `dev_scripts/rsa_ct_harness` (the Montgomery setup over a secret modulus, the checked
-  CRT and a key constructor's congruences; the last two through the crate's `ct_harness` module, which exists
+  CRT and a key constructor's congruences; the last two through the module's `ct_harness`, which exists
   only under `--cfg bouncycastle_rsa_ct_harness`) under memcheck with the key undefined, with controls that must
   be reported. `dev_scripts/check_rsa_stack.sh` runs `dev_scripts/rsa_stack_harness`, which paints the stack, runs
   each private-key operation and searches what it used for the key and what was derived from it. The second is

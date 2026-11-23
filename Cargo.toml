@@ -18,9 +18,9 @@ bouncycastle-cipher-test-framework = { path = "./crypto/cipher-test-framework" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
 bouncycastle-ec = { path = "./crypto/ec" }
 bouncycastle-hybrid = { path = "./crypto/hybrid" }
+bouncycastle-modexp = { path = "./crypto/modexp" }
 bouncycastle-pqc = { path = "./crypto/pqc" }
 bouncycastle-rng = { path = "./crypto/rng" }
-bouncycastle-rsa = { path = "./crypto/rsa" }
 bouncycastle-utils = { path = "./crypto/utils" }
 
 
@@ -53,6 +53,6 @@ bouncycastle-digest.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-ec.workspace = true
 bouncycastle-hybrid.workspace = true
+bouncycastle-modexp.workspace = true
 bouncycastle-pqc.workspace = true
 bouncycastle-rng.workspace = true
-bouncycastle-rsa.workspace = true

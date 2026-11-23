@@ -1,4 +1,4 @@
-//! What the private-key operations of bouncycastle-rsa leave on the dead stack, for
+//! What the private-key operations of bouncycastle_modexp::rsa leave on the dead stack, for
 //! `../check_rsa_stack.sh`. For each operation the stack below the call is painted, the
 //! operation run with its results going to the heap or to a live frame above, the dead stack
 //! copied out, and the copy searched for the 8-byte words of every secret the operation
@@ -21,20 +21,20 @@ use bouncycastle_core::signature_key::{
 };
 use bouncycastle_core::traits::{PrivateKey, SignatureSigner};
 use bouncycastle_digest::hkdf::{HKDF, HkdfDescription};
-use bouncycastle_rng::DefaultRNG;
-use bouncycastle_rsa::keygen::is_probable_prime;
-use bouncycastle_rsa::keys::{RsaPrivateComponents, RsaPrivateKey};
-use bouncycastle_rsa::modexp::{
+use bouncycastle_digest::sha2::SHA256;
+use bouncycastle_modexp::rsa::keygen::is_probable_prime;
+use bouncycastle_modexp::rsa::keys::{RsaPrivateComponents, RsaPrivateKey};
+use bouncycastle_modexp::rsa::modexp::{
     MontgomeryContext, mod_pow, mod_pow_public_exponent, mul_mod, reduce_wide, sub_mod,
 };
-use bouncycastle_rsa::rsaes_oaep::OaepParams;
-use bouncycastle_rsa::rsassa;
-use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
-use bouncycastle_rsa::rsassa_pss::RSASSA_PSS;
-use bouncycastle_rsa::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
-use bouncycastle_rsa::size::{KemKeyPair, RsaSigningSize, RsaSize, SignatureKeyPair};
-use bouncycastle_rsa::{RSA2048, RSA3072, RSA4096, RSA8192};
-use bouncycastle_digest::sha2::SHA256;
+use bouncycastle_modexp::rsa::rsaes_oaep::OaepParams;
+use bouncycastle_modexp::rsa::rsassa;
+use bouncycastle_modexp::rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
+use bouncycastle_modexp::rsa::rsassa_pss::RSASSA_PSS;
+use bouncycastle_modexp::rsa::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
+use bouncycastle_modexp::rsa::size::{KemKeyPair, RsaSigningSize, RsaSize, SignatureKeyPair};
+use bouncycastle_modexp::rsa::{RSA2048, RSA3072, RSA4096, RSA8192};
+use bouncycastle_rng::DefaultRNG;
 use std::collections::HashSet;
 use std::hint::black_box;
 use std::num::NonZeroUsize;

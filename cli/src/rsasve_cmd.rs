@@ -1,4 +1,4 @@
-//! CLI wiring for RSASVE (SP 800-56B Rev. 2 §7.2.1), `bouncycastle_rsa`'s RSA KEM. There is one
+//! CLI wiring for RSASVE (SP 800-56B Rev. 2 §7.2.1), `bouncycastle_modexp::rsa`'s RSA KEM. There is one
 //! command per modulus size, since the size fixes the key, ciphertext and shared-secret lengths
 //! (the same split `rsa_cmd.rs` makes for signatures). A single generic [`rsasve_cmd`], bound over
 //! the `EncapsulatingKey` / `DecapsulatingKey` roles, is monomorphised once per size.
@@ -9,7 +9,7 @@
 //! `keygen` is `rsa_cmd.rs`'s: the private key to stdout, the public key to `--pkfile`, since
 //! no command derives the public key from the private key file.
 //!
-//! These are separate subcommands from `rsa-<size>` because `bouncycastle_rsa` keeps
+//! These are separate subcommands from `rsa-<size>` because `bouncycastle_modexp::rsa` keeps
 //! key-establishment and signing keys as separate types (see its `rsasve` module's
 //! `# Key separation`). The file encodings are the same raw layouts, however, and nothing here
 //! stops a caller from pointing one command at the other's key files. The encodings cannot tell
