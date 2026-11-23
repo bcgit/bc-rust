@@ -102,6 +102,32 @@
   `kbkdf-double-pipeline`, `kbkdf-kmac128` and `kbkdf-kmac256` CLI commands.
 * `bouncycastle-dhkem` -- the generic DHKEM is a crate of its own, apart from HPKE, and gains `AuthEncap` and
   `AuthDecap`. Its `_out` functions return the number of bytes written.
+* SHA-1 -- `bouncycastle_digest::sha1`, FIPS 180-4's SHA-1 on the `Hash` traits, for interoperation with what already
+  uses it (an older peer's RSA-OAEP hash or MGF1, a fingerprint): not collision resistant, so it is credited with
+  no security strength (`SecurityStrength::None`). Checked against NIST's CAVP SHAVS vectors and RFC 3174's; the
+  `sha1` CLI command. It does not carry `CollisionResistantHash`, so the RSA signature schemes verify over it and
+  do not sign, short of `hazmat::WithoutCollisionResistance<SHA1>`.
+* RSA -- `bouncycastle-rsa`: RSASSA-PKCS1-v1_5 and RSASSA-PSS (RFC 8017 Section 8) on the signature roles, RSASVE
+  (NIST SP 800-56B Rev. 2 Section 7.2.1) on the KEM roles, its secret value raw or through HKDF, and key generation
+  by FIPS 186-5 Appendix A.1.3 with 25 Miller-Rabin rounds (FIPS 140-3 IG C.F), at RSA-2048, 3072, 4096 and 8192;
+  RSA-1024 and RSA-1536 verify signatures and nothing else. A public key encodes as `n || e` and a private key as
+  `p || q || dP || dQ || qInv || e`, with `e` in 8 big-endian bytes, and a modulus must have exactly its size's bit
+  length. A private key's constructor and decoder refuse components that do not belong together with `e` (RFC 8017
+  Section 3.2), in constant time; `RsaPrivateComponents::validate` is SP 800-56B Rev. 2 Section 6.4.1.4.3's
+  validation of a key pair, primality included, for a key from elsewhere. The result of every private-key
+  operation is checked against `e` before it is released (`SignatureError::ComputationFault`, or the operation's
+  one decryption error). A non-empty `ctx` is refused with `SignatureError::LengthError`, RSA having no context
+  input. Private-key operations wipe the stack they used, sized for an optimised x86-64 build; a key the caller
+  moves out of the `Result` it was returned in is the caller's to wipe. The `rsa-<size>` and `rsasve-<size>` CLI
+  commands. Two checks, run by CI and by hand: `dev_scripts/check_rsa_ct.sh` puts the CRT and the constructor's
+  congruences under memcheck with the key undefined, and `dev_scripts/check_rsa_stack.sh` searches the stack each
+  private-key operation used for the key.
+* RSAES-OAEP -- RFC 8017 Section 7.1 key transport on the RSA key-establishment keys, under `OaepParams<H, M, LEN>`
+  (label hash, MGF1 hash, label): as a KEM that draws the key (KTS-OAEP-basic, SP 800-56B Rev. 2) and, through
+  the new `core::key_transport_key` roles, for a key the caller holds; the `rsa-oaep-<size>` CLI commands. The hashes
+  are RFC 8017's seven (SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, SHA-512/256), a sealed trait
+  `OaepHash`. `dev_scripts/check_oaep_ct.sh`, run on pull requests, puts the decoding under memcheck with the encoded
+  message undefined and reads its Cortex-M0 and RISC-V 32I assembly.
 
 ## Minor features / bug fixes
 

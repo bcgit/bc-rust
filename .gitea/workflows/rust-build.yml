@@ -35,4 +35,8 @@ jobs:
       # --all-features above never builds a crate with a default feature off. scrypt without
       # `std` is its caller-supplied-memory configuration, and it once did not compile.
       - name: Test bouncycastle-digest without std
-        run: cargo test -p bouncycastle-digest --no-default-features
+        # The vector suites need bc-test-data, which this job does not check out.
+        # Every target is built first, so that one that stops compiling without std is seen.
+        run: |
+          cargo test -p bouncycastle-digest --no-default-features --no-run
+          cargo test -p bouncycastle-digest --no-default-features --lib --test scrypt_scrypt_caller_memory_tests

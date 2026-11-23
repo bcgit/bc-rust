@@ -1,0 +1,29 @@
+name: RSA Constant-Time Setup and Stack Wipes
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rsa-ct-stack-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rsa-ct-stack:
+    if: github.repository == 'bcgit/bc-rust'
+    name: rsa-ct-stack
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+
+      - name: Check the RSA private-key arithmetic under memcheck with the key undefined
+        run: ./dev_scripts/check_rsa_ct.sh
+
+      - name: Search the stack each RSA private-key operation used for the key
+        run: ./dev_scripts/check_rsa_stack.sh

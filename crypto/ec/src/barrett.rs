@@ -62,8 +62,12 @@ pub fn limbs_from_be_bytes_into<const L2: usize>(bytes: &[u8], out: &mut [u64; L
 
 /// `t mod m` for a `2L`-limb `t < m * 2^(64L)` and an `L`-limb modulus `2^(64L-1) < m < 2^(64L)`,
 /// given `mu_low = floor(2^(128L) / m) - 2^(64L)`. `L2` must be `2L` and `L1` must be `L + 1`
-/// (the width `r < 4m` needs before its final subtractions); both are debug-asserted, as are the
-/// preconditions on `t` and `m`. Branch-free in `t`.
+/// (the width `r < 4m` needs before its final subtractions); both are checked when the function
+/// is instantiated, and the preconditions on `t` and `m` are debug-asserted. Branch-free in `t`.
+///
+/// ```compile_fail,E0080
+/// let _ = bouncycastle_ec::barrett::reduce::<2, 4, 4>(&[0; 4], &[1, 1 << 63], &[0; 2]);
+/// ```
 pub fn reduce<const L: usize, const L2: usize, const L1: usize>(
     t: &[u64; L2],
     m: &[u64; L],
@@ -83,8 +87,10 @@ pub fn reduce_into<const L: usize, const L2: usize, const L1: usize>(
     mu_low: &[u64; L],
     out: &mut [u64; L],
 ) {
-    debug_assert_eq!(L2, 2 * L, "reduce's L2 must be exactly 2 * L");
-    debug_assert_eq!(L1, L + 1, "reduce's L1 must be exactly L + 1");
+    const {
+        assert!(L2 == 2 * L, "reduce's L2 must be exactly 2 * L");
+        assert!(L1 == L + 1, "reduce's L1 must be exactly L + 1");
+    }
     debug_assert!(m[L - 1] >> 63 == 1, "reduce needs a modulus with its top bit set");
 
     // t_hi = floor(t / 2^k), the top L limbs; the precondition t < m * 2^k is t_hi < m.
