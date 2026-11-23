@@ -38,11 +38,11 @@
 
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::aes::CTR_NONCE_LEN;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle::symmetric::BlockCipherKey;
+use bouncycastle::symmetric::aes::CTR_NONCE_LEN;
 use bouncycastle::symmetric::modes::CTR;
 use bouncycastle::symmetric::modes::ModeNames;
 
@@ -51,9 +51,9 @@ const BLOCK_LEN: usize = 16;
 
 // Every block cipher crate fixes the same CTR nonce length, so one command serves them all.
 const _: () = assert!(
-    CTR_NONCE_LEN == bouncycastle::aria::CTR_NONCE_LEN
-        && CTR_NONCE_LEN == bouncycastle::camellia::CTR_NONCE_LEN
-        && CTR_NONCE_LEN == bouncycastle::sm4::CTR_NONCE_LEN
+    CTR_NONCE_LEN == bouncycastle::symmetric::aria::CTR_NONCE_LEN
+        && CTR_NONCE_LEN == bouncycastle::symmetric::camellia::CTR_NONCE_LEN
+        && CTR_NONCE_LEN == bouncycastle::symmetric::sm4::CTR_NONCE_LEN
 );
 
 /// CTR under a `KEY_LEN`-byte key for the permutation `P`; `alg` names the cipher and key

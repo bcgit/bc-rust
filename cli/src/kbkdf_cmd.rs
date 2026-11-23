@@ -6,13 +6,13 @@
 use crate::helpers::{SecretBytes, decode_hex_arg, decode_hex_secret, read_secret_file};
 use crate::kdf_cmd::kdf_cmd;
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::kbkdf::{
+use bouncycastle::digest::sha2::{SHA224, SHA256, SHA384, SHA512};
+use bouncycastle::digest::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+use bouncycastle::symmetric::kbkdf::{
     CounterPosition, CounterSize, IterationCounterPosition, KDF_Counter, KDF_DoublePipeline,
     KDF_Feedback, KDF_KMAC128, KDF_KMAC256, PRF_CMAC_AES128, PRF_CMAC_AES192, PRF_CMAC_AES256,
     PRF_HMAC, Prf,
 };
-use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512};
-use bouncycastle::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use clap::ValueEnum;
 use std::process::exit;
 

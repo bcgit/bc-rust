@@ -10,7 +10,7 @@ use crate::helpers::{
 use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::PublicKey;
-use bouncycastle::ed::x448::{
+use bouncycastle::ec::ed::x448::{
     DHKEM_SS_LEN, POINT_LEN, SCALAR_LEN, X448PrivateKey, X448PublicKey, keygen_out,
 };
 use bouncycastle::rng::HashDRBG_SHA512;

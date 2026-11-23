@@ -28,13 +28,13 @@ use bouncycastle::core::signature_key::{
     DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
 };
 use bouncycastle::core::traits::{CollisionResistantHash, PrivateKey, PublicKey};
+use bouncycastle::digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle::ec::curve::Curve;
+use bouncycastle::ec::ecdsa::ecdsa::EcdsaHash;
+use bouncycastle::ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
+use bouncycastle::ec::ecdsa::keys_common::DerivePublicKey;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
-use bouncycastle::ecdsa::ecdsa::EcdsaHash;
-use bouncycastle::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
-use bouncycastle::ecdsa::keys_common::DerivePublicKey;
 use bouncycastle::rng::DefaultRNG;
-use bouncycastle::sha2::{SHA256, SHA384, SHA512};
 
 /// A fixed message, reused across every curve's sign/verify bench so peak stack usage reflects
 /// only the signature algorithm, not message size.

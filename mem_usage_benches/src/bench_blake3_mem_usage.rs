@@ -25,15 +25,15 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::blake3::{
-    BLAKE3, BLAKE3DeriveKey, BLAKE3DeriveKeySqueezer, BLAKE3KeyedHash, BLAKE3KeyedHashKey,
-    BLAKE3KeyedSqueezer, BLAKE3Squeezer, SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN,
-    SUSPENDED_BLAKE3_STATE_LEN,
-};
 use bouncycastle::core::direction::Encrypting;
 use bouncycastle::core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::{Hash, HashOneShot, MACGenerator, Suspendable, XOF, XOFSqueezer};
+use bouncycastle::digest::blake3::{
+    BLAKE3, BLAKE3DeriveKey, BLAKE3DeriveKeySqueezer, BLAKE3KeyedHash, BLAKE3KeyedHashKey,
+    BLAKE3KeyedSqueezer, BLAKE3Squeezer, SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN,
+    SUSPENDED_BLAKE3_STATE_LEN,
+};
 
 /// A 4 KiB message: four 1 KiB chunks, so the CV stack is pushed and merged (BLAKE3 spec s. 5.1.2).
 const MSG: [u8; 4096] = [0xA5; 4096];

@@ -21,8 +21,8 @@ use core::hint::black_box;
 use bouncycastle::core::direction::{Decrypting, Encrypting};
 use bouncycastle::core::errors::MACError;
 use bouncycastle::core::traits::{MACGenerator, MACVerifier};
-use bouncycastle::poly1305::hazmat::key_from_bytes;
-use bouncycastle::poly1305::{KEY_LEN, Poly1305, Poly1305Key, TAG_LEN};
+use bouncycastle::symmetric::poly1305::hazmat::key_from_bytes;
+use bouncycastle::symmetric::poly1305::{KEY_LEN, Poly1305, Poly1305Key, TAG_LEN};
 
 /// Six whole 16-byte blocks and a partial one.
 const MSG_LEN: usize = 100;

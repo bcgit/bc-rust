@@ -27,10 +27,10 @@ use core::hint::black_box;
 use core::num::NonZeroU32;
 
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle::hmac::HMACParams;
-use bouncycastle::pbkdf2::PBKDF2;
-use bouncycastle::sha2::{SHA256, SHA512};
-use bouncycastle::sha3::SHA3_256;
+use bouncycastle::digest::hmac::HMACParams;
+use bouncycastle::digest::pbkdf2::PBKDF2;
+use bouncycastle::digest::sha2::{SHA256, SHA512};
+use bouncycastle::digest::sha3::SHA3_256;
 
 /// Runs the operation under measurement out of line, so that its frames sit below one symbol
 /// the stack-table method can root a call chain at.

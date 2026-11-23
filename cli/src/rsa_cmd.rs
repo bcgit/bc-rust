@@ -42,17 +42,17 @@ use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
 use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier};
-use bouncycastle::rng::HashDRBG_SHA512;
-use bouncycastle::rsa::keys::{RsaPrivateKey, RsaPublicKey};
-use bouncycastle::rsa::rsassa::{
+use bouncycastle::digest::sha2::{SHA256, SHA384, SHA512};
+use bouncycastle::digest::sha3::{SHAKE128, SHAKE256};
+use bouncycastle::modexp::rsa::keys::{RsaPrivateKey, RsaPublicKey};
+use bouncycastle::modexp::rsa::rsassa::{
     RsaDeterministicSignatureAlgorithm, RsaRandomizedSignatureAlgorithm, RsaSignatureAlgorithm,
 };
-use bouncycastle::rsa::size::SignatureKeyPair;
-use bouncycastle::rsa::{
+use bouncycastle::modexp::rsa::size::SignatureKeyPair;
+use bouncycastle::modexp::rsa::{
     RSA2048, RSA3072, RSA4096, RSA8192, rsa_1024, rsa_1536, rsa_2048, rsa_3072, rsa_4096, rsa_8192,
 };
-use bouncycastle::sha2::{SHA256, SHA384, SHA512};
-use bouncycastle::sha3::{SHAKE128, SHAKE256};
+use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
 use std::process::exit;
 

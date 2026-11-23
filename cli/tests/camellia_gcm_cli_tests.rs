@@ -13,7 +13,7 @@
 //! the generated-nonce output is held to the library's own `Camellia128Key<GCM>` as well.
 
 mod common;
-use bouncycastle::camellia::hazmat::Camellia128Internal;
+use bouncycastle::symmetric::camellia::hazmat::Camellia128Internal;
 use common::{
     Framing, KEY16, KEY24, KEY32, any_input_length, library_gcm_decrypt, listed_in_help,
     pseudo_random, round_trips, run_err, run_ok, unhex, wrong_key_lengths,

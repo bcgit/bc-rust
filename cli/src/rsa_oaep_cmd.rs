@@ -17,12 +17,12 @@ use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::key_transport_key::{KeyTransportDecryptingKey, KeyTransportEncryptingKey};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::digest::sha1::SHA1;
+use bouncycastle::digest::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use bouncycastle::modexp::rsa::rsaes_oaep::{OaepHash, OaepParams};
+use bouncycastle::modexp::rsa::rsasve::{RSASVE, RsaKEMPrivateKey, RsaKEMPublicKey};
+use bouncycastle::modexp::rsa::size::{RsaSigningSize, RsaSize};
+use bouncycastle::modexp::rsa::{RSA2048, RSA3072, RSA4096, RSA8192};
 use bouncycastle::rng::HashDRBG_SHA512;
-use bouncycastle::rsa::rsaes_oaep::{OaepHash, OaepParams};
-use bouncycastle::rsa::rsasve::{RSASVE, RsaKEMPrivateKey, RsaKEMPublicKey};
-use bouncycastle::rsa::size::{RsaSigningSize, RsaSize};
-use bouncycastle::rsa::{RSA2048, RSA3072, RSA4096, RSA8192};
-use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use clap::ValueEnum;
 use std::process::exit;
 

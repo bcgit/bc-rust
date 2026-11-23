@@ -12,7 +12,7 @@
 //! here from the permutation.
 
 mod common;
-use bouncycastle::camellia::hazmat::{
+use bouncycastle::symmetric::camellia::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal,
 };
 use common::{

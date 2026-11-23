@@ -26,7 +26,7 @@ use crate::helpers::block_mode_helpers::{
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle::symmetric::modes::hazmat::ecb::ECB;
 use bouncycastle::symmetric::padding::NoPadding;
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
+use bouncycastle::symmetric::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
 
 /// Names the mode in error messages.
 const MODE: &str = "ECB";

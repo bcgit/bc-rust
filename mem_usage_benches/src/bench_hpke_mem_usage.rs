@@ -23,16 +23,16 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::aes::AES128Key;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
-use bouncycastle::ed::x25519::{X25519PrivateKey, X25519PublicKey};
-use bouncycastle::hpke::{
+use bouncycastle::digest::sha2::SHA256;
+use bouncycastle::ec::ed::x25519::{X25519PrivateKey, X25519PublicKey};
+use bouncycastle::hybrid::hpke::{
     HpkeAuthRecipient, HpkeAuthSender, HpkeContext, HpkeParams, HpkeRecipient, HpkeSender, NT,
     Recipient, Sender,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
-use bouncycastle::sha2::SHA256;
+use bouncycastle::symmetric::aes::AES128Key;
 use bouncycastle::symmetric::modes::GCM;
 
 type Params<'p> = HpkeParams<'p, SHA256, AES128Key<GCM>>;

@@ -24,10 +24,12 @@
 
 #![allow(dead_code)]
 
-use bouncycastle::aes::{AES_GCM_SIV_128, AES_GCM_SIV_256, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::symmetric_key::{
     AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, FromKeyMaterial,
+};
+use bouncycastle::symmetric::aes::{
+    AES_GCM_SIV_128, AES_GCM_SIV_256, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN,
 };
 
 /// The message length. The mode works in the caller's buffer, so its own stack does not depend

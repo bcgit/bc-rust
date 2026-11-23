@@ -17,7 +17,7 @@ use crate::helpers::block_mode_helpers::{
 use crate::kw_cmd::{run, run_with};
 use bouncycastle::core::symmetric_key::KeyUnwrappingKey;
 use bouncycastle::symmetric::modes::TKW;
-use bouncycastle::tdes::{KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key};
+use bouncycastle::symmetric::tdes::{KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key};
 
 pub(crate) fn tdes_tkw_cmd(
     direction: &CipherDirection,

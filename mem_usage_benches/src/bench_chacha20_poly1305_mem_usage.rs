@@ -20,9 +20,6 @@
 
 use core::hint::black_box;
 
-use bouncycastle::chacha20_poly1305_aead::{
-    ChaCha20_Poly1305, ChaCha20Poly1305Key, KEY_LEN, NONCE_LEN, TAG_LEN,
-};
 use bouncycastle::core::errors::{RNGError, SymmetricCipherError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
@@ -30,6 +27,9 @@ use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, Fr
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, RNG, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
+};
+use bouncycastle::symmetric::chacha20_poly1305_aead::{
+    ChaCha20_Poly1305, ChaCha20Poly1305Key, KEY_LEN, NONCE_LEN, TAG_LEN,
 };
 use bouncycastle::symmetric::{Decrypting, Encrypting};
 

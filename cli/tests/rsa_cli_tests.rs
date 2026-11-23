@@ -10,14 +10,14 @@
 
 use bouncycastle::core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
-use bouncycastle::rsa::RSA2048;
-use bouncycastle::rsa::keys::{
+use bouncycastle::modexp::rsa::RSA2048;
+use bouncycastle::modexp::rsa::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,
 };
-use bouncycastle::rsa::rsa_2048::{
+use bouncycastle::modexp::rsa::rsa_2048::{
     RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256, RSASSA_PSS_SHAKE128,
 };
-use bouncycastle::rsa::rsassa::RsaSignatureAlgorithm;
+use bouncycastle::modexp::rsa::rsassa::RsaSignatureAlgorithm;
 use std::io::{ErrorKind, Write};
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};

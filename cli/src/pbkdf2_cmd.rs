@@ -6,10 +6,10 @@ use crate::helpers::{
     decode_hex_arg, read_input_file, read_secret_file_or_stdin, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
-use bouncycastle::hmac::HMACParams;
-use bouncycastle::pbkdf2::PBKDF2;
-use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512};
-use bouncycastle::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+use bouncycastle::digest::hmac::HMACParams;
+use bouncycastle::digest::pbkdf2::PBKDF2;
+use bouncycastle::digest::sha2::{SHA224, SHA256, SHA384, SHA512};
+use bouncycastle::digest::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use clap::ValueEnum;
 use std::num::NonZeroU32;
 use std::process::exit;

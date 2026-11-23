@@ -54,8 +54,8 @@
 
 use bouncycastle::core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
-use bouncycastle::tdes::hazmat::{TDES2Internal, TDESInternal};
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
+use bouncycastle::symmetric::tdes::hazmat::{TDES2Internal, TDESInternal};
+use bouncycastle::symmetric::tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
 fn bench_do_nothing() {

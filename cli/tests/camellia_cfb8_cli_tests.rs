@@ -27,7 +27,7 @@ const KEY_256: &str = "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30
 /// take the IV the CLI generated, hand the body to the library, and the plaintext must come back.
 #[test]
 fn the_commands_are_cfb8_over_camellia() {
-    use bouncycastle::camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
+    use bouncycastle::symmetric::camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
     use bouncycastle::symmetric::modes::CFB8;
 
     for len in [1usize, 5, 16, 17, 64] {
@@ -69,7 +69,7 @@ fn the_commands_are_cfb8_over_camellia() {
 /// that IV.
 #[test]
 fn a_supplied_iv_is_used_and_not_written() {
-    use bouncycastle::camellia::Camellia128Key;
+    use bouncycastle::symmetric::camellia::Camellia128Key;
     use bouncycastle::symmetric::modes::CFB8;
 
     let iv = "000102030405060708090a0b0c0d0e0f";

@@ -13,8 +13,8 @@
 //! thing the AES CFB8 suite gets from SP 800-38A F.3, one step removed.
 
 mod common;
-use bouncycastle::sm4::SM4Key;
 use bouncycastle::symmetric::modes::CFB8;
+use bouncycastle::symmetric::sm4::SM4Key;
 use common::{
     Framing, KEY16, KEY32, any_input_length, key_object, large_payload_on_an_error_path,
     library_stream_decrypt, listed_in_help, pseudo_random, round_trips, run_ok, unhex,

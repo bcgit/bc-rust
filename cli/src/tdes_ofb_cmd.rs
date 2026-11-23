@@ -20,7 +20,7 @@ use crate::helpers::block_mode_helpers::TDEA_LIMIT;
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode_bounded;
 use bouncycastle::symmetric::modes::OFB;
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
+use bouncycastle::symmetric::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
 
 pub(crate) fn tdes_ofb_cmd(
     action: &CipherDirection,

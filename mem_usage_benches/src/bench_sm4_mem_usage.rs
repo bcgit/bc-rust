@@ -49,7 +49,7 @@
 
 #![allow(dead_code)]
 
-use bouncycastle::sm4::hazmat::SM4Internal;
+use bouncycastle::symmetric::sm4::hazmat::SM4Internal;
 
 use mem_usage_benches::block_cipher_mem_usage as bench;
 

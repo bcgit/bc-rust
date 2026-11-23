@@ -3,9 +3,9 @@
 
 use std::process::exit;
 
-use bouncycastle::blake3::{BLAKE3, BLAKE3DeriveKey, BLAKE3KeyedHashKey};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::MACGenerator;
+use bouncycastle::digest::blake3::{BLAKE3, BLAKE3DeriveKey, BLAKE3KeyedHashKey};
 
 use crate::helpers::{load_mac_key, squeeze_to_stdout, stream_stdin, stream_xof};
 use crate::mac_cmd::do_mac_with_key;

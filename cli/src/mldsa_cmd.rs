@@ -19,8 +19,10 @@ use bouncycastle::core::signature_key::{
 use bouncycastle::core::traits::{
     CollisionResistantHash, PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier,
 };
-use bouncycastle::mldsa::hazmat::AnyStrength;
-use bouncycastle::mldsa::{
+use bouncycastle::digest::sha2::{SHA256, SHA512};
+use bouncycastle::digest::sha3::{SHAKE128, SHAKE256};
+use bouncycastle::pqc::mldsa::hazmat::AnyStrength;
+use bouncycastle::pqc::mldsa::{
     MLDSA, MLDSA_MU_LEN, MLDSA_SEED_LEN, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN,
     MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN,
     MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN,
@@ -28,8 +30,6 @@ use bouncycastle::mldsa::{
     MLDSAPublicKeyTrait, MLDSATrait, MuBuilder, PrivateKeyLen, PublicKeyLen, SignatureLen,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
-use bouncycastle::sha2::{SHA256, SHA512};
-use bouncycastle::sha3::{SHAKE128, SHAKE256};
 use clap::ValueEnum;
 use core::marker::PhantomData;
 use std::process::exit;

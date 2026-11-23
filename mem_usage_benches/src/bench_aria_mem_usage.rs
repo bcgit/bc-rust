@@ -46,7 +46,7 @@
 
 #![allow(dead_code)]
 
-use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
+use bouncycastle::symmetric::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
 
 use mem_usage_benches::block_cipher_mem_usage as bench;
 

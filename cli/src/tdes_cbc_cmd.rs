@@ -22,7 +22,7 @@ use crate::helpers::block_mode_helpers::{
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle::symmetric::modes::CBC;
 use bouncycastle::symmetric::padding::PKCS7;
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
+use bouncycastle::symmetric::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
 
 pub(crate) fn tdes_cbc_cmd(
     action: &CipherDirection,

@@ -25,7 +25,7 @@ use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
-use bouncycastle::ed::x448::{X448PrivateKey, X448PublicKey, keygen_from_seed};
+use bouncycastle::ec::ed::x448::{X448PrivateKey, X448PublicKey, keygen_from_seed};
 use bouncycastle::rng::HashDRBG_SHA512;
 
 /// RFC 7748 Section 6.2's Alice private key.

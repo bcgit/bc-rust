@@ -16,7 +16,7 @@ use bouncycastle::core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
 use bouncycastle::core::traits::{PublicKey, SignatureSigner, SignatureVerifier};
-use bouncycastle::ed::ed448::{
+use bouncycastle::ec::ed::ed448::{
     CONTEXT_MAX_LEN, Ed448PrivateKey, Ed448PublicKey, SIGNATURE_LEN, keygen_out,
     keypair_consistency_check,
 };

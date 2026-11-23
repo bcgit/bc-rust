@@ -12,8 +12,8 @@
 //! `crypto/symmetric/tests/sm4_stream_mode_tests.rs` pins against the Sec 8.7.1 equations.
 
 mod common;
-use bouncycastle::sm4::SM4Key;
 use bouncycastle::symmetric::modes::CTR;
+use bouncycastle::symmetric::sm4::SM4Key;
 use common::{
     Framing, KEY16, KEY32, any_input_length, fresh_prefix_per_invocation, key_object,
     library_stream_decrypt, listed_in_help, pseudo_random, round_trips, run_ok, tohex, unhex,

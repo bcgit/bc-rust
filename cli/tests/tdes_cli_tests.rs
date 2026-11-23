@@ -156,7 +156,7 @@ fn vector(file: &str, section: &str) -> Option<Vector> {
 fn pkcs7_block(key_hex: &str, prev_hex: &str) -> String {
     use bouncycastle::core::hazmat::{BlockPermutation, KeyExpansion};
     use bouncycastle::core::key_material::{KeyMaterial, KeyType};
-    use bouncycastle::tdes::hazmat::{TDES2Internal, TDESInternal};
+    use bouncycastle::symmetric::tdes::hazmat::{TDES2Internal, TDESInternal};
 
     fn material<const N: usize>(key_hex: &str) -> KeyMaterial<N> {
         let key_bytes: [u8; N] = unhex(key_hex).try_into().expect("the right key length");
@@ -303,7 +303,7 @@ fn tdes_ctr_under_a_supplied_nonce_agrees_with_the_library() {
     use bouncycastle::core::key_material::{KeyMaterial, KeyType};
     use bouncycastle::core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
     use bouncycastle::symmetric::modes::CTR;
-    use bouncycastle::tdes::{BLOCK_LEN, CTR_NONCE_LEN, TDES3Key};
+    use bouncycastle::symmetric::tdes::{BLOCK_LEN, CTR_NONCE_LEN, TDES3Key};
 
     let nonce = "000102030405";
     let plaintext = pseudo_random(37, 5);

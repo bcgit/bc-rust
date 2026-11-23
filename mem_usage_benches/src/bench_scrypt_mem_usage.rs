@@ -24,7 +24,7 @@
 use core::hint::black_box;
 
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle::scrypt::{SCrypt, ScryptParams};
+use bouncycastle::digest::scrypt::{SCrypt, ScryptParams};
 
 /// Runs the operation under measurement out of line, so that its frames sit below one symbol
 /// the stack-table method can root a call chain at.

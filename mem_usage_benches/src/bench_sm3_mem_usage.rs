@@ -27,10 +27,10 @@ use bouncycastle::core::errors::{KDFError, MACError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::{Hash, HashOneShot, Suspendable};
-use bouncycastle::hmac::HmacKey;
-use bouncycastle::sm3::hkdf::HKDF_SM3;
-use bouncycastle::sm3::hmac::HMAC_SM3;
-use bouncycastle::sm3::{SM3, SUSPENDED_SM3_STATE_LEN};
+use bouncycastle::digest::hmac::HmacKey;
+use bouncycastle::digest::sm3::hkdf::HKDF_SM3;
+use bouncycastle::digest::sm3::hmac::HMAC_SM3;
+use bouncycastle::digest::sm3::{SM3, SUSPENDED_SM3_STATE_LEN};
 
 /// Two full 64-byte blocks and a partial one.
 const MSG_LEN: usize = 150;

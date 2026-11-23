@@ -1,5 +1,5 @@
 use crate::helpers::stream_hash;
-use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use bouncycastle::digest::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 
 #[allow(non_camel_case_types)]
 pub(crate) enum SHA2Variant {

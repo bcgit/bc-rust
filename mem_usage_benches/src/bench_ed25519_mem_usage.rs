@@ -26,7 +26,7 @@ use bouncycastle::core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
 use bouncycastle::core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
-use bouncycastle::ed::ed25519::{Ed25519PrivateKey, Ed25519PublicKey, keygen, keygen_out};
+use bouncycastle::ec::ed::ed25519::{Ed25519PrivateKey, Ed25519PublicKey, keygen, keygen_out};
 use std::hint::black_box;
 
 /// The private key of RFC 8032 Section 7.1's TEST SHA(abc) and Section 7.3's TEST abc.

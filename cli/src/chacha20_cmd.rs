@@ -15,7 +15,7 @@
 
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::chacha20::{ChaCha20Key, KEY_LEN, NONCE_LEN};
+use bouncycastle::symmetric::chacha20::{ChaCha20Key, KEY_LEN, NONCE_LEN};
 
 pub(crate) fn chacha20_cmd(
     action: &CipherDirection,

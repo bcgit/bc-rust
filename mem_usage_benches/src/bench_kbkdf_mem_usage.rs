@@ -28,7 +28,7 @@ use core::hint::black_box;
 
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::KDF;
-use bouncycastle::kbkdf::{
+use bouncycastle::symmetric::kbkdf::{
     CounterSize, IterationCounterPosition, KDF_Counter_CMAC_AES256, KDF_Counter_HMAC_SHA3_256,
     KDF_Counter_HMAC_SHA256, KDF_Counter_HMAC_SHA512, KDF_DoublePipeline_HMAC_SHA256,
     KDF_DoublePipeline_HMAC_SHA512, KDF_Feedback_HMAC_SHA256, KDF_Feedback_HMAC_SHA512,

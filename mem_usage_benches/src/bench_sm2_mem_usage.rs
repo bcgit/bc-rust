@@ -27,9 +27,9 @@
 use bouncycastle::core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::core::traits::{SignatureSigner, SignatureVerifier};
+use bouncycastle::ec::sm2::keys::{PK_LEN, SK_LEN, SM2PrivateKey, SM2PublicKey, keygen};
+use bouncycastle::ec::sm2::sm2::SM2;
 use bouncycastle::rng::DefaultRNG;
-use bouncycastle::sm2::keys::{PK_LEN, SK_LEN, SM2PrivateKey, SM2PublicKey, keygen};
-use bouncycastle::sm2::sm2::SM2;
 
 /// A fixed message, reused across the sign/verify benches.
 const MSG: &[u8] = b"peak stack usage of SM2 sign/verify, held constant across runs";

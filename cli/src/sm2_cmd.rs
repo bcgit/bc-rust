@@ -14,8 +14,8 @@ use crate::helpers::{
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::signature_key::{SigningKey, VerifyingKey};
 use bouncycastle::core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
+use bouncycastle::ec::sm2::keys::{SM2PrivateKey, SM2PublicKey, keygen};
 use bouncycastle::rng::HashDRBG_SHA512;
-use bouncycastle::sm2::keys::{SM2PrivateKey, SM2PublicKey, keygen};
 use clap::ValueEnum;
 use std::process::exit;
 

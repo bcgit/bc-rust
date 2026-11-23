@@ -37,10 +37,10 @@ use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::ec::curve::Curve;
+use bouncycastle::ec::eccdh::dhkem::DhkemCurve;
+use bouncycastle::ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
+use bouncycastle::ec::eccdh::keys_common::DerivePublicKey;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
-use bouncycastle::eccdh::dhkem::DhkemCurve;
-use bouncycastle::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
-use bouncycastle::eccdh::keys_common::DerivePublicKey;
 use bouncycastle::rng::DefaultRNG;
 
 /// Runs the operation under measurement out of line, so that its frames sit below one symbol

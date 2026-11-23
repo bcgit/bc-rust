@@ -4,10 +4,6 @@
 use std::io::{self, Read};
 use std::process::exit;
 
-use bouncycastle::ascon::AsconAEAD128Key;
-use bouncycastle::ascon::AsconCXof128;
-use bouncycastle::ascon::AsconHash256;
-use bouncycastle::ascon::AsconXof128;
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -16,6 +12,10 @@ use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, Fr
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
+use bouncycastle::symmetric::ascon::AsconAEAD128Key;
+use bouncycastle::symmetric::ascon::AsconCXof128;
+use bouncycastle::symmetric::ascon::AsconHash256;
+use bouncycastle::symmetric::ascon::AsconXof128;
 
 use crate::helpers;
 use crate::helpers::{CHUNK_LEN, decode_hex_arg, load_secret, read_input_file, read_stdin_chunk};

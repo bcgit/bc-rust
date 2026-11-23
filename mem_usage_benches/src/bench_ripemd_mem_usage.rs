@@ -28,9 +28,9 @@ use bouncycastle::core::errors::MACError;
 use bouncycastle::core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::{Hash, HashOneShot, Suspendable};
-use bouncycastle::hmac::HmacKey;
-use bouncycastle::ripemd::hmac::HMAC_RIPEMD160;
-use bouncycastle::ripemd::{
+use bouncycastle::digest::hmac::HmacKey;
+use bouncycastle::digest::ripemd::hmac::HMAC_RIPEMD160;
+use bouncycastle::digest::ripemd::{
     RIPEMD128, RIPEMD160, RIPEMD256, RIPEMD320, SUSPENDED_RIPEMD128_STATE_LEN,
     SUSPENDED_RIPEMD160_STATE_LEN, SUSPENDED_RIPEMD256_STATE_LEN, SUSPENDED_RIPEMD320_STATE_LEN,
 };

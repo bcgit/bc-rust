@@ -12,7 +12,7 @@
 //! permutation.
 
 mod common;
-use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
+use bouncycastle::symmetric::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
 use common::{
     Framing, KEY16, KEY24, KEY32, any_input_length, large_payload_on_an_error_path, listed_in_help,
     round_trips, run_err, run_ok, tohex, unhex, wrong_key_lengths,

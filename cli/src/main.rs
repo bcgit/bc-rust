@@ -75,18 +75,18 @@ use crate::rsasve_cmd::RSASVEAction;
 use crate::sha2_cmd::SHA2Variant;
 use crate::sha3_cmd::{SHA3Variant, Strength};
 use crate::sm2_cmd::SM2Action;
-use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::aes::{AES_GCM_SIV_128, AES_GCM_SIV_256};
-use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle::camellia::hazmat::{
-    Camellia128Internal, Camellia192Internal, Camellia256Internal,
-};
-use bouncycastle::concatkdf::{
+use bouncycastle::digest::concatkdf::{
     ConcatKDF_SHA3_256, ConcatKDF_SHA3_384, ConcatKDF_SHA3_512, ConcatKDF_SHA256, ConcatKDF_SHA384,
     ConcatKDF_SHA512,
 };
-use bouncycastle::sm4::hazmat::SM4Internal;
-use bouncycastle::x963kdf::{X963KDF_SHA256, X963KDF_SHA384, X963KDF_SHA512};
+use bouncycastle::digest::x963kdf::{X963KDF_SHA256, X963KDF_SHA384, X963KDF_SHA512};
+use bouncycastle::symmetric::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::symmetric::aes::{AES_GCM_SIV_128, AES_GCM_SIV_256};
+use bouncycastle::symmetric::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
+use bouncycastle::symmetric::camellia::hazmat::{
+    Camellia128Internal, Camellia192Internal, Camellia256Internal,
+};
+use bouncycastle::symmetric::sm4::hazmat::SM4Internal;
 use clap::{Parser, Subcommand};
 use helpers::block_mode_helpers::{CipherDirection, DecryptOnlyAction};
 
@@ -8844,9 +8844,11 @@ fn run() {
             mlkem_cmd::mlkem_hkdf_cmd(
                 &mlkem_cmd::MLKEM512_SET,
                 std::marker::PhantomData::<
-                    bouncycastle::mlkem::KdfParams<
-                        bouncycastle::hkdf::HkdfDescription<bouncycastle::sha2::SHA256>,
-                        { bouncycastle::mlkem::MLKEM512_HKDF_SHA256_SS_LEN },
+                    bouncycastle::pqc::mlkem::KdfParams<
+                        bouncycastle::digest::hkdf::HkdfDescription<
+                            bouncycastle::digest::sha2::SHA256,
+                        >,
+                        { bouncycastle::pqc::mlkem::MLKEM512_HKDF_SHA256_SS_LEN },
                     >,
                 >,
                 action,
@@ -8874,9 +8876,11 @@ fn run() {
             mlkem_cmd::mlkem_hkdf_cmd(
                 &mlkem_cmd::MLKEM768_SET,
                 std::marker::PhantomData::<
-                    bouncycastle::mlkem::KdfParams<
-                        bouncycastle::hkdf::HkdfDescription<bouncycastle::sha2::SHA512>,
-                        { bouncycastle::mlkem::MLKEM768_HKDF_SHA512_SS_LEN },
+                    bouncycastle::pqc::mlkem::KdfParams<
+                        bouncycastle::digest::hkdf::HkdfDescription<
+                            bouncycastle::digest::sha2::SHA512,
+                        >,
+                        { bouncycastle::pqc::mlkem::MLKEM768_HKDF_SHA512_SS_LEN },
                     >,
                 >,
                 action,
@@ -8904,9 +8908,11 @@ fn run() {
             mlkem_cmd::mlkem_hkdf_cmd(
                 &mlkem_cmd::MLKEM1024_SET,
                 std::marker::PhantomData::<
-                    bouncycastle::mlkem::KdfParams<
-                        bouncycastle::hkdf::HkdfDescription<bouncycastle::sha2::SHA512>,
-                        { bouncycastle::mlkem::MLKEM1024_HKDF_SHA512_SS_LEN },
+                    bouncycastle::pqc::mlkem::KdfParams<
+                        bouncycastle::digest::hkdf::HkdfDescription<
+                            bouncycastle::digest::sha2::SHA512,
+                        >,
+                        { bouncycastle::pqc::mlkem::MLKEM1024_HKDF_SHA512_SS_LEN },
                     >,
                 >,
                 action,

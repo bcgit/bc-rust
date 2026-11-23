@@ -18,10 +18,10 @@
 //!   an `Error:` line and exit status 255; a panic is never the answer to input.
 
 use bouncycastle::core::hazmat::do_hazardous_operations;
+use bouncycastle::core::hex;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::traits::{Hash, PrivateKey, XOF, XOFSqueezer};
-use bouncycastle::hex;
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use std::fs::File;
 use std::io;

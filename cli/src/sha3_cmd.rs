@@ -4,11 +4,13 @@
 use bouncycastle::core::traits::Hash;
 
 use bouncycastle::core::traits::XOF;
-use bouncycastle::sha3::parallelhash::{
+use bouncycastle::digest::sha3::parallelhash::{
     ParallelHash128, ParallelHash256, ParallelHashXOF128, ParallelHashXOF256,
 };
-use bouncycastle::sha3::tuplehash::{TupleHash128, TupleHash256, TupleHashXOF128, TupleHashXOF256};
-use bouncycastle::sha3::{
+use bouncycastle::digest::sha3::tuplehash::{
+    TupleHash128, TupleHash256, TupleHashXOF128, TupleHashXOF256,
+};
+use bouncycastle::digest::sha3::{
     CSHAKE128, CSHAKE256, SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256,
 };
 use core::num::NonZeroUsize;

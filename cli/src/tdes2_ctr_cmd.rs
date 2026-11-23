@@ -10,7 +10,7 @@
 use crate::helpers::block_mode_helpers::{DecryptOnlyAction, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::decrypt_stream;
 use bouncycastle::symmetric::modes::CTR;
-use bouncycastle::tdes::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN_2KEY, TDES2Key};
+use bouncycastle::symmetric::tdes::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN_2KEY, TDES2Key};
 
 pub(crate) fn tdes2_ctr_cmd(
     action: &DecryptOnlyAction,

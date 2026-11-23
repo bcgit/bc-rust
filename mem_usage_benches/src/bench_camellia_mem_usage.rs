@@ -53,7 +53,7 @@
 
 #![allow(dead_code)]
 
-use bouncycastle::camellia::hazmat::{
+use bouncycastle::symmetric::camellia::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal,
 };
 

@@ -11,7 +11,7 @@ use crate::helpers::block_mode_helpers::{DecryptOnlyAction, decrypt_stream, load
 use bouncycastle::core::symmetric_key::SymmetricDecryptionKey;
 use bouncycastle::symmetric::modes::hazmat::ecb::ECB;
 use bouncycastle::symmetric::padding::NoPadding;
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN_2KEY, TDES2Key};
+use bouncycastle::symmetric::tdes::{BLOCK_LEN, KEY_LEN_2KEY, TDES2Key};
 
 pub(crate) fn tdes2_ecb_cmd(
     action: &DecryptOnlyAction,

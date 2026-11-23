@@ -7,7 +7,7 @@ use crate::helpers::{
 };
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::traits::KDF;
-use bouncycastle::scrypt::{SCrypt, ScryptParams};
+use bouncycastle::digest::scrypt::{SCrypt, ScryptParams};
 use std::process::exit;
 
 /// The most key one invocation produces: the other KDF commands' bound.

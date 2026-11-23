@@ -20,9 +20,9 @@ use bouncycastle::core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG};
-use bouncycastle::hkdf::HkdfDescription;
-use bouncycastle::hmac::HMACParams;
-use bouncycastle::mlkem::{
+use bouncycastle::digest::hkdf::HkdfDescription;
+use bouncycastle::digest::hmac::HMACParams;
+use bouncycastle::pqc::mlkem::{
     MLKEM512, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey,
     MLKEM512PublicKey, MLKEM768, MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN,
     MLKEM768PrivateKey, MLKEM768PublicKey, MLKEM1024, MLKEM1024_CT_LEN, MLKEM1024_PK_LEN,

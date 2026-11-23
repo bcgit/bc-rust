@@ -25,7 +25,7 @@ use crate::helpers::block_mode_helpers::TDEA_LIMIT_CFB8;
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode_bounded;
 use bouncycastle::symmetric::modes::CFB8;
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
+use bouncycastle::symmetric::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
 
 pub(crate) fn tdes_cfb8_cmd(
     action: &CipherDirection,

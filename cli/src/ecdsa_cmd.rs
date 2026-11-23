@@ -28,15 +28,15 @@ use bouncycastle::core::signature_key::{
     DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
 use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier};
+use bouncycastle::digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle::ec::curve::Curve;
-use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
-use bouncycastle::ecdsa::ecdsa::{
+use bouncycastle::ec::ecdsa::ecdsa::{
     ECDSABp256r1, ECDSABp384r1, ECDSABp512r1, ECDSAP256, ECDSAP384, ECDSAP521, ECDSASecp256K1,
 };
-use bouncycastle::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
-use bouncycastle::ecdsa::keys_common::DerivePublicKey;
+use bouncycastle::ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
+use bouncycastle::ec::ecdsa::keys_common::DerivePublicKey;
+use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle::rng::HashDRBG_SHA512;
-use bouncycastle::sha2::{SHA256, SHA384, SHA512};
 use clap::ValueEnum;
 use std::process::exit;
 

@@ -5,8 +5,8 @@
 //! help listing.
 
 mod common;
-use bouncycastle::aes::{XTS_AES_128, XTS_AES_256};
 use bouncycastle::core::hazmat::BlockPermutation;
+use bouncycastle::symmetric::aes::{XTS_AES_128, XTS_AES_256};
 use bouncycastle::symmetric::modes::{XTS_MAX_DATA_UNIT_LEN, XTS_MIN_DATA_UNIT_LEN, XTSKey};
 use common::{
     KEY32, key_object, listed_in_help, pseudo_random, run, run_err_silent, run_ok, unhex,

@@ -24,7 +24,7 @@ use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
-use bouncycastle::ed::x25519::{X25519PrivateKey, X25519PublicKey, keygen_from_seed};
+use bouncycastle::ec::ed::x25519::{X25519PrivateKey, X25519PublicKey, keygen_from_seed};
 use bouncycastle::rng::HashDRBG_SHA512;
 
 /// Runs the operation under test in its own stack frame, with the key already loaded by the

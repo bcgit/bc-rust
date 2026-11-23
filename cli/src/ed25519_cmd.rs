@@ -15,7 +15,7 @@ use bouncycastle::core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
 use bouncycastle::core::traits::{PublicKey, SignatureSigner, SignatureVerifier};
-use bouncycastle::ed::ed25519::{
+use bouncycastle::ec::ed::ed25519::{
     Ed25519PrivateKey, Ed25519PublicKey, SIGNATURE_LEN, keygen_out, keypair_consistency_check,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
