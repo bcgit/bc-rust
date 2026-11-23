@@ -202,6 +202,24 @@ macro_rules! rsasve_suite {
                 assert_eq!(ss, ss2);
             }
 
+            /// SP 800-56B Rev. 2 §6.4.1.4.3 through the key and the size's forwarder: the RNG
+            /// is held to the size's strength, and with that strength validation gets as far
+            /// as the primality test, where a stream of zeros gives it no base.
+            #[test]
+            fn validate_reaches_the_size_and_checks_its_rng() {
+                let (_, sk) = openssl_keypair().unwrap();
+                assert_eq!(
+                    sk.validate(&mut rng_emitting([0u8; 64], $weaker)),
+                    Err(KEMError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm))
+                );
+                assert_eq!(
+                    sk.validate(&mut rng_emitting([0u8; 64], $strength)),
+                    Err(KEMError::GenericError(
+                        "RNG produced no usable Miller-Rabin base in 128 draws"
+                    ))
+                );
+            }
+
             #[test]
             fn encaps_accepts_exactly_the_modulus_strength_and_rejects_below_it() {
                 let (pk, _) = openssl_keypair().unwrap();

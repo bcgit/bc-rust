@@ -949,6 +949,17 @@ fn a_key_establishment_key_refuses_a_genuine_key_with_a_small_exponent() {
     assert_eq!(wide.e(), E_WIDE);
     let bytes: [u8; 648] = wide.encode();
     assert_eq!(RSA2048KEMPrivateKey::from_bytes(&bytes).unwrap().e(), E_WIDE);
+    // The key-establishment key validates as its components do.
+    assert_eq!(wide.validate(&mut DefaultRNG::default()), Ok(()));
+    let composite = RSA2048KEMPrivateKey::from_crt_components(
+        &COMPOSITE_MR_P, &COMPOSITE_Q, &COMPOSITE_MR_D_P, &COMPOSITE_D_Q, &COMPOSITE_MR_Q_INV,
+        0x10001,
+    )
+    .unwrap();
+    assert_eq!(
+        composite.validate(&mut DefaultRNG::default()),
+        Err(KEMError::DecodingError("a prime factor is composite"))
+    );
 }
 
 /// The components of a key pair the constructor takes.

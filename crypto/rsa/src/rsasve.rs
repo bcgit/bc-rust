@@ -207,6 +207,17 @@ impl<K: RsaSigningSize> RsaKEMPrivateKey<K> {
     }
 }
 
+impl<K: RsaSigningSize> RsaKEMPrivateKey<K> {
+    /// Validates the key pair as [`RsaPrivateComponents::validate`] does: SP 800-56B Rev. 2
+    /// §6.4.1.4.3, for a key from elsewhere.
+    ///
+    /// # Errors
+    /// Those of [`RsaPrivateComponents::validate`], as the [`KEMError`] of the same name.
+    pub fn validate(&self, rng: &mut dyn RNG) -> Result<(), KEMError> {
+        self.0.validate(rng).map_err(kem_error)
+    }
+}
+
 /// RSASVE (SP 800-56B Rev. 2 §7.2.1) at the modulus size `K`: the algorithm the KEM key types
 /// name, `RSASVE-2048` and so on, at the size's strength. The ciphertext and the shared secret
 /// are each `nLen = K::K_LEN` bytes.
