@@ -3,9 +3,9 @@
 
 #![allow(dead_code)] // each test file calls the functions it needs
 
-use bouncycastle_concatkdf::ConcatKDF;
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError, RNGError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -13,13 +13,14 @@ use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::key_agreement::{
     TestFrameworkKeyAgreement, TestFrameworkKeyAgreementKeys,
 };
+use bouncycastle_digest::concatkdf::ConcatKDF;
+use bouncycastle_digest::sha2::hkdf::HKDF_SHA256;
+use bouncycastle_digest::x963kdf::X963KDF;
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_eccdh::eccdh::{ECCDH, ECCDH_ConcatKDF, ECCDH_X963KDF, MatchedHash};
 use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
 use bouncycastle_eccdh::keys_common::DerivePublicKey;
-use bouncycastle_rng::{DefaultRNG, FixedSeedRNG};
-use bouncycastle_sha2::hkdf::HKDF_SHA256;
-use bouncycastle_x963kdf::X963KDF;
+use bouncycastle_rng::DefaultRNG;
 
 /// The framework suites over the raw role and the key codecs, `derive_pk` against `keygen`, and
 /// the algorithm's name and strength.

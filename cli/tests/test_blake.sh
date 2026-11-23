@@ -6,8 +6,8 @@
 # The known-answer values were copied by script, never retyped, from the vectors embedded in the
 # algorithm crates' tests: for BLAKE2, `RFC_ABC` (RFC 7693 Appendix A / B) and the `KAT` table
 # (from the official BLAKE2 KAT, github.com/BLAKE2/BLAKE2 testvectors/blake2-kat.json; message
-# bytes 0, 1, ..., len - 1, key bytes 0, 1, ..., kk - 1) in crypto/blake2/tests/blake2{b,s}_tests.rs;
-# for BLAKE3, crypto/blake3/tests/vectors/mod.rs (from the official
+# bytes 0, 1, ..., len - 1, key bytes 0, 1, ..., kk - 1) in crypto/digest/tests/blake2_blake2{b,s}_tests.rs;
+# for BLAKE3, crypto/digest/tests/blake3_vectors/mod.rs (from the official
 # github.com/BLAKE3-team/BLAKE3 test_vectors/test_vectors.json; input bytes i % 251).
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

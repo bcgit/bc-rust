@@ -19,7 +19,7 @@
 //! the IV is authenticated. Do not decrypt data you have not authenticated separately.
 //!
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
-//! the `bouncycastle-tdes` crate docs.
+//! the `bouncycastle_symmetric::tdes` module docs.
 
 use crate::helpers::block_mode_helpers::TDEA_LIMIT_CFB8;
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};

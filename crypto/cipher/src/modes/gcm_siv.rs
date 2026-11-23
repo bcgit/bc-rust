@@ -750,7 +750,7 @@ mod tests {
     // END values lifted from RFC 8452.
 
     fn hex(s: &str) -> Vec<u8> {
-        bouncycastle_hex::decode(s).expect("the lifted values are hex")
+        bouncycastle_core::hex::decode(s).expect("the lifted values are hex")
     }
 
     fn nonce_of(s: &str) -> [u8; GCM_SIV_NONCE_LEN] {

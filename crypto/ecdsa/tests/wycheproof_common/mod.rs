@@ -1,6 +1,6 @@
 //! The Wycheproof ECDSA runner, once over the curve and the hash: the project wycheproof repo
 //! (https://github.com/C2SP/wycheproof) must be cloned at `../wycheproof` relative to the root of
-//! this git project, as `bouncycastle-mldsa`'s `tests/wycheproof.rs` expects too. Each per-curve
+//! this git project, as `bouncycastle-pqc`'s `tests/mldsa_mldsa_wycheproof.rs` expects too. Each per-curve
 //! file names the `(hash, file)` pairs it runs: the `_p1363_` files carry raw `r || s`, this
 //! crate's native encoding, and the plain files DER `SEQUENCE { r, s }` (RFC 3279 Section
 //! 2.2.3), decoded with `bouncycastle_ecdsa::der::decode` first.
@@ -20,6 +20,7 @@
 
 #![allow(dead_code)]
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use bouncycastle_core::traits::PublicKey;
 use bouncycastle_ec::curve::Curve;
@@ -27,7 +28,6 @@ use bouncycastle_ecdsa::der;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
 use bouncycastle_ecdsa::keys::ECDSAPublicKey;
-use bouncycastle_hex::decode as hex_decode;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;

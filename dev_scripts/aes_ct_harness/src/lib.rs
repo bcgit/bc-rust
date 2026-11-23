@@ -12,10 +12,17 @@
 
 use bouncycastle_utils::ct;
 
-#[path = "../../../crypto/tdes/src/des.rs"]
-mod des;
-#[path = "../../../crypto/tdes/src/sbox.rs"]
-mod sbox;
+// Inside a `tdes` module, as in `bouncycastle-symmetric`, so that their `crate::tdes` paths resolve.
+#[path = "../../../crypto/symmetric/src/tdes"]
+mod tdes {
+    mod des;
+    mod sbox;
+
+    #[inline(always)]
+    pub(crate) fn rounds(l: u32, r: u32, sk: &[u32; 32]) -> (u32, u32) {
+        des::rounds(l, r, sk, false)
+    }
+}
 
 /// `u32::splat` as the crate compiles it off the fixed-latency targets.
 #[inline(never)]
@@ -48,8 +55,8 @@ pub fn splat64_plain(pattern: u16) -> u64 {
 /// The TDES round function as the crate compiles it: sixteen DEA rounds over a schedule, with
 /// `spread` going through the barrier off the fixed-latency targets.
 #[inline(never)]
-pub fn tdes_rounds(l: u32, r: u32, sk: &des::Subkeys) -> (u32, u32) {
-    des::rounds(l, r, sk, false)
+pub fn tdes_rounds(l: u32, r: u32, sk: &[u32; 32]) -> (u32, u32) {
+    tdes::rounds(l, r, sk)
 }
 
 /// The crate's `spread` without the barrier: the positive control, which LLVM folds into a

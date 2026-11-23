@@ -14,17 +14,18 @@ use crate::helpers::{
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::signature_key::{
-    DeterministicPreHashSigningKey, DeterministicSigningKey, PreHash, PreHashSigningKey,
-    PreHashVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey,
+    DeterministicSigningKey, PreHash, SigningKey, VerifyingKey,
 };
-use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier};
+use bouncycastle::core::traits::{
+    CollisionResistantHash, PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier,
+};
 use bouncycastle::mldsa::hazmat::AnyStrength;
 use bouncycastle::mldsa::{
-    MLDSA_MU_LEN, MLDSA_SEED_LEN, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN,
+    MLDSA, MLDSA_MU_LEN, MLDSA_SEED_LEN, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN,
     MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN,
     MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN,
-    MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait,
-    MuBuilder,
+    MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKey, MLDSAPrivateKeyTrait, MLDSAPublicKey,
+    MLDSAPublicKeyTrait, MLDSATrait, MuBuilder, PrivateKeyLen, PublicKeyLen, SignatureLen,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle::sha2::{SHA256, SHA512};
@@ -170,26 +171,17 @@ pub(crate) const MLDSA87_SET: ParameterSet<
 /// `prehash` selects HashML-DSA with that hash (FIPS 204 Section 5.4) over pure ML-DSA;
 /// `allow_weak_hash` lets that hash be weaker than the parameter set, which is otherwise refused;
 /// `deterministic` the variant with `rnd` all zero (Section 3.4) over the hedged one.
-pub(crate) fn mldsa_cmd<
-    A: SignatureAlgorithm,
-    PK: PublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN> + PreHashVerifyingKey<A, SIG_LEN>,
-    SK: PrivateKey<SK_LEN>
-        + SigningKey<A, SIG_LEN>
-        + DeterministicSigningKey<A, SIG_LEN>
-        + PreHashSigningKey<A, SIG_LEN>
-        + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    const PK_LEN: usize,
-    const SK_LEN: usize,
-    const SIG_LEN: usize,
->(
-    set: &ParameterSet<A, PK, SK, PK_LEN, SK_LEN, SIG_LEN>,
+pub(crate) fn mldsa_cmd<P, const PK_LEN: usize, const SK_LEN: usize, const SIG_LEN: usize>(
+    set: &ParameterSet<MLDSA<P>, MLDSAPublicKey<P>, MLDSAPrivateKey<P>, PK_LEN, SK_LEN, SIG_LEN>,
     action: &MLDSAAction,
     files: &Files,
     prehash: Option<PreHashAlg>,
     allow_weak_hash: bool,
     deterministic: bool,
     output_hex: bool,
-) {
+) where
+    P: PublicKeyLen<PK_LEN> + PrivateKeyLen<SK_LEN> + SignatureLen<SIG_LEN>,
+{
     match action {
         MLDSAAction::Keygen => {
             let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os())
@@ -232,52 +224,32 @@ pub(crate) fn mldsa_cmd<
                     let s = sk.create_signer_deterministic(ctx).unwrap_or_else(|e| signer_error(e));
                     sign_stream(s, output_hex)
                 }
-                (Some(hash), det) if allow_weak_hash => match hash {
-                    PreHashAlg::Sha256 => sign_ph::<A, SK, AnyStrength<SHA256>, SIG_LEN>(
+                (Some(hash), det) => match (hash, allow_weak_hash) {
+                    (PreHashAlg::Sha256, false) => {
+                        sign_ph::<P, SHA256, SIG_LEN>(&sk, &mut rng, ctx, det, output_hex)
+                    }
+                    (PreHashAlg::Sha256, true) => sign_ph::<P, AnyStrength<SHA256>, SIG_LEN>(
                         &sk, &mut rng, ctx, det, output_hex,
                     ),
-                    PreHashAlg::Sha512 => sign_ph::<A, SK, AnyStrength<SHA512>, SIG_LEN>(
+                    (PreHashAlg::Sha512, false) => {
+                        sign_ph::<P, SHA512, SIG_LEN>(&sk, &mut rng, ctx, det, output_hex)
+                    }
+                    (PreHashAlg::Sha512, true) => sign_ph::<P, AnyStrength<SHA512>, SIG_LEN>(
                         &sk, &mut rng, ctx, det, output_hex,
                     ),
-                    PreHashAlg::Shake128 => sign_ph::<A, SK, AnyStrength<SHAKE128>, SIG_LEN>(
+                    (PreHashAlg::Shake128, false) => {
+                        sign_ph::<P, SHAKE128, SIG_LEN>(&sk, &mut rng, ctx, det, output_hex)
+                    }
+                    (PreHashAlg::Shake128, true) => sign_ph::<P, AnyStrength<SHAKE128>, SIG_LEN>(
                         &sk, &mut rng, ctx, det, output_hex,
                     ),
-                    PreHashAlg::Shake256 => sign_ph::<A, SK, AnyStrength<SHAKE256>, SIG_LEN>(
+                    (PreHashAlg::Shake256, false) => {
+                        sign_ph::<P, SHAKE256, SIG_LEN>(&sk, &mut rng, ctx, det, output_hex)
+                    }
+                    (PreHashAlg::Shake256, true) => sign_ph::<P, AnyStrength<SHAKE256>, SIG_LEN>(
                         &sk, &mut rng, ctx, det, output_hex,
                     ),
                 },
-                (Some(PreHashAlg::Sha256), false) => {
-                    let s = sk.create_ph_signer::<SHA256>(&mut rng, ctx);
-                    sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
-                }
-                (Some(PreHashAlg::Sha512), false) => {
-                    let s = sk.create_ph_signer::<SHA512>(&mut rng, ctx);
-                    sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
-                }
-                (Some(PreHashAlg::Shake128), false) => {
-                    let s = sk.create_ph_signer::<SHAKE128>(&mut rng, ctx);
-                    sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
-                }
-                (Some(PreHashAlg::Shake256), false) => {
-                    let s = sk.create_ph_signer::<SHAKE256>(&mut rng, ctx);
-                    sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
-                }
-                (Some(PreHashAlg::Sha256), true) => {
-                    let s = sk.create_ph_signer_deterministic::<SHA256>(ctx);
-                    sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
-                }
-                (Some(PreHashAlg::Sha512), true) => {
-                    let s = sk.create_ph_signer_deterministic::<SHA512>(ctx);
-                    sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
-                }
-                (Some(PreHashAlg::Shake128), true) => {
-                    let s = sk.create_ph_signer_deterministic::<SHAKE128>(ctx);
-                    sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
-                }
-                (Some(PreHashAlg::Shake256), true) => {
-                    let s = sk.create_ph_signer_deterministic::<SHAKE256>(ctx);
-                    sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
-                }
             }
         }
         MLDSAAction::Verify => {
@@ -290,36 +262,28 @@ pub(crate) fn mldsa_cmd<
                     let v = pk.create_verifier(ctx).unwrap_or_else(|e| signer_error(e));
                     verify_stream(v, &sig)
                 }
-                Some(hash) if allow_weak_hash => match hash {
-                    PreHashAlg::Sha256 => {
-                        verify_ph::<A, PK, AnyStrength<SHA256>, SIG_LEN>(&pk, ctx, &sig)
+                Some(hash) => match (hash, allow_weak_hash) {
+                    (PreHashAlg::Sha256, false) => verify_ph::<P, SHA256, SIG_LEN>(&pk, ctx, &sig),
+                    (PreHashAlg::Sha256, true) => {
+                        verify_ph::<P, AnyStrength<SHA256>, SIG_LEN>(&pk, ctx, &sig)
                     }
-                    PreHashAlg::Sha512 => {
-                        verify_ph::<A, PK, AnyStrength<SHA512>, SIG_LEN>(&pk, ctx, &sig)
+                    (PreHashAlg::Sha512, false) => verify_ph::<P, SHA512, SIG_LEN>(&pk, ctx, &sig),
+                    (PreHashAlg::Sha512, true) => {
+                        verify_ph::<P, AnyStrength<SHA512>, SIG_LEN>(&pk, ctx, &sig)
                     }
-                    PreHashAlg::Shake128 => {
-                        verify_ph::<A, PK, AnyStrength<SHAKE128>, SIG_LEN>(&pk, ctx, &sig)
+                    (PreHashAlg::Shake128, false) => {
+                        verify_ph::<P, SHAKE128, SIG_LEN>(&pk, ctx, &sig)
                     }
-                    PreHashAlg::Shake256 => {
-                        verify_ph::<A, PK, AnyStrength<SHAKE256>, SIG_LEN>(&pk, ctx, &sig)
+                    (PreHashAlg::Shake128, true) => {
+                        verify_ph::<P, AnyStrength<SHAKE128>, SIG_LEN>(&pk, ctx, &sig)
+                    }
+                    (PreHashAlg::Shake256, false) => {
+                        verify_ph::<P, SHAKE256, SIG_LEN>(&pk, ctx, &sig)
+                    }
+                    (PreHashAlg::Shake256, true) => {
+                        verify_ph::<P, AnyStrength<SHAKE256>, SIG_LEN>(&pk, ctx, &sig)
                     }
                 },
-                Some(PreHashAlg::Sha256) => {
-                    let v = pk.create_ph_verifier::<SHA256>(ctx);
-                    verify_stream(v.unwrap_or_else(|e| signer_error(e)), &sig)
-                }
-                Some(PreHashAlg::Sha512) => {
-                    let v = pk.create_ph_verifier::<SHA512>(ctx);
-                    verify_stream(v.unwrap_or_else(|e| signer_error(e)), &sig)
-                }
-                Some(PreHashAlg::Shake128) => {
-                    let v = pk.create_ph_verifier::<SHAKE128>(ctx);
-                    verify_stream(v.unwrap_or_else(|e| signer_error(e)), &sig)
-                }
-                Some(PreHashAlg::Shake256) => {
-                    let v = pk.create_ph_verifier::<SHAKE256>(ctx);
-                    verify_stream(v.unwrap_or_else(|e| signer_error(e)), &sig)
-                }
             }
         }
         MLDSAAction::ComputeMu => {
@@ -399,34 +363,33 @@ fn signer_error(e: SignatureError) -> ! {
 }
 
 /// Signs stdin with the pre-hash `H`: hedged, or deterministic.
-fn sign_ph<A, SK, H, const SIG_LEN: usize>(
-    sk: &SK,
+fn sign_ph<P, H, const SIG_LEN: usize>(
+    sk: &MLDSAPrivateKey<P>,
     rng: &mut dyn RNG,
     ctx: Option<&[u8]>,
     deterministic: bool,
     output_hex: bool,
 ) where
-    A: SignatureAlgorithm,
-    SK: PreHashSigningKey<A, SIG_LEN> + DeterministicPreHashSigningKey<A, SIG_LEN>,
-    H: PreHash,
+    P: SignatureLen<SIG_LEN>,
+    H: PreHash + CollisionResistantHash,
 {
+    let sk = sk.as_prehash::<H>();
     if deterministic {
-        let s = sk.create_ph_signer_deterministic::<H>(ctx);
+        let s = sk.create_signer_deterministic(ctx);
         sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
     } else {
-        let s = sk.create_ph_signer::<H>(rng, ctx);
+        let s = sk.create_signer(rng, ctx);
         sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
     }
 }
 
 /// Verifies stdin against `sig` with the pre-hash `H`.
-fn verify_ph<A, PK, H, const SIG_LEN: usize>(pk: &PK, ctx: Option<&[u8]>, sig: &[u8])
+fn verify_ph<P, H, const SIG_LEN: usize>(pk: &MLDSAPublicKey<P>, ctx: Option<&[u8]>, sig: &[u8])
 where
-    A: SignatureAlgorithm,
-    PK: PreHashVerifyingKey<A, SIG_LEN>,
+    P: SignatureLen<SIG_LEN>,
     H: PreHash,
 {
-    let v = pk.create_ph_verifier::<H>(ctx);
+    let v = pk.as_prehash::<H>().create_verifier(ctx);
     verify_stream(v.unwrap_or_else(|e| signer_error(e)), sig)
 }
 

@@ -5,8 +5,8 @@
 //! this independent-reference pinning matters (a real test gap `cargo mutants` found on that
 //! curve's analogous constant and reduction).
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_ec::hazmat::bp512r1_extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_hex::decode as hex_decode;
 
 fn bytes64(hex: &str) -> [u8; 64] {
     hex_decode(hex).unwrap().try_into().unwrap()
@@ -69,7 +69,7 @@ fn known_answer_at_the_n_minus_1_boundary() {
 /// back in as `2^512 mod (n-1) = 2^512 - (n-1)`. Slow, obviously correct, and sharing no
 /// code with the Barrett path beyond `nat`'s add and sub.
 fn reference_bit_serial(bytes: &[u8]) -> [u8; 64] {
-    use bouncycastle_ec::nat;
+    use bouncycastle_utils::nat;
     let n = bouncycastle_ec::hazmat::bp512r1_scalar::N_LIMBS;
     let mut m = n;
     m[0] -= 1; // n is odd

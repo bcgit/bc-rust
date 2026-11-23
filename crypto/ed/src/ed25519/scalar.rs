@@ -741,7 +741,7 @@ mod tests {
     ];
 
     fn octets<const N: usize>(hex: &str) -> [u8; N] {
-        bouncycastle_hex::decode(hex).unwrap().try_into().unwrap()
+        bouncycastle_core::hex::decode(hex).unwrap().try_into().unwrap()
     }
 
     fn limbs(k: &[u8; 32]) -> [u64; SIZE] {

@@ -14,7 +14,7 @@ use bouncycastle_ec::hazmat::p256_scalar::{
     N_LIMBS, P256PublicScalar, P256Scalar, P256ScalarField,
 };
 use bouncycastle_ec::hazmat::p256_wnaf::shamir_multiply;
-use bouncycastle_ec::nat;
+use bouncycastle_utils::nat;
 
 const LIMBS: usize = 4;
 

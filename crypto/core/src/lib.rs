@@ -7,14 +7,23 @@
 #![forbid(missing_docs)]
 
 pub mod agreement_key;
+// Its docs link to the allocating one-shots, which a build without `std` does not have.
+#[cfg_attr(not(feature = "std"), allow(rustdoc::broken_intra_doc_links))]
+pub mod base64;
 pub mod direction;
 pub mod errors;
 pub mod hazmat;
+// Its docs link to the allocating one-shots, which a build without `std` does not have.
+#[cfg_attr(not(feature = "std"), allow(rustdoc::broken_intra_doc_links))]
+pub mod hex;
 pub mod kdf_params;
 pub mod kem_key;
 pub mod key_material;
+pub mod key_transport_key;
 mod provided;
 pub mod security_strength;
 pub mod signature_key;
 pub mod symmetric_key;
+// Its docs link to the allocating one-shots, which a build without `std` does not have.
+#[cfg_attr(not(feature = "std"), allow(rustdoc::broken_intra_doc_links))]
 pub mod traits;

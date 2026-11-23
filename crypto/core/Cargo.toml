@@ -4,9 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-# `std` gates the ergonomic, allocating (`Vec`-returning) one-shot APIs. It is on by
+# `std` gates the ergonomic, allocating (`Vec`- and `Box`-returning) one-shot APIs. It is on by
 # default today; a future `--no-default-features` build is what will let `core` become
-# `#![no_std]` (see the TODO at the top of `src/lib.rs`).
+# `#![no_std]` (see the TODO at the top of `src/lib.rs`). No other crate in the workspace
+# builds with it off yet: several override or call the gated methods.
 default = ["std"]
 std = []
 
@@ -15,3 +16,12 @@ bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 bouncycastle-rng.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "base64_benches"
+harness = false
+
+[[bench]]
+name = "hex_benches"
+harness = false

@@ -1,7 +1,9 @@
 //! Ed25519 and Ed25519ph (RFC 8032 Section 5.1; EdDSA and HashEdDSA over edwards25519 in FIPS
-//! 186-5 Section 7), on the signature roles: [`Ed25519PrivateKey`] and [`Ed25519PublicKey`]
-//! serve both algorithms, named by the markers [`Ed25519`] and [`Ed25519ph`]. Ed25519ctx is not
-//! provided.
+//! 186-5 Section 7), on the signature roles. [`Ed25519PrivateKey`] and [`Ed25519PublicKey`] are
+//! keys of [`Ed25519`], the algorithm their identifier names: RFC 8410 Section 3 defines its
+//! OIDs for "EdDSA in pure mode". [`Ed25519ph`] is reached through a key's `as_prehash()`,
+//! which gives a view that borrows the key: [`Ed25519phPrivateKey`], [`Ed25519phPublicKey`].
+//! Ed25519ctx is not provided.
 //!
 //! # Usage Examples
 //!
@@ -29,53 +31,53 @@
 //!
 //! ## Ed25519
 //!
-//! Ed25519 takes the whole message, through the one-shot roles. The keys implement those roles
-//! for both algorithms, so the call names the one it means:
+//! Ed25519 takes the whole message, through the one-shot roles:
 //!
 //! ```rust
 //! use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
-//! use bouncycastle_ed::ed25519::{Ed25519, keygen};
+//! use bouncycastle_ed::ed25519::keygen;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
 //!
-//! let sig = DeterministicOneShotSigningKey::<Ed25519, _>::sign_deterministic(&sk, b"msg", None)?;
-//! OneShotVerifyingKey::<Ed25519, _>::verify(&pk, b"msg", None, &sig)?;
+//! let sig = sk.sign_deterministic(b"msg", None)?;
+//! pk.verify(b"msg", None, &sig)?;
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
 //! ## Ed25519ph
 //!
 //! Ed25519ph signs the SHA-512 digest of the message under an optional context, so the message
-//! can be streamed. Only Ed25519ph has the streaming roles, so these calls need no marker; its
-//! one-shots do, as above.
+//! can be streamed. It is asked for by name, with `as_prehash()` on either key; the workers
+//! borrow the key, so the view need not be kept.
 //!
 //! ```rust
 //! use bouncycastle_core::signature_key::{
 //!     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 //! };
 //! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
-//! use bouncycastle_ed::ed25519::{Ed25519ph, keygen};
+//! use bouncycastle_ed::ed25519::keygen;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
 //!
-//! let mut signer = sk.create_signer_deterministic(Some(b"my protocol"))?;
+//! let mut signer = sk.as_prehash().create_signer_deterministic(Some(b"my protocol"))?;
 //! signer.do_update(b"a message ");
 //! signer.do_update(b"in two parts");
 //! let sig = signer.do_final()?;
 //!
-//! let mut verifier = pk.create_verifier(Some(b"my protocol"))?;
+//! let mut verifier = pk.as_prehash().create_verifier(Some(b"my protocol"))?;
 //! verifier.do_update(b"a message in two parts");
 //! verifier.do_verify_final(&sig)?;
 //!
 //! // The one-shots give and take the same signature.
 //! let msg = b"a message in two parts";
 //! let ctx = Some(&b"my protocol"[..]);
-//! let one_shot =
-//!     DeterministicOneShotSigningKey::<Ed25519ph, _>::sign_deterministic(&sk, msg, ctx)?;
-//! assert_eq!(one_shot, sig);
-//! OneShotVerifyingKey::<Ed25519ph, _>::verify(&pk, msg, ctx, &sig)?;
+//! assert_eq!(sk.as_prehash().sign_deterministic(msg, ctx)?, sig);
+//! pk.as_prehash().verify(msg, ctx, &sig)?;
+//!
+//! // It is not an Ed25519 signature.
+//! assert!(pk.verify(msg, None, &sig).is_err());
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
@@ -140,8 +142,11 @@
 //! variants SHOULD NOT be used." Prefer Ed25519 unless the message cannot be held. A streaming
 //! verifier has also read the whole message before it can say whether the signature is good;
 //! Section 8.7 warns against acting on data before then. One key pair may serve both algorithms
-//! (Section 8.6). The digest is computed here, from the message: a caller that holds only a
-//! SHA-512 digest cannot sign or verify it as Ed25519ph.
+//! (Section 8.6), and the two never verify each other's signatures; a key is Ed25519's unless
+//! `as_prehash()` is called on it, so neither a streaming call nor a one-shot selects Ed25519ph
+//! unasked. RFC 8410 gives Ed25519ph no identifier, so nothing in a certificate or an encoded
+//! key says it is meant: both sides have to know. The digest is computed here, from the
+//! message: a caller that holds only a SHA-512 digest cannot sign or verify it as Ed25519ph.
 //!
 //! **Constant time.** Key expansion and signing are constant time in the private key and
 //! everything derived from it, on a target that multiplies two 64-bit words into 128 bits in
@@ -172,6 +177,7 @@ mod scheme;
 
 pub use keys::{
     ED25519_NAME, ED25519PH_NAME, Ed25519, Ed25519PrivateKey, Ed25519PublicKey, Ed25519ph,
-    Ed25519phSigner, Ed25519phVerifier, keygen, keygen_out, keypair_consistency_check,
+    Ed25519phPrivateKey, Ed25519phPublicKey, Ed25519phSigner, Ed25519phVerifier, keygen,
+    keygen_out, keypair_consistency_check,
 };
 pub use scheme::{CONTEXT_MAX_LEN, PRIVATE_KEY_LEN, PUBLIC_KEY_LEN, SIGNATURE_LEN};

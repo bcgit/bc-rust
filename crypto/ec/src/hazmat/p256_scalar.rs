@@ -22,9 +22,9 @@
 //! the reduction never touches beyond a 9-limb accumulator, which is what `redc` uses.
 
 use crate::curve::{PublicScalar, ScalarFieldElement, SecretScalar};
-use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::Secret;
 
 /// `n`, the order of the P-256 base point `G`, little-endian `u64` limbs (SP 800-186 §3.2.1.3).
@@ -237,9 +237,10 @@ fn widening_mul(a: &[u64; 4], b: &[u64; 4]) -> [u64; 8] {
 /// `m * n`, one limb times the 4-limb modulus `n`, as the 5 limbs such a product can occupy.
 ///
 /// This is exactly what each round of [`redc`]'s SOS reduction needs, and the shape
-/// [`crate::montgomery::redc`] has always used for the brainpool curves. Every hand-written scalar
-/// REDC in this crate previously formed it with the general 4x4 [`widening_mul`] against a
-/// zero-padded `[m, 0, ..., 0]` instead, asking for 16 limb multiplications where 4 are needed.
+/// [`bouncycastle_utils::montgomery::redc`] has always used for the brainpool curves. Every
+/// hand-written scalar REDC in this crate previously formed it with the general 4x4
+/// [`widening_mul`] against a zero-padded `[m, 0, ..., 0]` instead, asking for 16 limb
+/// multiplications where 4 are needed.
 ///
 /// Whether that padding costs anything turns out to depend entirely on the width, measured rather
 /// than assumed: at four limbs the optimizer eliminates it completely (P-256 and secp256k1 time

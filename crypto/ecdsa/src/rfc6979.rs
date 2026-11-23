@@ -13,8 +13,8 @@ use crate::ecdsa::{MAX_HASH_LEN, check_hash_fits, hash_to_limbs};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
 use bouncycastle_core::traits::HashAlgParams;
+use bouncycastle_digest::hmac::{HMACParams, HmacKey, hazmat as hmac_hazmat};
 use bouncycastle_ec::curve::{Curve, ScalarFieldElement, SecretScalar};
-use bouncycastle_hmac::{HMACParams, HmacKey, hazmat as hmac_hazmat};
 use bouncycastle_utils::secret::Secret;
 
 /// The most `HMAC_K(V)` outputs step h.2 concatenates: `ceil(qlen / hlen)`, which is 3 for

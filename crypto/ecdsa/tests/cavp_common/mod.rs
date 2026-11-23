@@ -46,7 +46,7 @@ pub fn get_test_data(filename: &str) -> String {
 /// curve's `sign_rng` draws its DRBG bytes and reduces them per FIPS 186-5 Appendix A.4.1
 /// (`x mod (n-1)`, then `+ 1`), so an RNG returning `k - 1` -- which is `< n - 1`, making the
 /// reduction the identity -- produces exactly `k`, through the public API and with no test-only
-/// hook in the crate. Only `next_bytes_out`/`next_bytes` are meaningful; nothing in the signing
+/// hook in the crate. Only `next_bytes_out` is meaningful; nothing in the signing
 /// path calls the rest.
 pub struct FixedBytesRng {
     value_be: Vec<u8>,
@@ -65,12 +65,6 @@ impl RNG for FixedBytesRng {
 
     fn next_int(&mut self) -> Result<u32, RNGError> {
         unimplemented!("FixedBytesRng only serves next_bytes_out")
-    }
-
-    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
-        let mut out = vec![0u8; len];
-        self.next_bytes_out(&mut out)?;
-        Ok(out)
     }
 
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
@@ -177,7 +171,7 @@ pub fn hex_field(fields: &BTreeMap<String, String>, key: &str, width: usize) -> 
     let hex = fields.get(key).unwrap_or_else(|| panic!("record missing field {key}"));
     let hex = if hex.len() % 2 == 1 { format!("0{hex}") } else { hex.clone() };
     let bytes =
-        bouncycastle_hex::decode(&hex).unwrap_or_else(|e| panic!("bad hex in {key}: {e:?}"));
+        bouncycastle_core::hex::decode(&hex).unwrap_or_else(|e| panic!("bad hex in {key}: {e:?}"));
     if bytes.len() >= width {
         return bytes;
     }
@@ -190,7 +184,7 @@ pub fn hex_field(fields: &BTreeMap<String, String>, key: &str, width: usize) -> 
 /// itself, not a fixed-width field element).
 pub fn hex_bytes(fields: &BTreeMap<String, String>, key: &str) -> Vec<u8> {
     let hex = fields.get(key).unwrap_or_else(|| panic!("record missing field {key}"));
-    bouncycastle_hex::decode(hex).unwrap_or_else(|e| panic!("bad hex in {key}: {e:?}"))
+    bouncycastle_core::hex::decode(hex).unwrap_or_else(|e| panic!("bad hex in {key}: {e:?}"))
 }
 
 /// `true` iff a CAVP `Result = P (0 )` / `Result = F (...)` field indicates success.
@@ -199,13 +193,13 @@ pub fn result_is_pass(fields: &BTreeMap<String, String>) -> bool {
 }
 
 use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
-use bouncycastle_core::traits::{PrivateKey, PublicKey};
+use bouncycastle_core::traits::{CollisionResistantHash, PrivateKey, PublicKey};
+use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
 use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_sha2::SHA256;
 
 /// SEC 1 Section 2.3.3 case 3 (`04 || X || Y`), built dynamically rather than into a fixed-size
 /// array: `ECDSA_PKV.rsp`'s "out of range" vectors deliberately supply a coordinate wider than
@@ -266,7 +260,7 @@ pub fn siggen<C, H, const PK_LEN: usize, const SK_LEN: usize, const SIG_LEN: usi
 where
     C: Curve
         + Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     let width = C::SCALAR_LEN;
     let content = get_test_data("ECDSA_SigGen.txt");
@@ -336,7 +330,7 @@ pub fn keypair<C, H, const PK_LEN: usize, const SK_LEN: usize, const SIG_LEN: us
 where
     C: Curve
         + Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     use bouncycastle_ecdsa::keys_common::DerivePublicKey;
     let width = C::SCALAR_LEN;

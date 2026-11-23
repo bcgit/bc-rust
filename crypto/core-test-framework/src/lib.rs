@@ -23,6 +23,7 @@ pub mod kdf;
 pub mod kem;
 pub mod key_agreement;
 pub mod key_stream;
+pub mod key_transport;
 pub mod key_wrap;
 pub mod mac;
 pub mod signature;
@@ -46,9 +47,6 @@ impl RNG for FailingRNG {
         Err(RNGError::GenericError("FailingRNG: every draw fails"))
     }
     fn next_int(&mut self) -> Result<u32, RNGError> {
-        Err(RNGError::GenericError("FailingRNG: every draw fails"))
-    }
-    fn next_bytes(&mut self, _: usize) -> Result<Vec<u8>, RNGError> {
         Err(RNGError::GenericError("FailingRNG: every draw fails"))
     }
     fn next_bytes_out(&mut self, _: &mut [u8]) -> Result<usize, RNGError> {

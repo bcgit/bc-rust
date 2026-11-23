@@ -11,10 +11,9 @@
 //! Each curve has two signer types, `ECDSA*` (random `k`) and `ECDetDSA*` (RFC 6979), identical in
 //! trait shape; `--deterministic` picks which one [`ecdsa_cmd`] is instantiated over.
 //!
-//! `ctx` (accepted by `Signer`/`SignatureVerifier` for trait conformance) is not exposed as a CLI
-//! flag here: `bouncycastle_ecdsa`'s own crate docs say ECDSA "accepts but ignores" it (FIPS
-//! 186-5/SEC 1 have no context-string input), so a `--ctxfile` flag would silently do nothing --
-//! every call below passes `None` directly instead. `SM2` (`sm2_cmd.rs`) is the curve this crate
+//! `ctx` is not exposed as a CLI flag here: ECDSA has no context input, and `bouncycastle_ecdsa`
+//! refuses a non-empty one, so a `--ctxfile` flag could only fail -- every call below passes
+//! `None` directly instead. `SM2` (`sm2_cmd.rs`) is the curve this crate
 //! does NOT cover: its `ctx` is mandatory (it carries the signer's identity `IDA`) and its
 //! `derive_pk` is a bespoke inherent method rather than an implementation of `DerivePublicKey`, so
 //! it needs its own command function and its own `--idfile` flag.

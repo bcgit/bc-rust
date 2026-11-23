@@ -16,13 +16,13 @@ use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::OFB;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::FixedSeedRNG;
+use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-use bouncycastle_hex as hex;
-use bouncycastle_rng::FixedSeedRNG;
 
 const BLOCK_LEN: usize = 16;
 

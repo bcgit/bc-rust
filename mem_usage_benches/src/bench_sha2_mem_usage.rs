@@ -20,7 +20,7 @@
 //! (this is because /usr/bin/time prints useful outputs to stderr as well)
 //!
 //! Main is at the bottom, controls which this was actually run. `print_struct_sizes()` is the source of
-//! the numbers in the "Memory Usage" tables in the bouncycastle-sha2 crate docs.
+//! the numbers in the "Memory Usage" tables in the `bouncycastle_digest::sha2` module docs.
 
 #![allow(dead_code)]
 #![allow(unused_imports)]

@@ -7,12 +7,16 @@
 //! returns early, so `cargo test` passes for someone who has cloned only this repository. When a
 //! repository is present, a file missing from it is a failure rather than a skip.
 //!
+//! bc-test-data also carries copies of some Wycheproof files, in `crypto/wycheproof`. Without the
+//! Wycheproof checkout, [`wycheproof`] reads those; a file that has not been copied there is then
+//! skipped, since the copies are a selection.
+//!
 //! The paths are resolved from this crate's manifest directory, which is at the same depth as every
 //! crate under `crypto/`, so they do not depend on the directory `cargo test` runs in. Under
 //! `cargo mutants`, which copies the tree into `/tmp`, they resolve to `/tmp/bc-test-data` and
 //! `/tmp/wycheproof`.
 
-use bouncycastle_hex as hex;
+use bouncycastle_core::hex;
 use std::fs;
 use std::path::Path;
 use std::sync::Once;
@@ -28,6 +32,9 @@ const WYCHEPROOF_ROOT: &str =
 static BC_TEST_DATA_CHECK: Once = Once::new();
 static WYCHEPROOF_CHECK: Once = Once::new();
 
+/// Where bc-test-data keeps its copies of Wycheproof files.
+const WYCHEPROOF_COPIES_DIR: &str = "crypto/wycheproof";
+
 /// Returns the contents of `bc-test-data/<dir>/<filename>`, or `None` (after a one-time warning)
 /// if bc-test-data is not cloned beside this repository.
 ///
@@ -36,12 +43,27 @@ pub fn bc_test_data(dir: &str, filename: &str) -> Option<String> {
     read(BC_TEST_DATA_ROOT, &BC_TEST_DATA_CHECK, "bc-test-data", &format!("{dir}/{filename}"))
 }
 
-/// Returns the contents of `wycheproof/testvectors_v1/<filename>`, or `None` (after a one-time
-/// warning) if Wycheproof is not cloned beside this repository.
+/// Returns the contents of `wycheproof/testvectors_v1/<filename>`, or, if Wycheproof is not cloned
+/// beside this repository, of bc-test-data's copy of that file. `None` (after a one-time warning)
+/// if neither is there.
 ///
 /// Panics if Wycheproof is present but the file cannot be read.
 pub fn wycheproof(filename: &str) -> Option<String> {
-    read(WYCHEPROOF_ROOT, &WYCHEPROOF_CHECK, "wycheproof", filename)
+    if Path::new(WYCHEPROOF_ROOT).is_dir() {
+        return read(WYCHEPROOF_ROOT, &WYCHEPROOF_CHECK, "wycheproof", filename);
+    }
+    let copies = format!("{BC_TEST_DATA_ROOT}/{WYCHEPROOF_COPIES_DIR}");
+    WYCHEPROOF_CHECK.call_once(|| {
+        println!(
+            "WARNING: wycheproof not found at {WYCHEPROOF_ROOT}; reading the copies in {copies}, \
+             and tests that need a file not copied there will be skipped"
+        );
+    });
+    let path = format!("{copies}/{filename}");
+    if !Path::new(&path).is_file() {
+        return None;
+    }
+    Some(fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path} is unreadable: {e}")))
 }
 
 /// [`bc_test_data`], parsed as JSON.

@@ -41,7 +41,7 @@
 
 use bouncycastle_ec::barrett;
 use bouncycastle_ec::hazmat::sm2_scalar::{N_LIMBS, Sm2Scalar};
-use bouncycastle_ec::nat;
+use bouncycastle_utils::nat;
 
 /// `n - 1`, little-endian `u64` limbs. `N_LIMBS[0]` ends in `0x23`, so neither this subtraction
 /// nor [`N_MINUS_2_LIMBS`]'s borrows out of the low limb.

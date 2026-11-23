@@ -1,0 +1,32 @@
+[package]
+name = "bouncycastle-pqc"
+description = "ML-DSA (FIPS 204) and ML-KEM (FIPS 203), each in a standard and a low-memory implementation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bouncycastle-core.workspace = true
+bouncycastle-digest.workspace = true
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-rng.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "mldsa_mldsa_benches"
+harness = false
+
+[[bench]]
+name = "mldsa_lowmemory_mldsa_benches"
+harness = false
+
+[[bench]]
+name = "mlkem_mlkem_benches"
+harness = false
+
+[[bench]]
+name = "mlkem_lowmemory_mlkem_benches"
+harness = false

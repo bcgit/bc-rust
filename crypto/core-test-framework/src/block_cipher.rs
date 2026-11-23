@@ -3,10 +3,10 @@
 
 use crate::DUMMY_SEED;
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{EcbDecryptionKey, EcbEncryptionKey};
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, RNG};
-use bouncycastle_rng::FixedSeedRNG;
 
 /// Instance of the test framework.
 pub struct TestFrameworkBlockCipher {

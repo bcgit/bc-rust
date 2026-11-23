@@ -2,17 +2,19 @@
 //! particular to the two algorithms.
 
 use bouncycastle_core::errors::{KeyMaterialError, SignatureError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::signature_key::{
-    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
+    DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey,
+    SignatureAlgorithm, VerifyingKey,
 };
 use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
 use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
+use bouncycastle_digest::sha3::SHAKE256;
 use bouncycastle_ed::ed448::{
     CONTEXT_MAX_LEN, ED448_NAME, ED448PH_NAME, Ed448, Ed448PrivateKey, Ed448PublicKey, Ed448ph,
-    SIGNATURE_LEN, keygen,
+    Ed448phPrivateKey, Ed448phPublicKey, Ed448phSigner, Ed448phVerifier, SIGNATURE_LEN, keygen,
 };
-use bouncycastle_rng::FixedSeedRNG;
-use bouncycastle_sha3::SHAKE256;
+use std::sync::OnceLock;
 
 const MSG: &[u8] = b"The quick brown fox jumped over the lazy dog";
 const FAILED: Result<(), SignatureError> = Err(SignatureError::SignatureVerificationFailed);
@@ -30,8 +32,17 @@ fn key_pair() -> Result<(Ed448PublicKey, Ed448PrivateKey), SignatureError> {
     keygen(&mut FixedSeedRNG::new(core::array::from_fn::<u8, 128, _>(|i| i as u8)))
 }
 
+/// The Ed448ph views of that pair, for the framework, whose runners take a function that
+/// returns the keys by value: a view borrows its key, so the pair lives in a static.
+fn key_pair_ph() -> Result<(Ed448phPublicKey<'static>, Ed448phPrivateKey<'static>), SignatureError>
+{
+    static PAIR: OnceLock<(Ed448PublicKey, Ed448PrivateKey)> = OnceLock::new();
+    let (pk, sk) = PAIR.get_or_init(|| key_pair().unwrap());
+    Ok((pk.as_prehash(), sk.as_prehash()))
+}
+
 fn sign(sk: &Ed448PrivateKey, msg: &[u8], ctx: Option<&[u8]>) -> [u8; SIGNATURE_LEN] {
-    DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(sk, msg, ctx).unwrap()
+    sk.sign_deterministic(msg, ctx).unwrap()
 }
 
 fn verify(
@@ -40,11 +51,11 @@ fn verify(
     ctx: Option<&[u8]>,
     sig: &[u8],
 ) -> Result<(), SignatureError> {
-    OneShotVerifyingKey::<Ed448, _>::verify(pk, msg, ctx, sig)
+    pk.verify(msg, ctx, sig)
 }
 
 fn sign_ph(sk: &Ed448PrivateKey, msg: &[u8], ctx: Option<&[u8]>) -> [u8; SIGNATURE_LEN] {
-    DeterministicOneShotSigningKey::<Ed448ph, _>::sign_deterministic(sk, msg, ctx).unwrap()
+    sk.as_prehash().sign_deterministic(msg, ctx).unwrap()
 }
 
 fn verify_ph(
@@ -53,7 +64,7 @@ fn verify_ph(
     ctx: Option<&[u8]>,
     sig: &[u8],
 ) -> Result<(), SignatureError> {
-    OneShotVerifyingKey::<Ed448ph, _>::verify(pk, msg, ctx, sig)
+    pk.as_prehash().verify(msg, ctx, sig)
 }
 
 fn is_length_error<T>(result: Result<T, SignatureError>) -> bool {
@@ -74,12 +85,127 @@ fn ed448_core_framework() {
         .test_deterministic_one_shot_signature::<Ed448, _, _, SIGNATURE_LEN>(key_pair, true);
 }
 
-/// Ed448ph streams and binds its context.
+/// Ed448ph, on the views of the keys, streams and binds its context.
 #[test]
 fn ed448ph_core_framework() {
     let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
-    tf.test_deterministic_signature::<Ed448ph, _, _, SIGNATURE_LEN>(key_pair, true);
-    tf.test_deterministic_one_shot_signature::<Ed448ph, _, _, SIGNATURE_LEN>(key_pair, false);
+    tf.test_deterministic_signature::<Ed448ph, _, _, SIGNATURE_LEN>(key_pair_ph, true);
+    tf.test_deterministic_one_shot_signature::<Ed448ph, _, _, SIGNATURE_LEN>(key_pair_ph, false);
+}
+
+/// The keys are Ed448's and the views Ed448ph's, so no call names its algorithm: the
+/// one-shots on a key and on a view, and the streaming constructors on a view that is a
+/// temporary or a variable.
+#[test]
+fn no_call_names_the_algorithm() {
+    let (pk, sk) = key_pair().unwrap();
+
+    let sig = sk.sign_deterministic(MSG, None).unwrap();
+    let mut out = [0u8; SIGNATURE_LEN];
+    assert_eq!(sk.sign_deterministic_out(MSG, None, &mut out), Ok(SIGNATURE_LEN));
+    assert_eq!(out, sig);
+    assert_eq!(pk.verify(MSG, None, &sig), Ok(()));
+
+    let sig_ph = sk.as_prehash().sign_deterministic(MSG, Some(b"ctx")).unwrap();
+    let mut out = [0u8; SIGNATURE_LEN];
+    assert_eq!(
+        sk.as_prehash().sign_deterministic_out(MSG, Some(b"ctx"), &mut out),
+        Ok(SIGNATURE_LEN)
+    );
+    assert_eq!(out, sig_ph);
+    assert_eq!(pk.as_prehash().verify(MSG, Some(b"ctx"), &sig_ph), Ok(()));
+
+    // The views are gone at the end of each statement; the workers borrow the keys.
+    let mut signer = sk.as_prehash().create_signer_deterministic(Some(b"ctx")).unwrap();
+    let mut verifier = pk.as_prehash().create_verifier(Some(b"ctx")).unwrap();
+    signer.do_update(MSG);
+    verifier.do_update(MSG);
+    assert_eq!(signer.do_final().unwrap(), sig_ph);
+    assert_eq!(verifier.do_verify_final(&sig_ph), Ok(()));
+
+    let (pk_ph, sk_ph) = (pk.as_prehash(), sk.as_prehash());
+    let mut signer = sk_ph.create_signer_deterministic(Some(b"ctx")).unwrap();
+    let mut verifier = pk_ph.create_verifier(Some(b"ctx")).unwrap();
+    signer.do_update(MSG);
+    verifier.do_update(MSG);
+    assert_eq!(signer.do_final().unwrap(), sig_ph);
+    assert_eq!(verifier.do_verify_final(&sig_ph), Ok(()));
+}
+
+/// A worker made through a view borrows the key for the key's lifetime, so a function can
+/// return one made from a view it did not keep.
+fn signer_of(sk: &Ed448PrivateKey) -> Ed448phSigner<'_> {
+    sk.as_prehash().create_signer_deterministic(None).unwrap()
+}
+
+fn verifier_of(pk: &Ed448PublicKey) -> Ed448phVerifier<'_> {
+    pk.as_prehash().create_verifier(None).unwrap()
+}
+
+#[test]
+fn the_workers_outlive_the_view() {
+    let (pk, sk) = key_pair().unwrap();
+    let mut signer = signer_of(&sk);
+    let mut verifier = verifier_of(&pk);
+    signer.do_update(MSG);
+    verifier.do_update(MSG);
+    let sig = signer.do_final().unwrap();
+    assert_eq!(sig, sign_ph(&sk, MSG, None));
+    assert_eq!(verifier.do_verify_final(&sig), Ok(()));
+}
+
+/// The view is a reference to the key and nothing else, so making one copies no key material.
+#[test]
+fn the_view_is_a_reference() {
+    use core::mem::size_of;
+    assert_eq!(size_of::<Ed448phPrivateKey<'_>>(), size_of::<&Ed448PrivateKey>());
+    assert_eq!(size_of::<Ed448phPublicKey<'_>>(), size_of::<&Ed448PublicKey>());
+    assert!(size_of::<Ed448phPrivateKey<'_>>() < size_of::<Ed448PrivateKey>());
+
+    // A copy of a view is a view of the same key.
+    let (pk, sk) = key_pair().unwrap();
+    let (sk_ph, pk_ph) = (sk.as_prehash(), pk.as_prehash());
+    let (sk_copy, pk_copy) = (sk_ph, pk_ph);
+    let sig = sk_ph.sign_deterministic(MSG, None).unwrap();
+    assert_eq!(sk_copy.sign_deterministic(MSG, None), Ok(sig));
+    assert_eq!(pk_copy.verify(MSG, None, &sig), Ok(()));
+    assert_eq!(pk_ph.verify(MSG, None, &sig), Ok(()));
+}
+
+/// Code generic over the streaming roles, which is handed the views.
+fn streamed<A, SK, PK, const N: usize>(sk: &SK, pk: &PK) -> [u8; N]
+where
+    A: SignatureAlgorithm,
+    SK: DeterministicSigningKey<A, N>,
+    PK: VerifyingKey<A, N>,
+{
+    let mut signer = sk.create_signer_deterministic(None).unwrap();
+    signer.do_update(MSG);
+    let sig = signer.do_final().unwrap();
+    let mut verifier = pk.create_verifier(None).unwrap();
+    verifier.do_update(MSG);
+    verifier.do_verify_final(&sig).unwrap();
+    sig
+}
+
+/// Code generic over the one-shot roles, which is handed the keys or the views.
+fn one_shot<A, SK, PK, const N: usize>(sk: &SK, pk: &PK) -> [u8; N]
+where
+    A: SignatureAlgorithm,
+    SK: DeterministicOneShotSigningKey<A, N>,
+    PK: OneShotVerifyingKey<A, N>,
+{
+    let sig = sk.sign_deterministic(MSG, None).unwrap();
+    pk.verify(MSG, None, &sig).unwrap();
+    sig
+}
+
+#[test]
+fn generic_code_takes_the_keys_and_the_views() {
+    let (pk, sk) = key_pair().unwrap();
+    assert_eq!(one_shot(&sk, &pk), sign(&sk, MSG, None));
+    assert_eq!(one_shot(&sk.as_prehash(), &pk.as_prehash()), sign_ph(&sk, MSG, None));
+    assert_eq!(streamed(&sk.as_prehash(), &pk.as_prehash()), sign_ph(&sk, MSG, None));
 }
 
 #[test]
@@ -101,10 +227,10 @@ fn the_markers_and_workers_name_their_algorithm() {
     assert_eq!(<Ed448 as AlgorithmOID>::OID_DER, &[0x06, 0x03, 0x2b, 0x65, 0x71]);
 
     let (pk, sk) = key_pair().unwrap();
-    let signer = sk.create_signer_deterministic(None).unwrap();
+    let signer = sk.as_prehash().create_signer_deterministic(None).unwrap();
     assert_eq!(signer.alg_name(), "Ed448ph");
     assert_eq!(signer.max_security_strength(), SecurityStrength::_192bit);
-    let verifier = pk.create_verifier(None).unwrap();
+    let verifier = pk.as_prehash().create_verifier(None).unwrap();
     assert_eq!(verifier.alg_name(), "Ed448ph");
     assert_eq!(verifier.max_security_strength(), SecurityStrength::_192bit);
 }
@@ -158,7 +284,7 @@ fn what_was_not_signed_is_rejected() {
 #[test]
 fn s_not_below_the_group_order_is_rejected() {
     let (pk, sk) = key_pair().unwrap();
-    let l = bouncycastle_hex::decode(L).unwrap();
+    let l = bouncycastle_core::hex::decode(L).unwrap();
     assert_eq!(l.len(), 57);
     for (name, sign, verify) in BOTH {
         let sig = sign(&sk, MSG, None);
@@ -320,10 +446,11 @@ const NON_CANONICAL_R_KATS: &[(&str, &str)] = &[
 /// p + 1, or with bit 448 set, are refused, though the equation would hold for them.
 #[test]
 fn a_small_order_r_is_accepted_only_canonically_encoded() {
-    let pk = Ed448PublicKey::from_bytes(&bouncycastle_hex::decode(GENERATED_PK).unwrap()).unwrap();
+    let pk =
+        Ed448PublicKey::from_bytes(&bouncycastle_core::hex::decode(GENERATED_PK).unwrap()).unwrap();
     assert_eq!((COFACTORED_KATS.len(), NON_CANONICAL_R_KATS.len()), (7, 5));
     for (what, sig) in COFACTORED_KATS {
-        let sig = bouncycastle_hex::decode(sig).unwrap();
+        let sig = bouncycastle_core::hex::decode(sig).unwrap();
         assert_eq!(verify(&pk, b"cofactored", None, &sig), Ok(()), "{what}");
         assert_eq!(verify(&pk, b"cofactored", Some(&[]), &sig), Ok(()), "{what}");
         assert_eq!(verify(&pk, b"cofactoreD", None, &sig), FAILED, "{what}");
@@ -331,7 +458,7 @@ fn a_small_order_r_is_accepted_only_canonically_encoded() {
         assert_eq!(verify_ph(&pk, b"cofactored", None, &sig), FAILED, "{what}");
     }
     for (what, sig) in NON_CANONICAL_R_KATS {
-        let sig = bouncycastle_hex::decode(sig).unwrap();
+        let sig = bouncycastle_core::hex::decode(sig).unwrap();
         assert_eq!(verify(&pk, b"cofactored", None, &sig), FAILED, "{what}");
     }
 }
@@ -415,13 +542,14 @@ const CONTEXT_KATS: &[(bool, &str, &str)] = &[
 /// length octet and the placing of the context in `dom4` (RFC 8032 Section 2).
 #[test]
 fn known_answers_with_a_context() {
-    let sk = Ed448PrivateKey::from_bytes(&bouncycastle_hex::decode(GENERATED_SK).unwrap()).unwrap();
+    let sk = Ed448PrivateKey::from_bytes(&bouncycastle_core::hex::decode(GENERATED_SK).unwrap())
+        .unwrap();
     let pk = sk.pk().unwrap();
-    assert_eq!(pk.encode().as_slice(), bouncycastle_hex::decode(GENERATED_PK).unwrap());
+    assert_eq!(pk.encode().as_slice(), bouncycastle_core::hex::decode(GENERATED_PK).unwrap());
     let mut seen = Vec::new();
     for (ph, ctx, sig) in CONTEXT_KATS {
-        let ctx = bouncycastle_hex::decode(ctx).unwrap();
-        let sig = bouncycastle_hex::decode(sig).unwrap();
+        let ctx = bouncycastle_core::hex::decode(ctx).unwrap();
+        let sig = bouncycastle_core::hex::decode(sig).unwrap();
         let (name, sign, verify) = BOTH[usize::from(*ph)];
         assert_eq!(sign(&sk, b"abc", Some(&ctx))[..], sig[..], "{name}: context of {}", ctx.len());
         assert_eq!(verify(&pk, b"abc", Some(&ctx), &sig), Ok(()), "{name}");
@@ -434,7 +562,9 @@ fn known_answers_with_a_context() {
 }
 
 /// The two algorithms give different signatures of one message under one key and context, and
-/// neither verifies as the other, over the message or over its 64-octet SHAKE256 digest.
+/// neither verifies as the other, over the message or over its 64-octet SHAKE256 digest: a
+/// signature made through the view verifies only through the view, and one made by the key
+/// only by the key.
 #[test]
 fn ed448_and_ed448ph_do_not_cross_verify() {
     let (pk, sk) = key_pair().unwrap();
@@ -454,6 +584,13 @@ fn ed448_and_ed448ph_do_not_cross_verify() {
         assert_eq!(verify(&pk, &digest, ctx, &ph), FAILED);
         assert_eq!(verify_ph(&pk, MSG, ctx, &pure), FAILED);
         assert_eq!(verify_ph(&pk, MSG, ctx, &sign(&sk, &digest, ctx)), FAILED);
+
+        // The view's streaming verifier, likewise.
+        for (sig, verdict) in [(ph, Ok(())), (pure, FAILED)] {
+            let mut verifier = pk.as_prehash().create_verifier(ctx).unwrap();
+            verifier.do_update(MSG);
+            assert_eq!(verifier.do_verify_final(&sig), verdict);
+        }
     }
 }
 
@@ -488,36 +625,26 @@ fn the_context() {
     }
 
     let mut out = [0xA5u8; SIGNATURE_LEN];
-    assert!(is_length_error(DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic_out(
-        &sk,
-        MSG,
-        Some(&long),
-        &mut out
-    )));
+    assert!(is_length_error(sk.sign_deterministic_out(MSG, Some(&long), &mut out)));
     assert_eq!(out, [0u8; SIGNATURE_LEN]);
     let mut out = [0xA5u8; SIGNATURE_LEN];
-    assert!(is_length_error(DeterministicOneShotSigningKey::<Ed448ph, _>::sign_deterministic_out(
-        &sk,
-        MSG,
-        Some(&long),
-        &mut out
-    )));
+    assert!(is_length_error(sk.as_prehash().sign_deterministic_out(MSG, Some(&long), &mut out)));
     assert_eq!(out, [0u8; SIGNATURE_LEN]);
 
     // The streaming workers of Ed448ph take the same contexts.
     let sig = sign_ph(&sk, MSG, None);
-    let mut signer = sk.create_signer_deterministic(Some(&[])).unwrap();
+    let mut signer = sk.as_prehash().create_signer_deterministic(Some(&[])).unwrap();
     signer.do_update(MSG);
     assert_eq!(signer.do_final().unwrap(), sig);
     let sig = sign_ph(&sk, MSG, Some(longest));
-    let mut signer = sk.create_signer_deterministic(Some(longest)).unwrap();
+    let mut signer = sk.as_prehash().create_signer_deterministic(Some(longest)).unwrap();
     signer.do_update(MSG);
     assert_eq!(signer.do_final().unwrap(), sig);
-    let mut verifier = pk.create_verifier(Some(longest)).unwrap();
+    let mut verifier = pk.as_prehash().create_verifier(Some(longest)).unwrap();
     verifier.do_update(MSG);
     assert_eq!(verifier.do_verify_final(&sig), Ok(()));
-    assert!(is_length_error(sk.create_signer_deterministic(Some(&long))));
-    assert!(is_length_error(pk.create_verifier(Some(&long))));
+    assert!(is_length_error(sk.as_prehash().create_signer_deterministic(Some(&long))));
+    assert!(is_length_error(pk.as_prehash().create_verifier(Some(&long))));
 }
 
 /// A streamed message is the same message however it is cut, and the streaming verifier
@@ -528,8 +655,8 @@ fn ed448ph_streaming() {
     let msg: Vec<u8> = (0..1000u32).map(|i| (i * 7) as u8).collect();
     let sig = sign_ph(&sk, &msg, Some(b"ctx"));
     for size in [1, 135, 136, 137, 272, 999, 1000] {
-        let mut signer = sk.create_signer_deterministic(Some(b"ctx")).unwrap();
-        let mut verifier = pk.create_verifier(Some(b"ctx")).unwrap();
+        let mut signer = sk.as_prehash().create_signer_deterministic(Some(b"ctx")).unwrap();
+        let mut verifier = pk.as_prehash().create_verifier(Some(b"ctx")).unwrap();
         for chunk in msg.chunks(size) {
             signer.do_update(chunk);
             verifier.do_update(chunk);
@@ -540,13 +667,13 @@ fn ed448ph_streaming() {
         assert_eq!(verifier.do_verify_final(&sig), Ok(()));
     }
     // Nothing fed is the empty message.
-    let signer = sk.create_signer_deterministic(None).unwrap();
+    let signer = sk.as_prehash().create_signer_deterministic(None).unwrap();
     assert_eq!(signer.do_final().unwrap(), sign_ph(&sk, b"", None));
 
-    let mut verifier = pk.create_verifier(Some(b"ctx")).unwrap();
+    let mut verifier = pk.as_prehash().create_verifier(Some(b"ctx")).unwrap();
     verifier.do_update(&msg);
     assert!(is_length_error(verifier.do_verify_final(&sig[..113])));
-    let mut verifier = pk.create_verifier(Some(b"ctx")).unwrap();
+    let mut verifier = pk.as_prehash().create_verifier(Some(b"ctx")).unwrap();
     verifier.do_update(&msg[1..]);
     assert_eq!(verifier.do_verify_final(&sig), FAILED);
 }
@@ -557,25 +684,12 @@ fn ed448ph_streaming() {
 fn an_unfilled_key_does_not_sign() {
     let sk = Ed448PrivateKey::zeroized();
     let mut out = [0xA5u8; SIGNATURE_LEN];
-    assert_eq!(
-        DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic_out(
-            &sk, MSG, None, &mut out
-        ),
-        Err(ZEROIZED)
-    );
+    assert_eq!(sk.sign_deterministic_out(MSG, None, &mut out), Err(ZEROIZED));
     assert_eq!(out, [0u8; SIGNATURE_LEN]);
-    assert_eq!(
-        DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(&sk, MSG, Some(b"ctx")),
-        Err(ZEROIZED)
-    );
+    assert_eq!(sk.sign_deterministic(MSG, Some(b"ctx")), Err(ZEROIZED));
 
     let mut out = [0xA5u8; SIGNATURE_LEN];
-    assert_eq!(
-        DeterministicOneShotSigningKey::<Ed448ph, _>::sign_deterministic_out(
-            &sk, MSG, None, &mut out
-        ),
-        Err(ZEROIZED)
-    );
+    assert_eq!(sk.as_prehash().sign_deterministic_out(MSG, None, &mut out), Err(ZEROIZED));
     assert_eq!(out, [0u8; SIGNATURE_LEN]);
-    assert!(matches!(sk.create_signer_deterministic(None), Err(ZEROIZED)));
+    assert!(matches!(sk.as_prehash().create_signer_deterministic(None), Err(ZEROIZED)));
 }

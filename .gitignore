@@ -22,3 +22,6 @@ custom_mutants_output/
 .claude/settings.local.json
 .claude 2/
 dev_scripts/aes_ct_harness/Cargo.lock
+dev_scripts/oaep_ct_harness/Cargo.lock
+dev_scripts/rsa_ct_harness/Cargo.lock
+dev_scripts/rsa_stack_harness/Cargo.lock

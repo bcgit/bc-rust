@@ -1,12 +1,12 @@
 //! Key objects for digital signatures: how a signer or verifier is made, and the one-shots over
 //! them.
 //!
-//! A signature key is bound to one key encoding and may serve several algorithms with it: an
-//! ML-DSA-44 key signs ML-DSA-44 and HashML-DSA-44, an ECDSA P-256 key signs with a random or an
-//! RFC 6979 nonce, an RSA key signs PKCS#1 v1.5 and PSS. The algorithm is therefore a type
-//! parameter of the role traits, not of the key: `A` in [`SigningKey<A, SIG_LEN>`] is a
-//! [`SignatureAlgorithm`] marker that carries the metadata and holds no state. The worker traits
-//! in [`crate::traits`], [`SignatureSigner`] and [`SignatureVerifier`], describe only an object
+//! A signature key names one algorithm: `A` in [`SigningKey<A, SIG_LEN>`] is a
+//! [`SignatureAlgorithm`] marker that carries the metadata and holds no state, and a key type
+//! implements a role for one `A`. Where one key encoding serves a second algorithm (ECDSA under
+//! another hash, Ed25519ph, HashML-DSA), the second is a key of its own, reached from the first
+//! by a conversion: `with_hash`, or `as_prehash`, which borrows. The worker traits in
+//! [`crate::traits`], [`SignatureSigner`] and [`SignatureVerifier`], describe only an object
 //! that already exists.
 //!
 //! Three pairs of role traits:
@@ -14,12 +14,12 @@
 //! * [`SigningKey`] / [`VerifyingKey`]: the algorithm draws randomness per signature (hedged
 //!   ML-DSA, ECDSA, RSASSA-PSS), so `create_signer` takes an RNG.
 //! * [`DeterministicSigningKey`]: the algorithm draws nothing (RFC 6979 ECDSA, RSASSA-PKCS1-v1_5),
-//!   so no method of it takes an RNG. A key may implement both traits for two algorithms; the
-//!   constructors have different names so the calls never clash.
+//!   so no method of it takes an RNG. A key may implement both traits, for the two ways its
+//!   algorithm signs; the constructors have different names so the calls never clash.
 //! * [`PreHashSigningKey`] / [`DeterministicPreHashSigningKey`] / [`PreHashVerifyingKey`]: the
-//!   message is hashed with a hash the caller picks as a type parameter (HashML-DSA with any
-//!   approved hash, RSA over any hash), either by the worker as the message streams in, or by
-//!   the caller, who hands over the digest.
+//!   key of a [`PreHashAlgorithm`] (HashML-DSA) also takes a digest the caller made, with the
+//!   hash the algorithm names. The streaming roles of such a key hash the message themselves.
+//!   The signing two take only a [`CollisionResistantHash`]; verifying takes any.
 //!
 //! The one-shots over a whole message are roles of their own, which name no worker:
 //! [`OneShotSigningKey`], [`DeterministicOneShotSigningKey`] and [`OneShotVerifyingKey`]. Each
@@ -33,11 +33,9 @@
 //! let sig = signer.do_final()?;
 //! pk.verify(msg, Some(b"ctx"), &sig)?;                    // OneShotVerifyingKey<MLDSA44, _>
 //!
-//! let sig = sk.sign_ph::<SHA512>(&mut rng, &digest, None)?;     // PreHashSigningKey
+//! let sk_ph = sk.as_prehash::<SHA512>();                        // a HashML-DSA key
+//! let sig = sk_ph.sign_ph(&mut rng, &digest, None)?;            // PreHashSigningKey
 //! ```
-//!
-//! A key with several impls in scope names the algorithm at the call:
-//! `SigningKey::<MLDSA44, _>::create_signer(&sk, ..)`.
 //!
 //! Nothing here instantiates a DRBG for the caller: a method that draws randomness takes
 //! `&mut dyn RNG`.
@@ -54,13 +52,14 @@
 
 use crate::errors::SignatureError;
 use crate::traits::{
-    Algorithm, AlgorithmOID, HashAlgParams, HashOneShot, RNG, SignatureSigner, SignatureVerifier,
+    Algorithm, AlgorithmOID, CollisionResistantHash, HashAlgParams, HashOneShot, RNG,
+    SignatureSigner, SignatureVerifier,
 };
 
-/// Marker for one signature algorithm: ML-DSA-44, ECDSA P-256, ECDSA P-256 with RFC 6979,
-/// RSASSA-PSS. It carries the metadata through [`Algorithm`] and holds no state; the role traits
-/// take it as a type parameter so that one key can serve every algorithm its encoding fits. The
-/// hash of a pre-hash signature is not part of the marker; see [`PreHashSigningKey`].
+/// Marker for one signature algorithm, hash included: ML-DSA-44, ECDSA over P-256 with SHA-256,
+/// HashML-DSA-44 with SHA-512, RSASSA-PSS. It carries the metadata through [`Algorithm`] and
+/// holds no state; the role traits take it as a type parameter, and a key type implements a role
+/// for one marker.
 pub trait SignatureAlgorithm: Algorithm {}
 
 /// A hash that can pre-hash a message for a signature: buildable from nothing, with its lengths
@@ -295,42 +294,78 @@ pub fn verify_with_verifier<V: SignatureVerifier>(
     verifier.do_verify_final(sig)
 }
 
-/// A [`SigningKey`] whose algorithm can also sign a digest of the message made with a hash the
-/// caller chooses: HashML-DSA (FIPS 204 Section 5.4) with any approved hash, RSA over any hash.
+/// A signature algorithm that signs a digest of the message, made with a hash the algorithm
+/// names: HashML-DSA with SHA-512 (FIPS 204 Section 5.4). The hash is part of the algorithm, so
+/// the marker carries it, and the keys of the algorithm take a digest made with no other.
+pub trait PreHashAlgorithm: SignatureAlgorithm {
+    /// The hash a digest handed to a key of this algorithm was made with.
+    type Hash: PreHash;
+}
+
+/// A [`SigningKey`] that also signs a digest of the message the caller already has: the key of
+/// a [`PreHashAlgorithm`], for a message hashed before the key is at hand or on another machine.
 ///
-/// The hash is a type parameter of each method, so one key and one algorithm marker serve every
-/// hash. The digest may be taken by the worker as the message streams in, through
-/// [`create_ph_signer`](Self::create_ph_signer), or handed over ready-made, through
-/// [`sign_ph_out`](Self::sign_ph_out); the two produce the same signature.
-pub trait PreHashSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
+/// The digest is one made with `A::Hash`. The signer the supertrait hands out takes the digest
+/// itself as the message streams in, and gives the signature
+/// [`sign_ph_out`](Self::sign_ph_out) gives over the same digest.
+///
+/// Signing requires the algorithm's hash to be a [`CollisionResistantHash`];
+/// [`PreHashVerifyingKey`] does not, so what was signed over a hash without the marker can still
+/// be verified. Code that names this trait over a hash it knows nothing of does not compile:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::{PreHash, PreHashAlgorithm, PreHashSigningKey};
+/// use bouncycastle_core::traits::RNG;
+///
+/// fn sign<A, K, H, const N: usize>(key: &K, rng: &mut dyn RNG, ph: &[u8])
+/// where
+///     H: PreHash,
+///     A: PreHashAlgorithm<Hash = H>,
+///     K: PreHashSigningKey<A, N>,
+/// {
+///     let _ = key.sign_ph(rng, ph, None);
+/// }
+/// ```
+///
+/// and does once the hash carries the marker, which verifying never asks for:
+///
+/// ```
+/// use bouncycastle_core::signature_key::{
+///     PreHash, PreHashAlgorithm, PreHashSigningKey, PreHashVerifyingKey,
+/// };
+/// use bouncycastle_core::traits::{CollisionResistantHash, RNG};
+///
+/// fn sign<A, K, H, const N: usize>(key: &K, rng: &mut dyn RNG, ph: &[u8])
+/// where
+///     H: PreHash + CollisionResistantHash,
+///     A: PreHashAlgorithm<Hash = H>,
+///     K: PreHashSigningKey<A, N>,
+/// {
+///     let _ = key.sign_ph(rng, ph, None);
+/// }
+///
+/// fn verify<A, K, H, const N: usize>(key: &K, ph: &[u8], sig: &[u8])
+/// where
+///     H: PreHash,
+///     A: PreHashAlgorithm<Hash = H>,
+///     K: PreHashVerifyingKey<A, N>,
+/// {
+///     let _ = key.verify_ph(ph, None, sig);
+/// }
+/// ```
+pub trait PreHashSigningKey<A: PreHashAlgorithm, const SIG_LEN: usize>:
     SigningKey<A, SIG_LEN>
+where
+    A::Hash: CollisionResistantHash,
 {
-    /// The streaming pre-hash signer for the hash `H`, borrowing the key for `'k`.
-    type PreHashSigner<'k, H: PreHash>: SignatureSigner<SIG_LEN>
-    where
-        Self: 'k;
-
-    /// Begins a pre-hash signature: the worker hashes the message with `H` as it streams in and
-    /// signs the digest.
+    /// Signs `ph`, the `A::Hash` digest of the message, into `output`, which is zeroized first;
+    /// returns the number of bytes written, always `SIG_LEN`.
     ///
     /// # Errors
-    /// As [`SigningKey::create_signer`]; also [`SignatureError::PreHashTooWeak`] if the algorithm
-    /// does not accept `H` (FIPS 204 Section 5.4 requires a hash of at least the parameter set's
-    /// strength for HashML-DSA).
-    fn create_ph_signer<'k, H: PreHash>(
-        &'k self,
-        rng: &mut dyn RNG,
-        ctx: Option<&[u8]>,
-    ) -> Result<Self::PreHashSigner<'k, H>, SignatureError>;
-
-    /// One-shot over a digest the caller already has: signs `ph`, the `H` hash of the message,
-    /// into `output`, which is zeroized first; returns the number of bytes written, always
-    /// `SIG_LEN`.
-    ///
-    /// # Errors
-    /// [`SignatureError::LengthError`] if `ph` is not `H::OUTPUT_LEN` bytes; otherwise as
-    /// [`create_ph_signer`](Self::create_ph_signer).
-    fn sign_ph_out<H: PreHash>(
+    /// [`SignatureError::LengthError`] if `ph` is not the hash's output length; otherwise as
+    /// [`SigningKey::create_signer`], which includes [`SignatureError::PreHashTooWeak`] for a key
+    /// whose algorithm does not accept its hash.
+    fn sign_ph_out(
         &self,
         rng: &mut dyn RNG,
         ph: &[u8],
@@ -338,105 +373,68 @@ pub trait PreHashSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>;
 
-    /// One-shot over a digest the caller already has: the signature of `ph`, the `H` hash of the
-    /// message.
+    /// The signature of `ph`, the `A::Hash` digest of the message.
     ///
     /// # Errors
     /// As [`sign_ph_out`](Self::sign_ph_out).
-    fn sign_ph<H: PreHash>(
+    fn sign_ph(
         &self,
         rng: &mut dyn RNG,
         ph: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
-        self.sign_ph_out::<H>(rng, ph, ctx, &mut out)?;
+        self.sign_ph_out(rng, ph, ctx, &mut out)?;
         Ok(out)
     }
 }
 
-/// The pre-hash form of [`DeterministicSigningKey`]; see [`PreHashSigningKey`] for the shape.
-pub trait DeterministicPreHashSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
+/// The pre-hash form of [`DeterministicSigningKey`]; see [`PreHashSigningKey`] for the shape and
+/// for the [`CollisionResistantHash`] it requires of the algorithm's hash.
+pub trait DeterministicPreHashSigningKey<A: PreHashAlgorithm, const SIG_LEN: usize>:
     DeterministicSigningKey<A, SIG_LEN>
+where
+    A::Hash: CollisionResistantHash,
 {
-    /// The streaming pre-hash signer for the hash `H`, borrowing the key for `'k`.
-    type PreHashSigner<'k, H: PreHash>: SignatureSigner<SIG_LEN>
-    where
-        Self: 'k;
-
-    /// Begins a pre-hash signature: the worker hashes the message with `H` as it streams in and
-    /// signs the digest.
+    /// Signs `ph`, the `A::Hash` digest of the message, into `output`, which is zeroized first;
+    /// returns the number of bytes written, always `SIG_LEN`.
     ///
     /// # Errors
-    /// As [`DeterministicSigningKey::create_signer_deterministic`]; also
-    /// [`SignatureError::PreHashTooWeak`] if the algorithm does not accept `H`.
-    fn create_ph_signer_deterministic<'k, H: PreHash>(
-        &'k self,
-        ctx: Option<&[u8]>,
-    ) -> Result<Self::PreHashSigner<'k, H>, SignatureError>;
-
-    /// One-shot over a digest the caller already has: signs `ph`, the `H` hash of the message,
-    /// into `output`, which is zeroized first; returns the number of bytes written, always
-    /// `SIG_LEN`.
-    ///
-    /// # Errors
-    /// [`SignatureError::LengthError`] if `ph` is not `H::OUTPUT_LEN` bytes; otherwise as
-    /// [`create_ph_signer_deterministic`](Self::create_ph_signer_deterministic).
-    fn sign_ph_deterministic_out<H: PreHash>(
+    /// [`SignatureError::LengthError`] if `ph` is not the hash's output length; otherwise as
+    /// [`DeterministicSigningKey::create_signer_deterministic`].
+    fn sign_ph_deterministic_out(
         &self,
         ph: &[u8],
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>;
 
-    /// One-shot over a digest the caller already has: the signature of `ph`, the `H` hash of the
-    /// message.
+    /// The signature of `ph`, the `A::Hash` digest of the message.
     ///
     /// # Errors
     /// As [`sign_ph_deterministic_out`](Self::sign_ph_deterministic_out).
-    fn sign_ph_deterministic<H: PreHash>(
+    fn sign_ph_deterministic(
         &self,
         ph: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
-        self.sign_ph_deterministic_out::<H>(ph, ctx, &mut out)?;
+        self.sign_ph_deterministic_out(ph, ctx, &mut out)?;
         Ok(out)
     }
 }
 
-/// A [`VerifyingKey`] whose algorithm can also verify over a digest of the message made with a
-/// hash the caller chooses; the counterpart of [`PreHashSigningKey`].
-pub trait PreHashVerifyingKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
+/// A [`VerifyingKey`] that also verifies over a digest of the message the caller already has;
+/// the counterpart of [`PreHashSigningKey`]. The algorithm's hash need not be a
+/// [`CollisionResistantHash`].
+pub trait PreHashVerifyingKey<A: PreHashAlgorithm, const SIG_LEN: usize>:
     VerifyingKey<A, SIG_LEN>
 {
-    /// The streaming pre-hash verifier for the hash `H`, borrowing the key for `'k`.
-    type PreHashVerifier<'k, H: PreHash>: SignatureVerifier
-    where
-        Self: 'k;
-
-    /// Begins a pre-hash verification: the worker hashes the message with `H` as it streams in
-    /// and verifies over the digest.
+    /// Checks `sig` over `ph`, the `A::Hash` digest of the message.
     ///
     /// # Errors
-    /// As [`VerifyingKey::create_verifier`]; also [`SignatureError::PreHashTooWeak`] if the
-    /// algorithm does not accept `H`.
-    fn create_ph_verifier<'k, H: PreHash>(
-        &'k self,
-        ctx: Option<&[u8]>,
-    ) -> Result<Self::PreHashVerifier<'k, H>, SignatureError>;
-
-    /// One-shot over a digest the caller already has: checks `sig` over `ph`, the `H` hash of the
-    /// message.
-    ///
-    /// # Errors
-    /// [`SignatureError::LengthError`] if `ph` is not `H::OUTPUT_LEN` bytes or `sig` is not
+    /// [`SignatureError::LengthError`] if `ph` is not the hash's output length or `sig` is not
     /// `SIG_LEN` bytes; [`SignatureError::SignatureVerificationFailed`] if the signature does not
-    /// verify; otherwise as [`create_ph_verifier`](Self::create_ph_verifier).
-    fn verify_ph<H: PreHash>(
-        &self,
-        ph: &[u8],
-        ctx: Option<&[u8]>,
-        sig: &[u8],
-    ) -> Result<(), SignatureError>;
+    /// verify; otherwise as [`VerifyingKey::create_verifier`].
+    fn verify_ph(&self, ph: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
 }

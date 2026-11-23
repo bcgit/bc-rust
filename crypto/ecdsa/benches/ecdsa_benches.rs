@@ -1,12 +1,13 @@
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
 };
+use bouncycastle_core::traits::CollisionResistantHash;
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
 use bouncycastle_ecdsa::keys::keygen;
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -17,7 +18,7 @@ const MSG: &[u8] = b"a representative message for benchmarking ECDSA";
 fn bench_curve<C, H, const SIG_LEN: usize>(c: &mut Criterion, group: &str)
 where
     C: Curve<Signature = [u8; SIG_LEN]>,
-    H: EcdsaHash,
+    H: EcdsaHash + CollisionResistantHash,
 {
     let (pk, sk) = keygen::<C, H>(&mut DefaultRNG::default()).unwrap();
     let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();

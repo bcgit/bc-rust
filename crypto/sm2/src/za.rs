@@ -17,11 +17,11 @@
 
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::Hash;
+use bouncycastle_digest::sm3::SM3;
 use bouncycastle_ec::hazmat::sm2::{P_LIMBS, Sm2FieldElement};
 use bouncycastle_ec::hazmat::sm2_domain::{B_LIMBS, G_X_LIMBS, G_Y_LIMBS};
 use bouncycastle_ec::hazmat::sm2_sec1::be_bytes_from_limbs;
-use bouncycastle_ec::nat;
-use bouncycastle_sm3::SM3;
+use bouncycastle_utils::nat;
 
 /// `a = p - 3` (`draft-shen-sm2-ecdsa-02` Appendix D), computed here rather than exposed by
 /// [`bouncycastle_ec::hazmat::sm2_domain`]: SM2's own curve arithmetic never needs the literal
@@ -76,7 +76,7 @@ mod tests {
 
     fn fe(hex: &str) -> Sm2FieldElement {
         Sm2FieldElement::from_limbs(limbs_from_be_bytes(
-            &bouncycastle_hex::decode(hex).unwrap().try_into().unwrap(),
+            &bouncycastle_core::hex::decode(hex).unwrap().try_into().unwrap(),
         ))
     }
 
@@ -110,7 +110,7 @@ mod tests {
         ];
         for (qx, qy, id, za_hex) in cases {
             let za = compute(id, &fe(qx), &fe(qy)).unwrap();
-            assert_eq!(bouncycastle_hex::encode(za), za_hex);
+            assert_eq!(bouncycastle_core::hex::encode(za), za_hex);
         }
     }
 }

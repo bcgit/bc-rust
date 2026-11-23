@@ -9,7 +9,8 @@
 //! use bouncycastle_core::traits::RNG;
 //! use bouncycastle_rng as rng;
 //!
-//! let random_bytes = rng::DefaultRNG::default().next_bytes(32);
+//! let mut random_bytes = [0u8; 32];
+//! rng::DefaultRNG::default().next_bytes_out(&mut random_bytes).unwrap();
 //! ```
 //! This is secure because `::default()` seeds the RNG from the OS, configured for general use.
 //!
@@ -43,17 +44,8 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::key_material::KeyType;
 // end doc-only imports
 
-pub mod fixed_seed_rng;
 pub mod hash_drbg80090a;
 pub mod hazmat;
-
-pub use fixed_seed_rng::FixedSeedRNG;
-
-/*** String constants ***/
-///
-pub const HASH_DRBG_SHA256_NAME: &str = "HashDRBG-SHA256";
-///
-pub const HASH_DRBG_SHA512_NAME: &str = "HashDRBG-SHA512";
 
 /*** pub types ***/
 /// Public type for HashDRBG using SHA256.

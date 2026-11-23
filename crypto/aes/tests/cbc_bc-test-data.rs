@@ -32,10 +32,10 @@
 
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{Blocks, CBC};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
-use bouncycastle_rng::FixedSeedRNG;
 use std::collections::BTreeMap;
 
 #[path = "common/acvp_helpers.rs"]

@@ -21,7 +21,7 @@
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use bouncycastle_core::traits::PublicKey;
-use bouncycastle_ed::ed25519::{Ed25519, Ed25519PublicKey, Ed25519ph};
+use bouncycastle_ed::ed25519::Ed25519PublicKey;
 
 // (number, message, public key, signature)
 const TAMING: &[(usize, &str, &str, &str)] = &[
@@ -143,21 +143,21 @@ fn taming_vectors() {
     assert_eq!(TAMING.len(), 12);
     let (mut at_decode, mut at_verify) = (0, 0);
     for (number, msg, pk, sig) in TAMING {
-        let msg = bouncycastle_hex::decode(msg).unwrap();
-        let sig = bouncycastle_hex::decode(sig).unwrap();
+        let msg = bouncycastle_core::hex::decode(msg).unwrap();
+        let sig = bouncycastle_core::hex::decode(sig).unwrap();
         assert_eq!(sig.len(), 64, "vector {number}");
-        let pk = Ed25519PublicKey::from_bytes(&bouncycastle_hex::decode(pk).unwrap());
+        let pk = Ed25519PublicKey::from_bytes(&bouncycastle_core::hex::decode(pk).unwrap());
         assert_eq!(pk.is_ok(), KEY_DECODES.contains(number), "vector {number}: key decode");
         match pk {
             Err(_) => at_decode += 1,
             Ok(pk) => {
                 assert_eq!(
-                    OneShotVerifyingKey::<Ed25519, _>::verify(&pk, &msg, None, &sig),
+                    pk.verify(&msg, None, &sig),
                     Err(SignatureError::SignatureVerificationFailed),
                     "vector {number}"
                 );
                 assert_eq!(
-                    OneShotVerifyingKey::<Ed25519ph, _>::verify(&pk, &msg, None, &sig),
+                    pk.as_prehash().verify(&msg, None, &sig),
                     Err(SignatureError::SignatureVerificationFailed),
                     "vector {number}"
                 );

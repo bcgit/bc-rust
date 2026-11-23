@@ -35,15 +35,15 @@ use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey};
 fn pubkey_from_hex(x_hex: &str, y_hex: &str) -> SM2PublicKey {
     let mut bytes = [0u8; 65];
     bytes[0] = 0x04;
-    bytes[1..33].copy_from_slice(&bouncycastle_hex::decode(x_hex).unwrap());
-    bytes[33..65].copy_from_slice(&bouncycastle_hex::decode(y_hex).unwrap());
+    bytes[1..33].copy_from_slice(&bouncycastle_core::hex::decode(x_hex).unwrap());
+    bytes[33..65].copy_from_slice(&bouncycastle_core::hex::decode(y_hex).unwrap());
     SM2PublicKey::from_bytes(&bytes).unwrap()
 }
 
 fn sig_from_hex(r_hex: &str, s_hex: &str) -> [u8; 64] {
     let mut sig = [0u8; 64];
-    sig[..32].copy_from_slice(&bouncycastle_hex::decode(r_hex).unwrap());
-    sig[32..].copy_from_slice(&bouncycastle_hex::decode(s_hex).unwrap());
+    sig[..32].copy_from_slice(&bouncycastle_core::hex::decode(r_hex).unwrap());
+    sig[32..].copy_from_slice(&bouncycastle_core::hex::decode(s_hex).unwrap());
     sig
 }
 
@@ -89,7 +89,7 @@ const VECTORS: [Vector; 3] = [V1, V2_EMPTY_ID_AND_MSG, V3_LONGER_MESSAGE];
 fn known_answer_vectors_verify() {
     for v in VECTORS {
         let pk = pubkey_from_hex(v.qx, v.qy);
-        let msg = bouncycastle_hex::decode(v.msg_hex).unwrap();
+        let msg = bouncycastle_core::hex::decode(v.msg_hex).unwrap();
         let sig = sig_from_hex(v.r, v.s);
         pk.verify(&msg, Some(v.id), &sig)
             .unwrap_or_else(|e| panic!("KAT vector failed to verify: {e:?}"));
@@ -100,7 +100,7 @@ fn known_answer_vectors_verify() {
 fn known_answer_vectors_reject_tampered_r() {
     for v in VECTORS {
         let pk = pubkey_from_hex(v.qx, v.qy);
-        let msg = bouncycastle_hex::decode(v.msg_hex).unwrap();
+        let msg = bouncycastle_core::hex::decode(v.msg_hex).unwrap();
         let mut sig = sig_from_hex(v.r, v.s);
         sig[0] ^= 0xFF;
         assert!(pk.verify(&msg, Some(v.id), &sig).is_err());
@@ -111,7 +111,7 @@ fn known_answer_vectors_reject_tampered_r() {
 fn known_answer_vectors_reject_wrong_id() {
     for v in VECTORS {
         let pk = pubkey_from_hex(v.qx, v.qy);
-        let msg = bouncycastle_hex::decode(v.msg_hex).unwrap();
+        let msg = bouncycastle_core::hex::decode(v.msg_hex).unwrap();
         let sig = sig_from_hex(v.r, v.s);
         assert!(pk.verify(&msg, Some(b"wrong identity"), &sig).is_err());
     }
@@ -133,7 +133,7 @@ fn bc_java_sm2p256v1_vector_verifies() {
     const R: &str = "05890b9077b92e47b17a1ff42a814280e556afd92b4a98b9670bf8b1a274c2fa";
     const S: &str = "e3abbb8db2b6ecd9b24eccea7f679fb9a4b1db52f4aa985e443ad73237fa1993";
 
-    let sk = SM2PrivateKey::from_bytes(&bouncycastle_hex::decode(D_HEX).unwrap())
+    let sk = SM2PrivateKey::from_bytes(&bouncycastle_core::hex::decode(D_HEX).unwrap())
         .expect("bc-java's dA is in [1, n-1]");
     let pk = sk.derive_pk();
     assert_eq!(pk, pubkey_from_hex(PA_X, PA_Y), "PA = [dA]G disagrees with the external vector");

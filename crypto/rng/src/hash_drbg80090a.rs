@@ -12,7 +12,7 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Hash, HashAlgParams, HashOneShot, RNG};
-use bouncycastle_sha2::{SHA256, SHA512};
+use bouncycastle_digest::sha2::{SHA256, SHA512};
 use bouncycastle_utils::{min, secret::Secret};
 
 use core::fmt::{Display, Formatter};
@@ -524,10 +524,6 @@ impl<H: HashDRBG80090AParams> RNG for HashDRBG80090A<H> {
         let mut out = [0u8; 4];
         self.generate_out("next_int".as_bytes(), &mut out)?;
         Ok(u32::from_le_bytes(out))
-    }
-
-    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
-        self.generate("next_bytes".as_bytes(), len)
     }
 
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {

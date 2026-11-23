@@ -9,7 +9,6 @@
 
 use crate::kdf::{KdfPairing, PairedKdf, derive};
 use crate::keys::{ECCDHPrivateKey, ECCDHPublicKey};
-use bouncycastle_concatkdf::{ConcatKDF, ConcatKDFParams};
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
 use bouncycastle_core::errors::{KeyAgreementError, KeyMaterialError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -17,13 +16,14 @@ use bouncycastle_core::kdf_params::{KdfDescription, KdfParams};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KeyAgreement};
+use bouncycastle_digest::concatkdf::{ConcatKDF, ConcatKDFParams};
+use bouncycastle_digest::hkdf::HkdfDescription;
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_digest::x963kdf::{X963KDF, X963KDFParams};
 use bouncycastle_ec::curve::{Curve, FieldElement, JacobianPoint};
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
-use bouncycastle_hkdf::HkdfDescription;
-use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_utils::const_str::ConstStr;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_x963kdf::{X963KDF, X963KDFParams};
 use core::marker::PhantomData;
 
 /// ECC CDH over the curve `C`: the algorithm an [`ECCDHPrivateKey<C>`] runs when made into a

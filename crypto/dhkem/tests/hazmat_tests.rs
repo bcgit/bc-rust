@@ -3,7 +3,7 @@
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_dhkem::hazmat::{MAX_NH, labeled_expand, labeled_extract_out, salt_key};
-use bouncycastle_sha2::SHA256;
+use bouncycastle_digest::sha2::SHA256;
 
 /// `labeled_extract_out` writes Nh bytes and leaves the rest of a stale buffer zero.
 #[test]

@@ -4,8 +4,8 @@
 mod ecdsa_common;
 
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_digest::sha2::SHA512;
 use bouncycastle_ec::Bp512r1;
-use bouncycastle_sha2::SHA512;
 
 #[test]
 fn framework_and_metadata() {
@@ -19,6 +19,11 @@ fn framework_and_metadata() {
 #[test]
 fn two_signers_one_verifier() {
     ecdsa_common::two_signers_one_verifier::<Bp512r1, SHA512, 128>();
+}
+
+#[test]
+fn context_is_refused() {
+    ecdsa_common::context_is_refused::<Bp512r1, SHA512, 128>();
 }
 
 #[test]

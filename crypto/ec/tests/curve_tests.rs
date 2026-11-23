@@ -5,6 +5,7 @@
 //! as in `check_lengths`.
 
 use bouncycastle_core::errors::RNGError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::RNG;
 use bouncycastle_ec::curve::{
@@ -18,7 +19,6 @@ use bouncycastle_ec::hazmat::{
     p521_domain, p521_keygen, p521_scalar,
 };
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
-use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 
 /// A curve's hazmat keygen at some draw length, for the comparison with the trait's.

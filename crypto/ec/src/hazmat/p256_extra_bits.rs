@@ -38,7 +38,7 @@
 
 use crate::barrett;
 use crate::hazmat::p256_scalar::{N_LIMBS, P256Scalar};
-use crate::nat;
+use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::Secret;
 
 /// `n - 1`, little-endian `u64` limbs. `N_LIMBS[0]` is odd (SP 800-186 §3.2.1.3's `n`), so the

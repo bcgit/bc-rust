@@ -7,7 +7,7 @@
 //!
 //! The known answers are the first pseudorandom (`Normal`) 32-byte case at each key length of
 //! Wycheproof's `camellia_wrap_test.json` (tcId 7, 48, 101); the full set runs in
-//! `crypto/camellia/tests/kw_wycheproof.rs`.
+//! `crypto/symmetric/tests/camellia_kw_wycheproof.rs`.
 
 mod common;
 use common::{listed_in_help, run_err_silent, run_ok, tohex, unhex};

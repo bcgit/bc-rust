@@ -160,7 +160,7 @@ fn a_short_output_buffer_is_refused_without_consuming_anything() {
     enc.do_encrypt_out(&plaintext, &mut big_enough).unwrap();
 
     let (mut fresh, _) =
-        key.create_encryptor(&mut bouncycastle_rng::FixedSeedRNG::new(init)).unwrap();
+        key.create_encryptor(&mut bouncycastle_core::hazmat::FixedSeedRNG::new(init)).unwrap();
     let mut reference = plaintext.clone();
     fresh.do_encrypt_inplace(&mut reference).unwrap();
     assert_eq!(big_enough, reference, "the refused call must not have advanced the keystream");

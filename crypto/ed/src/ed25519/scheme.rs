@@ -15,7 +15,7 @@ use super::scalar;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::traits::Hash;
-use bouncycastle_sha2::SHA512;
+use bouncycastle_digest::sha2::SHA512;
 use bouncycastle_utils::secret::Secret;
 
 /// Octets in an Ed25519 private key (RFC 8032 Section 5.1.5).
@@ -729,11 +729,11 @@ mod tests {
     ];
 
     fn octets<const N: usize>(hex: &str) -> [u8; N] {
-        bouncycastle_hex::decode(hex).unwrap().try_into().unwrap()
+        bouncycastle_core::hex::decode(hex).unwrap().try_into().unwrap()
     }
 
     fn bytes(hex: &str) -> Vec<u8> {
-        bouncycastle_hex::decode(hex).unwrap()
+        bouncycastle_core::hex::decode(hex).unwrap()
     }
 
     fn sha512(m: &[u8]) -> [u8; PREHASH_LEN] {

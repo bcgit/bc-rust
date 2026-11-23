@@ -3,27 +3,30 @@
 
 use crate::helpers::block_mode_helpers::{load_iv, load_key_object_typed};
 use crate::helpers::{
-    SecretBytes, decode_hex_arg, load_mac_key, stream_stdin, stream_xof, write_bytes_or_hex,
+    SecretBytes, decode_hex_arg, load_mac_key, squeeze_to_stdout, stream_stdin, write_bytes_or_hex,
     write_stdout,
 };
 use crate::sha3_cmd::{MAX_FIXED_OUTPUT_LEN, Strength};
 use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle::cipher::modes::{CMAC, GMAC};
 use bouncycastle::core::errors::MACError;
+use bouncycastle::core::hazmat::finish_token;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::{
     FromAnyKeyMaterial, FromKeyMaterial, MacGenerationKey, MacVerificationKey,
     NonceMacGenerationKey, NonceMacVerificationKey,
 };
-use bouncycastle::core::traits::{MACGenerator, MACVerifier, XOF, XOFSqueezer};
+use bouncycastle::core::traits::{Hash, MACGenerator, MACVerifier, XOFSqueezer};
 use bouncycastle::hmac::{HMACParams, HmacKey};
 use bouncycastle::poly1305;
 use bouncycastle::poly1305::hazmat::key_from_bytes;
 use bouncycastle::ripemd::RIPEMD160;
 use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
-use bouncycastle::sha3::kmac::{KMAC_MAX_OUTPUT_LEN, KMAC_MIN_OUTPUT_LEN, KMACXOF128, KMACXOF256};
-use bouncycastle::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+use bouncycastle::sha3::kmac::{
+    KMAC_MAX_OUTPUT_LEN, KMAC_MIN_OUTPUT_LEN, KMACXOF128, KMACXOF256, KMACXOFInternal,
+};
+use bouncycastle::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKEParams};
 use bouncycastle::sm3::SM3;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use std::process::exit;
@@ -117,12 +120,14 @@ pub(crate) fn kmac_cmd(
     let key = load_mac_key(key, key_file, None);
     match strength {
         Strength::Bits128 => {
-            let x = KMACXOF128::new(&key, customization, true).unwrap_or_else(|e| mac_key_error(e));
-            kmac_run(x, length, verify_val, output_hex)
+            let mut x =
+                KMACXOF128::new(&key, customization, true).unwrap_or_else(|e| mac_key_error(e));
+            kmac_run(&mut x, length, verify_val, output_hex)
         }
         Strength::Bits256 => {
-            let x = KMACXOF256::new(&key, customization, true).unwrap_or_else(|e| mac_key_error(e));
-            kmac_run(x, length, verify_val, output_hex)
+            let mut x =
+                KMACXOF256::new(&key, customization, true).unwrap_or_else(|e| mac_key_error(e));
+            kmac_run(&mut x, length, verify_val, output_hex)
         }
     }
 }
@@ -130,8 +135,14 @@ pub(crate) fn kmac_cmd(
 /// Streams stdin into `kmac` and binds `length` at the final read, then writes the tag or
 /// verifies `--verify` against it in constant time, reporting through the exit status and an
 /// `Error:` line as [`do_mac`] does; as there, a `--verify` of the wrong length is refused before
-/// any input is read.
-fn kmac_run(mut kmac: impl XOF, length: usize, verify_val: &Option<String>, output_hex: bool) {
+/// any input is read. The sponge holds the key, so it is borrowed and finished where it sits
+/// rather than moved.
+fn kmac_run<P: SHAKEParams>(
+    kmac: &mut KMACXOFInternal<P>,
+    length: usize,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
     let expected = verify_val.as_ref().map(|verify_val| {
         let expected = decode_hex_arg(verify_val, "verify");
         if expected.len() != length {
@@ -142,7 +153,7 @@ fn kmac_run(mut kmac: impl XOF, length: usize, verify_val: &Option<String>, outp
     });
     stream_stdin(|chunk| kmac.do_update(chunk));
     let mut tag = vec![0u8; length];
-    kmac.into_squeezer().do_output_final_out(&mut tag);
+    kmac.finish_squeezer(&finish_token()).do_output_final_out(&mut tag);
     match expected {
         None => {
             write_bytes_or_hex(&tag, output_hex);
@@ -171,14 +182,23 @@ pub(crate) fn kmacxof_cmd(
     let key = load_mac_key(key, key_file, None);
     match strength {
         Strength::Bits128 => {
-            let x = KMACXOF128::new(&key, customization, true).unwrap_or_else(|e| mac_key_error(e));
-            stream_xof(x, output_len, output_hex);
+            let mut x =
+                KMACXOF128::new(&key, customization, true).unwrap_or_else(|e| mac_key_error(e));
+            kmacxof_run(&mut x, output_len, output_hex);
         }
         Strength::Bits256 => {
-            let x = KMACXOF256::new(&key, customization, true).unwrap_or_else(|e| mac_key_error(e));
-            stream_xof(x, output_len, output_hex);
+            let mut x =
+                KMACXOF256::new(&key, customization, true).unwrap_or_else(|e| mac_key_error(e));
+            kmacxof_run(&mut x, output_len, output_hex);
         }
     }
+}
+
+/// `helpers::stream_xof` for a KMACXOF: the sponge holds the key, so it is finished where it
+/// sits rather than moved into its squeezer.
+fn kmacxof_run<P: SHAKEParams>(kmac: &mut KMACXOFInternal<P>, output_len: usize, output_hex: bool) {
+    stream_stdin(|chunk| kmac.do_update(chunk));
+    squeeze_to_stdout(kmac.finish_squeezer(&finish_token()), output_len, output_hex);
 }
 
 /// AES-CMAC (NIST SP 800-38B) under the key the command's length selects.

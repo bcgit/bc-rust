@@ -6,7 +6,7 @@
 # unless `--nonce` supplies one (in which case the nonce is not written), the 16-byte tag rides
 # at the end of the ciphertext, and `--ad` is authenticated but not encrypted. Keys, nonces and
 # data come from `bc-rust rng`; the fixed inputs are the NIST LWC known-answer values already
-# pinned in `crypto/ascon/tests/*.rs`, copied from the Rust suite this file replaces.
+# pinned in `crypto/symmetric/tests/ascon_*.rs`, copied from the Rust suite this file replaces.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 

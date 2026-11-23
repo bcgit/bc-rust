@@ -8,8 +8,9 @@
 //! multipliers take any scalar and `*_mul::multiply_point` any point that passed that check, and
 //! the wNAF multiplier and the `*PublicScalar` types are variable-time by design. The signature
 //! crates are the intended callers, and the crate docs' Security Considerations apply to every
-//! item here. The generic limb arithmetic ([`crate::nat`], [`crate::montgomery`],
-//! [`crate::barrett`], [`crate::inverse_vartime`]) is not curve-specific and stays at the root.
+//! item here. The generic limb arithmetic is not curve-specific and is outside this module:
+//! [`crate::barrett`] and [`crate::inverse_vartime`] at the crate root, and
+//! [`bouncycastle_utils::nat`] and [`bouncycastle_utils::montgomery`].
 
 pub mod bp256r1;
 pub mod bp256r1_comb;

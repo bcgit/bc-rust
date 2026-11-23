@@ -104,12 +104,6 @@ impl RNG for FixedNonce {
         Ok(0)
     }
 
-    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
-        let mut out = vec![0u8; len];
-        self.next_bytes_out(&mut out)?;
-        Ok(out)
-    }
-
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
         for (i, b) in out.iter_mut().enumerate() {
             *b = NONCE[i % ASCON_AEAD128_NONCE_LEN];

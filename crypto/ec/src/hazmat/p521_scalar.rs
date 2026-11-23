@@ -20,9 +20,9 @@
 //! version had.
 
 use crate::curve::{PublicScalar, ScalarFieldElement, SecretScalar};
-use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::Secret;
 
 /// `n`, the order of the P-521 base point `G`, little-endian `u64` limbs (SP 800-186 §3.2.1.5).
@@ -309,9 +309,10 @@ fn widening_square(a: &[u64; 9]) -> [u64; 18] {
 /// `m * n`, one limb times the 9-limb modulus `n`, as the 10 limbs such a product can occupy.
 ///
 /// This is exactly what each round of [`redc`]'s SOS reduction needs, and the shape
-/// [`crate::montgomery::redc`] has always used for the brainpool curves. Every hand-written scalar
-/// REDC in this crate previously formed it with the general 9x9 [`widening_mul`] against a
-/// zero-padded `[m, 0, ..., 0]` instead, asking for 81 limb multiplications where 9 are needed.
+/// [`bouncycastle_utils::montgomery::redc`] has always used for the brainpool curves. Every
+/// hand-written scalar REDC in this crate previously formed it with the general 9x9
+/// [`widening_mul`] against a zero-padded `[m, 0, ..., 0]` instead, asking for 81 limb
+/// multiplications where 9 are needed.
 ///
 /// Whether that padding costs anything turns out to depend entirely on the width, measured rather
 /// than assumed: at four limbs the optimizer eliminates it completely (P-256 and secp256k1 time
@@ -410,7 +411,7 @@ fn reduce_wide_into(limbs: &[u64; 9], out: &mut [u64; 9]) {
     let mut hi_limbs = Secret::<[u64; 9]>::new();
     hi_limbs[0] = limbs[8] >> 9;
     let mut product = Secret::<[u64; 18]>::new();
-    crate::montgomery::widening_mul_into::<9, 18>(
+    bouncycastle_utils::montgomery::widening_mul_into::<9, 18>(
         &hi_limbs, &TWO_POW_521_MOD_N_LIMBS, &mut product,
     );
     debug_assert_eq!(&product[9..], &[0u64; 9], "hi * C must fit in 9 limbs");

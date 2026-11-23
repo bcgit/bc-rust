@@ -1,0 +1,21 @@
+# The private-key operations of bouncycastle-rsa, each run over a painted stack that is then
+# searched for what the operation handled, for `../check_rsa_stack.sh`. Its own workspace, so
+# the root `cargo build --workspace` never builds it.
+[package]
+name = "rsa_stack_harness"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bouncycastle-core = { path = "../../crypto/core" }
+bouncycastle-digest = { path = "../../crypto/digest" }
+bouncycastle-rng = { path = "../../crypto/rng" }
+bouncycastle-rsa = { path = "../../crypto/rsa" }
+
+# The root workspace's release profile: the wipes are sized for the frames it lays out.
+[profile.release]
+lto = "thin"
+strip = "debuginfo"
+
+[workspace]

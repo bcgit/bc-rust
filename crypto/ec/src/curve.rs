@@ -10,11 +10,11 @@
 //! which the solver resolves from `C` so that no call site names `N`. The `*_LEN` constants are the
 //! same numbers for documentation and arithmetic, and [`check_lengths`] pins the two together.
 
-use crate::nat;
 use bouncycastle_core::errors::RNGError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::RNG;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt::Debug;
 

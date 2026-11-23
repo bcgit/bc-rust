@@ -39,6 +39,7 @@ use bouncycastle_cipher::modes::{
     KW, KWP, OFB, Ofb,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{AeadInPlaceEncryptMode, EcbEncryptionKey, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -50,7 +51,6 @@ use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, MACGenerator, StreamCipherDecryptor,
     StreamCipherEncryptor,
 };
-use bouncycastle_rng::FixedSeedRNG;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 

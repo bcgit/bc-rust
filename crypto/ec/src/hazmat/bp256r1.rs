@@ -2,16 +2,17 @@
 //! this crate, `p` here is a "random" prime with no Solinas-style algebraic shortcut for
 //! reduction (RFC 5639 §3.1's curves are generated pseudorandomly, not chosen for a special
 //! bit-pattern) -- so this field, like [`crate::hazmat::bp256r1_scalar`], is built on
-//! [`crate::montgomery`]'s generic Montgomery multiplication instead of a per-curve fold.
+//! [`bouncycastle_utils::montgomery`]'s generic Montgomery multiplication instead of a per-curve
+//! fold.
 //!
 //! `p`'s value and the base point's coordinates were extracted directly from RFC 5639 §3.4's text
 //! (programmatically, concatenating the line-wrapped hex, not retyped) and verified in Python: `G`
 //! is on the curve and `n·G` is the point at infinity, before any of this was ported to Rust.
 
 use crate::curve::FieldElement;
-use crate::montgomery;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::montgomery;
 
 /// `p`, little-endian `u64` limbs (RFC 5639 §3.4).
 pub const P_LIMBS: [u64; 4] =
@@ -49,7 +50,7 @@ impl Bp256r1FieldElement {
     /// `0xa9fb...`, comfortably more than half of `u64::MAX`, so `2p > 2^256`), then converting to
     /// Montgomery form.
     pub fn from_limbs(limbs: [u64; 4]) -> Self {
-        let (diff, borrow) = crate::nat::sub(&limbs, &P_LIMBS);
+        let (diff, borrow) = bouncycastle_utils::nat::sub(&limbs, &P_LIMBS);
         let mut reduced = [0u64; 4];
         ct::conditional_select(Condition::<u64>::from_lsb(borrow), &limbs, &diff, &mut reduced);
         let t = montgomery::widening_mul::<4, 8>(&reduced, &R_SQUARED_LIMBS);
@@ -87,7 +88,7 @@ impl Bp256r1FieldElement {
     /// downstream; the range is checked in debug builds.
     pub(crate) fn from_internal_limbs(limbs: [u64; 4]) -> Self {
         debug_assert_eq!(
-            crate::nat::sub(&limbs, &P_LIMBS).1,
+            bouncycastle_utils::nat::sub(&limbs, &P_LIMBS).1,
             1,
             "from_internal_limbs given a value >= p"
         );
@@ -96,7 +97,7 @@ impl Bp256r1FieldElement {
 
     /// TRUE iff this element is the additive identity.
     pub fn is_zero(&self) -> Condition<u64> {
-        crate::nat::is_zero(&self.0)
+        bouncycastle_utils::nat::is_zero(&self.0)
     }
 
     /// Overwrites the element with zero, for scrubbing a secret-derived value before it goes out
@@ -112,9 +113,9 @@ impl Bp256r1FieldElement {
     /// carry out of the top limb means the true sum is `sum + 2^256`, and `2^256 mod p` is
     /// `R_MOD_P_LIMBS` by definition, not `p` itself.
     pub fn add(&self, other: &Self) -> Self {
-        let (sum, carry) = crate::nat::add(&self.0, &other.0);
-        let (sum_plus_r, _) = crate::nat::add(&sum, &R_MOD_P_LIMBS);
-        let (diff, borrow) = crate::nat::sub(&sum, &P_LIMBS);
+        let (sum, carry) = bouncycastle_utils::nat::add(&self.0, &other.0);
+        let (sum_plus_r, _) = bouncycastle_utils::nat::add(&sum, &R_MOD_P_LIMBS);
+        let (diff, borrow) = bouncycastle_utils::nat::sub(&sum, &P_LIMBS);
         let mut when_no_carry = [0u64; 4];
         ct::conditional_select(Condition::<u64>::from_lsb(borrow), &sum, &diff, &mut when_no_carry);
         let mut result = [0u64; 4];
@@ -129,8 +130,8 @@ impl Bp256r1FieldElement {
 
     /// `self - other mod p`.
     pub fn sub(&self, other: &Self) -> Self {
-        let (diff, borrow) = crate::nat::sub(&self.0, &other.0);
-        let (corrected, _) = crate::nat::add(&diff, &P_LIMBS);
+        let (diff, borrow) = bouncycastle_utils::nat::sub(&self.0, &other.0);
+        let (corrected, _) = bouncycastle_utils::nat::add(&diff, &P_LIMBS);
         let mut result = [0u64; 4];
         ct::conditional_select(Condition::<u64>::from_lsb(borrow), &corrected, &diff, &mut result);
         Self(result)
@@ -138,7 +139,7 @@ impl Bp256r1FieldElement {
 
     /// `-self mod p`.
     pub fn negate(&self) -> Self {
-        let (diff, _) = crate::nat::sub(&P_LIMBS, &self.0);
+        let (diff, _) = bouncycastle_utils::nat::sub(&P_LIMBS, &self.0);
         let mut result = [0u64; 4];
         ct::conditional_select(self.is_zero(), &Self::ZERO.0, &diff, &mut result);
         Self(result)
@@ -197,8 +198,8 @@ impl Bp256r1FieldElement {
     /// otherwise `high`, minus `p` once more if `high >= p`.
     fn finish_redc(t: &[u64; 8]) -> [u64; 4] {
         let (high, extra) = montgomery::redc::<4, 8, 9>(t, &P_LIMBS, N_PRIME);
-        let (sum, _) = crate::nat::add(&high, &R_MOD_P_LIMBS);
-        let (diff, borrow) = crate::nat::sub(&high, &P_LIMBS);
+        let (sum, _) = bouncycastle_utils::nat::add(&high, &R_MOD_P_LIMBS);
+        let (diff, borrow) = bouncycastle_utils::nat::sub(&high, &P_LIMBS);
         let mut when_no_extra = [0u64; 4];
         ct::conditional_select(
             Condition::<u64>::from_lsb(borrow),

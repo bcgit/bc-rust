@@ -13,8 +13,9 @@
 use super::point::{self, POINT_LEN, PointAffine, PublicPoint};
 use super::scalar::{self, SCALAR_LEN};
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
-use bouncycastle_sha3::SHAKE256;
+use bouncycastle_core::hazmat::finish_token;
+use bouncycastle_core::traits::{Hash, XOFSqueezer};
+use bouncycastle_digest::sha3::SHAKE256;
 use bouncycastle_utils::secret::Secret;
 
 /// Octets in an Ed448 private key (RFC 8032 Section 5.2.5).
@@ -48,48 +49,27 @@ fn computation_fault() -> SignatureError {
     SignatureError::ComputationFault
 }
 
-/// Ends absorbing and writes the 114 octets of `SHAKE256(x, 114)` to `digest`.
-fn squeeze_digest(hash: SHAKE256, digest: &mut [u8; DIGEST_LEN]) {
-    let mut squeezer = hash.into_squeezer();
+/// Ends absorbing where the sponge sits and writes the 114 octets of `SHAKE256(x, 114)` to
+/// `digest`.
+fn squeeze_digest(hash: &mut SHAKE256, digest: &mut [u8; DIGEST_LEN]) {
+    let mut squeezer = hash.finish_squeezer(&finish_token());
     squeezer.do_output_out(digest);
 }
 
 /// `SHAKE256(parts[0] || parts[1] || .., 114)` for an input that holds a secret, the private
 /// key or the prefix.
 ///
-/// SHAKE256 gives more than 64 octets only through `into_squeezer`, which takes the sponge by
-/// value, and a sponge that is moved leaves its old bytes where they were: a release build
-/// was seen to leave the private key (still in the sponge's input buffer) and whole Keccak
-/// states of the prefix's hash, from which the prefix can be computed back, on the dead stack
-/// that way. So the hash is made, moved and dropped inside a frame of its own, and the stack
-/// that frame used is overwritten afterwards, as `scalar::calculate_S` does for its own spills.
+/// The sponge is finished where it sits and wiped when it drops, here. `XOF::into_squeezer`
+/// would move it, and a sponge that is moved leaves its old bytes where they were: a release
+/// build was seen to leave the private key (still in the sponge's input buffer) and whole
+/// Keccak states of the prefix's hash, from which the prefix can be computed back, on the dead
+/// stack that way.
 fn secret_digest(parts: &[&[u8]], digest: &mut [u8; DIGEST_LEN]) {
-    secret_digest_in_own_frame(parts, digest);
-    wipe_stack_below();
-}
-
-/// The computation of [`secret_digest`]. Never inlined, so that every copy of the sponge lies
-/// below its caller's frame, where [`wipe_stack_below`] reaches it.
-#[inline(never)]
-fn secret_digest_in_own_frame(parts: &[&[u8]], digest: &mut [u8; DIGEST_LEN]) {
     let mut hash = SHAKE256::new();
     for part in parts {
         hash.do_update(part);
     }
-    squeeze_digest(hash, digest);
-}
-
-/// How much stack [`wipe_stack_below`] overwrites, in 64-bit words: more than
-/// [`secret_digest_in_own_frame`] and everything it calls use, with room for a compiler that
-/// lays the frames out less tightly or keeps more copies of the sponge.
-const WIPED_STACK_WORDS: usize = 512;
-
-/// Overwrites the stack that the previous call made from the caller's frame used, by taking a
-/// frame of its own over the same memory and wiping it. Never inlined: the frame is the point.
-#[inline(never)]
-fn wipe_stack_below() {
-    let mut scratch = Secret::<[u64; WIPED_STACK_WORDS]>::new();
-    core::hint::black_box(&mut *scratch);
+    squeeze_digest(&mut hash, digest);
 }
 
 /// The private key after RFC 8032 Section 5.2.6, step 1, with its public key: the secret
@@ -311,7 +291,7 @@ fn sign_core(
     hash.do_update(&R);
     hash.do_update(&key.A);
     hash.do_update(PH_M);
-    squeeze_digest(hash, &mut k_digest);
+    squeeze_digest(&mut hash, &mut k_digest);
 
     // Step 5: "Compute S = (r + k * s) mod L. For efficiency, again reduce k modulo L first."
     let mut k = [0_u8; SCALAR_LEN];
@@ -356,7 +336,7 @@ fn verify_core(
     hash.do_update(R);
     hash.do_update(&A_encoded);
     hash.do_update(PH_M);
-    squeeze_digest(hash, &mut k_digest);
+    squeeze_digest(&mut hash, &mut k_digest);
     let mut k_octets = [0_u8; SCALAR_LEN];
     scalar::reduce_912(&k_digest, &mut k_octets);
     let mut k = [0_u64; 7];
@@ -386,6 +366,7 @@ mod tests {
     extern crate std;
 
     use super::*;
+    use bouncycastle_core::traits::XOF;
     use std::vec::Vec;
 
     // RFC 8032 Section 7.4 (Ed448) and Section 7.5 (Ed448ph), lifted from the RFC text by
@@ -1862,11 +1843,11 @@ mod tests {
     ];
 
     fn octets<const N: usize>(hex: &str) -> [u8; N] {
-        bouncycastle_hex::decode(hex).unwrap().try_into().unwrap()
+        bouncycastle_core::hex::decode(hex).unwrap().try_into().unwrap()
     }
 
     fn bytes(hex: &str) -> Vec<u8> {
-        bouncycastle_hex::decode(hex).unwrap()
+        bouncycastle_core::hex::decode(hex).unwrap()
     }
 
     /// PH(M) of Ed448ph: SHAKE256(M, 64).

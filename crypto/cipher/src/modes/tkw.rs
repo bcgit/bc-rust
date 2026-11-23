@@ -6,14 +6,14 @@
 //! encryption key. Everything in the [`kw`](crate::modes::kw) module docs -- the key path, the
 //! trait shape, the in-place wrapping function, the security notes -- applies here too; this
 //! module only documents what differs. SP 800-38F Sec 5.1 fixes the block cipher to TDEA, so the
-//! only key type is `bouncycastle_tdes::TDES3Key<TKW>`, whose aliases `TDES_TKW` and the
+//! only key type is `bouncycastle_symmetric::tdes::TDES3Key<TKW>`, whose aliases `TDES_TKW` and the
 //! unwrap-only `TDES2_TKW` are in that crate.
 //!
 //! # Legacy only
 //!
 //! SP 800-38F Sec 8: TKW-AE and TKW-AD "are approved to support legacy systems but should not be
 //! used for new applications". Its forgery probability is 2^-32 per attempt against KW's 2^-64
-//! (Appendix A.3), and TDEA itself is a legacy algorithm; see the `bouncycastle-tdes` crate's
+//! (Appendix A.3), and TDEA itself is a legacy algorithm; see the `bouncycastle_symmetric::tdes` module's
 //! security considerations. Two-key TDEA may not wrap at all (SP 800-131A Rev 2 Table 6): a
 //! permutation that decrypts only
 //! ([`BlockPermutation::DECRYPT_ONLY`]) refuses to make a wrapper at compile time, as the
@@ -299,7 +299,7 @@ where
 mod tests {
     //! The 2^28 upper bounds of SP 800-38F Table 1, which no buffer can reach: the last valid
     //! plaintext is 2^28 - 1 semiblocks, the last valid ciphertext 2^28. The lower bounds and
-    //! the alignment rule are pinned through the key in `bouncycastle-tdes`.
+    //! the alignment rule are pinned through the key in `bouncycastle_symmetric::tdes`.
 
     use super::*;
 

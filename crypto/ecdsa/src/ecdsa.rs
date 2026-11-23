@@ -35,14 +35,15 @@ use bouncycastle_core::signature_key::{
     verify_with_verifier,
 };
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmInfo, FinishToken, HashAlgParams, RNG, SignatureSigner, SignatureVerifier,
+    Algorithm, AlgorithmInfo, CollisionResistantHash, FinishToken, HashAlgParams, RNG,
+    SignatureSigner, SignatureVerifier,
 };
+use bouncycastle_digest::hmac::HMACParams;
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_ec::curve::{
     Curve, FieldElement, JacobianPoint, PublicScalar, ScalarFieldElement,
 };
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
-use bouncycastle_hmac::HMACParams;
-use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_utils::const_str::ConstStr;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::marker::PhantomData;
@@ -96,9 +97,63 @@ const fn min_strength(a: SecurityStrength, b: SecurityStrength) -> SecurityStren
 /// what was signed that way.
 ///
 /// Raw `r || s`, `C::SIG_LEN` bytes, is the signature encoding; [`crate::der`] offers the RFC
-/// 3279 Section 2.2.3 DER `SEQUENCE { r, s }` for interop that needs it. Neither signer uses
-/// `ctx`: ECDSA has no context string, and the argument is accepted and ignored so that the key
-/// traits read the same across algorithms.
+/// 3279 Section 2.2.3 DER `SEQUENCE { r, s }` for interop that needs it.
+///
+/// ECDSA takes no context: FIPS 186-5 Sections 6.4.1 and 6.4.2 list none among their inputs.
+/// `None` and `Some(&[])` are accepted as `ctx`, and anything else is a
+/// [`SignatureError::LengthError`] from every constructor and one-shot, signing and verifying.
+///
+/// The private key signs only where `H` is a [`CollisionResistantHash`]; the public key verifies
+/// under any hash. Signing over a hash without the marker does not compile:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::DeterministicOneShotSigningKey;
+/// use bouncycastle_core::traits::PrivateKey;
+/// use bouncycastle_ec::P256;
+/// use bouncycastle_ecdsa::ecdsa::ECDSA;
+/// use bouncycastle_ecdsa::keys::ECDSAPrivateKey;
+/// use bouncycastle_digest::ripemd::RIPEMD160;
+///
+/// let sk = ECDSAPrivateKey::<P256, RIPEMD160>::from_bytes(&[1u8; 32]).unwrap();
+/// let _ = DeterministicOneShotSigningKey::<ECDSA<P256, RIPEMD160>, 64>::sign_deterministic(
+///     &sk, b"message", None,
+/// );
+/// ```
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::OneShotSigningKey;
+/// use bouncycastle_core::traits::PrivateKey;
+/// use bouncycastle_ec::P256;
+/// use bouncycastle_ecdsa::ecdsa::ECDSA;
+/// use bouncycastle_ecdsa::keys::ECDSAPrivateKey;
+/// use bouncycastle_digest::ripemd::RIPEMD160;
+/// use bouncycastle_rng::HashDRBG_SHA512;
+///
+/// let sk = ECDSAPrivateKey::<P256, RIPEMD160>::from_bytes(&[1u8; 32]).unwrap();
+/// let mut rng = HashDRBG_SHA512::new_from_os();
+/// let _ = OneShotSigningKey::<ECDSA<P256, RIPEMD160>, 64>::sign(&sk, &mut rng, b"message", None);
+/// ```
+///
+/// A caller who must produce such a signature re-pairs the key with
+/// [`WithoutCollisionResistance<H>`](bouncycastle_core::hazmat::WithoutCollisionResistance),
+/// which signs as `H` does:
+///
+/// ```
+/// use bouncycastle_core::hazmat::WithoutCollisionResistance;
+/// use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
+/// use bouncycastle_core::traits::PrivateKey;
+/// use bouncycastle_ec::P256;
+/// use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
+/// use bouncycastle_ecdsa::keys_common::DerivePublicKey;
+/// use bouncycastle_digest::ripemd::RIPEMD160;
+///
+/// let sk = ECDSAPrivateKey::<P256, RIPEMD160>::from_bytes(&[1u8; 32]).unwrap();
+/// let pk: ECDSAPublicKey<P256, RIPEMD160> = sk.derive_pk();
+/// let sk = sk.with_hash::<WithoutCollisionResistance<RIPEMD160>>();
+/// let sig = sk.sign_deterministic(b"message", None)?;
+/// pk.verify(b"message", None, &sig)?;
+/// # Ok::<(), bouncycastle_core::errors::SignatureError>(())
+/// ```
 pub struct ECDSA<C: Curve, H: EcdsaHash>(PhantomData<(C, H)>);
 
 impl<C: Curve, H: EcdsaHash> ECDSA<C, H> {
@@ -117,9 +172,10 @@ impl<C: Curve, H: EcdsaHash> Algorithm for ECDSA<C, H> {
 
 impl<C: Curve, H: EcdsaHash> SignatureAlgorithm for ECDSA<C, H> {}
 
-/// A hash ECDSA signs with: any [`HMACParams`] hash, because the deterministic signer keys RFC
+/// A hash ECDSA is paired with: any [`HMACParams`] hash, because the deterministic signer keys RFC
 /// 6979's HMAC on it. Implemented for every such hash, so the bound is a name for "a hash", not
-/// a restriction.
+/// a restriction, and it is all a key type or a verification asks. Signing and key-pair
+/// generation ask in addition for a [`CollisionResistantHash`].
 pub trait EcdsaHash: HMACParams {}
 
 impl<H: HMACParams> EcdsaHash for H {}
@@ -229,6 +285,15 @@ fn r_or_s_is_zero<C: Curve>(r: &C::ScalarField, s: &C::ScalarField) -> bool {
     *r == C::ScalarField::ZERO || *s == C::ScalarField::ZERO
 }
 
+/// ECDSA has no context input (FIPS 186-5 Sections 6.4.1 and 6.4.2), so a non-empty one is
+/// refused, not dropped: a caller who passes one expects it bound into the signature.
+fn refuse_context(ctx: Option<&[u8]>) -> Result<(), SignatureError> {
+    match ctx {
+        Some(ctx) if !ctx.is_empty() => Err(SignatureError::LengthError("ECDSA takes no context")),
+        _ => Ok(()),
+    }
+}
+
 /// The finished message hash, `H::OUTPUT_LEN` bytes of a `MAX_HASH_LEN` buffer.
 fn finish_hash<H: EcdsaHash>(hash: &mut H, token: &FinishToken) -> [u8; MAX_HASH_LEN] {
     let mut h = [0u8; MAX_HASH_LEN];
@@ -293,8 +358,8 @@ fn verify_final<C: Curve, H: EcdsaHash>(
     if r1 == r { Ok(()) } else { Err(SignatureError::SignatureVerificationFailed) } // step 9
 }
 
-impl<C, H: EcdsaHash, const SIG_LEN: usize> SigningKey<ECDSA<C, H>, SIG_LEN>
-    for ECDSAPrivateKey<C, H>
+impl<C, H: EcdsaHash + CollisionResistantHash, const SIG_LEN: usize>
+    SigningKey<ECDSA<C, H>, SIG_LEN> for ECDSAPrivateKey<C, H>
 where
     C: Curve<Signature = [u8; SIG_LEN]>,
 {
@@ -306,15 +371,17 @@ where
     fn create_signer<'k>(
         &'k self,
         rng: &mut dyn RNG,
-        _ctx: Option<&[u8]>,
+        ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
         const { check_hash_fits::<C, H>() };
+        // Before `k` is drawn, so that a refused call takes nothing from the RNG.
+        refuse_context(ctx)?;
         Ok(ECDSASigner { sk: self, hash: H::default(), k: random_k::<C>(rng)? })
     }
 }
 
-impl<C, H: EcdsaHash, const SIG_LEN: usize> OneShotSigningKey<ECDSA<C, H>, SIG_LEN>
-    for ECDSAPrivateKey<C, H>
+impl<C, H: EcdsaHash + CollisionResistantHash, const SIG_LEN: usize>
+    OneShotSigningKey<ECDSA<C, H>, SIG_LEN> for ECDSAPrivateKey<C, H>
 where
     C: Curve<Signature = [u8; SIG_LEN]>,
 {
@@ -330,8 +397,8 @@ where
     }
 }
 
-impl<C, H: EcdsaHash, const SIG_LEN: usize> DeterministicSigningKey<ECDSA<C, H>, SIG_LEN>
-    for ECDSAPrivateKey<C, H>
+impl<C, H: EcdsaHash + CollisionResistantHash, const SIG_LEN: usize>
+    DeterministicSigningKey<ECDSA<C, H>, SIG_LEN> for ECDSAPrivateKey<C, H>
 where
     C: Curve<Signature = [u8; SIG_LEN]>,
 {
@@ -342,15 +409,16 @@ where
 
     fn create_signer_deterministic<'k>(
         &'k self,
-        _ctx: Option<&[u8]>,
+        ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
         const { check_hash_fits::<C, H>() };
+        refuse_context(ctx)?;
         Ok(ECDetDSASigner { sk: self, hash: H::default() })
     }
 }
 
-impl<C, H: EcdsaHash, const SIG_LEN: usize> DeterministicOneShotSigningKey<ECDSA<C, H>, SIG_LEN>
-    for ECDSAPrivateKey<C, H>
+impl<C, H: EcdsaHash + CollisionResistantHash, const SIG_LEN: usize>
+    DeterministicOneShotSigningKey<ECDSA<C, H>, SIG_LEN> for ECDSAPrivateKey<C, H>
 where
     C: Curve<Signature = [u8; SIG_LEN]>,
 {
@@ -378,9 +446,10 @@ where
 
     fn create_verifier<'k>(
         &'k self,
-        _ctx: Option<&[u8]>,
+        ctx: Option<&[u8]>,
     ) -> Result<Self::Verifier<'k>, SignatureError> {
         const { check_hash_fits::<C, H>() };
+        refuse_context(ctx)?;
         Ok(ECDSAVerifier { pk: self, hash: H::default() })
     }
 }

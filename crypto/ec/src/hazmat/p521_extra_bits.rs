@@ -15,8 +15,8 @@
 //! reduces them here. `p521_extra_bits_tests.rs` pins known answers computed in Python.
 
 use crate::hazmat::p521_scalar::{N_LIMBS, P521Scalar};
-use crate::nat;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::Secret;
 
 /// `n - 1`, little-endian `u64` limbs. `N_LIMBS[0]` is odd (`n` is prime), so the subtraction
@@ -78,7 +78,7 @@ pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> P521Scalar {
     hi[1] = x[9] >> 9;
 
     let mut product = Secret::<[u64; 18]>::new();
-    crate::montgomery::widening_mul_into::<9, 18>(
+    bouncycastle_utils::montgomery::widening_mul_into::<9, 18>(
         &hi,
         &TWO_POW_521_MOD_N_MINUS_1_LIMBS,
         &mut product,

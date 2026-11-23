@@ -25,7 +25,7 @@
 
 use crate::barrett;
 use crate::hazmat::bp256r1_scalar::{Bp256r1Scalar, N_LIMBS};
-use crate::nat;
+use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::Secret;
 
 /// `n - 1`, little-endian `u64` limbs. `N_LIMBS[0]` is odd (`n` is prime), so the subtraction

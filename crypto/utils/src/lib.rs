@@ -11,15 +11,29 @@
 //! and zeroization techniques require unsafe code in order to force the compiler into specific
 //! assembly-level behaviours. The idea is to contain the unsafe code in a central location rather
 //! so that the higher-level primitives can stick to safe rust.
+//!
+//! Within the crate it is confined to two modules, [`ct`] and [`secret`]: the crate denies
+//! `unsafe_code`, those two allow it, and every other module forbids it, so the compiler holds
+//! the line.
 
 #![no_std]
 #![forbid(missing_docs)]
+#![deny(unsafe_code)]
 #![allow(private_bounds)]
 
+#[forbid(unsafe_code)]
 pub mod bitslice;
+#[forbid(unsafe_code)]
 pub mod const_str;
+#[allow(unsafe_code)]
 pub mod ct;
+#[forbid(unsafe_code)]
+pub mod montgomery;
+#[forbid(unsafe_code)]
+pub mod nat;
+#[allow(unsafe_code)]
 pub mod secret;
+#[forbid(unsafe_code)]
 pub mod suspendable_state;
 
 /// Basic max function. If they are equal, it returns the first one.

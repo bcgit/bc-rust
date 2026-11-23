@@ -43,7 +43,7 @@ Revisit this section at the first non-alpha release.
 
 - Builds on Rust **stable**: there is no toolchain pin, and no crate enables a `#![feature(...)]` gate, so
   nightly-only tooling (`-Z` flags and the like) is not available. CI builds, tests and docs on stable; only the
-  `rustfmt` job and the AES assembly check (`-Zbuild-std=core` for targets without a shipped `core`) install
+  `rustfmt` job and the AES and OAEP assembly checks (`-Zbuild-std=core` for targets without a shipped `core`) install
   nightly.
 - 2024 edition (set workspace-wide in the root `Cargo.toml`).
 - Minimum Rust is 1.88: `rust-version` in the root `Cargo.toml`, inherited by `bouncycastle-utils` (the crate that
@@ -58,12 +58,12 @@ bare `cargo build` builds only that package (no `cli`, no benches) and a bare `c
 
 ```
 cargo build --workspace         # whole workspace incl. `bc-rust` CLI binary
-cargo build -p bouncycastle-sha3   # one sub-crate
+cargo build -p bouncycastle-digest # one sub-crate
 cargo test --workspace          # all tests
-cargo test -p bouncycastle-mlkem   # tests for one crate
-cargo test -p bouncycastle-mlkem ml_kem_tests   # one integration test file
+cargo test -p bouncycastle-pqc     # tests for one crate
+cargo test -p bouncycastle-pqc --test mlkem_mlkem_tests   # one integration test file
 cargo bench --all               # all criterion benches
-cargo bench -p bouncycastle-mlkem
+cargo bench -p bouncycastle-pqc --bench mlkem_mlkem_benches   # one bench file of one crate
 cargo doc                       # rustdoc (published to gh-pages by CI on main)
 cargo run -p cli -- --help      # run the `bc-rust` CLI
 ```
@@ -72,7 +72,7 @@ Quality / mutation testing:
 
 ```
 ./dev_scripts/quality_stats.sh ./crypto    # lines-of-code, docstring & fallibility metrics; CI publishes this
-cargo mutants -p bouncycastle-sha3         # config in .cargo/mutants.toml (output: custom_mutants_output/)
+cargo mutants -p bouncycastle-digest       # config in .cargo/mutants.toml (output: custom_mutants_output/)
 ```
 
 `-p` is as non-optional here as `--workspace` is for build and test, and for the same reason: a bare
@@ -98,19 +98,19 @@ way when adding a harness, or `cargo test --workspace` fails to compile them.
 
 The workspace has four top-level kinds of member:
 
-1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework`, `cipher-test-framework` and `factory` described below. Most are one primitive each; some, such as `cipher`, hold generic building blocks (modes, padding) as sub-modules. The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is published as `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`.
-2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::sm3`, `bouncycastle::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
+1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework` and `cipher-test-framework` described below. Most are one primitive each; some, such as `cipher`, hold generic building blocks (modes, padding) as sub-modules; `pqc`, `digest`, `symmetric` and `hybrid` are family crates, holding their primitives as modules (see [the layout below](#sub-crate-layout-convention)). The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is named `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`; the two test frameworks, `cli` and `mem_usage_benches` are `publish = false`, which works because every dev-dependency is path-only and so is dropped from a packaged crate.
+2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::sm3`, `bouncycastle::pqc`), and of a family crate's primitive modules under the names they had as crates (`bouncycastle::mlkem` is `bouncycastle_pqc::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
 3. `cli/` — the `bc-rust` binary built on top of `bouncycastle`, exposing every primitive as a streaming stdin→stdout subcommand using `clap`.
 4. `mem_usage_benches/` — stand-alone binary crates that measure peak stack usage of algorithms (cannot be done via criterion).
 
-### The `core` / `core-test-framework` / `factory` spine
+### The `core` / `core-test-framework` spine
 
 - `crypto/core` defines the abstract traits (`Hash`, `KDF`, `MACGenerator` / `MACVerifier`, `KEM`, `Signature`, `RNG`, `Algorithm`, `HashAlgParams`, …), error enums (`HashError`, `KDFError`, `KEMError`, `MACError`, `RNGError`, `SignatureError`), and the `KeyMaterial` / `KeyType` wrapper that all sensitive byte buffers are required to use (see `Secret` super-trait requirement in QUALITY_AND_STYLE.md).
 - `crypto/core-test-framework` contains the shared per-trait test suite (`hash.rs`, `kdf.rs`, `kem.rs`, `mac.rs`, `signature.rs`). New implementations of a core trait must be exercised through this framework — it's how trait conformance and error-condition coverage stay consistent across implementations.
 - `crypto/cipher-test-framework` holds the suites every block cipher crate runs over `BlockCipherKey<P, M>`: the keys under every mode through the core suites, the padded and stream-mode wiring checks, and the Wycheproof runners, each generic over the permutation and run at one key length per call. It is a sibling of `core-test-framework` rather than part of it because it names `bouncycastle-cipher`'s types, and that crate's own tests depend on the core framework. A new block cipher's `mode_key_tests.rs`, `padded_alias_tests.rs`, `stream_mode_alias_tests.rs` and `*_wycheproof.rs` are calls into it; what stays in the crate is the cipher's own known answers, aliases and sizes.
-- `crypto/factory` provides enum-based string-name factories (`HashFactory`, `KDFFactory`, `MACFactory`, `RNGFactory`, `XOFFactory`). Each factory enum impls the underlying trait so it can be used transparently as that primitive, except `MACFactory`, which is a key enum whose algorithm is chosen at run time and so keeps run-time tag lengths: inherent `mac` / `mac_out` / `verify` over slices, and `create_generator` / `create_verifier` handing out a `MACFactoryWorker<Dir>` with inherent finals, where the role traits take `[u8; MAC_LEN]`; and each impls `AlgorithmFactory` (`new(name)`, `default_128_bit()`, `default_256_bit()`). When adding a new primitive that fits an existing trait, register it in the corresponding factory.
+- There is no factory crate: `bouncycastle-factory` (string-name enums such as `HashFactory` and `MACFactory`) was removed in November 2026, unused inside the workspace. Algorithms are named by type.
 
-Trait/factory/CLI is the standard layering: a new algorithm typically requires (a) the primitive crate, (b) implementing the relevant `core` trait, (c) wiring it into the matching factory, (d) a CLI subcommand in `cli/src/*_cmd.rs` registered in `cli/src/main.rs`.
+Trait/CLI is the standard layering: a new algorithm typically requires (a) the primitive crate, (b) implementing the relevant `core` trait, (c) a CLI subcommand in `cli/src/*_cmd.rs` registered in `cli/src/main.rs`.
 
 ### Sub-crate layout convention
 
@@ -118,12 +118,37 @@ A typical primitive crate looks like:
 
 ```
 crypto/<name>/
-  Cargo.toml          # depends on bouncycastle-core; dev-deps on core-test-framework, hex, rng, criterion
+  Cargo.toml          # depends on bouncycastle-core; dev-deps on core-test-framework, rng, criterion
   src/lib.rs          # must contain #![forbid(unsafe_code)], #![forbid(missing_docs)], aim for #![no_std]
   src/*.rs            # implementation
   tests/*.rs          # integration tests, usually driven via core-test-framework
   benches/*.rs        # criterion benches (declared as [[bench]] with harness=false)
 ```
+
+A family crate holds its primitives as modules, each with the layout it had as a crate:
+`bouncycastle-hybrid` (`crypto/hybrid`: `hpke`), `bouncycastle-digest` (`crypto/digest`: `blake2`,
+`blake3`, `concatkdf`, `hkdf`, `hmac`, `pbkdf2`, `ripemd`, `scrypt`, `sha1`, `sha2`, `sha3`, `sm3`,
+`x963kdf`), `bouncycastle-symmetric`
+(`crypto/symmetric`: `aria`, `ascon`, `camellia`, `chacha20`, `chacha20_poly1305_aead`, `kbkdf`,
+`poly1305`, `sm4`, `tdes`) and `bouncycastle-pqc` (`crypto/pqc`: `mldsa`,
+`mldsa_lowmemory`, `mlkem`, `mlkem_lowmemory`, and the `mldsa_common` / `mlkem_common` modules the
+two forms of each share).
+
+```
+crypto/<family>/
+  Cargo.toml              # one [[bench]] per bench file; dev-deps are the union of the modules'
+  src/lib.rs              # the crate attributes, short crate docs, one `pub mod` per primitive
+  src/<module>/mod.rs     # the primitive's docs, with its own Usage / Memory / Security sections
+  src/<module>/*.rs       # implementation; module-private items are `pub(in crate::<module>)`
+  tests/<module>_*.rs     # that module's integration tests
+  benches/<module>_*.rs   # that module's criterion benches
+  examples/<module>_*.rs
+```
+
+Inside a family crate `pub(crate)` reaches every primitive in it, so an item private to one
+primitive is `pub(in crate::<module>)`. A module prefix is also a prefix of its siblings' (`mldsa_`
+of `mldsa_lowmemory_` and `mldsa_common_`), so select one module's test files by name rather than
+by a `--test 'mldsa_*'` glob.
 
 `#![no_std]` is the long-term goal but the `core` crate still has a `Vec`-removal TODO blocking it (see the comment at the top of `crypto/core/src/lib.rs`). Don't add new `Vec` usage where a const-sized array would do.
 
@@ -145,7 +170,7 @@ Repo mechanics behind those rules, which the documents don't spell out:
   processing or stream processing", because the payload length is inside the first block the MAC
   covers) -- there, read the whole input once and process it in place, rather than adding a second
   buffer the size of the input on top of it; see `aes_ccm_cmd.rs`.
-- Trait → factory → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework--factory-spine) above for the crates involved.
+- Trait → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework-spine) above for the crates involved.
 - AI-drafted docs and comments run long. Before committing, check them against QUALITY_AND_STYLE.md's "Proportion"
   rule: cut duplicated material, long rationale and restated spec text rather than adding more.
 - **Comments describe the code that is there, not the road that led to it.** Do not add a comment
@@ -252,8 +277,8 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   key locally bounds `for<'k> K::Encryptor<'k>: ..` with `K: 'static`. A test binds the key
   before the worker, since `key_fn().create_encryptor(..)` borrows a temporary.
 - **A struct cannot hold a worker that borrows a key it also owns:** HKDF runs its extract-phase HMAC as the
-  two halves `HmacKey::inner_state` / `finish_out`, and the MAC factory is a key enum that hands
-  out a worker enum.
+  two halves `HmacKey::inner_state` / `finish_out`, and the MAC factory (since removed) was a
+  key enum that handed out a worker enum.
 - **What has no key-path twin is dropped, and said so.** `new_allow_weak_key` on a cipher-based
   MAC, a wrong-length `KeyMaterial512` into a fixed-length key, GCM's verify-before-decrypt
   one-shot override: each went with a line in the commit message rather than a shim.
@@ -285,6 +310,11 @@ cipher and MAC traits had (`local/signer_verifier_init_removal_plan.md`). Mechan
   several algorithms (ML-DSA and HashML-DSA, ECDSA and RFC 6979, PKCS#1 and PSS), so the marker
   goes on the role trait, not the key type; a pre-hash's hash goes on the method
   (`create_ph_signer::<SHA512>`), with the strength rule checked at construction.
+  *Superseded, November 2026:* every signature key now names one algorithm. Ed25519ph, Ed448ph
+  and HashML-DSA are keys of their own, borrowing views reached by `as_prehash()` /
+  `as_prehash::<H>()`, so the hash is on the view (`HashMLDSA<P, H>`) and the pre-hash traits
+  keep only the digest-supplied methods, over a marker that names its hash
+  (`PreHashAlgorithm::Hash`).
 - **A test RNG that repeats its seed defeats a "two signatures differ" check.** `FixedSeedRNG`
   emits its seed cyclically; two 32-byte draws from a 64-byte constant seed are identical, and
   so are two 64-byte draws (a PSS/SHA-512 salt) from a 64-byte counting seed. Seed it with a
@@ -342,9 +372,10 @@ direction in the worker types. Mechanics to reuse:
   needed at `KMAC128Key::with_params(..)` in expression position; `let key: KMAC128Key = ..`
   takes the default. Code generic over the hash (HKDF, its tests) uses the hazmat halves
   `inner_state` / `finish_out` rather than the role, which wants the length as a const.
-- **A run-time-length tag has one home, the factory.** `MACFactory` and the `kmac*` CLI
-  commands (which bind their length through KMACXOF's final read, SP 800-185 Sec 4.3.1) are
-  where a length chosen at run time lives; everywhere else it is the key type's.
+- **A run-time-length tag has one home, the CLI.** The `kmac*` CLI commands (which bind
+  their length through KMACXOF's final read, SP 800-185 Sec 4.3.1) are where a length chosen
+  at run time lives; everywhere else it is the key type's. (`MACFactory` was the library's
+  home for one until the factory crate was removed.)
 
 ## Lessons from the in-place finals (November 2026)
 
@@ -361,7 +392,7 @@ end its message, and took `Clone` off the cipher workers. QUALITY_AND_STYLE.md h
 - **The token guards against accidents, not against intent.** The `finish_` methods take a
   `&FinishToken` whose constructor is private to `core`, so only a provided final calls them.
   Code that owns a worker without being one (a KDF's block loop, `MuBuilder::do_final`,
-  `MACFactoryWorker`, CCM's in-place one-shots, HMAC's hazmat `finish_out`) takes a token from
+  CCM's in-place one-shots, HMAC's hazmat `finish_out`) takes a token from
   `core::hazmat::finish_token()` and with it the duty to finish once and not use the worker
   again. Crate-internal keyed helpers take the token as a parameter rather than minting one.
 - **A new worker type owes the `finish_` method, not a final.** A worker that implements only
@@ -373,8 +404,8 @@ end its message, and took `Clone` off the cipher workers. QUALITY_AND_STYLE.md h
   `Clone`; add a new mode's workers to it. A worker in its own crate is asserted there, by the
   same test (Ascon) or a doctest (ChaCha20, Poly1305). A wrapper over another worker must be
   named over a `Clone` inner type, or a derived `Clone`, being conditional, passes unnoticed.
-  Check a new assertion by putting `Clone` back on the type. `Tkw`, `HMAC`, the BLAKE MACs,
-  `MACFactoryWorker` and `HpkeContext` are not `Clone` but have no assertion yet.
+  Check a new assertion by putting `Clone` back on the type. `Tkw`, `HMAC`, the BLAKE MACs
+  and `HpkeContext` are not `Clone` but have no assertion yet.
 - **`git stash create` fails with an intent-to-add file in the tree;** stage the file before
   pushing a work-in-progress tree to apollo for a mutants run.
 
@@ -424,12 +455,13 @@ Rules when working from the downloaded copy:
 What a crate must be tested against — including the mutation-testing expectation, the trait test framework, and the
 external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING.md. Repo-specific mechanics:
 
-- `cargo mutants` is expected to be run on each crate; surviving mutants must be investigated but not all need to die (e.g. XOR/OR equivalences in crypto code are acceptable). Config lives in `.cargo/mutants.toml` (output dir `custom_mutants_output/`). Four things about running it here:
+- `cargo mutants` is expected to be run on each crate; surviving mutants must be investigated but not all need to die (e.g. XOR/OR equivalences in crypto code are acceptable). Config lives in `.cargo/mutants.toml` (output dir `custom_mutants_output/`). Things to know about running it here:
   - **Always pass `-p <crate>`.** Without it only the root package is examined, which has no mutants, and the run "passes" vacuously — see [Common commands](#common-commands).
-  - **`-f`/`--file` does nothing while the checked-in config is in play**, because its `examine_globs` wins over the CLI filter: `cargo mutants -p bouncycastle-sha3 -f '**/kmac.rs'` still examines all ~874 mutants in the crate. To scope a run to the files you changed, copy `.cargo/mutants.toml` somewhere outside the repo, delete its `examine_globs` block, and pass `--config <copy>`; `-f` then filters as documented. (`--config /dev/null` also works but throws away `skip_calls`, `error_values`, `cap_lints` and the timeout multipliers with it.)
-  - **Add `--test-workspace true` when a crate's mutants are killed by another crate's tests.** The `core` traits are the case that matters: their default method bodies are exercised from `sha3` and `factory`, so a `-p bouncycastle-core` run alone reports them all as missed.
+  - **`-f`/`--file` does nothing while the checked-in config is in play**, because its `examine_globs` wins over the CLI filter: `cargo mutants -p bouncycastle-digest -f '**/kmac.rs'` still examines every mutant in the crate. To scope a run to the files you changed, copy `.cargo/mutants.toml` somewhere outside the repo, delete its `examine_globs` block, and pass `--config <copy>`; `-f` then filters as documented. (`--config /dev/null` also works but throws away `skip_calls`, `error_values`, `cap_lints` and the timeout multipliers with it.)
+  - **Add `--test-workspace true` when a crate's mutants are killed by another crate's tests.** The `core` traits are the case that matters: their default method bodies are exercised from the primitive crates (`digest`, `rng` and others), so a `-p bouncycastle-core` run alone reports them all as missed.
   - **Symlink the test data into `/tmp`.** `cargo mutants` copies the tree to `/tmp/cargo-mutants-<dir>-XXXX.tmp/`, so the `../../../bc-test-data/...` paths the vector suites use resolve to `/tmp/bc-test-data`. Without `ln -s <path-to>/bc-test-data /tmp/bc-test-data` those tests print their "not found" warning, pass vacuously, and every mutant they would have killed is reported as missed. Use `--jobs 3` and an explicit `--timeout`; note that a mutant which makes a squeeze return no bytes hangs a fill loop for real, so some timeouts are kills rather than false alarms.
-  - **Builds use the `mutants` cargo profile** (`profile = "mutants"` in the config, defined in the root `Cargo.toml`): release optimisation without LTO, with incremental codegen. Measured on `bouncycastle-mldsa-lowmemory`, a mutant rebuilds in under a second and the suite runs in about 4 s, against 160 s per run unoptimised and an 80 s thin-LTO rebuild per mutant under `release`. Do not pass `--profile dev` or `--profile release` to "speed things up"; both are slower here.
+  - **A family crate is one package.** `-p bouncycastle-pqc` examines every primitive module in it, so a change to one primitive is scoped by file, with the `--config` copy and `-f` described above.
+  - **Builds use the `mutants` cargo profile** (`profile = "mutants"` in the config, defined in the root `Cargo.toml`): release optimisation without LTO, with incremental codegen. Measured on the low-memory ML-DSA code when it was a crate of its own (now `pqc::mldsa_lowmemory`), a mutant rebuilds in under a second and the suite runs in about 4 s, against 160 s per run unoptimised and an 80 s thin-LTO rebuild per mutant under `release`. Do not pass `--profile dev` or `--profile release` to "speed things up"; both are slower here.
 - Integration tests in `tests/` are preferred over in-file `#[cfg(test)] mod tests` blocks — see "Unit tests vs integration tests" in QUALITY_AND_STYLE.md for the reasoning and the exceptions. A unit test is justified for high-risk code that has known-answer values and cannot be reached through the public API; when you write one, all of its helpers go inside that `mod tests`.
 - A property that can be asserted at compile time (`const _: () = assert!(...)`) stays a compile-time assertion even when a test also covers it: `cargo mutants` cannot see a const assertion fail, so pair the two rather than trading the guarantee for the coverage.
 - For traits in `core`, the canonical tests live in `core-test-framework` and are invoked from each implementor's integration tests — don't duplicate them per-implementation. The same goes for a block cipher's key, mode-wiring and Wycheproof suites, which live in `cipher-test-framework`, for the CLI block cipher command tests' harness and shared checks in `cli/tests/common/mod.rs`, and for the stack-usage harness in `mem_usage_benches/src/block_cipher_mem_usage.rs`.
@@ -437,11 +469,12 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 ## CI
 
-Six workflows under `.github/workflows/`, all triggered by pull requests:
+Eight workflows under `.github/workflows/`, all triggered by pull requests:
 
 - `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then
-  `cargo test -p bouncycastle-scrypt --no-default-features`, since `--all-features` never
-  builds a crate with a default feature off.
+  `cargo test -p bouncycastle-digest --no-default-features` on the crate's unit tests and scrypt's
+  caller-memory tests (the vector suites need bc-test-data, which that job does not check out),
+  since `--all-features` never builds a crate with a default feature off.
 - `rust-test.yml`: `cargo test --all` on stable, with `bcgit/bc-test-data` and `C2SP/wycheproof`
   checked out beside the repository. Wycheproof is pinned to a commit (`ref:` in the workflow), so
   that a change upstream does not fail an unrelated PR: a vector suite that is strict about the
@@ -452,6 +485,18 @@ Six workflows under `.github/workflows/`, all triggered by pull requests:
 - `aes-ct-asm.yml`: `dev_scripts/check_aes_ct_asm.sh` on **nightly** with `rust-src`: builds
   `dev_scripts/aes_ct_harness` for thumbv6m and riscv32i and greps the assembly of the AES round-key
   widening for a multiply, call or branch (see the comment on `PlaneWord::splat` in the aes crate).
+- `oaep-ct.yml`: `dev_scripts/check_oaep_ct.sh` with valgrind and **nightly** `rust-src`: runs
+  `dev_scripts/oaep_ct_harness` (the EME-OAEP decode, included by path) under memcheck with the encoded
+  message undefined, with a variable-time control, and greps its thumbv6m and riscv32i assembly for a
+  multiply, divide or unexpected call.
+- `rsa-ct-stack.yml`: two checks of `crypto/rsa`, on the runner's stable toolchain. `dev_scripts/check_rsa_ct.sh`
+  with valgrind runs `dev_scripts/rsa_ct_harness` (the Montgomery setup over a secret modulus, the checked
+  CRT and a key constructor's congruences; the last two through the crate's `ct_harness` module, which exists
+  only under `--cfg bouncycastle_rsa_ct_harness`) under memcheck with the key undefined, with controls that must
+  be reported. `dev_scripts/check_rsa_stack.sh` runs `dev_scripts/rsa_stack_harness`, which paints the stack, runs
+  each private-key operation and searches what it used for the key and what was derived from it. The second is
+  sized by measurement for an x86-64 release build, so a new compiler that lays frames out deeper fails it: that
+  is the check working, and the fix is to re-measure the wipe sizes, not to drop the step.
 - `publish_doc_benches_to_ghpages.yaml`: builds rustdoc and runs `quality_stats.sh`; on `main` it also
   publishes docs and code stats to GitHub Pages (`https://bcgit.github.io/bc-rust/`). Its bench step is
   commented out because the benches are too slow on the hosted runner, so benchmark figures come from a
@@ -460,8 +505,8 @@ Six workflows under `.github/workflows/`, all triggered by pull requests:
 `cargo test --all` is the workspace run, so a failing test does block a PR; what CI does not run is
 `cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.
 
-The gitea origin has its own copies of the five pull-request checks under `.gitea/workflows/`
-(there is no Pages job). They differ from the GitHub ones in two ways: the toolchain is installed
+The gitea origin has its own copies of five of the pull-request checks under `.gitea/workflows/`
+(there is no Pages job, and `oaep-ct.yml` and `rsa-ct-stack.yml` have no gitea copy). They differ from the GitHub ones in two ways: the toolchain is installed
 with `rustup` in a shell step, and the test job takes its vectors from the runner's read-only
 `/bc-test-data` and `/wycheproof` mounts, failing if either is missing. Wycheproof's are read out
 of the mounted clone at the pinned commit (`git archive`), wherever the clone's `HEAD` is, so the

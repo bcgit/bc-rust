@@ -14,7 +14,7 @@ use bouncycastle_ec::hazmat::p521_scalar::{
     N_LIMBS, P521PublicScalar, P521Scalar, P521ScalarField,
 };
 use bouncycastle_ec::hazmat::p521_wnaf::shamir_multiply;
-use bouncycastle_ec::nat;
+use bouncycastle_utils::nat;
 
 const LIMBS: usize = 9;
 

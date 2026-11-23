@@ -40,9 +40,9 @@
 //! use bouncycastle_core::security_strength::SecurityStrength;
 //! use bouncycastle_core::traits::PublicKey;
 //! use bouncycastle_ed::x448::keygen;
-//! use bouncycastle_hkdf::HkdfDescription;
+//! use bouncycastle_digest::hkdf::HkdfDescription;
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_sha2::SHA512;
+//! use bouncycastle_digest::sha2::SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let (alice_pk, alice_sk) = keygen(&mut rng)?;
@@ -204,8 +204,8 @@ use bouncycastle_core::traits::{
 use bouncycastle_dhkem::{
     AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEM, DHKEMParams, DeriveKeyPairForm, HpkeKem,
 };
-use bouncycastle_hkdf::HkdfDescription;
-use bouncycastle_sha2::SHA512;
+use bouncycastle_digest::hkdf::HkdfDescription;
+use bouncycastle_digest::sha2::SHA512;
 use bouncycastle_utils::ct::{Condition, ct_eq_bytes, ct_eq_zero_bytes};
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::fmt::{self, Display, Formatter};

@@ -4,15 +4,15 @@
 //! [`ECDSA<P384, H>`] signs them. The appendix's `k` is not asserted directly: it is the one
 //! value that gives this `r`, so the signature pins it.
 
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
-use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
+use bouncycastle_core::traits::{Algorithm, CollisionResistantHash, PrivateKey, PublicKey};
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA384, SHA512};
 use bouncycastle_ec::P384;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
 use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 use bouncycastle_ecdsa::keys_common::DerivePublicKey;
-use bouncycastle_hex::decode as hex_decode;
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
 
 const SCALAR_LEN: usize = 48;
 const SIG_LEN: usize = 96;
@@ -101,7 +101,7 @@ fn public_key_matches_vector() {
 }
 
 /// The deterministic signature under `H` is the appendix's `(r, s)`, and verifies.
-fn check<H: EcdsaHash>(vectors: &[Vector]) {
+fn check<H: EcdsaHash + CollisionResistantHash>(vectors: &[Vector]) {
     let (pk, sk) = key_pair::<H>();
     for v in vectors {
         let sig = sk.sign_deterministic(v.msg, None).unwrap();
@@ -110,6 +110,9 @@ fn check<H: EcdsaHash>(vectors: &[Vector]) {
         expected[SCALAR_LEN..].copy_from_slice(&bytes(v.s));
         assert_eq!(sig, expected, "{} over {:?}", ECDSA::<P384, H>::ALG_NAME, v.msg);
         pk.verify(v.msg, None, &sig).unwrap();
+        // The empty context is the absent one.
+        assert_eq!(sk.sign_deterministic(v.msg, Some(&[])).unwrap(), sig);
+        pk.verify(v.msg, Some(&[]), &sig).unwrap();
     }
 }
 

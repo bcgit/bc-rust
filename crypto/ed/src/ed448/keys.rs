@@ -1,4 +1,5 @@
-//! The Ed448 key objects, the algorithm markers and the signature roles over them.
+//! The Ed448 key objects, the algorithm markers, the Ed448ph views of the keys and the
+//! signature roles over them.
 
 use super::point::PublicPoint;
 use super::scheme::{
@@ -14,7 +15,7 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, FinishToken, Hash, PrivateKey, PublicKey, RNG, SignatureSigner,
     SignatureVerifier,
 };
-use bouncycastle_sha3::SHAKE256;
+use bouncycastle_digest::sha3::SHAKE256;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
 use core::fmt::{self, Debug, Display, Formatter};
@@ -24,49 +25,16 @@ pub const ED448_NAME: &str = "Ed448";
 /// String name of the Ed448ph algorithm.
 pub const ED448PH_NAME: &str = "Ed448ph";
 
-/// Ed448 (RFC 8032 Section 5.2), the algorithm that signs the message itself. It takes the
-/// whole message at once, so the keys implement only the one-shot roles under this marker:
-/// [`DeterministicOneShotSigningKey`] and [`OneShotVerifyingKey`].
+/// Ed448 (RFC 8032 Section 5.2), the algorithm that signs the message itself, and the
+/// algorithm of [`Ed448PrivateKey`] and [`Ed448PublicKey`]. It takes the whole message at
+/// once, so the keys implement only the one-shot roles: [`DeterministicOneShotSigningKey`] and
+/// [`OneShotVerifyingKey`].
 ///
 /// Unlike Ed25519, it takes a context, of at most [`CONTEXT_MAX_LEN`] octets and empty by
 /// default (RFC 8032 Section 5.2: "Value of context is set by signer and verifier (maximum of
 /// 255 octets; the default is empty string) and has to match octet by octet for verification
 /// to be successful"): `None` is the empty context, and a longer one is a
 /// [`SignatureError::LengthError`] from signing and from verification.
-///
-/// There is no streaming signer or verifier to ask for. These compile under [`Ed448ph`]:
-///
-/// ```
-/// use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
-/// use bouncycastle_ed::ed448::{Ed448PrivateKey, Ed448PublicKey, Ed448ph};
-///
-/// fn signer(sk: &Ed448PrivateKey) {
-///     let _ = DeterministicSigningKey::<Ed448ph, 114>::create_signer_deterministic(sk, None);
-/// }
-/// fn verifier(pk: &Ed448PublicKey) {
-///     let _ = VerifyingKey::<Ed448ph, 114>::create_verifier(pk, None);
-/// }
-/// ```
-///
-/// and neither does under this marker:
-///
-/// ```compile_fail,E0277
-/// use bouncycastle_core::signature_key::DeterministicSigningKey;
-/// use bouncycastle_ed::ed448::{Ed448, Ed448PrivateKey};
-///
-/// fn signer(sk: &Ed448PrivateKey) {
-///     let _ = DeterministicSigningKey::<Ed448, 114>::create_signer_deterministic(sk, None);
-/// }
-/// ```
-///
-/// ```compile_fail,E0277
-/// use bouncycastle_core::signature_key::VerifyingKey;
-/// use bouncycastle_ed::ed448::{Ed448, Ed448PublicKey};
-///
-/// fn verifier(pk: &Ed448PublicKey) {
-///     let _ = VerifyingKey::<Ed448, 114>::create_verifier(pk, None);
-/// }
-/// ```
 pub struct Ed448;
 
 impl Algorithm for Ed448 {
@@ -89,9 +57,10 @@ impl AlgorithmOID for Ed448 {
 
 /// Ed448ph (RFC 8032 Section 5.2), the algorithm that signs `SHAKE256(x, 64)`, the first 64
 /// octets of SHAKE256 of the message, under a context of at most [`CONTEXT_MAX_LEN`] octets
-/// that is empty by default. The message can arrive in pieces, so the keys implement the
-/// streaming roles under this marker, [`DeterministicSigningKey`] and [`VerifyingKey`], and
-/// the one-shot roles with them.
+/// that is empty by default. Its keys are [`Ed448phPrivateKey`] and [`Ed448phPublicKey`], the
+/// views [`Ed448PrivateKey::as_prehash`] and [`Ed448PublicKey::as_prehash`] give of an Ed448
+/// key. The message can arrive in pieces, so they implement the streaming roles,
+/// [`DeterministicSigningKey`] and [`VerifyingKey`], and the one-shot roles with them.
 ///
 /// An Ed448ph signature is not an Ed448 signature of the message or of its digest, and the
 /// other way round.
@@ -178,7 +147,20 @@ pub fn keypair_consistency_check(
 ///
 /// The derivation runs once, when the key is generated or decoded, so signing does not repeat
 /// it. Everything secret is wiped when the key is dropped, and the type has no `Debug`.
-/// One key signs with [`Ed448`] and with [`Ed448ph`].
+///
+/// It is a key of [`Ed448`], the algorithm `id-Ed448` names (RFC 8410 Section 3), and signs a
+/// whole message through [`DeterministicOneShotSigningKey`]. The same octets sign with
+/// [`Ed448ph`] through the view [`as_prehash`](Self::as_prehash) gives. The key itself has no
+/// streaming signer:
+///
+/// ```compile_fail,E0599
+/// use bouncycastle_core::signature_key::DeterministicSigningKey;
+/// use bouncycastle_ed::ed448::Ed448PrivateKey;
+///
+/// fn signer(sk: &Ed448PrivateKey) {
+///     let _ = sk.create_signer_deterministic(None);
+/// }
+/// ```
 pub struct Ed448PrivateKey {
     /// The private key as RFC 8032 has it, kept for the encoding.
     private_key: Secret<[u8; PRIVATE_KEY_LEN]>,
@@ -259,6 +241,12 @@ impl Ed448PrivateKey {
         let point = self.expanded.public_point().ok_or(KeyMaterialError::ActingOnZeroizedKey)?;
         Ok(Ed448PublicKey { point })
     }
+
+    /// The pre-hash form of this key, an [`Ed448ph`] signing key. The view borrows the key; no
+    /// key material is copied or moved.
+    pub fn as_prehash(&self) -> Ed448phPrivateKey<'_> {
+        Ed448phPrivateKey { sk: self }
+    }
 }
 
 /// The encoding is the 57 octets of the private key as RFC 8032 Section 5.2.5 defines it (the
@@ -317,7 +305,20 @@ impl PartialEq for Ed448PrivateKey {
 impl Eq for Ed448PrivateKey {}
 
 /// An Ed448 public key, fully validated: a point of the curve in the prime-order subgroup,
-/// and not the neutral element. One key verifies [`Ed448`] and [`Ed448ph`] signatures.
+/// and not the neutral element.
+///
+/// It is a key of [`Ed448`], and verifies over a whole message through
+/// [`OneShotVerifyingKey`]; the view [`as_prehash`](Self::as_prehash) gives verifies
+/// [`Ed448ph`] signatures. The key itself has no streaming verifier:
+///
+/// ```compile_fail,E0599
+/// use bouncycastle_core::signature_key::VerifyingKey;
+/// use bouncycastle_ed::ed448::Ed448PublicKey;
+///
+/// fn verifier(pk: &Ed448PublicKey) {
+///     let _ = pk.create_verifier(None);
+/// }
+/// ```
 ///
 /// The validation is done once, by [`from_bytes`](PublicKey::from_bytes), and costs about one
 /// variable-time scalar multiplication by the group order, comparable to verifying a signature;
@@ -327,6 +328,14 @@ impl Eq for Ed448PrivateKey {}
 #[derive(Clone)]
 pub struct Ed448PublicKey {
     point: PublicPoint,
+}
+
+impl Ed448PublicKey {
+    /// The pre-hash form of this key, an [`Ed448ph`] verifying key. The view borrows the key and
+    /// copies nothing.
+    pub fn as_prehash(&self) -> Ed448phPublicKey<'_> {
+        Ed448phPublicKey { pk: self }
+    }
 }
 
 /// The encoding is the 57 octets of RFC 8032 Section 5.2.5: the y-coordinate, little-endian,
@@ -388,7 +397,7 @@ impl Debug for Ed448PublicKey {
     }
 }
 
-/*** Ed448: the one-shot roles alone ***/
+/*** Ed448, on the keys: the one-shot roles alone ***/
 
 /// Ed448 signing (RFC 8032 Section 5.2.6). The message is hashed twice, the second time
 /// after a value computed from the first, so it is taken whole.
@@ -426,7 +435,7 @@ fn signature_octets(sig: &[u8]) -> Result<&[u8; SIGNATURE_LEN], SignatureError> 
     sig.try_into().map_err(|_| SignatureError::LengthError("An Ed448 signature is 114 bytes"))
 }
 
-/*** Ed448ph: the streaming roles, and the one-shot roles over their workers ***/
+/*** Ed448ph, on the views: the streaming roles, and the one-shot roles over their workers ***/
 
 /// A context as a worker holds it: checked against [`CONTEXT_MAX_LEN`] and copied, because the
 /// worker outlives the caller's borrow of it. It is public data.
@@ -452,8 +461,8 @@ impl Context {
 
 /// An Ed448ph signature in progress (RFC 8032 Section 5.2.6 with PH(x) = SHAKE256(x, 64)):
 /// the message is hashed as it arrives and the digest signed at the end. Made by
-/// [`DeterministicSigningKey::create_signer_deterministic`] on an [`Ed448PrivateKey`], which
-/// it borrows.
+/// [`DeterministicSigningKey::create_signer_deterministic`] on an [`Ed448phPrivateKey`]; it
+/// borrows the [`Ed448PrivateKey`] behind the view.
 pub struct Ed448phSigner<'k> {
     sk: &'k Ed448PrivateKey,
     prehash: SHAKE256,
@@ -487,7 +496,7 @@ impl SignatureSigner<SIGNATURE_LEN> for Ed448phSigner<'_> {
 
 /// An Ed448ph verification in progress (RFC 8032 Section 5.2.7 with PH(x) = SHAKE256(x, 64)),
 /// by the cofactored equation. Made by [`VerifyingKey::create_verifier`] on an
-/// [`Ed448PublicKey`], which it borrows.
+/// [`Ed448phPublicKey`]; it borrows the [`Ed448PublicKey`] behind the view.
 pub struct Ed448phVerifier<'k> {
     pk: &'k Ed448PublicKey,
     prehash: SHAKE256,
@@ -515,14 +524,68 @@ impl SignatureVerifier for Ed448phVerifier<'_> {
     }
 }
 
+/// An Ed448ph signing key: the view [`Ed448PrivateKey::as_prehash`] gives of an Ed448 private key,
+/// which signs with [`Ed448ph`] through [`DeterministicSigningKey`] and its one-shot role. It
+/// is a reference to the key and holds no key material, so copying it copies none. A signer it
+/// makes borrows the key, not the view:
+///
+/// ```
+/// use bouncycastle_core::signature_key::DeterministicSigningKey;
+/// use bouncycastle_ed::ed448::{Ed448PrivateKey, Ed448phSigner};
+///
+/// fn signer(sk: &Ed448PrivateKey) -> Ed448phSigner<'_> {
+///     sk.as_prehash().create_signer_deterministic(None).unwrap()
+/// }
+/// ```
+///
+/// It does not sign with [`Ed448`]:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::DeterministicOneShotSigningKey;
+/// use bouncycastle_ed::ed448::{Ed448, Ed448PrivateKey};
+///
+/// fn sign(sk: &Ed448PrivateKey) {
+///     let _ = DeterministicOneShotSigningKey::<Ed448, 114>::sign_deterministic(
+///         &sk.as_prehash(),
+///         b"msg",
+///         None,
+///     );
+/// }
+/// ```
+#[derive(Clone, Copy)]
+pub struct Ed448phPrivateKey<'k> {
+    sk: &'k Ed448PrivateKey,
+}
+
+/// An Ed448ph verifying key: the view [`Ed448PublicKey::as_prehash`] gives of an Ed448 public key,
+/// which verifies [`Ed448ph`] signatures through [`VerifyingKey`] and its one-shot role. It is
+/// a reference to the key, and a verifier it makes borrows the key, not the view.
+///
+/// It does not verify [`Ed448`] signatures:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::signature_key::OneShotVerifyingKey;
+/// use bouncycastle_ed::ed448::{Ed448, Ed448PublicKey};
+///
+/// fn verify(pk: &Ed448PublicKey, sig: &[u8]) {
+///     let _ = OneShotVerifyingKey::<Ed448, 114>::verify(&pk.as_prehash(), b"msg", None, sig);
+/// }
+/// ```
+#[derive(Clone, Copy)]
+pub struct Ed448phPublicKey<'k> {
+    pk: &'k Ed448PublicKey,
+}
+
 /// Ed448ph signing, the message taken as it arrives.
 ///
 /// The errors beyond the role's are [`KeyMaterialError::ActingOnZeroizedKey`] from the
 /// constructor for a key that was never filled, and [`SignatureError::ComputationFault`] from the
 /// signer's final if a computed point fails its check, which no input causes.
-impl DeterministicSigningKey<Ed448ph, SIGNATURE_LEN> for Ed448PrivateKey {
+impl<'a> DeterministicSigningKey<Ed448ph, SIGNATURE_LEN> for Ed448phPrivateKey<'a> {
+    // The signer borrows the key the view refers to, for the key's lifetime and not the
+    // view's, so it outlives a view that was a temporary.
     type Signer<'k>
-        = Ed448phSigner<'k>
+        = Ed448phSigner<'a>
     where
         Self: 'k;
 
@@ -530,29 +593,27 @@ impl DeterministicSigningKey<Ed448ph, SIGNATURE_LEN> for Ed448PrivateKey {
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
-        self.check_filled()?;
-        Ok(Ed448phSigner { sk: self, prehash: SHAKE256::new(), context: Context::new(ctx)? })
+        self.sk.check_filled()?;
+        Ok(Ed448phSigner { sk: self.sk, prehash: SHAKE256::new(), context: Context::new(ctx)? })
     }
 }
 
-impl DeterministicOneShotSigningKey<Ed448ph, SIGNATURE_LEN> for Ed448PrivateKey {
+impl DeterministicOneShotSigningKey<Ed448ph, SIGNATURE_LEN> for Ed448phPrivateKey<'_> {
     fn sign_deterministic_out(
         &self,
         msg: &[u8],
         ctx: Option<&[u8]>,
         output: &mut [u8; SIGNATURE_LEN],
     ) -> Result<usize, SignatureError> {
-        let signer = DeterministicSigningKey::<Ed448ph, SIGNATURE_LEN>::create_signer_deterministic(
-            self, ctx,
-        );
-        sign_out_with_signer(signer, msg, output)
+        sign_out_with_signer(self.create_signer_deterministic(ctx), msg, output)
     }
 }
 
 /// Ed448ph verification, the message taken as it arrives.
-impl VerifyingKey<Ed448ph, SIGNATURE_LEN> for Ed448PublicKey {
+impl<'a> VerifyingKey<Ed448ph, SIGNATURE_LEN> for Ed448phPublicKey<'a> {
+    // As the signer: the verifier borrows the key, not the view.
     type Verifier<'k>
-        = Ed448phVerifier<'k>
+        = Ed448phVerifier<'a>
     where
         Self: 'k;
 
@@ -560,13 +621,12 @@ impl VerifyingKey<Ed448ph, SIGNATURE_LEN> for Ed448PublicKey {
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Verifier<'k>, SignatureError> {
-        Ok(Ed448phVerifier { pk: self, prehash: SHAKE256::new(), context: Context::new(ctx)? })
+        Ok(Ed448phVerifier { pk: self.pk, prehash: SHAKE256::new(), context: Context::new(ctx)? })
     }
 }
 
-impl OneShotVerifyingKey<Ed448ph, SIGNATURE_LEN> for Ed448PublicKey {
+impl OneShotVerifyingKey<Ed448ph, SIGNATURE_LEN> for Ed448phPublicKey<'_> {
     fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
-        let verifier = VerifyingKey::<Ed448ph, SIGNATURE_LEN>::create_verifier(self, ctx)?;
-        verify_with_verifier(verifier, msg, sig)
+        verify_with_verifier(self.create_verifier(ctx)?, msg, sig)
     }
 }

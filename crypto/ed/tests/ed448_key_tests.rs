@@ -2,16 +2,16 @@
 //! encoding and decoding, and the full validation of a decoded public key.
 
 use bouncycastle_core::errors::{KeyDecodingError, KeyMaterialError, RNGError, SignatureError};
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::FailingRNG;
 use bouncycastle_core_test_framework::signature::TestFrameworkSignatureKeys;
 use bouncycastle_ed::ed448::{
-    Ed448, Ed448PrivateKey, Ed448PublicKey, PRIVATE_KEY_LEN, PUBLIC_KEY_LEN, keygen, keygen_out,
+    Ed448PrivateKey, Ed448PublicKey, PRIVATE_KEY_LEN, PUBLIC_KEY_LEN, keygen, keygen_out,
     keypair_consistency_check,
 };
-use bouncycastle_rng::FixedSeedRNG;
 
 const ZEROIZED: SignatureError =
     SignatureError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey);
@@ -22,7 +22,7 @@ fn rng() -> FixedSeedRNG<[u8; 128]> {
 }
 
 fn octets(hex: &str) -> [u8; 57] {
-    bouncycastle_hex::decode(hex).unwrap().try_into().unwrap()
+    bouncycastle_core::hex::decode(hex).unwrap().try_into().unwrap()
 }
 
 // The encodings below were made with the Python library of RFC 8032 Appendix A, lifted from
@@ -213,13 +213,9 @@ fn keygen_out_matches_keygen_and_signs() {
     assert!(sk_out == sk);
     assert_eq!(sk_out.encode(), sk.encode());
 
-    let sig = DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(&sk_out, b"msg", None)
-        .unwrap();
-    OneShotVerifyingKey::<Ed448, _>::verify(&pk, b"msg", None, &sig).unwrap();
-    assert_eq!(
-        sig,
-        DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(&sk, b"msg", None).unwrap()
-    );
+    let sig = sk_out.sign_deterministic(b"msg", None).unwrap();
+    pk.verify(b"msg", None, &sig).unwrap();
+    assert_eq!(sig, sk.sign_deterministic(b"msg", None).unwrap());
 }
 
 /// A key that already holds one key pair holds exactly the new one afterwards.
@@ -258,9 +254,6 @@ fn a_failed_keygen_leaves_the_key_unfilled() {
             Ok(())
         }
         fn next_int(&mut self) -> Result<u32, RNGError> {
-            Err(RNGError::GenericError("dry"))
-        }
-        fn next_bytes(&mut self, _: usize) -> Result<Vec<u8>, RNGError> {
             Err(RNGError::GenericError("dry"))
         }
         fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
@@ -321,10 +314,7 @@ fn from_bytes_out_fills_a_held_key() {
     Ed448PrivateKey::from_bytes_out(&sk.encode(), &mut held).unwrap();
     assert!(held == sk);
     assert_eq!(held.pk().unwrap(), pk);
-    assert_eq!(
-        DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(&held, b"msg", None),
-        DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(&sk, b"msg", None)
-    );
+    assert_eq!(held.sign_deterministic(b"msg", None), sk.sign_deterministic(b"msg", None));
 
     Ed448PrivateKey::from_bytes_out(&[7u8; 57], &mut held).unwrap();
     assert!(held == Ed448PrivateKey::from_bytes(&[7u8; 57]).unwrap() && held != sk);
@@ -354,10 +344,7 @@ fn clone_and_clone_from() {
     assert!(held == sk);
     assert_eq!(held.encode(), sk.encode());
     assert_eq!(held.pk().unwrap(), pk);
-    assert_eq!(
-        DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(&held, b"msg", None),
-        DeterministicOneShotSigningKey::<Ed448, _>::sign_deterministic(&sk, b"msg", None)
-    );
+    assert_eq!(held.sign_deterministic(b"msg", None), sk.sign_deterministic(b"msg", None));
 
     held.clone_from(&Ed448PrivateKey::zeroized());
     assert!(held == Ed448PrivateKey::zeroized());

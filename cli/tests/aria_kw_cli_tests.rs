@@ -7,7 +7,7 @@
 //!
 //! The known answers are the first pseudorandom (`Normal`) 32-byte case at each key length of
 //! Wycheproof's `aria_wrap_test.json` (tcId 7, 48, 101) and `aria_kwp_test.json` (tcId 7, 82,
-//! 165); the full sets run in `crypto/aria/tests/kw_wycheproof.rs`.
+//! 165); the full sets run in `crypto/symmetric/tests/aria_kw_wycheproof.rs`.
 
 mod common;
 use common::{listed_in_help, run_err_silent, run_ok, tohex, unhex};

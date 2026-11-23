@@ -9,8 +9,8 @@
 
 mod cavp_common;
 
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA384, SHA512};
 use bouncycastle_ec::P521;
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
 
 const PK_LEN: usize = 133;
 const SK_LEN: usize = 66;

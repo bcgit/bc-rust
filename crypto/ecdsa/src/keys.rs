@@ -8,7 +8,7 @@
 use crate::ecdsa::EcdsaHash;
 use crate::keys_common::{DerivePublicKey, SignatureKeyPair};
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
-use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
+use bouncycastle_core::traits::{CollisionResistantHash, PrivateKey, PublicKey, RNG};
 use bouncycastle_ec::curve::{Curve, SecretScalar, private_scalar_from_be_bytes};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -135,9 +135,21 @@ impl<C: Curve, H: EcdsaHash> Display for ECDSAPublicKey<C, H> {
 /// with the order's length): the draw is the curve's
 /// [`keygen_extra_bits`](Curve::keygen_extra_bits), Table A.2's recommended length.
 ///
+/// A pair is generated to sign with, so `H` is a [`CollisionResistantHash`]; a key over another
+/// hash is decoded, or re-paired with [`with_hash`](ECDSAPublicKey::with_hash):
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_ec::P256;
+/// use bouncycastle_ecdsa::keys::keygen;
+/// use bouncycastle_digest::ripemd::RIPEMD160;
+/// use bouncycastle_rng::HashDRBG_SHA512;
+///
+/// let _ = keygen::<P256, RIPEMD160>(&mut HashDRBG_SHA512::new_from_os());
+/// ```
+///
 /// # Errors
 /// [`SignatureError::RNGError`] if the RNG is weaker than the curve or fails to deliver.
-pub fn keygen<C: Curve, H: EcdsaHash>(
+pub fn keygen<C: Curve, H: EcdsaHash + CollisionResistantHash>(
     rng: &mut dyn RNG,
 ) -> Result<(ECDSAPublicKey<C, H>, ECDSAPrivateKey<C, H>), SignatureError> {
     let (d, (x, y)) = C::keygen_extra_bits(rng)?;
@@ -147,7 +159,7 @@ pub fn keygen<C: Curve, H: EcdsaHash>(
 /// Every curve's [`generate_signature_key_pair`](SignatureKeyPair::generate_signature_key_pair)
 /// is [`keygen`].
 impl<C: Curve> SignatureKeyPair for C {
-    fn generate_signature_key_pair<H: EcdsaHash>(
+    fn generate_signature_key_pair<H: EcdsaHash + CollisionResistantHash>(
         rng: &mut dyn RNG,
     ) -> Result<(ECDSAPublicKey<C, H>, ECDSAPrivateKey<C, H>), SignatureError> {
         keygen::<C, H>(rng)

@@ -991,7 +991,7 @@ mod tests {
     const D: &str = "37095705934669439343138083508754565189542113879843219016388785533085940283555";
 
     fn octets<const N: usize>(hex: &str) -> [u8; N] {
-        bouncycastle_hex::decode(hex).unwrap().try_into().unwrap()
+        bouncycastle_core::hex::decode(hex).unwrap().try_into().unwrap()
     }
 
     fn halves(hex: &str) -> [u64; 2] {

@@ -3,7 +3,7 @@
 //! is the same algorithm). This crate implements only the Digital Signature Algorithm -- key
 //! generation ([`keys`]) and signing/verification ([`sm2::SM2`]) -- built on
 //! [`bouncycastle_ec::hazmat::sm2`]'s field/scalar/point arithmetic, SEC 1 encoding, and comb/wNAF
-//! multipliers, and [`bouncycastle_sm3`] for the hash (see [`sm2`]'s docs on why only SM3).
+//! multipliers, and [`bouncycastle_digest::sm3`] for the hash (see [`sm2`]'s docs on why only SM3).
 //!
 //! # Scope
 //!

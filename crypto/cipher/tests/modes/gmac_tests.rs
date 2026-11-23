@@ -8,6 +8,7 @@ mod common;
 use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, GMAC, ModeNames};
 use bouncycastle_core::errors::MACError;
+use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{KeyExpansion, Mode, NonceMacMode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -17,7 +18,6 @@ use bouncycastle_core::symmetric_key::{
 use bouncycastle_core::traits::{MACGenerator, MACVerifier};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
-use bouncycastle_rng::FixedSeedRNG;
 use common::{TOY_LEN, Toy, toy_key};
 
 type ToyGmacKey<const TAG_LEN: usize = 16> = BlockCipherKey<Toy, GMAC<TAG_LEN>>;

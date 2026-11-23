@@ -88,6 +88,21 @@ pub enum KEMError {
     KDFError(KDFError),
 }
 
+/// Errors of the key-transport roles ([`crate::key_transport_key`]).
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum KeyTransportError {
+    /// The key is longer than the algorithm can carry under these parameters.
+    KeyTooLong,
+    /// The ciphertext did not decrypt to a key, for whatever reason: the one error a recipient
+    /// reports, so that the causes cannot be told apart.
+    DecryptionFailed,
+    /// The key to transport is not usable, or the recovered key could not be typed.
+    KeyMaterialError(KeyMaterialError),
+    /// The RNG refused or failed to deliver, or is weaker than the algorithm requires.
+    RNGError(RNGError),
+}
+
 /// Errors of the key-agreement traits ([`crate::agreement_key`], [`crate::traits::KeyAgreement`]).
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -176,8 +191,10 @@ pub enum SignatureError {
     /// The pre-hash is weaker than the parameter set (FIPS 204 Section 5.4 for HashML-DSA).
     PreHashTooWeak,
     /// A value the algorithm computed failed the check the algorithm makes on its own results
-    /// before releasing them, such as a point that is not on the curve. No input causes it: it
-    /// means a fault in the computation, and nothing was written.
+    /// before releasing them, such as a point that is not on the curve, or an RSA result that
+    /// the public exponent does not take back to its input. No message causes it: it means a
+    /// fault in the computation, or a private key whose parts do not belong together, and
+    /// nothing was written.
     ComputationFault,
     ///
     EncodingError(&'static str),
@@ -386,6 +403,18 @@ impl From<KeyMaterialError> for SignatureError {
 
 impl From<RNGError> for SignatureError {
     fn from(e: RNGError) -> SignatureError {
+        Self::RNGError(e)
+    }
+}
+
+impl From<KeyMaterialError> for KeyTransportError {
+    fn from(e: KeyMaterialError) -> Self {
+        Self::KeyMaterialError(e)
+    }
+}
+
+impl From<RNGError> for KeyTransportError {
+    fn from(e: RNGError) -> Self {
         Self::RNGError(e)
     }
 }

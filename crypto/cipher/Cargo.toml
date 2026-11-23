@@ -6,7 +6,6 @@ version.workspace = true
 
 [dependencies]
 bouncycastle-core.workspace = true
-bouncycastle-rng.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
@@ -20,8 +19,8 @@ bouncycastle-utils.workspace = true
 # published manifest and the two crates can be published in order, this one first.
 bouncycastle-aes = { path = "../aes" }
 bouncycastle-core-test-framework.workspace = true
-bouncycastle-hex.workspace = true
 criterion.workspace = true
+bouncycastle-rng.workspace = true
 
 [[test]]
 name = "nopadding_tests"

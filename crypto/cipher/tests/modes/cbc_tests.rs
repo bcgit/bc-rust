@@ -84,7 +84,7 @@ fn call_grouping_does_not_change_the_result() {
     // Both encryption runs must use the same IV to be comparable, so pin it with the fixed RNG
     // rather than letting `create_encryptor` draw a fresh one.
     let iv: [u8; TOY_LEN] = core::array::from_fn(|i| 0xF0 ^ (i as u8));
-    let pinned_rng = || bouncycastle_rng::FixedSeedRNG::new(iv);
+    let pinned_rng = || bouncycastle_core::hazmat::FixedSeedRNG::new(iv);
 
     // Reference: all eight blocks in one call (two fours).
     let (mut enc, got_iv) = key.create_encryptor(&mut pinned_rng()).unwrap();
@@ -341,7 +341,7 @@ fn the_key_enforces_the_material_policy() {
 fn one_shots_agree_with_the_streaming_api() {
     let key = cbc_key();
     let iv: [u8; TOY_LEN] = core::array::from_fn(|i| 0x0F ^ (i as u8));
-    let pinned_rng = || bouncycastle_rng::FixedSeedRNG::new(iv);
+    let pinned_rng = || bouncycastle_core::hazmat::FixedSeedRNG::new(iv);
 
     // 3 blocks = 48 bytes: one pair and a tail.
     let flat3: [u8; 3 * TOY_LEN] = core::array::from_fn(|i| (i * 7) as u8);
