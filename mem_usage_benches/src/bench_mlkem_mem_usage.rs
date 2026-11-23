@@ -2110,8 +2110,8 @@ fn bench_mlkem512_keygen_out() {
     .unwrap();
 
     let mut sk = bouncycastle::pqc::mlkem::MLKEM512PrivateKey::zeroized();
-    let pk = MLKEM512::keygen_from_seed_out(&seed, &mut sk).unwrap();
-    println!("{:x?}", pk.encode());
+    MLKEM512::keygen_from_seed_out(&seed, &mut sk).unwrap();
+    println!("{:x?}", sk.pk().encode());
 }
 
 fn bench_mlkem768_keygen_out() {
@@ -2132,8 +2132,8 @@ fn bench_mlkem768_keygen_out() {
     .unwrap();
 
     let mut sk = bouncycastle::pqc::mlkem::MLKEM768PrivateKey::zeroized();
-    let pk = MLKEM768::keygen_from_seed_out(&seed, &mut sk).unwrap();
-    println!("{:x?}", pk.encode());
+    MLKEM768::keygen_from_seed_out(&seed, &mut sk).unwrap();
+    println!("{:x?}", sk.pk().encode());
 }
 
 fn bench_mlkem1024_keygen_out() {
@@ -2154,8 +2154,8 @@ fn bench_mlkem1024_keygen_out() {
     .unwrap();
 
     let mut sk = bouncycastle::pqc::mlkem::MLKEM1024PrivateKey::zeroized();
-    let pk = MLKEM1024::keygen_from_seed_out(&seed, &mut sk).unwrap();
-    println!("{:x?}", pk.encode());
+    MLKEM1024::keygen_from_seed_out(&seed, &mut sk).unwrap();
+    println!("{:x?}", sk.pk().encode());
 }
 
 /// Encapsulation with the expanded key, including building it from the key loaded beforehand.

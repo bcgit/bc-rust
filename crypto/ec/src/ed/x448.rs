@@ -272,23 +272,25 @@ impl AlgorithmOID for X448 {
 ///
 /// # Errors
 /// [`KeyAgreementError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver.
+// Inlined so that the key is built in the caller's frame and moved into the pair once; out of
+// line, LLVM stages a further copy of it, which the stack harness's keygen rows show.
+#[inline(always)]
 pub fn keygen(rng: &mut dyn RNG) -> Result<(X448PublicKey, X448PrivateKey), KeyAgreementError> {
     let mut sk = X448PrivateKey::zeroized();
-    let pk = keygen_out(rng, &mut sk)?;
+    keygen_out(rng, &mut sk)?;
+    let pk = sk.pk;
     Ok((pk, sk))
 }
 
-/// Generates a private key into `sk`, a key you hold, and returns its public key: the RNG,
-/// which must offer X448's 192 bits, writes the 56 bytes of the scalar straight into the key's
-/// own `Secret` (RFC 7748 Section 6.2), so no copy of it is staged on the way. `sk` is zeroized
-/// first and left so on every error.
+/// Generates a private key into `sk`, a key you hold: the RNG, which must offer X448's 192 bits,
+/// writes the 56 bytes of the scalar straight into the key's own `Secret` (RFC 7748 Section
+/// 6.2), so no copy of it is staged on the way. The public key is read from the key afterwards
+/// with [`sk.pk()`](X448PrivateKey::pk), which cannot fail once this has returned `Ok`. `sk` is
+/// zeroized first and left so on every error.
 ///
 /// # Errors
 /// [`KeyAgreementError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver.
-pub fn keygen_out(
-    rng: &mut dyn RNG,
-    sk: &mut X448PrivateKey,
-) -> Result<X448PublicKey, KeyAgreementError> {
+pub fn keygen_out(rng: &mut dyn RNG, sk: &mut X448PrivateKey) -> Result<(), KeyAgreementError> {
     sk.clear();
     if rng.security_strength() < X448::MAX_SECURITY_STRENGTH {
         return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
@@ -298,7 +300,7 @@ pub fn keygen_out(
         return Err(e.into());
     }
     sk.fill_pk();
-    Ok(sk.pk)
+    Ok(())
 }
 
 /// The key pair whose private key is `seed`'s 56 bytes: a [`KeyMaterial`] typed
@@ -312,17 +314,22 @@ pub fn keygen_out(
 /// # Errors
 /// [`KeyAgreementError::KeyMaterialError`] for a seed of another type or length, or of too
 /// little strength.
+// Inlined so that the key is built in the caller's frame and moved into the pair once; out of
+// line, LLVM stages a further copy of it, which the stack harness's keygen rows show.
+#[inline(always)]
 pub fn keygen_from_seed(
     seed: &KeyMaterial<SCALAR_LEN>,
 ) -> Result<(X448PublicKey, X448PrivateKey), KeyAgreementError> {
     let mut sk = X448PrivateKey::zeroized();
-    let pk = keygen_from_seed_out(seed, &mut sk)?;
+    keygen_from_seed_out(seed, &mut sk)?;
+    let pk = sk.pk;
     Ok((pk, sk))
 }
 
-/// The private key whose scalar is `seed`'s 56 bytes, into `sk`, a key you hold, and its public
-/// key returned: the seed's requirements are [`keygen_from_seed`]'s, and the bytes are copied
-/// once, into the key's own `Secret`. `sk` is zeroized first and left so on every error.
+/// The private key whose scalar is `seed`'s 56 bytes, into `sk`, a key you hold: the seed's
+/// requirements are [`keygen_from_seed`]'s, and the bytes are copied once, into the key's own
+/// `Secret`. The public key is read as after [`keygen_out`]. `sk` is zeroized first and left so
+/// on every error.
 ///
 /// # Errors
 /// [`KeyAgreementError::KeyMaterialError`] for a seed of another type or length, or of too
@@ -330,7 +337,7 @@ pub fn keygen_from_seed(
 pub fn keygen_from_seed_out(
     seed: &KeyMaterial<SCALAR_LEN>,
     sk: &mut X448PrivateKey,
-) -> Result<X448PublicKey, KeyAgreementError> {
+) -> Result<(), KeyAgreementError> {
     sk.clear();
     if seed.key_type() == KeyType::Zeroized {
         return Err(KeyMaterialError::ActingOnZeroizedKey.into());
@@ -352,7 +359,7 @@ pub fn keygen_from_seed_out(
 
     sk.k.copy_from_slice(seed.ref_to_bytes());
     sk.fill_pk();
-    Ok(sk.pk)
+    Ok(())
 }
 
 /// Checks that `pk` is the public key of `sk`. The keys are compared as their 56 bytes, so
@@ -1014,10 +1021,11 @@ impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X448 {
         // generated in this frame and dropped here, so its scalar is wiped where it was drawn.
         let mut sk = X448PrivateKey::zeroized();
         // keygen_out fails only through the RNG.
-        let pk = keygen_out(rng, &mut sk).map_err(|e| match e {
+        keygen_out(rng, &mut sk).map_err(|e| match e {
             KeyAgreementError::RNGError(e) => KEMError::RNGError(e),
             _ => KEMError::GenericError("X448 key generation failed"),
         })?;
+        let pk = sk.pk;
         Ok(f(&pk, &sk))
     }
 

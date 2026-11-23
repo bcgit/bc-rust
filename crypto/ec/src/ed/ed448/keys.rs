@@ -86,23 +86,25 @@ impl SignatureAlgorithm for Ed448ph {}
 /// [`SignatureError::ComputationFault`] if the computed public key fails its check, which no input
 /// causes; [`SignatureError::KeyGenError`] if the octets drawn are a private key this module
 /// refuses ([`Ed448PrivateKey`]), which is not known to happen. The generation is not retried.
+// Inlined so that the key is built in the caller's frame and moved into the pair once; out of
+// line, LLVM stages a further copy of it, which the stack harness's keygen rows show.
+#[inline(always)]
 pub fn keygen(rng: &mut dyn RNG) -> Result<(Ed448PublicKey, Ed448PrivateKey), SignatureError> {
     let mut sk = Ed448PrivateKey::zeroized();
-    let pk = keygen_out(rng, &mut sk)?;
+    keygen_out(rng, &mut sk)?;
+    let pk = sk.pk()?;
     Ok((pk, sk))
 }
 
-/// Generates a private key into `sk`, a key you hold, and returns its public key: the RNG,
-/// which must offer the 192 bits Ed448 is classed at, writes the 57 octets straight into the
-/// key, which is expanded where it sits, so no copy of it is staged on the way. `sk` is
-/// zeroized first and left so on every error.
+/// Generates a private key into `sk`, a key you hold: the RNG, which must offer the 192 bits
+/// Ed448 is classed at, writes the 57 octets straight into the key, which is expanded where it
+/// sits, so no copy of it is staged on the way. The public key is read from the key afterwards
+/// with [`sk.pk()`](Ed448PrivateKey::pk), which cannot fail once this has returned `Ok`. `sk`
+/// is zeroized first and left so on every error.
 ///
 /// # Errors
 /// As [`keygen`].
-pub fn keygen_out(
-    rng: &mut dyn RNG,
-    sk: &mut Ed448PrivateKey,
-) -> Result<Ed448PublicKey, SignatureError> {
+pub fn keygen_out(rng: &mut dyn RNG, sk: &mut Ed448PrivateKey) -> Result<(), SignatureError> {
     sk.clear();
     if rng.security_strength() < Ed448::MAX_SECURITY_STRENGTH {
         return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
@@ -115,7 +117,7 @@ pub fn keygen_out(
         sk.clear();
         return Err(e);
     }
-    sk.pk()
+    Ok(())
 }
 
 /// Checks that `pk` is the public key of `sk`.

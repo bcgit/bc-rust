@@ -693,19 +693,12 @@ pub trait MLKEMTrait<P: MLKEMParams>: Sized {
     }
     /// [`keygen`](Self::keygen) into a private key the caller holds: each field is computed in
     /// `sk` itself, so no copy of it is staged on the way and none is left behind by a move,
-    /// which wipes nothing. Start from [`MLKEMPrivateKey::zeroized`]. `sk` is cleared first and
-    /// left so on every error.
-    ///
-    /// Returns the public key, which `sk` holds: the reference borrows `sk`, so use it before
-    /// the private key, or take [`sk.pk()`](MLKEMPrivateKeyTrait::pk) afterwards, which is the
-    /// same key.
+    /// which wipes nothing. Start from [`MLKEMPrivateKey::zeroized`]; the public key is
+    /// [`sk.pk()`](MLKEMPrivateKeyTrait::pk). `sk` is cleared first and left so on every error.
     ///
     /// After an error `sk.pk()` is the all-zero public key, which is not refused by
     /// encapsulation: do not publish it (see [`MLKEMPrivateKey::zeroized`]).
-    fn keygen_out<'k>(
-        rng: &mut dyn RNG,
-        sk: &'k mut MLKEMPrivateKey<P>,
-    ) -> Result<&'k MLKEMPublicKey<P>, KEMError> {
+    fn keygen_out(rng: &mut dyn RNG, sk: &mut MLKEMPrivateKey<P>) -> Result<(), KEMError> {
         sk.clear();
         if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
             Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
@@ -720,10 +713,10 @@ pub trait MLKEMTrait<P: MLKEMParams>: Sized {
     ) -> Result<(MLKEMPublicKey<P>, MLKEMPrivateKey<P>), KEMError>;
     /// [`keygen_from_seed`](Self::keygen_from_seed) into a private key the caller holds; see
     /// [`keygen_out`](Self::keygen_out).
-    fn keygen_from_seed_out<'k>(
+    fn keygen_from_seed_out(
         seed: &KeyMaterial<64>,
-        sk: &'k mut MLKEMPrivateKey<P>,
-    ) -> Result<&'k MLKEMPublicKey<P>, KEMError>;
+        sk: &mut MLKEMPrivateKey<P>,
+    ) -> Result<(), KEMError>;
     /// Imports a secret key from both a seed and an encoded_sk.
     ///
     /// This is a convenience function to expand the key from seed and compare it against
@@ -759,12 +752,11 @@ impl<P: MLKEMParams> MLKEMTrait<P> for MLKEM<P> {
         Self::keygen_internal(seed)
     }
 
-    fn keygen_from_seed_out<'k>(
+    fn keygen_from_seed_out(
         seed: &KeyMaterial<64>,
-        sk: &'k mut MLKEMPrivateKey<P>,
-    ) -> Result<&'k MLKEMPublicKey<P>, KEMError> {
-        Self::keygen_internal_out(seed, sk)?;
-        Ok(sk.pk())
+        sk: &mut MLKEMPrivateKey<P>,
+    ) -> Result<(), KEMError> {
+        Self::keygen_internal_out(seed, sk)
     }
 
     fn keygen_from_seed_and_encoded<const SK_LEN: usize>(

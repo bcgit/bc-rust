@@ -115,8 +115,8 @@ fn keygen_uses_the_rng_output_as_the_key() {
 }
 
 /// The out forms write into a key the caller holds: a stale key is overwritten with what the
-/// by-value forms give for the same RNG output or seed, the returned public key is the key's
-/// own, and a refused RNG or seed leaves the key all zero.
+/// by-value forms give for the same RNG output or seed, public key included, and a refused
+/// RNG or seed leaves the key all zero.
 #[test]
 fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
     let seed_bytes: [u8; 32] = hex::decode(ALICE_SK).unwrap().try_into().unwrap();
@@ -124,10 +124,11 @@ fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
     assert_eq!(zero.pk(), NO_PK);
 
     let (_, mut sk) = keygen_default().unwrap();
-    let pk = keygen_out(&mut FixedSeedRNG::new(seed_bytes), &mut sk).unwrap();
-    assert_eq!(pk.as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
-    assert_eq!(sk.pk().unwrap(), pk);
-    assert!(sk == keygen(&mut FixedSeedRNG::new(seed_bytes)).unwrap().1);
+    keygen_out(&mut FixedSeedRNG::new(seed_bytes), &mut sk).unwrap();
+    let (expected_pk, expected_sk) = keygen(&mut FixedSeedRNG::new(seed_bytes)).unwrap();
+    assert_eq!(sk.pk().unwrap().as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
+    assert_eq!(sk.pk().unwrap(), expected_pk);
+    assert!(sk == expected_sk);
 
     let mut weak = FixedSeedRNG::new(seed_bytes);
     weak.set_security_strength(SecurityStrength::_112bit);
@@ -139,10 +140,11 @@ fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
     assert_eq!(sk.pk(), NO_PK);
 
     let (_, mut sk) = keygen_default().unwrap();
-    let pk = keygen_from_seed_out(&seed(ALICE_SK, KeyType::Seed), &mut sk).unwrap();
-    assert_eq!(pk.as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
-    assert_eq!(sk.pk().unwrap(), pk);
-    assert!(sk == keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap().1);
+    keygen_from_seed_out(&seed(ALICE_SK, KeyType::Seed), &mut sk).unwrap();
+    let (expected_pk, expected_sk) = keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap();
+    assert_eq!(sk.pk().unwrap().as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
+    assert_eq!(sk.pk().unwrap(), expected_pk);
+    assert!(sk == expected_sk);
 
     assert!(matches!(
         keygen_from_seed_out(&seed(ALICE_SK, KeyType::Unknown), &mut sk),

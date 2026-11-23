@@ -104,8 +104,8 @@
 //!
 //! | Entry point                        | Stack   |
 //! |------------------------------------|---------|
-//! | `keygen`                           | 4672 B  |
-//! | `keygen_out`                       | 4080 B  |
+//! | `keygen`                           | 4192 B  |
+//! | `keygen_out`                       | 3728 B  |
 //! | `Ed448PrivateKey::from_bytes`      | 4064 B  |
 //! | `Ed448PrivateKey::from_bytes_out`  | 3392 B  |
 //! | `Ed448PublicKey::from_bytes`       | 7232 B  |

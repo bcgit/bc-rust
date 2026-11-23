@@ -69,8 +69,8 @@ fn keygen_draws_the_private_key() {
 fn keygen_out_matches_keygen_and_signs() {
     let (pk, sk) = keygen(&mut rng()).unwrap();
     let mut sk_out = Ed25519PrivateKey::zeroized();
-    let pk_out = keygen_out(&mut rng(), &mut sk_out).unwrap();
-    assert_eq!(pk_out, pk);
+    keygen_out(&mut rng(), &mut sk_out).unwrap();
+    assert_eq!(sk_out.pk().unwrap(), pk);
     assert!(sk_out == sk);
     assert_eq!(sk_out.encode(), sk.encode());
 
@@ -84,10 +84,10 @@ fn keygen_out_matches_keygen_and_signs() {
 fn refilling_replaces_the_key() {
     let mut rng = rng();
     let mut sk = Ed25519PrivateKey::zeroized();
-    let pk1 = keygen_out(&mut rng, &mut sk).unwrap();
-    let pk2 = keygen_out(&mut rng, &mut sk).unwrap();
-    assert_ne!(pk1, pk2);
-    assert_eq!(sk.pk().unwrap(), pk2);
+    keygen_out(&mut rng, &mut sk).unwrap();
+    let pk1 = sk.pk().unwrap();
+    keygen_out(&mut rng, &mut sk).unwrap();
+    assert_ne!(sk.pk().unwrap(), pk1);
     let second: [u8; 32] = core::array::from_fn(|i| 32 + i as u8);
     assert_eq!(sk.encode(), second);
     assert!(sk == Ed25519PrivateKey::from_bytes(&second).unwrap());

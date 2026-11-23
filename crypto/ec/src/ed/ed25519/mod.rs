@@ -99,8 +99,8 @@
 //!
 //! | Entry point                          | Stack  |
 //! |--------------------------------------|--------|
-//! | `keygen`                             | 2952 B |
-//! | `keygen_out`                         | 2600 B |
+//! | `keygen`                             | 2536 B |
+//! | `keygen_out`                         | 2344 B |
 //! | `Ed25519PrivateKey::from_bytes`      | 2536 B |
 //! | `Ed25519PrivateKey::from_bytes_out`  | 2200 B |
 //! | `Ed25519PublicKey::from_bytes`       | 3704 B |

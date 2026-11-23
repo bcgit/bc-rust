@@ -123,8 +123,8 @@ fn bench_ed25519_keygen_out() {
 
     let mut sk = Ed25519PrivateKey::zeroized();
     measure(|| {
-        let pk = keygen_out(&mut FixedSeedRNG::new(SK), &mut sk).unwrap();
-        print!("{:x?}", pk.encode());
+        keygen_out(&mut FixedSeedRNG::new(SK), &mut sk).unwrap();
+        print!("{:x?}", sk.pk().unwrap().encode());
     });
 }
 

@@ -70,15 +70,15 @@
 //! ```
 //!
 //! Into a private key the caller holds, so that it is built where it will live and no copy of it
-//! is left behind by a move; the private key holds the public key, and the call returns a
-//! reference to it:
+//! is left behind by a move; the private key holds the public key:
 //!
 //! ```rust
-//! use bouncycastle_pqc::mlkem::{MLKEM768, MLKEM768PrivateKey, MLKEMTrait};
+//! use bouncycastle_pqc::mlkem::{MLKEM768, MLKEM768PrivateKey, MLKEMPrivateKeyTrait, MLKEMTrait};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut sk = MLKEM768PrivateKey::zeroized();
-//! let pk = MLKEM768::keygen_out(&mut HashDRBG_SHA512::new_from_os(), &mut sk).unwrap();
+//! MLKEM768::keygen_out(&mut HashDRBG_SHA512::new_from_os(), &mut sk).unwrap();
+//! let pk = sk.pk();
 //! ```
 //!
 //! See [`MLKEM`] and [`MLKEM::decaps_from_seed`] for an API that uses a merged

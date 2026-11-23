@@ -128,8 +128,8 @@ fn bench_x448_keygen_out() {
 
     let mut sk = X448PrivateKey::zeroized();
     measure(|| {
-        let pk = keygen_out(&mut FixedSeedRNG::new(black_box(ALICE_SK)), &mut sk).unwrap();
-        print!("{:x?}", pk.encode());
+        keygen_out(&mut FixedSeedRNG::new(black_box(ALICE_SK)), &mut sk).unwrap();
+        print!("{:x?}", sk.pk().unwrap().encode());
     });
 }
 

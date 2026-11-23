@@ -148,8 +148,8 @@ fn bench_ed448_keygen_out() {
 
     let mut sk = Ed448PrivateKey::zeroized();
     measure(|| {
-        let pk = keygen_out(&mut FixedSeedRNG::new(black_box(SK)), &mut sk).unwrap();
-        print!("{:x?}", pk.encode());
+        keygen_out(&mut FixedSeedRNG::new(black_box(SK)), &mut sk).unwrap();
+        print!("{:x?}", sk.pk().unwrap().encode());
     });
 }
 

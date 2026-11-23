@@ -127,7 +127,7 @@
 //! | Entry point                         | Stack  |
 //! |-------------------------------------|--------|
 //! | `keygen_from_seed`                  | 1272 B |
-//! | `keygen_out`                        | 1192 B |
+//! | `keygen_out`                        | 1176 B |
 //! | `X25519PrivateKey::from_bytes`      | 1272 B |
 //! | `X25519PrivateKey::from_bytes_out`  | 1160 B |
 //! | `agree` on the private key          | 1304 B |
@@ -280,23 +280,25 @@ impl AlgorithmOID for X25519 {
 ///
 /// # Errors
 /// [`KeyAgreementError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver.
+// Inlined so that the key is built in the caller's frame and moved into the pair once; out of
+// line, LLVM stages a further copy of it, which the stack harness's keygen rows show.
+#[inline(always)]
 pub fn keygen(rng: &mut dyn RNG) -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
     let mut sk = X25519PrivateKey::zeroized();
-    let pk = keygen_out(rng, &mut sk)?;
+    keygen_out(rng, &mut sk)?;
+    let pk = sk.pk;
     Ok((pk, sk))
 }
 
-/// Generates a private key into `sk`, a key you hold, and returns its public key: the RNG,
-/// which must offer X25519's 128 bits, writes the 32 bytes of the scalar straight into the
-/// key's own `Secret` (RFC 7748 Section 6.1), so no copy of it is staged on the way. `sk` is
-/// zeroized first and left so on every error.
+/// Generates a private key into `sk`, a key you hold: the RNG, which must offer X25519's 128
+/// bits, writes the 32 bytes of the scalar straight into the key's own `Secret` (RFC 7748
+/// Section 6.1), so no copy of it is staged on the way. The public key is read from the key
+/// afterwards with [`sk.pk()`](X25519PrivateKey::pk), which cannot fail once this has returned
+/// `Ok`. `sk` is zeroized first and left so on every error.
 ///
 /// # Errors
 /// [`KeyAgreementError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver.
-pub fn keygen_out(
-    rng: &mut dyn RNG,
-    sk: &mut X25519PrivateKey,
-) -> Result<X25519PublicKey, KeyAgreementError> {
+pub fn keygen_out(rng: &mut dyn RNG, sk: &mut X25519PrivateKey) -> Result<(), KeyAgreementError> {
     sk.clear();
     if rng.security_strength() < X25519::MAX_SECURITY_STRENGTH {
         return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
@@ -306,7 +308,7 @@ pub fn keygen_out(
         return Err(e.into());
     }
     sk.pk = scalar_mult_base(&sk.k);
-    Ok(sk.pk)
+    Ok(())
 }
 
 /// The key pair whose private key is `seed`'s 32 bytes: a [`KeyMaterial256`] typed
@@ -320,17 +322,22 @@ pub fn keygen_out(
 /// # Errors
 /// [`KeyAgreementError::KeyMaterialError`] for a seed of another type or length, or of too
 /// little strength.
+// Inlined so that the key is built in the caller's frame and moved into the pair once; out of
+// line, LLVM stages a further copy of it, which the stack harness's keygen rows show.
+#[inline(always)]
 pub fn keygen_from_seed(
     seed: &KeyMaterial256,
 ) -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
     let mut sk = X25519PrivateKey::zeroized();
-    let pk = keygen_from_seed_out(seed, &mut sk)?;
+    keygen_from_seed_out(seed, &mut sk)?;
+    let pk = sk.pk;
     Ok((pk, sk))
 }
 
-/// The private key whose scalar is `seed`'s 32 bytes, into `sk`, a key you hold, and its public
-/// key returned: the seed's requirements are [`keygen_from_seed`]'s, and the bytes are copied
-/// once, into the key's own `Secret`. `sk` is zeroized first and left so on every error.
+/// The private key whose scalar is `seed`'s 32 bytes, into `sk`, a key you hold: the seed's
+/// requirements are [`keygen_from_seed`]'s, and the bytes are copied once, into the key's own
+/// `Secret`. The public key is read as after [`keygen_out`]. `sk` is zeroized first and left so
+/// on every error.
 ///
 /// # Errors
 /// [`KeyAgreementError::KeyMaterialError`] for a seed of another type or length, or of too
@@ -338,7 +345,7 @@ pub fn keygen_from_seed(
 pub fn keygen_from_seed_out(
     seed: &KeyMaterial256,
     sk: &mut X25519PrivateKey,
-) -> Result<X25519PublicKey, KeyAgreementError> {
+) -> Result<(), KeyAgreementError> {
     sk.clear();
     if seed.key_type() == KeyType::Zeroized {
         return Err(KeyMaterialError::ActingOnZeroizedKey.into());
@@ -360,7 +367,7 @@ pub fn keygen_from_seed_out(
 
     sk.k.copy_from_slice(seed.ref_to_bytes());
     sk.pk = scalar_mult_base(&sk.k);
-    Ok(sk.pk)
+    Ok(())
 }
 
 /// Checks that `pk` is the public key of `sk`. The keys are compared as their 32 bytes, so
@@ -1036,10 +1043,11 @@ impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X25519 {
         // in this frame and dropped here, so its scalar is wiped where it was drawn.
         let mut sk = X25519PrivateKey::zeroized();
         // keygen_out fails only through the RNG.
-        let pk = keygen_out(rng, &mut sk).map_err(|e| match e {
+        keygen_out(rng, &mut sk).map_err(|e| match e {
             KeyAgreementError::RNGError(e) => KEMError::RNGError(e),
             _ => KEMError::GenericError("X25519 key generation failed"),
         })?;
+        let pk = sk.pk;
         Ok(f(&pk, &sk))
     }
 

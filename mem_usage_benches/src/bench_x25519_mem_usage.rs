@@ -129,8 +129,8 @@ fn bench_x25519_keygen_out() {
 
     let mut sk = X25519PrivateKey::zeroized();
     measure(|| {
-        let pk = keygen_out(&mut FixedSeedRNG::new(black_box([0x2Au8; 32])), &mut sk).unwrap();
-        print!("{:x?}", pk.encode());
+        keygen_out(&mut FixedSeedRNG::new(black_box([0x2Au8; 32])), &mut sk).unwrap();
+        print!("{:x?}", sk.pk().unwrap().encode());
     });
 }
 
