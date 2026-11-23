@@ -29,7 +29,7 @@ jobs:
       # a build without default features, on a target that has neither.
       - name: Check the library crates and the umbrella without std or alloc on Cortex-M0
         run: |
-          for crate in utils core digest symmetric ec pqc modexp hybrid; do
+          for crate in utils core digest symmetric ec pqc modexp hybrid rng; do
             cargo +nightly check -Zbuild-std=core --target thumbv6m-none-eabi --no-default-features -p "bouncycastle-$crate"
           done
           cargo +nightly check -Zbuild-std=core --target thumbv6m-none-eabi --no-default-features -p bouncycastle

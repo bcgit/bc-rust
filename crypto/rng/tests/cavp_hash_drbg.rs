@@ -95,11 +95,13 @@ fn run<D: Sp80090ADrbg + NewUninitialized>(r: &Record, strength: SecurityStrengt
             .unwrap_or_else(|e| panic!("COUNT {}: reseed: {e:?}", r.count));
     }
     assert_eq!(r.additional.len(), 2, "COUNT {}: two AdditionalInput lines", r.count);
-    let n = r.returned_bits.len();
-    drbg.generate(&r.additional[0], n)
+    // Through `generate_out`, so that the vectors run without the crate's `alloc` feature.
+    let mut out = vec![0u8; r.returned_bits.len()];
+    drbg.generate_out(&r.additional[0], &mut out)
         .unwrap_or_else(|e| panic!("COUNT {}: first generate: {e:?}", r.count));
-    drbg.generate(&r.additional[1], n)
-        .unwrap_or_else(|e| panic!("COUNT {}: second generate: {e:?}", r.count))
+    drbg.generate_out(&r.additional[1], &mut out)
+        .unwrap_or_else(|e| panic!("COUNT {}: second generate: {e:?}", r.count));
+    out
 }
 
 fn check_file(dir: &str) {

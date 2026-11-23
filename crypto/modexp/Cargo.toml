@@ -26,7 +26,8 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(bouncycastle_rsa_ct_harnes
 # The tests, benches and doc examples use the `Vec` one-shots.
 bouncycastle-core = { workspace = true, features = ["std"] }
 bouncycastle-core-test-framework.workspace = true
-bouncycastle-rng.workspace = true
+# The tests and doc examples seed a DRBG from the operating system.
+bouncycastle-rng = { workspace = true, features = ["std"] }
 criterion.workspace = true
 serde_json = "1.0"
 

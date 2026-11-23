@@ -6,7 +6,5 @@ pub use bouncycastle_ec as ec;
 pub use bouncycastle_hybrid as hybrid;
 pub use bouncycastle_modexp as modexp;
 pub use bouncycastle_pqc as pqc;
-// Seeds from the operating system, so it is not there without `std`.
-#[cfg(feature = "std")]
 pub use bouncycastle_rng as rng;
 pub use bouncycastle_symmetric as symmetric;

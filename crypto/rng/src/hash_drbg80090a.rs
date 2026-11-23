@@ -9,7 +9,9 @@ use crate::{MIN_NONCE_LEN, Sp80090ADrbg};
 
 use bouncycastle_core::errors::{KeyMaterialError, RNGError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+#[cfg(feature = "std")]
+use bouncycastle_core::key_material::KeyMaterial512;
+use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Hash, HashAlgParams, HashOneShot, RNG};
 use bouncycastle_digest::sha2::{SHA256, SHA512};
@@ -111,11 +113,15 @@ impl<const SEED_LEN: usize> Display for WorkingState<SEED_LEN> {
 #[test]
 /// impl Display to not print the state data.
 fn test_working_state_display() {
+    use std::format;
     let ws =
         WorkingState::<32> { v: Secret::new(), c: Secret::new(), reseed_counter: Secret::new() };
     assert_eq!(format!("{}", ws), "HashDRBG80090A::WorkingState::<32>");
 }
 
+/// The constructors that seed from the operating system; without the `std` feature there are
+/// none, and a DRBG is made by [`NewUninitialized`] and seeded by [`Sp80090ADrbg::instantiate`].
+#[cfg(feature = "std")]
 impl<H: HashDRBG80090AParams> HashDRBG80090A<H> {
     /// Creates a new instance using the local OS RNG as a source of seed entropy.
     /// Alias for [`HashDRBG80090A::new_from_os`].
@@ -171,6 +177,7 @@ impl<H: HashDRBG80090AParams> NewUninitialized for HashDRBG80090A<H> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<H: HashDRBG80090AParams> Default for HashDRBG80090A<H> {
     /// Creates a new instance using the local OS RNG as a source of seed entropy.
     /// Alias for [`HashDRBG80090A::new_from_os`].
@@ -204,9 +211,12 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
             ));
         }
 
-        // TODO: take this out once supported
+        // Section 9.1, Instantiate Process step 2: "If prediction_resistance_flag is set, and
+        // prediction resistance is not supported, then return (ERROR_FLAG, Invalid)."
         if prediction_resistance {
-            todo!("Prediction resistance is not yet supported by Hash_DRBG80090A.")
+            return Err(RNGError::GenericError(
+                "Prediction resistance is not supported by this DRBG instance.",
+            ));
         }
 
         if personalization_string.len() as u64 > H::MAX_PERSONALIZATION_STRING_LEN {
@@ -218,6 +228,15 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         if seed.key_type() != KeyType::Seed {
             return Err(KeyMaterialError::InvalidKeyType("RNG seed must be KeyType::Seed"))?;
         }
+
+        // Section 9.1, Instantiate Process step 4: "Set security_strength to the lowest security
+        // strength greater than or equal to requested_instantiation_security_strength from the
+        // set {112, 128, 192, 256}." The length checks below are against this strength.
+        let security_strength = if security_strength < SecurityStrength::_112bit {
+            SecurityStrength::_112bit
+        } else {
+            security_strength
+        };
 
         if (seed.key_len() as u32) < security_strength.as_int() / 8 {
             return Err(KeyMaterialError::SecurityStrength(
@@ -360,12 +379,6 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         Ok(())
     }
 
-    fn generate(&mut self, additional_input: &[u8], len: usize) -> Result<Vec<u8>, RNGError> {
-        let mut out = vec![0u8; len];
-        self.generate_out(additional_input, &mut out)?;
-        Ok(out)
-    }
-
     fn generate_out(&mut self, additional_input: &[u8], out: &mut [u8]) -> Result<usize, RNGError> {
         // Hash_DRBG_Generate Process:
         // 1. If reseed_counter > reseed_interval, then return an indication that a reseed is required.
@@ -377,6 +390,9 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         // 5. V = (V + H + C + reseed_counter) mod 2^seedlen.
         // 6. reseed_counter = reseed_counter + 1.
         // 7. Return (SUCCESS, returned_bits, V, C, reseed_counter).
+
+        // Before any check, so that an error leaves no stale bytes in `out`.
+        out.fill(0);
 
         if !self.admin_info.instantiated {
             return Err(RNGError::Uninitialized);
@@ -396,8 +412,6 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         if *self.state.reseed_counter > H::RESEED_INTERVAL {
             return Err(RNGError::ReseedRequired);
         }
-
-        out.fill(0);
 
         // 2. If (additional_input ≠ Null), then do
         //   2.1 w = Hash (0x02 || V || additional_input).
@@ -614,6 +628,8 @@ fn hash_df<H: HashOneShot + HashAlgParams>(
 /// length. The CAVP `Hash_DRBG.rsp` suites in `tests/` are the end-to-end check.
 #[test]
 fn test_hash_df() {
+    use std::vec;
+    use std::vec::Vec;
     fn hex(s: &str) -> Vec<u8> {
         (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
     }

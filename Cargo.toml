@@ -20,7 +20,7 @@ bouncycastle-ec = { path = "./crypto/ec", default-features = false }
 bouncycastle-hybrid = { path = "./crypto/hybrid", default-features = false }
 bouncycastle-modexp = { path = "./crypto/modexp", default-features = false }
 bouncycastle-pqc = { path = "./crypto/pqc", default-features = false }
-bouncycastle-rng = { path = "./crypto/rng" }
+bouncycastle-rng = { path = "./crypto/rng", default-features = false }
 bouncycastle-utils = { path = "./crypto/utils" }
 
 
@@ -48,14 +48,14 @@ version.workspace = true
 edition.workspace = true
 
 # `alloc` turns on the `alloc` feature of every library crate, and with it the one-shots that
-# return a `Vec` and the `_boxed` finals of the worker traits. `std`, on by default, implies it,
-# turns on their `std`, and adds `bouncycastle-rng`, which seeds from the operating system and so
-# cannot do without `std`. With neither the crate is a `no_std` build that links no allocator.
+# return a `Vec` and the `_boxed` finals of the worker traits. `std`, on by default, implies it
+# and turns on their `std`, which in `bouncycastle-rng` adds the constructors that seed from the
+# operating system. With neither the crate is a `no_std` build that links no allocator, and
+# `bouncycastle::rng` is the DRBG seeded by the caller.
 [features]
 default = ["std"]
 std = [
     "alloc",
-    "dep:bouncycastle-rng",
     "bouncycastle-core/std",
     "bouncycastle-digest/std",
     "bouncycastle-symmetric/std",
@@ -63,6 +63,7 @@ std = [
     "bouncycastle-pqc/std",
     "bouncycastle-modexp/std",
     "bouncycastle-hybrid/std",
+    "bouncycastle-rng/std",
 ]
 alloc = [
     "bouncycastle-core/alloc",
@@ -72,6 +73,7 @@ alloc = [
     "bouncycastle-pqc/alloc",
     "bouncycastle-modexp/alloc",
     "bouncycastle-hybrid/alloc",
+    "bouncycastle-rng/alloc",
 ]
 
 [dependencies]
@@ -82,4 +84,4 @@ bouncycastle-ec.workspace = true
 bouncycastle-hybrid.workspace = true
 bouncycastle-modexp.workspace = true
 bouncycastle-pqc.workspace = true
-bouncycastle-rng = { workspace = true, optional = true }
+bouncycastle-rng.workspace = true

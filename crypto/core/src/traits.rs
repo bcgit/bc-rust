@@ -1222,10 +1222,10 @@ pub trait PublicKey<const PK_LEN: usize>: PartialEq + Eq + Clone + Debug + Displ
 /// requirements of SP 800-90A.
 /// Note: this interface produces bytes. If you want a [`KeyMaterialTrait`], then use [`KeyMaterial::from_rng`].
 ///
-/// Implementors are expected to also implement [`Default`] (default-construction should produce a
-/// securely OS-seeded instance), but this is intentionally *not* a supertrait bound: requiring
-/// `Default` would make `RNG` not dyn-compatible, and `&mut dyn RNG` is needed so RNG instances
-/// can be handed around as trait objects.
+/// Where an operating system is available, implementors are expected to also implement
+/// [`Default`], default-construction producing a securely OS-seeded instance.
+// `Default` is not a supertrait: it would make `RNG` not dyn-compatible, and `&mut dyn RNG` is
+// how RNG instances are handed around.
 pub trait RNG {
     // TODO: add back once we figure out streaming interaction with entropy sources.
     // fn add_seed_bytes(&mut self, additional_seed: &[u8]) -> Result<(), RNGError>;
@@ -1252,6 +1252,35 @@ pub trait RNG {
     //      then have `RNG: Algorithm`, then delete this function.
     fn security_strength(&self) -> SecurityStrength;
 }
+
+/// Fixed-length draws from any [`RNG`], returned by value.
+///
+/// Implemented for every `RNG`, a `dyn RNG` included, so `rng.next_array::<12>()` works on a
+/// `&mut dyn RNG`.
+///
+/// # 🚨 Security Considerations 🚨
+/// The array is returned by value: it is moved, may be copied on the way, and is never wiped.
+/// Use it for public values such as nonces, salts, IVs and test data, never for a secret. A secret
+/// is drawn into a [`KeyMaterial`] with [`RNG::fill_keymaterial_out`], or into a [`Secret`] with
+/// [`RNG::next_bytes_out`].
+// A trait of its own because a generic method on `RNG` would make that trait not dyn-compatible.
+pub trait RNGExt: RNG {
+    /// Returns `N` bytes from one call to [`RNG::next_bytes_out`]. The array is built on the
+    /// caller's stack, so a large `N` costs that much stack.
+    ///
+    /// # Errors
+    /// The RNG's own error; [`RNGError::GenericError`] if it reports fewer than `N` bytes
+    /// written. A short draw never returns a partly filled array.
+    fn next_array<const N: usize>(&mut self) -> Result<[u8; N], RNGError> {
+        let mut out = [0u8; N];
+        if self.next_bytes_out(&mut out)? != N {
+            return Err(RNGError::GenericError("RNG delivered fewer bytes than requested"));
+        }
+        Ok(out)
+    }
+}
+
+impl<T: RNG + ?Sized> RNGExt for T {}
 
 /// The signing half of a signature in progress: the streaming worker a signing key hands out
 /// through [`SigningKey`](crate::signature_key::SigningKey) or

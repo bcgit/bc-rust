@@ -8,5 +8,6 @@ publish = false
 # The suites use the `Vec` one-shots.
 bouncycastle-core = { workspace = true, features = ["std"] }
 bouncycastle-core-test-framework.workspace = true
-bouncycastle-rng.workspace = true
+# The suites draw IVs and nonces from a DRBG seeded by the operating system.
+bouncycastle-rng = { workspace = true, features = ["std"] }
 bouncycastle-symmetric.workspace = true

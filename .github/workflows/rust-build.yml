@@ -32,10 +32,10 @@ jobs:
       # one, where it does not.
       - name: Check the library crates without std
         run: |
-          for crate in utils core digest symmetric ec pqc modexp hybrid; do
+          for crate in utils core digest symmetric ec pqc modexp hybrid rng; do
             cargo check -p "bouncycastle-$crate" --no-default-features
           done
-          for crate in core digest symmetric ec pqc modexp hybrid; do
+          for crate in core digest symmetric ec pqc modexp hybrid rng; do
             cargo check -p "bouncycastle-$crate" --no-default-features --features alloc
           done
 
@@ -43,6 +43,13 @@ jobs:
         run: |
           cargo test -p bouncycastle-core --no-default-features
           cargo test -p bouncycastle-core --no-default-features --features alloc
+
+      # Without `std` the DRBG is seeded by the caller: nothing here draws from the OS.
+      - name: Test bouncycastle-rng without std
+        # The CAVP suite needs bc-test-data, which this job does not check out, and skips.
+        run: |
+          cargo test -p bouncycastle-rng --no-default-features
+          cargo test -p bouncycastle-rng --no-default-features --features alloc
 
       # scrypt without `alloc` is its caller-supplied-memory configuration, and it once did not
       # compile.
