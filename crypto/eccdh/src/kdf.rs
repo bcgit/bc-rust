@@ -52,7 +52,7 @@
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_eccdh::keys::keygen;
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_hkdf::HkdfDescription;
+//! use bouncycastle_digest::hkdf::HkdfDescription;
 //!
 //! let (pk, sk) = keygen::<P256>(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! let hkdf = HKDF_SHA256::new();
@@ -65,9 +65,9 @@ use bouncycastle_core::kdf_params::{KdfDescription, KdfParams};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::HashAlgParams;
 use bouncycastle_digest::concatkdf::{ConcatKDF, ConcatKDFParams};
+use bouncycastle_digest::hkdf::HkdfDescription;
+use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_digest::x963kdf::{X963KDF, X963KDFParams};
-use bouncycastle_hkdf::HkdfDescription;
-use bouncycastle_sha2::SHA256;
 
 /// A KDF the library pairs a curve with, by its description: HKDF-SHA256, the X9.63 KDFs and the
 /// concatenation KDFs. Sealed, so that the
@@ -140,7 +140,7 @@ pub(crate) fn derive<
 
 mod sealed {
     pub trait Sealed {}
-    impl Sealed for bouncycastle_hkdf::HkdfDescription<'_, bouncycastle_sha2::SHA256> {}
+    impl Sealed for bouncycastle_digest::hkdf::HkdfDescription<'_, bouncycastle_digest::sha2::SHA256> {}
     impl<H: bouncycastle_digest::x963kdf::X963KDFParams> Sealed
         for bouncycastle_digest::x963kdf::X963KDF<H>
     {

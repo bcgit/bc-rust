@@ -7,14 +7,14 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KDF, KeyAgreement, PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreement;
+use bouncycastle_digest::hkdf::HkdfDescription;
+use bouncycastle_digest::sha2::SHA512;
+use bouncycastle_digest::sha2::hkdf::HKDF_SHA512;
 use bouncycastle_ed::x448::{
     HKDF_SHA512_MAX_LEN, POINT_LEN, SCALAR_LEN, X448PrivateKey, X448PublicKey, keygen,
     keygen_from_seed,
 };
-use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_sha2::SHA512;
-use bouncycastle_sha2::hkdf::HKDF_SHA512;
 
 // Every known answer below is lifted from the text of RFC 7748 by a script, in the two lines
 // of 56 hexadecimal digits the RFC prints, unless it says otherwise.

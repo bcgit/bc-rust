@@ -1,6 +1,6 @@
 //! EMSA-PKCS1-v1_5 (RFC 8017 §9.2): deterministic signature encoding, generic over the hash
 //! function `H` via its [`HashAlgParams`]/[`AlgorithmOID`] impls (e.g.
-//! `bouncycastle_sha2::SHA256`), and specialized to this crate's fixed-width keys: RFC 8017's
+//! `bouncycastle_digest::sha2::SHA256`), and specialized to this crate's fixed-width keys: RFC 8017's
 //! `emLen` is always this crate's modulus byte length `K_LEN` (`8 * L`), never a generic
 //! caller-chosen length. Both operations take the message's already-computed hash rather than
 //! the message (step 1 of the encoding is the caller's), so that a streaming signer/verifier can
@@ -214,7 +214,7 @@ mod tests {
 
     use super::*;
     use bouncycastle_core::traits::HashOneShot;
-    use bouncycastle_sha2::{SHA256, SHA384, SHA512};
+    use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 
     /// The whole EMSA-PKCS1-V1_5-ENCODE over a message, SHA-256: step 1 here, the rest in
     /// [`emsa_pkcs1_v1_5_encode_from_hash`] -- what `rsassa_pkcs1_v1_5::sign` does, restated

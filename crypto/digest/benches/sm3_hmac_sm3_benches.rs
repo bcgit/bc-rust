@@ -1,8 +1,8 @@
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::RNG;
+use bouncycastle_digest::hmac::HmacKey;
 use bouncycastle_digest::sm3::SM3;
-use bouncycastle_hmac::HmacKey;
 use bouncycastle_rng as rng;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;

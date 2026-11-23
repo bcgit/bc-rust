@@ -15,7 +15,7 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, FinishToken, Hash, PrivateKey, PublicKey, RNG, SignatureSigner,
     SignatureVerifier,
 };
-use bouncycastle_sha3::SHAKE256;
+use bouncycastle_digest::sha3::SHAKE256;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
 use core::fmt::{self, Debug, Display, Formatter};

@@ -10,13 +10,13 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, KEMDecapsulator};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_core_test_framework::kem::TestFrameworkKEM;
-use bouncycastle_hkdf::HkdfDescription;
+use bouncycastle_digest::hkdf::HkdfDescription;
+use bouncycastle_digest::sha2::hkdf::HKDF_SHA256;
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
 use bouncycastle_rsa::rsasve_kdf::RSASVE_HKDF;
 use bouncycastle_rsa::{RSA2048, RSA3072, RSA4096};
-use bouncycastle_sha2::hkdf::HKDF_SHA256;
-use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 
 // A genuine RSA-2048 key pair (the crate docs' example key, Wycheproof's
 // rsa_pkcs1_2048_sig_gen_test.json first SHA-256 group): key generation is seconds in a debug

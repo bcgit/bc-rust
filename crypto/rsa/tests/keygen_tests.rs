@@ -27,6 +27,7 @@ use bouncycastle_core::signature_key::{
 use bouncycastle_core::traits::PrivateKey;
 use bouncycastle_core::traits::RNG;
 use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
+use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_ec::montgomery::widening_mul;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::RSA2048;
@@ -39,7 +40,6 @@ use bouncycastle_rsa::rsa_2048::{RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256, SI
 use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use bouncycastle_rsa::size::RsaSigningSize;
 use bouncycastle_rsa::{rsa_3072, rsa_4096, rsa_8192};
-use bouncycastle_sha2::SHA256;
 use core::num::NonZeroUsize;
 
 /// The documented Wycheproof RSA-2048 key's `p` and `q` (see `rsa_2048_pkcs1_v1_5_tests.rs` for

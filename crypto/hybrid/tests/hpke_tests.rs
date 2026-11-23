@@ -22,6 +22,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_dhkem::HpkeKem;
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_ec::{P256, P384, P521};
 use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
 use bouncycastle_ed::x448::{X448PrivateKey, X448PublicKey};
@@ -31,7 +32,6 @@ use bouncycastle_hybrid::hpke::{
     HpkeKdf, HpkeParams, HpkeRecipient, HpkeSender, NN, NT, Psk, Recipient, Sender,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
-use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use std::collections::HashMap;
 

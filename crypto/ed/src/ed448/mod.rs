@@ -180,7 +180,7 @@
 //! runs in a frame of its own whose stack is overwritten afterwards. The other is every
 //! SHAKE256 over the private key or the prefix: a sponge that is moved to be squeezed leaves
 //! the private key and whole Keccak states of the prefix's hash behind, so each is finished
-//! where it sits, and `bouncycastle-sha3` overwrites the frame of each Keccak permutation,
+//! where it sits, and `bouncycastle_digest::sha3` overwrites the frame of each Keccak permutation,
 //! which spills lanes of the state. With both in place, a scan of the dead stack
 //! after each operation finds none of the private key, the scalar, the prefix, the digests,
 //! the nonce `r`, `r + k s` or those Keccak states after `keygen_out`, `from_bytes_out`,

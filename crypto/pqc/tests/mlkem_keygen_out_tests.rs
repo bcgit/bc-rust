@@ -8,7 +8,8 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KEMDecapsulator, PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::FailingRNG;
-use bouncycastle_hkdf::HkdfDescription;
+use bouncycastle_digest::hkdf::HkdfDescription;
+use bouncycastle_digest::sha2::{SHA256, SHA512};
 use bouncycastle_pqc::mlkem::hazmat::EncapsWithRandomness;
 use bouncycastle_pqc::mlkem::{
     KdfParams, KeyLen, MLKEM512, MLKEM512_CT_LEN, MLKEM512_HKDF_SHA256_SS_LEN, MLKEM512_PK_LEN,
@@ -17,7 +18,6 @@ use bouncycastle_pqc::mlkem::{
     MLKEM1024, MLKEM1024_CT_LEN, MLKEM1024_PK_LEN, MLKEM1024PrivateKey,
     MLKEM1024PrivateKeyExpanded, MLKEMPrivateKeyTrait, MLKEMTrait,
 };
-use bouncycastle_sha2::{SHA256, SHA512};
 
 const ZEROIZED: KEMError = KEMError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey);
 

@@ -9,10 +9,9 @@ publish = false
 
 [dependencies]
 bouncycastle-core = { path = "../../crypto/core" }
-bouncycastle-hkdf = { path = "../../crypto/hkdf" }
+bouncycastle-digest = { path = "../../crypto/digest" }
 bouncycastle-rng = { path = "../../crypto/rng" }
 bouncycastle-rsa = { path = "../../crypto/rsa" }
-bouncycastle-sha2 = { path = "../../crypto/sha2" }
 
 # The root workspace's release profile: the wipes are sized for the frames it lays out.
 [profile.release]

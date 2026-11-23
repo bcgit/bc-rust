@@ -13,9 +13,9 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core_test_framework::test_data_loaders::{
     Value, bc_test_data_json, wycheproof_json,
 };
+use bouncycastle_digest::hmac::HMACParams;
 use bouncycastle_digest::pbkdf2::PBKDF2;
-use bouncycastle_hmac::HMACParams;
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA384, SHA512};
 use core::num::NonZeroU32;
 use std::collections::HashMap;
 

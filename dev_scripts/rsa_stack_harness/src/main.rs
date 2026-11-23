@@ -20,7 +20,7 @@ use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey, SigningKey,
 };
 use bouncycastle_core::traits::{PrivateKey, SignatureSigner};
-use bouncycastle_hkdf::{HKDF, HkdfDescription};
+use bouncycastle_digest::hkdf::{HKDF, HkdfDescription};
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::keygen::is_probable_prime;
 use bouncycastle_rsa::keys::{RsaPrivateComponents, RsaPrivateKey};
@@ -34,7 +34,7 @@ use bouncycastle_rsa::rsassa_pss::RSASSA_PSS;
 use bouncycastle_rsa::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
 use bouncycastle_rsa::size::{KemKeyPair, RsaSigningSize, RsaSize, SignatureKeyPair};
 use bouncycastle_rsa::{RSA2048, RSA3072, RSA4096, RSA8192};
-use bouncycastle_sha2::SHA256;
+use bouncycastle_digest::sha2::SHA256;
 use std::collections::HashSet;
 use std::hint::black_box;
 use std::num::NonZeroUsize;

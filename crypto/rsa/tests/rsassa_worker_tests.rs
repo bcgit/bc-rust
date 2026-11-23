@@ -7,14 +7,14 @@ use bouncycastle_core::signature_key::{
     OneShotVerifyingKey, SigningKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{AlgorithmInfo, HashOneShot, SignatureSigner, SignatureVerifier};
+use bouncycastle_digest::sha2::SHA256;
+use bouncycastle_digest::sha3::SHAKE128;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keys::{RsaPrivateComponents, RsaPublicComponents};
 use bouncycastle_rsa::rsassa;
 use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use bouncycastle_rsa::rsassa_pss::RSASSA_PSS;
-use bouncycastle_sha2::SHA256;
-use bouncycastle_sha3::SHAKE128;
 
 // The crate docs' example key (Wycheproof's rsa_pkcs1_2048_sig_gen_test.json first SHA-256 group).
 const P: [u64; 16] = [

@@ -4,9 +4,9 @@
 
 mod wycheproof_common;
 
+use bouncycastle_digest::sha2::SHA512;
+use bouncycastle_digest::sha3::SHA3_512;
 use bouncycastle_ec::P521;
-use bouncycastle_sha2::SHA512;
-use bouncycastle_sha3::SHA3_512;
 use wycheproof_common::{Encoding, run};
 
 #[test]

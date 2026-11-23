@@ -39,7 +39,7 @@ use bouncycastle_core::traits::{
 /// use bouncycastle_rsa::RSA2048;
 /// use bouncycastle_rsa::rsassa::RsaSignatureAlgorithm;
 /// use bouncycastle_rsa::rsassa_pss::RSASSA_PSS;
-/// use bouncycastle_sha2::SHA256;
+/// use bouncycastle_digest::sha2::SHA256;
 /// let _ = RSASSA_PSS::<RSA2048, SHA256>::emsa_verify::<128>(&[0u8; 32], &[0u8; 128]);
 /// ```
 ///
@@ -47,7 +47,7 @@ use bouncycastle_core::traits::{
 /// use bouncycastle_rsa::RSA2048;
 /// use bouncycastle_rsa::rsassa::RsaSignatureAlgorithm;
 /// use bouncycastle_rsa::rsassa_pss::RSASSA_PSS;
-/// use bouncycastle_sha2::SHA256;
+/// use bouncycastle_digest::sha2::SHA256;
 /// assert!(!RSASSA_PSS::<RSA2048, SHA256>::emsa_verify::<256>(&[0u8; 32], &[0u8; 256]));
 /// ```
 pub trait RsaSignatureAlgorithm: SignatureAlgorithm + sealed::Sealed {

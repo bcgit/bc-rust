@@ -9,11 +9,11 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashOneShot, KDF};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
+use bouncycastle_digest::sha2::{SHA256, SHA512};
 use bouncycastle_digest::x963kdf::{
     X963KDF_SHA224, X963KDF_SHA256, X963KDF_SHA256_NAME, X963KDF_SHA384, X963KDF_SHA512,
     X963KDF_SHA512_NAME,
 };
-use bouncycastle_sha2::{SHA256, SHA512};
 
 /// CAVP `ansx963_2001.rsp`, `[SHA-256]`, shared secret 192 bits, SharedInfo 128 bits, key data
 /// 1024 bits, COUNT = 0 (the same vector `x963kdf_cavp.rs` reads from bc-test-data).

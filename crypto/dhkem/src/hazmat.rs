@@ -10,13 +10,13 @@
 //! These are the KDF steps of a protocol, not a KDF to call: nothing checks that a label, a
 //! suite id or an output length is one RFC 9180 defines, and an `L` past 255*Nh or 0xFFFF,
 //! like an all-zero PRK (one HMAC output in 2^(8 * Nh)), is a panic.
-//! Use HKDF (`bouncycastle-hkdf`) for key derivation.
+//! Use HKDF (`bouncycastle_digest::hkdf`) for key derivation.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
 use bouncycastle_core::traits::HashAlgParams;
-use bouncycastle_hmac::hazmat as hmac_hazmat;
-use bouncycastle_hmac::{HMACParams, HmacKey};
+use bouncycastle_digest::hmac::hazmat as hmac_hazmat;
+use bouncycastle_digest::hmac::{HMACParams, HmacKey};
 use bouncycastle_utils::secret::Secret;
 
 /// The version label that RFC 9180 Section 4 puts in every labeled KDF input: at the front of

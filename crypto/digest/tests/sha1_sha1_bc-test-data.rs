@@ -5,8 +5,8 @@
 //! the `SHA1*.rsp` files of NIST's `shabittestvectors.zip` and `shabytetestvectors.zip`. If it is not
 //! present, the tests print a warning and pass vacuously.
 //!
-//! The three SHAVS test types (ShortMsg, LongMsg and Monte) are run as the SHA-2 crate runs them;
-//! see `crypto/sha2/tests/sha2_bc-test-data.rs` for what each is.
+//! The three SHAVS test types (ShortMsg, LongMsg and Monte) are run as the SHA-2 module runs them;
+//! see `sha2_sha2_bc-test-data.rs` for what each is.
 
 use bouncycastle_core::hex;
 use bouncycastle_core::traits::HashOneShot;

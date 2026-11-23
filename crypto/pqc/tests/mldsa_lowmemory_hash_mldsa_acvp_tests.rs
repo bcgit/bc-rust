@@ -19,6 +19,8 @@ use bouncycastle_core::hex;
 use bouncycastle_core::signature_key::{PreHash, PreHashAlgorithm, PreHashVerifyingKey};
 use bouncycastle_core::traits::{Algorithm, HashOneShot, PrivateKey, PublicKey, SignatureVerifier};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use bouncycastle_digest::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
 use bouncycastle_pqc::mldsa::MLDSAPrivateKeyTrait;
 use bouncycastle_pqc::mldsa_lowmemory::hazmat::AnyStrength;
 use bouncycastle_pqc::mldsa_lowmemory::{
@@ -26,8 +28,6 @@ use bouncycastle_pqc::mldsa_lowmemory::{
     MLDSA65Params, MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87Params, MLDSAPublicKey, PublicKeyLen,
     SignatureLen,
 };
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
-use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
 use std::collections::BTreeMap;
 
 const TEST_DATA_DIR: &str = "pqc/crypto/mldsa";

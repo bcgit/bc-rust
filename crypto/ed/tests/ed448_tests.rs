@@ -9,11 +9,11 @@ use bouncycastle_core::signature_key::{
 };
 use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
 use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
+use bouncycastle_digest::sha3::SHAKE256;
 use bouncycastle_ed::ed448::{
     CONTEXT_MAX_LEN, ED448_NAME, ED448PH_NAME, Ed448, Ed448PrivateKey, Ed448PublicKey, Ed448ph,
     Ed448phPrivateKey, Ed448phPublicKey, Ed448phSigner, Ed448phVerifier, SIGNATURE_LEN, keygen,
 };
-use bouncycastle_sha3::SHAKE256;
 use std::sync::OnceLock;
 
 const MSG: &[u8] = b"The quick brown fox jumped over the lazy dog";

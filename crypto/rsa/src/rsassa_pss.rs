@@ -26,8 +26,8 @@ use bouncycastle_core::signature_key::SignatureAlgorithm;
 use bouncycastle_core::traits::{
     Algorithm, CollisionResistantHash, HashAlgParams, HashOneShot, XOF,
 };
-use bouncycastle_sha2::{SHA256InitValue, SHA256Internal, SHA512InitValue, SHA512Internal};
-use bouncycastle_sha3::{SHA3Internal, SHA3Params, SHAKEInternal, SHAKEParams};
+use bouncycastle_digest::sha2::{SHA256InitValue, SHA256Internal, SHA512InitValue, SHA512Internal};
+use bouncycastle_digest::sha3::{SHA3Internal, SHA3Params, SHAKEInternal, SHAKEParams};
 use bouncycastle_utils::const_str::ConstStr;
 use core::marker::PhantomData;
 

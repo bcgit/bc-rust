@@ -26,8 +26,8 @@ use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorith
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KDF, KEMDecapsulator, KEMEncapsulator, RNG};
-use bouncycastle_hkdf::HkdfDescription;
-use bouncycastle_hmac::HMACParams;
+use bouncycastle_digest::hkdf::HkdfDescription;
+use bouncycastle_digest::hmac::HMACParams;
 use bouncycastle_utils::const_str::ConstStr;
 use core::marker::PhantomData;
 
@@ -43,10 +43,10 @@ use core::marker::PhantomData;
 /// ```compile_fail,E0277
 /// use bouncycastle_core::kdf_params::KdfParams;
 /// use bouncycastle_core::kem_key::EncapsulatingKey;
-/// use bouncycastle_hkdf::HkdfDescription;
+/// use bouncycastle_digest::hkdf::HkdfDescription;
 /// use bouncycastle_rsa::RSA1024;
 /// use bouncycastle_rsa::rsasve::RsaKEMPublicKey;
-/// use bouncycastle_sha2::SHA256;
+/// use bouncycastle_digest::sha2::SHA256;
 ///
 /// type Params = KdfParams<'static, HkdfDescription<'static, SHA256>, 32>;
 /// fn encapsulates<PK: EncapsulatingKey<Params, N, 32>, const N: usize>() {}
@@ -56,10 +56,10 @@ use core::marker::PhantomData;
 /// ```
 /// use bouncycastle_core::kdf_params::KdfParams;
 /// use bouncycastle_core::kem_key::EncapsulatingKey;
-/// use bouncycastle_hkdf::HkdfDescription;
+/// use bouncycastle_digest::hkdf::HkdfDescription;
 /// use bouncycastle_rsa::RSA2048;
 /// use bouncycastle_rsa::rsasve::RsaKEMPublicKey;
-/// use bouncycastle_sha2::SHA256;
+/// use bouncycastle_digest::sha2::SHA256;
 ///
 /// type Params = KdfParams<'static, HkdfDescription<'static, SHA256>, 32>;
 /// fn encapsulates<PK: EncapsulatingKey<Params, N, 32>, const N: usize>() {}

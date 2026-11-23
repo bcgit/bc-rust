@@ -13,7 +13,7 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashOneShot, KDF};
 use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
-use bouncycastle_sha2::{SHA256, SHA512};
+use bouncycastle_digest::sha2::{SHA256, SHA512};
 use bouncycastle_symmetric::kbkdf::{
     CounterPosition, CounterSize, KDF_Counter, KDF_Counter_HMAC_SHA3_256, KDF_Counter_HMAC_SHA256,
     KDF_Counter_HMAC_SHA384, KDF_Counter_HMAC_SHA512, PRF_HMAC, Prf, fixed_input_out,

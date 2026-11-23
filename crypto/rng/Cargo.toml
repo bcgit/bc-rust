@@ -5,7 +5,10 @@ edition.workspace = true
 
 [dependencies]
 bouncycastle-core.workspace = true
-bouncycastle-sha2.workspace = true
+# By path, not from the workspace table, to leave the default `std` feature off:
+# `bouncycastle-digest` dev-depends on this crate, and a default-featured edge back to it would
+# turn `std` on in its own `--no-default-features` test build.
+bouncycastle-digest = { path = "../digest", default-features = false }
 bouncycastle-utils.workspace = true
 
 # external

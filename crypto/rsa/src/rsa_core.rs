@@ -136,7 +136,7 @@ fn is_one<const N: usize>(x: &[u64; N]) -> Condition<u64> {
 /// that does not. Each caller gives the measured figures beside its constants.
 ///
 /// The shape of `wipe_stack_below` in `bouncycastle-ed` (`ed25519/scalar.rs`) and
-/// `bouncycastle-sha3` (`keccak.rs`), which are private to those crates and of one fixed size.
+/// `bouncycastle_digest::sha3` (`keccak.rs`), which are private to those modules and of one fixed size.
 /// Like theirs it is sized for an optimised build: an unoptimised build's frames are larger
 /// and are not covered.
 #[inline(never)]
@@ -489,9 +489,9 @@ mod tests {
             OneShotVerifyingKey, SigningKey,
         };
         use bouncycastle_core::traits::SignatureSigner;
-        use bouncycastle_hkdf::HkdfDescription;
+        use bouncycastle_digest::hkdf::HkdfDescription;
+        use bouncycastle_digest::sha2::SHA256;
         use bouncycastle_rng::DefaultRNG;
-        use bouncycastle_sha2::SHA256;
 
         // A genuine RSA-2048 key: the first SHA-256 group of Wycheproof's
         // `rsa_pkcs1_2048_sig_gen_test.json` (`tests/rsa_2048_pkcs1_v1_5_tests.rs` has the provenance),

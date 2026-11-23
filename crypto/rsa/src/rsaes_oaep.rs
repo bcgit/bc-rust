@@ -47,7 +47,7 @@ use bouncycastle_core::traits::{
     Algorithm, HashAlgParams, HashOneShot, KEMDecapsulator, KEMEncapsulator, RNG,
 };
 use bouncycastle_digest::sha1::SHA1;
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use bouncycastle_utils::const_str::ConstStr;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
@@ -89,7 +89,7 @@ impl OaepHash for SHA512_256 {}
 /// use bouncycastle_rsa::RSA1024;
 /// use bouncycastle_rsa::rsaes_oaep::OaepParams;
 /// use bouncycastle_rsa::rsasve::RsaKEMPublicKey;
-/// use bouncycastle_sha2::SHA256;
+/// use bouncycastle_digest::sha2::SHA256;
 ///
 /// type Params = OaepParams<'static, SHA256, SHA256, 32>;
 /// fn encapsulates<PK: EncapsulatingKey<Params, N, 32>, const N: usize>() {}
@@ -101,7 +101,7 @@ impl OaepHash for SHA512_256 {}
 /// use bouncycastle_rsa::RSA1024;
 /// use bouncycastle_rsa::rsaes_oaep::OaepParams;
 /// use bouncycastle_rsa::rsasve::RsaKEMPublicKey;
-/// use bouncycastle_sha2::SHA256;
+/// use bouncycastle_digest::sha2::SHA256;
 ///
 /// type Params = OaepParams<'static, SHA256>;
 /// fn transports<PK: KeyTransportEncryptingKey<Params, N>, const N: usize>() {}
@@ -114,7 +114,7 @@ impl OaepHash for SHA512_256 {}
 /// use bouncycastle_rsa::RSA2048;
 /// use bouncycastle_rsa::rsaes_oaep::OaepParams;
 /// use bouncycastle_rsa::rsasve::RsaKEMPublicKey;
-/// use bouncycastle_sha2::SHA256;
+/// use bouncycastle_digest::sha2::SHA256;
 ///
 /// type Kem = OaepParams<'static, SHA256, SHA256, 32>;
 /// type Transport = OaepParams<'static, SHA256>;
@@ -184,7 +184,7 @@ impl<K: RsaSize, H: OaepHash, M: OaepHash> KeyTransportAlgorithm for RSAES_OAEP<
 /// use bouncycastle_rng::HashDRBG_SHA512;
 /// use bouncycastle_rsa::rsa_2048::RSASVE;
 /// use bouncycastle_rsa::rsaes_oaep::OaepParams;
-/// use bouncycastle_sha2::SHA256;
+/// use bouncycastle_digest::sha2::SHA256;
 ///
 /// let mut rng = HashDRBG_SHA512::new_from_os();
 /// let (pk, _sk) = RSASVE::keygen(&mut rng).unwrap();

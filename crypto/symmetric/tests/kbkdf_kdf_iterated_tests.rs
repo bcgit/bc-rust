@@ -16,8 +16,8 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{Algorithm, KDF};
 use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
-use bouncycastle_hkdf::HKDF;
-use bouncycastle_sha2::SHA256;
+use bouncycastle_digest::hkdf::HKDF;
+use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_symmetric::kbkdf::{
     CounterPosition, CounterSize, IterationCounterPosition as Position, KDF_Counter_CMAC_AES128,
     KDF_Counter_CMAC_AES192, KDF_Counter_CMAC_AES256, KDF_Counter_HMAC_SHA256,

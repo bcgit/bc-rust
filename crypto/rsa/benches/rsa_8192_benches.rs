@@ -8,10 +8,10 @@ use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
 };
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
+use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_rsa::RSA8192;
 use bouncycastle_rsa::rsa_8192::{RSA8192KEMPrivateKey, RSA8192KEMPublicKey};
 use bouncycastle_rsa::rsaes_oaep::OaepParams;
-use bouncycastle_sha2::SHA256;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 

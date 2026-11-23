@@ -1,8 +1,8 @@
 //! HMAC-based Extract-and-Expand Key Derivation Function (HKDF) over SM3, as per RFC 5869.
 //!
-//! Uses [`bouncycastle_hkdf`] to provide the HKDF-SM3 instantiation: [`HKDF_SM3`]. HKDF itself is
-//! implemented generically in [`bouncycastle_hkdf`]; this module publishes the type alias over SM3.
-//! See [`bouncycastle_hkdf`] for the extract and expand phases and entropy tracking, all of which
+//! Uses [`crate::hkdf`] to provide the HKDF-SM3 instantiation: [`HKDF_SM3`]. HKDF itself is
+//! implemented generically in [`crate::hkdf`]; this module publishes the type alias over SM3.
+//! See [`crate::hkdf`] for the extract and expand phases and entropy tracking, all of which
 //! apply here unchanged.
 //!
 //! # Usage Examples
@@ -29,8 +29,8 @@
 //! * The output key inherits the security strength of the inputs, at most SM3's 128 bits; HKDF
 //!   stretches key material but does not create entropy.
 
+use crate::hkdf::HKDF;
 use crate::sm3::SM3;
-use bouncycastle_hkdf::HKDF;
 
 /// Algorithm name string for HKDF-SM3, as used by the factories and CLI.
 pub const HKDF_SM3_NAME: &str = "HKDF-SM3";

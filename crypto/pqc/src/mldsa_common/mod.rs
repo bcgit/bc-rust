@@ -28,7 +28,7 @@ pub mod params;
 #[doc(hidden)]
 pub mod polynomial;
 
-use bouncycastle_sha3::{SHAKE128, SHAKE256};
+use bouncycastle_digest::sha3::{SHAKE128, SHAKE256};
 
 /* FIPS 204, Table 1: the values that are the same for all parameter sets. */
 

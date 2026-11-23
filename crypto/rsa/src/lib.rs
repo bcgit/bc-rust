@@ -196,7 +196,7 @@
 //!
 //! // Z is a shared secret, not a key: derive the key actually used, here with HKDF-SHA-256
 //! // (SP 800-56C Rev. 2's two-step method), binding in whatever context the protocol defines.
-//! let key = bouncycastle_sha2::hkdf::HKDF_SHA256::default()
+//! let key = bouncycastle_digest::sha2::hkdf::HKDF_SHA256::default()
 //!     .derive_key(&z, b"example protocol v1", 32)
 //!     .expect("HKDF accepts any non-empty input key");
 //! assert_eq!(key.key_len(), 32);
@@ -204,8 +204,8 @@
 //! // Or let the keys do it: over `KdfParams` naming the HKDF's description (its salt, absent
 //! // here) and the info, the same keys run RSASVE-2048-HKDF-SHA256 and hand out that key.
 //! use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
-//! use bouncycastle_hkdf::HkdfDescription;
-//! use bouncycastle_sha2::SHA256;
+//! use bouncycastle_digest::hkdf::HkdfDescription;
+//! use bouncycastle_digest::sha2::SHA256;
 //! let hkdf = HkdfDescription::<SHA256>::new();
 //! let params = KdfParams::new(&hkdf, b"example protocol v1", KeyLen::<32>);
 //! let (key_a, ct) = pk.encaps(&mut DefaultRNG::default(), params)?;

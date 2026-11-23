@@ -14,13 +14,13 @@ use bouncycastle_core_test_framework::key_agreement::{
     TestFrameworkKeyAgreement, TestFrameworkKeyAgreementKeys,
 };
 use bouncycastle_digest::concatkdf::ConcatKDF;
+use bouncycastle_digest::sha2::hkdf::HKDF_SHA256;
 use bouncycastle_digest::x963kdf::X963KDF;
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_eccdh::eccdh::{ECCDH, ECCDH_ConcatKDF, ECCDH_X963KDF, MatchedHash};
 use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
 use bouncycastle_eccdh::keys_common::DerivePublicKey;
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_sha2::hkdf::HKDF_SHA256;
 
 /// The framework suites over the raw role and the key codecs, `derive_pk` against `keygen`, and
 /// the algorithm's name and strength.

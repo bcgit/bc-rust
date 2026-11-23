@@ -4,11 +4,11 @@
 
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, PublicKey};
+use bouncycastle_digest::sha2::{SHA256, SHA384};
 use bouncycastle_ec::{P256, P384};
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::keys::{ECDSAPublicKey, keygen};
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_sha2::{SHA256, SHA384};
 
 #[test]
 fn strength_is_the_lesser_side_whichever_it_is() {

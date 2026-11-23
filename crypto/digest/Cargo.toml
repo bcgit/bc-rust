@@ -1,13 +1,13 @@
 [package]
 name = "bouncycastle-digest"
-description = "Hash functions and the key derivation functions built on them: BLAKE2, RIPEMD, SM3, PBKDF2, scrypt, the NIST concatenation KDF and the ANSI X9.63 KDF"
+description = "Hash functions and the MACs and key derivation functions built on them: SHA-2, SHA-3, BLAKE2, RIPEMD, SM3, HMAC, HKDF, PBKDF2, scrypt, the NIST concatenation KDF and the ANSI X9.63 KDF"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [features]
 # `std` gates scrypt's [`KDF`] and `KdfDescription` impls, which allocate the working memory, and
-# BLAKE3's `Vec`-returning one-shots; without it `scrypt` is the caller-supplied-memory function
+# BLAKE3's and SHA-3's `Vec`-returning one-shots; without it `scrypt` is the caller-supplied-memory function
 # alone, and the other modules are unchanged. That is a narrower API, not yet a `no_std` build: `bouncycastle-core` still links
 # `std`, and the forwarding below changes nothing while the workspace dependency on `core` keeps
 # its default features.
@@ -16,10 +16,6 @@ std = ["bouncycastle-core/std"]
 
 [dependencies]
 bouncycastle-core.workspace = true
-bouncycastle-hkdf.workspace = true
-bouncycastle-hmac.workspace = true
-bouncycastle-sha2.workspace = true
-bouncycastle-sha3.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
@@ -35,6 +31,35 @@ required-features = ["std"]
 # BLAKE3's tests use its `Vec`-returning one-shots.
 [[test]]
 name = "blake3_blake3_tests"
+required-features = ["std"]
+
+# These SHA-3 tests use the `Vec`-returning one-shots.
+[[test]]
+name = "sha3_cshake_tests"
+required-features = ["std"]
+
+[[test]]
+name = "sha3_finish_squeezer_tests"
+required-features = ["std"]
+
+[[test]]
+name = "sha3_kmac_tests"
+required-features = ["std"]
+
+[[test]]
+name = "sha3_parallelhash_bc-test-data"
+required-features = ["std"]
+
+[[test]]
+name = "sha3_parallelhash_tests"
+required-features = ["std"]
+
+[[test]]
+name = "sha3_tuplehash_bc-test-data"
+required-features = ["std"]
+
+[[test]]
+name = "sha3_tuplehash_tests"
 required-features = ["std"]
 
 [[bench]]
@@ -83,4 +108,25 @@ harness = false
 
 [[bench]]
 name = "sha1_sha1_benches"
+harness = false
+
+[[bench]]
+name = "sha2_sha2_benches"
+harness = false
+
+[[bench]]
+name = "sha2_hkdf_sha2_benches"
+harness = false
+
+[[bench]]
+name = "sha2_hmac_sha2_benches"
+harness = false
+
+[[bench]]
+name = "sha3_sha3_benches"
+harness = false
+required-features = ["std"]
+
+[[bench]]
+name = "sha3_hmac_sha3_benches"
 harness = false

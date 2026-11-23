@@ -80,6 +80,9 @@
 //!   each block is computed independently, so a guess is checked against the first.
 //! - The password's encoding is the caller's: the function takes octets.
 
+use crate::hmac::{HMACParams, HmacKey, LARGEST_HASHER_BLOCK_LEN, hazmat as hmac_hazmat};
+use crate::sha2::{SHA224, SHA256, SHA384, SHA512};
+use crate::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token, label_kdf_output};
 use bouncycastle_core::kdf_params::KdfDescription;
@@ -87,9 +90,6 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
 use bouncycastle_core::traits::{Algorithm, KDF};
-use bouncycastle_hmac::{HMACParams, HmacKey, LARGEST_HASHER_BLOCK_LEN, hazmat as hmac_hazmat};
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
-use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_utils::const_str::ConstStr;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
@@ -385,8 +385,8 @@ pub mod hazmat {
     //! a `KeyMaterial` cannot hold what is being derived.
 
     use super::{KDFError, PBKDF2};
+    use crate::hmac::HMACParams;
     use bouncycastle_core::key_material::KeyMaterialTrait;
-    use bouncycastle_hmac::HMACParams;
     use core::num::NonZeroU32;
 
     /// RFC 8018 Section 5.2 over HMAC with `H`: `out`, all of it, with `dkLen = out.len()`

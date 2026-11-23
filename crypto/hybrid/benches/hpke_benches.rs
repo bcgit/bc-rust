@@ -5,13 +5,13 @@
 use bouncycastle_aes::{AES128Key, AES256Key};
 use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_ed::x25519::keygen;
 use bouncycastle_hybrid::hpke::{
     HpkeAuthRecipient, HpkeAuthSender, HpkeCipher, HpkeContext, HpkeKdf, HpkeParams, HpkeRecipient,
     HpkeSender, NT,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
-use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;

@@ -19,6 +19,8 @@ use bouncycastle_core::signature_key::{
 };
 use bouncycastle_core::traits::{Hash, HashOneShot, PrivateKey, PublicKey, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
+use bouncycastle_digest::sha2::SHA512;
+use bouncycastle_digest::sha3::SHAKE256;
 use bouncycastle_pqc::mldsa_lowmemory::mldsa::{
     MLDSA44_FULL_SK_LEN, MLDSA65_FULL_SK_LEN, MLDSA87_FULL_SK_LEN,
 };
@@ -28,8 +30,6 @@ use bouncycastle_pqc::mldsa_lowmemory::{
     MLDSA87_SK_LEN, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait,
     MLDSATrait, MuBuilder,
 };
-use bouncycastle_sha2::SHA512;
-use bouncycastle_sha3::SHAKE256;
 
 const TEST_DATA_DIR: &str = "pqc/crypto/mldsa";
 

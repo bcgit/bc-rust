@@ -22,8 +22,8 @@ use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, Fro
 use bouncycastle_core::traits::{HashAlgParams, RNG};
 use bouncycastle_dhkem::hazmat::{self as labeled, MAX_NH};
 use bouncycastle_dhkem::{AuthDecapsulatingKey, AuthEncapsulatingKey, HpkeKem};
-use bouncycastle_hmac::HMACParams;
-use bouncycastle_sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_digest::hmac::HMACParams;
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
@@ -342,7 +342,7 @@ pub struct Recipient;
 /// use bouncycastle_ed::x25519::keygen;
 /// use bouncycastle_hybrid::hpke::{HpkeParams, HpkeSender};
 /// use bouncycastle_rng::HashDRBG_SHA512;
-/// use bouncycastle_sha2::SHA256;
+/// use bouncycastle_digest::sha2::SHA256;
 ///
 /// let mut rng = HashDRBG_SHA512::new_from_os();
 /// let (pk, _sk) = keygen(&mut rng).unwrap();
@@ -508,7 +508,7 @@ impl<Dir, H: HpkeKdf, A: HpkeAead> HpkeContext<Dir, H, A> {
     /// use bouncycastle_ed::x25519::keygen;
     /// use bouncycastle_hybrid::hpke::{HpkeParams, HpkeSender};
     /// use bouncycastle_rng::HashDRBG_SHA512;
-    /// use bouncycastle_sha2::SHA256;
+    /// use bouncycastle_digest::sha2::SHA256;
     ///
     /// let mut rng = HashDRBG_SHA512::new_from_os();
     /// let (pk, _sk) = keygen(&mut rng).unwrap();

@@ -18,6 +18,7 @@ use bouncycastle_core::signature_key::{
 use bouncycastle_core::traits::RNG;
 use bouncycastle_core::traits::{HashOneShot, SignatureSigner, SignatureVerifier};
 use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
+use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keys::{
@@ -26,7 +27,6 @@ use bouncycastle_rsa::keys::{
 use bouncycastle_rsa::rsa_2048::{RSASSA_PSS_SHA256, SIG_LEN};
 use bouncycastle_rsa::rsassa;
 use bouncycastle_rsa::rsassa_pss::RSASSA_PSS;
-use bouncycastle_sha2::SHA256;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;

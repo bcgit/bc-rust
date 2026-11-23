@@ -9,6 +9,7 @@ mod mlkem_tests {
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, XOF, XOFSqueezer};
+    use bouncycastle_digest::sha3::SHAKE256;
     use bouncycastle_pqc::mlkem_lowmemory::hazmat::EncapsWithRandomness;
     use bouncycastle_pqc::mlkem_lowmemory::mlkem::{
         MLKEM512_FULL_SK_LEN, MLKEM768_FULL_SK_LEN, MLKEM1024_FULL_SK_LEN,
@@ -26,7 +27,6 @@ mod mlkem_tests {
     };
     use bouncycastle_pqc::mlkem_lowmemory::{MLKEMPrivateKeyTrait, MLKEMTrait};
     use bouncycastle_rng::DefaultRNG;
-    use bouncycastle_sha3::SHAKE256;
 
     #[test]
     fn core_framework_tests() {

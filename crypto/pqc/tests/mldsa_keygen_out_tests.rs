@@ -11,6 +11,7 @@ use bouncycastle_core::signature_key::{
 };
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::FailingRNG;
+use bouncycastle_digest::sha2::SHA512;
 use bouncycastle_pqc::mldsa::{
     MLDSA44, MLDSA44_SIG_LEN, MLDSA44PrivateKey, MLDSA44PrivateKeyExpanded, MLDSA44PublicKey,
     MLDSA44PublicKeyExpanded, MLDSA65, MLDSA65_SIG_LEN, MLDSA65PrivateKey,
@@ -18,7 +19,6 @@ use bouncycastle_pqc::mldsa::{
     MLDSA87_SIG_LEN, MLDSA87PrivateKey, MLDSA87PrivateKeyExpanded, MLDSA87PublicKey,
     MLDSA87PublicKeyExpanded, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait,
 };
-use bouncycastle_sha2::SHA512;
 
 const ZEROIZED: SignatureError =
     SignatureError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey);

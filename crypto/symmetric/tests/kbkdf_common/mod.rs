@@ -7,8 +7,8 @@
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data, bc_test_data_json};
-use bouncycastle_hmac::HmacKey;
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
+use bouncycastle_digest::hmac::HmacKey;
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA384, SHA512};
 use bouncycastle_symmetric::kbkdf::{
     CounterSize, PRF_CMAC_AES128, PRF_CMAC_AES192, PRF_CMAC_AES256, PRF_HMAC, Prf,
 };

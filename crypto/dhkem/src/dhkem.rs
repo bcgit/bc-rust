@@ -8,7 +8,7 @@ use bouncycastle_core::kem_key::KEMAlgorithm;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashAlgParams, RNG};
-use bouncycastle_hmac::HMACParams;
+use bouncycastle_digest::hmac::HMACParams;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 
