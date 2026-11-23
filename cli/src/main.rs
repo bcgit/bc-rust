@@ -4856,8 +4856,8 @@ enum Subcommands {
         x: bool,
     },
 
-    /// RSA-1024 signature verification (RFC 8017 Section 8.2), PKCS#1 v1.5 only. Verification-only: this
-    /// crate has no RSA-1024 private key type at all. See rsa-2048 for --scheme/--hash.
+    /// RSA-1024 signature verification (RFC 8017 Section 8.2), PKCS#1 v1.5 only. Verification-only: the
+    /// library has no RSA-1024 private key type at all. See rsa-2048 for --scheme/--hash.
     RSA_1024 {
         #[arg(long, value_enum)]
         /// The signature scheme: only `pkcs1v15` is available at this modulus size.
@@ -4876,8 +4876,8 @@ enum Subcommands {
         sigfile: Option<String>,
     },
 
-    /// RSA-1536 signature verification (RFC 8017 Section 8.2), PKCS#1 v1.5 only. Verification-only: this
-    /// crate has no RSA-1536 private key type at all. See rsa-2048 for --scheme/--hash.
+    /// RSA-1536 signature verification (RFC 8017 Section 8.2), PKCS#1 v1.5 only. Verification-only: the
+    /// library has no RSA-1536 private key type at all. See rsa-2048 for --scheme/--hash.
     RSA_1536 {
         #[arg(long, value_enum)]
         /// The signature scheme: only `pkcs1v15` is available at this modulus size.
@@ -4900,7 +4900,7 @@ enum Subcommands {
     /// RSASSA-PSS (RFC 8017 Section 8.1, or RFC 8702 Section 3.2.1 with `--hash shake128`), selected by
     /// `--scheme`/`--hash`. PSS draws a fresh salt from the OS RNG each time it signs. `keygen`
     /// (FIPS 186-5 A.1.3, e = 65537) writes the private key to stdout and the public key to
-    /// `--pkfile`. Private/public key files use this crate's own raw fixed-width encoding (see
+    /// `--pkfile`. Private/public key files use the library's own raw fixed-width encoding (see
     /// `RsaPrivateComponents`/`RsaPublicComponents`'s `# Encoding` docs), not PEM or ASN.1 DER.
     RSA_2048 {
         action: RSAAction,

@@ -217,7 +217,7 @@ pub(crate) enum MLKEMHkdfAction {
 
 /// One body for the three `mlkem*-hkdf-*` subcommands: the plain set's keys, and the roles over
 /// `KdfParams` the `_params` marker names, the HKDF described by the salt. The derived key is one hash
-/// output long, the crate's `*_SS_LEN`.
+/// output long, the `mlkem` module's `*_SS_LEN`.
 #[allow(clippy::too_many_arguments)] // one flag per input, the HKDF ones each inline or from a file
 pub(crate) fn mlkem_hkdf_cmd<
     PK,

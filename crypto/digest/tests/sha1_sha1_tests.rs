@@ -133,7 +133,7 @@ fn test_constants() {
     assert_eq!(SHA1::BLOCK_LEN, 64);
     assert_eq!(SHA1::new().block_bitlen(), 512);
     assert_eq!(SHA1::new().output_len(), 20);
-    // The crate docs' Memory Usage table.
+    // The module docs' Memory Usage table.
     assert_eq!(core::mem::size_of::<SHA1>(), 104);
 }
 

@@ -1,5 +1,5 @@
 //! MGF1 (RFC 8017 Appendix B.2.1), a mask generation function based on a hash function, in the
-//! two shapes this crate calls it in: [`mgf1`] for EMSA-PSS, whose seed is a hash output and
+//! two shapes this module calls it in: [`mgf1`] for EMSA-PSS, whose seed is a hash output and
 //! whose mask is wanted on its own, and [`mgf1_xor`] for EME-OAEP, whose seeds are of any length
 //! and whose masks are XORed into what they mask.
 
@@ -53,7 +53,7 @@ pub(in crate::rsa) fn mgf1_xor<M: HashOneShot + HashAlgParams>(seed: &[u8], targ
 
 #[cfg(test)]
 mod tests {
-    //! `mgf1` is crate-private (only [`crate::rsa::emsa_pss`] needs it), so it is exercised here
+    //! `mgf1` is module-private (only [`crate::rsa::emsa_pss`] needs it), so it is exercised here
     //! rather than from `tests/` -- the same "high-risk code that cannot be reached through the
     //! public API" exception `rsa_core`'s tests use. Every expected value below was computed with
     //! a direct Python transliteration of RFC 8017 Appendix B.2.1's own steps (not from recall),

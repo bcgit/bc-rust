@@ -1,8 +1,8 @@
 //! All 3840 known-answer vectors of NTT's CRYPTREC test-vector file `t_camellia.txt`, for all three
 //! key lengths, in both directions, through the four-block and single-block paths.
 //!
-//! The data module `ntt_cryptrec_data.rs` describes the file and its provenance. Each key set is
-//! the 128 single-bit plaintexts under one key, so the 128 ciphertexts go through
+//! The data module `camellia_ntt_cryptrec_data.rs` describes the file and its provenance. Each key
+//! set is the 128 single-bit plaintexts under one key, so the 128 ciphertexts go through
 //! `encrypt_4blocks` as thirty-two batches of four (one four-lane pass each) and back through
 //! `decrypt_4blocks`; the first
 //! plaintext of every set is also run through the single-block methods. Between them the 30 keys

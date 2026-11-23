@@ -9,7 +9,7 @@
 //! # Where the expected values come from
 //!
 //! FIPS 180-4 publishes H(0) for t = 224 and t = 256 only (s. 5.3.6.1 / s. 5.3.6.2, pinned by
-//! `sha512t_h0_tests.rs`) and no digests at all for any other truncation. The known-answer
+//! `sha2_sha512t_h0_tests.rs`) and no digests at all for any other truncation. The known-answer
 //! values below were therefore generated with BC Java's `org.bouncycastle.crypto.digests
 //! .SHA512tDigest`, an independent implementation of the same section, over the FIPS 180-4
 //! Appendix C sample messages. The two approved truncations are in the table as well, so a change
@@ -196,7 +196,7 @@ fn one_million_a() {
 }
 
 /// The algorithm name is built from `T` at compile time; check every digit count, and that the two
-/// approved truncations still spell themselves the way the crate's name constants do.
+/// approved truncations still spell themselves the way the module's name constants do.
 #[test]
 fn alg_name_spells_t_in_decimal() {
     assert_eq!(<SHA512t<8> as Algorithm>::ALG_NAME, "SHA512/8");

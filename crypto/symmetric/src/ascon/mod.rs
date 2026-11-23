@@ -13,7 +13,7 @@
 //! between the different primitives. The algorithms are also single-pass and inverse-free;
 //! Ascon-AEAD128 additionally supports online processing.
 //!
-//! This crate implements the four Ascon functions standardized in NIST SP 800-232
+//! This module implements the four Ascon functions standardized in NIST SP 800-232
 //! (August 2025), which can be found here: <https://doi.org/10.6028/NIST.SP.800-232>
 //!
 //! - [`Ascon-AEAD128`](Ascon_AEAD128) — authenticated encryption (128-bit key/nonce/tag, 128-bit

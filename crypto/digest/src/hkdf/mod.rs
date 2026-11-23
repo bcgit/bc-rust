@@ -290,8 +290,8 @@ impl<H: HMACParams> HKDF<H> {
     /// The salt can be of any [`KeyType`] but [`KeyType::Unknown`], which is refused as
     /// [`KeyMaterialError::InvalidKeyType`]; the IKM can be of any type, and credits entropy only
     /// when it is a full-entropy one. The salt credits entropy only when it is typed
-    /// [`KeyType::MACKey`], a secret salt; see the crate's Security Considerations. The type of the
-    /// output is set from what was credited.
+    /// [`KeyType::MACKey`], a secret salt; see the module's Security Considerations. The type of
+    /// the output is set from what was credited.
     /// The output KeyMaterial will be of fixed size, with a capacity large enough to cover any
     /// underlying hash function, but the actual key length will be appropriate to the underlying hash function.
     ///
@@ -762,7 +762,7 @@ impl<H: HMACParams> KDF for HKDF<H> {
 /// [`HKDF`] with the salt through [`engine`](KdfDescription::engine) for each derivation, as
 /// [`HKDF::new_with_salt`] does, and a key held where the secret must not leave reads the salt
 /// and hands the device the same derivation. The salt is typed as the caller's material is: a
-/// [`KeyType::MACKey`] salt is the secret salt the crate's Security Considerations describe,
+/// [`KeyType::MACKey`] salt is the secret salt the module's Security Considerations describe,
 /// credited by the engine; any other type but [`KeyType::Unknown`], which is refused, is RFC
 /// 5869's non-secret random value.
 pub struct HkdfDescription<'s, H: HMACParams> {

@@ -32,7 +32,7 @@
 //! learn about `d` from repeated calls with related bases, per Kocher (1996) and Boneh & Brumley
 //! (2003). Neither this module nor `crate::rsa::rsa_core`'s CRT, which every private-key operation
 //! runs, applies message blinding on top of it -- see the `rsa` module's
-//! own `# Security Considerations` for what that means for this crate's signing operation.
+//! own `# Security Considerations` for what that means for this module's signing operation.
 
 use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::montgomery;

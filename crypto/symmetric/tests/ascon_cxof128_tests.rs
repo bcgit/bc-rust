@@ -1,8 +1,8 @@
 //! Ascon-CXOF128 tests (NIST SP 800-232 §5.3).
 //!
-//! Embedded NIST LWC known-answer vectors (always-on; full sweep in `ascon_bc-test-data.rs`) plus
-//! domain-separation, streaming/byte-at-a-time equivalence, trait-API, partial-input rejection,
-//! and suspend/resume tests.
+//! Embedded NIST LWC known-answer vectors (always-on; full sweep in `ascon_ascon_bc-test-data.rs`)
+//! plus domain-separation, streaming/byte-at-a-time equivalence, trait-API, partial-input
+//! rejection, and suspend/resume tests.
 
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::hex;

@@ -1,6 +1,6 @@
 //! Cross-check of the constant-time engine against a transcription of BC Java's
-//! `CamelliaLightEngine` (`tests/common/mod.rs`), on many keys and blocks of every length, in
-//! every lane, in both directions.
+//! `CamelliaLightEngine` (`tests/camellia_common/mod.rs`), on many keys and blocks of every length,
+//! in every lane, in both directions.
 //!
 //! The known-answer files pin published values. This file pins *agreement with the source
 //! implementation* over thousands of inputs, which is what catches a circuit, mask or schedule

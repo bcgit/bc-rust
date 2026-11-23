@@ -32,7 +32,7 @@ use bouncycastle_core::traits::{
 /// The nonce is [`GCM_NONCE_LEN`] (12 bytes) and the tag 16, which is what RFC 8998 Sec 3.5.1
 /// fixes for `AEAD_SM4_GCM`: "The nonce length is 12 octets. The authentication tag length is 16
 /// octets." For a shorter tag, name the key's mode as `GCM<12>` and so on, within the `12..=16`
-/// bytes `Gcm` accepts. The RFC's Appendix A.1 vector is pinned in `tests/rfc8998_tests.rs`.
+/// bytes `Gcm` accepts. The RFC's Appendix A.1 vector is pinned in `tests/sm4_rfc8998_tests.rs`.
 ///
 /// # Usage Examples
 ///

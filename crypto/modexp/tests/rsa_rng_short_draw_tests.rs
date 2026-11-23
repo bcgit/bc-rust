@@ -1,4 +1,4 @@
-//! A draw from the RNG that comes back short is an error everywhere this crate draws: the
+//! A draw from the RNG that comes back short is an error everywhere this module draws: the
 //! contract of `RNG::next_bytes_out` is that the buffer is zeroized and the count of bytes
 //! written returned, so an RNG that writes half and says so must not have its zeros used as
 //! half of a prime candidate, a salt, an OAEP seed, a transported key or a secret value.

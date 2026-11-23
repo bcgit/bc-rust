@@ -1,7 +1,7 @@
 //! RSA-2048 RSASSA-PSS with SHA-384 and SHA-512, against Wycheproof's
 //! `rsa_pss_2048_sha384_mgf1_48_test.json` for SHA-384. No matching-hash-and-MGF SHA-512 PSS
 //! vector file exists in this Wycheproof checkout (only the SHA-512/224 and SHA-512/256 variants,
-//! and a mixed SHA-512-hash/MGF1-SHA-256 "params" file, neither of which this crate's SHA-512
+//! and a mixed SHA-512-hash/MGF1-SHA-256 "params" file, neither of which this module's SHA-512
 //! wiring is), so SHA-512 is covered by self-consistency round trips only, the same as SHA-384's
 //! sign side -- see `rsa_2048_pkcs1_v1_5_sha384_sha512_tests.rs` for why reusing the SHA-256
 //! sig-gen key here (rather than factoring a fresh one) is the right tradeoff.

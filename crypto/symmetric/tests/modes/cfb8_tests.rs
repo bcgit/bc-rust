@@ -5,7 +5,7 @@
 //! SP 800-38A Appendix D error propagation, and the "forward cipher function only" rule of
 //! Sec 6.3 -- independently of any real cipher. The known-answer tests against SP 800-38A
 //! Appendix F.3.7-F.3.12 are in the `aes` module, `crypto/symmetric/tests/aes_sp800_38a_cfb8_tests.rs`, and
-//! the ACVP CFB8 set in `cfb8_bc-test-data.rs` beside it.
+//! the ACVP CFB8 set in `aes_cfb8_bc-test-data.rs` beside it.
 //!
 //! The toy's own conformance to [`ElectronicCodeBook`] is pinned once, by
 //! `the_toy_permutation_conforms_to_the_trait` in `cbc_tests.rs`; it is the same `Toy` here, so it
@@ -373,9 +373,10 @@ fn call_chunking_does_not_change_the_result() {
 /// `call_chunking_does_not_change_the_result` proves the property over [`Toy`] at 55 bytes. This
 /// repeats it at 171 bytes, which is 42 four-byte batches and a 3-byte tail, and runs it over
 /// [`ForwardOnlyToy`] as well, so the chunked decryptions that reach the batch paths are shown to
-/// do so without the inverse cipher. The AES coverage (the `aes` module's `sp800_38a_cfb8_tests.rs`
-/// and `cfb8_bc-test-data.rs`) chunks against *published* ciphertext; this is the direct
-/// single-call-versus-chunked comparison, kept free of an AES dependency.
+/// do so without the inverse cipher. The AES coverage (the `aes` module's
+/// `aes_sp800_38a_cfb8_tests.rs` and `aes_cfb8_bc-test-data.rs`) chunks against *published*
+/// ciphertext; this is the direct single-call-versus-chunked comparison, kept free of an AES
+/// dependency.
 #[test]
 fn chunking_matches_a_single_call_at_every_batch_remainder() {
     fn check<P, const KEY_LEN: usize>(name: &str)

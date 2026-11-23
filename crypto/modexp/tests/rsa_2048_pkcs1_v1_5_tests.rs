@@ -23,8 +23,7 @@
 //! same check again, in Rust, against RSASSA-PKCS1-v1_5's real API.
 //!
 //! This factoring step lives only in the throwaway script that produced these constants, never in
-//! the crate: `bouncycastle_modexp::rsa` has no prime-generation or factoring code (see `src/rsa/mod.rs`'s
-//! `# Scope`), by design.
+//! the module: `bouncycastle_modexp::rsa` has no factoring code, by design.
 //!
 //! `p` and `q` here are both genuinely 1024 bits (this key's generator produced balanced primes,
 //! as most do) -- [`RsaPrivateKey`] does not require that, see its docs, but this file cannot
@@ -69,9 +68,9 @@ fn get_test_data(filename: &str) -> String {
 }
 
 /// Big-endian hex (as Wycheproof/ASN.1 write it, with an optional leading `00` sign-avoidance
-/// byte) into this crate's little-endian `[u64; L]` limb form. Duplicated in miniature from
-/// `bouncycastle_modexp::rsa::codec` (crate-private) rather than exposed from it: this conversion belongs
-/// to the test's own data plumbing, not to the crate's public API surface.
+/// byte) into this module's little-endian `[u64; L]` limb form. Duplicated in miniature from
+/// `bouncycastle_modexp::rsa::codec` (module-private) rather than exposed from it: this conversion
+/// belongs to the test's own data plumbing, not to the module's public API surface.
 fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
     let bytes_len = 8 * L;
     let mut bytes = hex_decode(hex).expect("valid hex");
@@ -166,7 +165,7 @@ fn pkcs1_v1_5_sig_gen_2048_sha256() {
 // ---- bouncycastle_core trait conformance ------------------------------------------------------
 
 /// The same genuine key pair as the sig-gen test above, in the `fn() -> Result<(PK, SK)>`
-/// shape `core-test-framework` takes in place of a key generator (this crate has none).
+/// shape `core-test-framework` takes in place of a key generator.
 fn fixed_keypair()
 -> Result<(RsaPublicComponents<RSA2048>, RsaPrivateComponents<RSA2048>), SignatureError> {
     let sk = wycheproof_key();
@@ -212,7 +211,7 @@ fn streamed_signature_equals_one_shot() {
 
 /// RFC 8017 §8.2.2 step 1 ("If the length of the signature S is not k octets, output 'invalid
 /// signature'"): the trait's `&[u8]` signature makes this a runtime check, reported as a
-/// `LengthError` as the other signature crates do. `core-test-framework` covers the too-long
+/// `LengthError` as the other signature modules do. `core-test-framework` covers the too-long
 /// case; this is the too-short one.
 #[test]
 fn trait_verify_rejects_short_signature() {

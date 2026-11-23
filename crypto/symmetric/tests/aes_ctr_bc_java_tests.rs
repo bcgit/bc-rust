@@ -2,10 +2,10 @@
 //!
 //! # Why this is the closest comparison available
 //!
-//! `ctr_vector_tests.rs` checks against OpenSSL, but OpenSSL's `-aes-*-ctr` takes the whole 16-byte
-//! initial counter block as its IV: it has no notion of a nonce, and its counter is always the full
-//! block. It can therefore only ever agree with this type at the one width where the two coincide,
-//! and it cannot exercise a **narrow** counter at all.
+//! `aes_ctr_vector_tests.rs` checks against OpenSSL, but OpenSSL's `-aes-*-ctr` takes the whole
+//! 16-byte initial counter block as its IV: it has no notion of a nonce, and its counter is always
+//! the full block. It can therefore only ever agree with this type at the one width where the two
+//! coincide, and it cannot exercise a **narrow** counter at all.
 //!
 //! BC Java's `SICBlockCipher` (Segmented Integer Counter, its name for CTR) is built the same way
 //! this type is. Given an IV shorter than the block it
@@ -32,7 +32,7 @@
 //! a mismatch point straight at the counter block that produced it.
 //!
 //! Whole-message agreement with BC Java was also checked while these were generated -- the 69-byte
-//! vectors of `ctr_vector_tests.rs` and a 5000-byte message across the 255-to-256 carry, at all
+//! vectors of `aes_ctr_vector_tests.rs` and a 5000-byte message across the 255-to-256 carry, at all
 //! three key lengths -- and it is exact. Those cases are covered there and by the ACVP suite, so
 //! what is pinned here is specifically the part neither of them reaches: the narrow counters.
 

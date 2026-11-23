@@ -15,7 +15,7 @@
 //!   ciphertexts (`c <= 1` or `c >= n - 1`) that step 3.c must reject. Their public exponents
 //!   are 30 to 56 bits wide, so the passing cases also pin RSAEP under such an `e`, through
 //!   `encaps` with an RNG that emits the vector's `pt`. The basic-format groups
-//!   (`keyMode: standard`, no CRT components) are skipped, since this crate has no `(n, d)` key
+//!   (`keyMode: standard`, no CRT components) are skipped, since this module has no `(n, d)` key
 //!   type.
 //! * `openssl/openssl_rsasve_<bits>.json`: produced by `openssl/ossl_rsasve.c` against OpenSSL
 //!   3.0.13's `EVP_PKEY_encapsulate` with `EVP_PKEY_CTX_set_kem_op(ctx, "RSASVE")`. Each file has
@@ -165,7 +165,7 @@ macro_rules! rsasve_suite {
                 )));
             }
 
-            /// OpenSSL encapsulated; this crate decapsulates. And the other way round: fed
+            /// OpenSSL encapsulated; this module decapsulates. And the other way round: fed
             /// OpenSSL's `Z` as its RNG output, `encaps` must produce OpenSSL's `C` exactly
             /// (RSAEP is deterministic in `z`).
             #[test]
@@ -370,7 +370,7 @@ macro_rules! rsasve_suite {
                 assert!(matches!(SK::from_bytes(&bytes), Err(KeyDecodingError(_))));
                 // SP 800-56B Rev. 2 §6.2.1: 65,537 <= e. These components are not a key under
                 // a smaller e, so the refusal is not pinned to that rule here:
-                // `keys_tests.rs` has genuine keys under small exponents.
+                // `rsa_keys_tests.rs` has genuine keys under small exponents.
                 assert_eq!(sk.e(), 65537);
                 for e in [3u64, 17, 65535] {
                     assert!(matches!(
@@ -611,7 +611,7 @@ fn keygen_produces_working_kem_keys() {
     let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
     assert_eq!(sk.decaps(&ct, ()).unwrap(), ss);
 
-    // A stuck RNG exhausts FIPS 186-5 A.1.3's candidate limit (see `keygen_tests.rs`'s
+    // A stuck RNG exhausts FIPS 186-5 A.1.3's candidate limit (see `rsa_keygen_tests.rs`'s
     // `keygen_gives_up_on_a_stuck_rng`), and the KEM keygen passes that error through
     // as `GenericError` with key generation's own message, not a generic one.
     let mut stuck = FixedSeedRNG::new([0x42u8; 64]);
@@ -628,7 +628,7 @@ fn keygen_produces_working_kem_keys() {
     ));
 }
 
-/// `RSASVE::keygen` at the larger sizes, following `keygen_tests.rs`: 3072 runs by default, and
+/// `RSASVE::keygen` at the larger sizes, following `rsa_keygen_tests.rs`: 3072 runs by default, and
 /// 4096/8192 are `#[ignore]`d for the same reason as there.
 macro_rules! kem_keygen_round_trip {
     ($name:ident, $size:ident $(, $ignore:meta)?) => {

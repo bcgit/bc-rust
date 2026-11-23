@@ -35,9 +35,9 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// same 16-byte counter block differently -- a 4-octet nonce, an 8-octet IV and a 4-octet block
 /// counter that starts at **one** rather than zero, which is the IPsec convention rather than a
 /// property of Camellia. Its nine test vectors therefore begin one block into the keystream these
-/// keys generate, so `tests/stream_mode_tests.rs` uses them to pin a reference CTR built from the
-/// SP 800-38A Sec 6.5 equations over the permutation, and holds the keys to that reference on the
-/// counter blocks they do produce.
+/// keys generate, so `tests/camellia_stream_mode_tests.rs` uses them to pin a reference CTR built
+/// from the SP 800-38A Sec 6.5 equations over the permutation, and holds the keys to that reference
+/// on the counter blocks they do produce.
 ///
 /// ```
 /// use bouncycastle_symmetric::camellia::Camellia128Key;

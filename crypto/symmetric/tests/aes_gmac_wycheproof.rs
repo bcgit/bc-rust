@@ -6,13 +6,13 @@
 //! suites in this crate.
 //!
 //! GMAC is GCM with an empty plaintext (SP 800-38D Sec 5.2): the vector's `msg` is the AAD, and the
-//! tag is the whole output. Cases run through the same helpers as `gmac_bc-test-data.rs`, and
+//! tag is the whole output. Cases run through the same helpers as `aes_gmac_bc-test-data.rs`, and
 //! through `AES*Key<GMAC>` (`aes_common/gmac_helpers.rs`). A `valid`
 //! case must produce exactly `tag`, which must then verify; an `invalid` case must fail the tag
 //! check.
 //!
 //! `Gcm` fixes the IV at 96 bits, so the file's 128-bit-IV groups are counted as not supported, as
-//! in `gcm_wycheproof.rs`.
+//! in `aes_gcm_wycheproof.rs`.
 
 #[path = "aes_common/acvp_gcm_helpers.rs"]
 mod acvp_gcm_helpers;

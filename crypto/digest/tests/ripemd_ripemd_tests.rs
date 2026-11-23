@@ -169,7 +169,7 @@ mod ripemd_tests {
         assert_eq!(RIPEMD320_NAME, "RIPEMD320");
     }
 
-    /// All four sit below the library's 112-bit floor; see the crate docs.
+    /// All four sit below the library's 112-bit floor; see the module docs.
     #[test]
     fn test_security_strength() {
         for s in [

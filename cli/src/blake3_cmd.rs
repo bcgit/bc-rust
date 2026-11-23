@@ -11,7 +11,7 @@ use crate::helpers::{load_mac_key, squeeze_to_stdout, stream_stdin, stream_xof};
 use crate::mac_cmd::do_mac_with_key;
 
 /// BLAKE3 spec s. 2.3: `keyed_hash` "takes an input of any length together with a 256-bit key".
-/// The crate has no public constant for it.
+/// The `blake3` module has no public constant for it.
 const BLAKE3_KEY_LEN: usize = 32;
 
 /// The default-length BLAKE3 output: BLAKE3 spec s. 2.1, "The chaining value of the root node,

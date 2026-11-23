@@ -1,7 +1,7 @@
 //! EMSA-PKCS1-v1_5 (RFC 8017 §9.2): deterministic signature encoding, generic over the hash
 //! function `H` via its [`HashAlgParams`]/[`AlgorithmOID`] impls (e.g.
-//! `bouncycastle_digest::sha2::SHA256`), and specialized to this crate's fixed-width keys: RFC 8017's
-//! `emLen` is always this crate's modulus byte length `K_LEN` (`8 * L`), never a generic
+//! `bouncycastle_digest::sha2::SHA256`), and specialized to this module's fixed-width keys: RFC
+//! 8017's `emLen` is always this module's modulus byte length `K_LEN` (`8 * L`), never a generic
 //! caller-chosen length. Both operations take the message's already-computed hash rather than
 //! the message (step 1 of the encoding is the caller's), so that a streaming signer/verifier can
 //! hash incrementally and hand in the result; `H` is never instantiated here.
@@ -13,7 +13,7 @@ use bouncycastle_core::traits::{AlgorithmOID, HashAlgParams};
 pub(in crate::rsa) const HASH_LEN_ERROR: SignatureError =
     SignatureError::LengthError("the message hash must be the hash's output length");
 
-/// The largest `T` this crate builds: two SEQUENCE headers, an OID of at most 16 bytes with
+/// The largest `T` this module builds: two SEQUENCE headers, an OID of at most 16 bytes with
 /// its NULL, and a 64-byte digest behind its OCTET STRING header.
 const MAX_T_LEN: usize = 2 + 2 + 16 + 2 + 2 + 64;
 
@@ -30,9 +30,9 @@ const MAX_T_LEN: usize = 2 + 2 + 16 + 2 + 2 + 64;
 /// wrapping `OID_DER` in the two surrounding `SEQUENCE`s and the `05 00` (`NULL`) parameters, then
 /// appending the digest behind its own `04 <len>` (`OCTET STRING`) tag, reproduces exactly those
 /// bytes -- checked against SHA-256/384/512 in this module's tests. Every DER length here
-/// (`H::OID_DER.len()` and `H_LEN`) is well under 128 for every hash this crate could plausibly
+/// (`H::OID_DER.len()` and `H_LEN`) is well under 128 for every hash this module could plausibly
 /// support (SHA-3's largest output is 64 bytes), so each is a single length byte, not the
-/// multi-byte long form; `debug_assert`'d, since it can only fail on a hash this crate does not
+/// multi-byte long form; `debug_assert`'d, since it can only fail on a hash this module does not
 /// support, never on real input.
 fn digest_info<H: AlgorithmOID + HashAlgParams>(digest: &[u8], t: &mut [u8; MAX_T_LEN]) -> usize {
     let h_len = digest.len();
@@ -162,7 +162,7 @@ fn decode_digest_info<H: AlgorithmOID>(t: &[u8], digest: &[u8]) -> bool {
 /// caller, as for [`emsa_pkcs1_v1_5_encode_from_hash`]): RFC 8017 §8.2.2's own note describes
 /// this as an alternative to its step 4 ("apply a 'decoding' operation ... to recover the
 /// underlying hash value, and then compare it to a newly computed hash value") -- required here,
-/// rather than optional, because re-encoding the digest and comparing bytes (this crate's
+/// rather than optional, because re-encoding the digest and comparing bytes (this module's
 /// [`emsa_pkcs1_v1_5_encode_from_hash`]) only ever produces one canonical `EM`, and
 /// [`decode_digest_info`] must accept two. Checks `EM = 0x00 || 0x01 || PS || 0x00 || T`
 /// structurally (at least 8 bytes of `0xff` padding, then the separator), then hands `T` to
@@ -188,7 +188,7 @@ pub fn emsa_pkcs1_v1_5_verify_from_hash<H: HashAlgParams + AlgorithmOID, const K
         i += 1;
     }
     // Mutating this `- 2` to `+ 2` or `/ 2` is an accepted equivalent, not a gap, for every
-    // concrete `(H, K_LEN)` this crate actually instantiates: `decode_digest_info` requires `T`
+    // concrete `(H, K_LEN)` this module actually instantiates: `decode_digest_info` requires `T`
     // to exactly fill whatever remains of `em` after the separator (no trailing garbage, RFC 8017
     // §9.2 note 1's structure, which `decode_digest_info` enforces), which pins `i` to one specific value
     // for a genuine, hash-matching `DigestInfo` -- the same value regardless of how `ps_len` is
@@ -205,7 +205,7 @@ pub fn emsa_pkcs1_v1_5_verify_from_hash<H: HashAlgParams + AlgorithmOID, const K
 
 #[cfg(test)]
 mod tests {
-    //! `digest_info` is crate-private (only [`emsa_pkcs1_v1_5_encode_from_hash`] needs it
+    //! `digest_info` is private (only [`emsa_pkcs1_v1_5_encode_from_hash`] needs it
     //! directly), so it is exercised here rather than from `tests/` -- the same "high-risk code
     //! that cannot be reached through the public API" exception `rsa_core`'s tests use, though
     //! `digest_info` itself is not high-risk so much as inconvenient to reach any other way. The
@@ -318,7 +318,7 @@ mod tests {
 
     /// The `MissingNull` case Wycheproof's `rsa_signature_2048_sha256_test.json` marks
     /// "acceptable": a `DigestInfo` whose `AlgorithmIdentifier` omits the `NULL` parameters this
-    /// crate's own [`emsa_pkcs1_v1_5_encode_from_hash`] always includes.
+    /// module's own [`emsa_pkcs1_v1_5_encode_from_hash`] always includes.
     #[test]
     fn verify_accepts_digest_info_with_null_parameters_absent() {
         let mut digest = [0u8; 32];

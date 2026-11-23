@@ -23,7 +23,7 @@ use bouncycastle_symmetric::ascon::{
 use bouncycastle_symmetric::{Decrypting, Encrypting};
 
 /// Wraps the vector's key bytes as a cipher key, promoting them if `KeyMaterial`'s entropy
-/// heuristic declined to (as `ascon_bc-test-data.rs` does for the NIST KAT keys).
+/// heuristic declined to (as `ascon_ascon_bc-test-data.rs` does for the NIST KAT keys).
 fn cipher_key(bytes: &[u8]) -> KeyMaterial<ASCON_AEAD128_KEY_LEN> {
     let mut key = KeyMaterial::<ASCON_AEAD128_KEY_LEN>::from_bytes_as_type(
         bytes,

@@ -1,6 +1,6 @@
 //! Type aliases for AES in GMAC (NIST SP 800-38D Sec 5.2), and the nonce-bound MAC roles that
 //! make [`AES128Key<GMAC>`] and friends GMAC keys. The docs are on [`AES_GMAC_128`], which the
-//! crate root re-exports.
+//! module root re-exports.
 
 use crate::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use crate::modes::Gmac;

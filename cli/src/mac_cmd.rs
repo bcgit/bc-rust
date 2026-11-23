@@ -94,7 +94,7 @@ pub(crate) fn mac_cmd(
 /// The library's KMAC key types carry the tag length as a const parameter, which a command-line
 /// argument cannot name, so the command runs KMACXOF and binds the length at its final read:
 /// SP 800-185 Sec 4.3.1 differs from Sec 4.3 only in the `right_encode` the final read absorbs,
-/// so `KMACXOF`'s final read of `L` bytes is `KMAC(K, X, 8L, S)` exactly, which the sha3 crate's
+/// so `KMACXOF`'s final read of `L` bytes is `KMAC(K, X, 8L, S)` exactly, which the `sha3` module's
 /// sample-value tests pin against the published vectors.
 pub(crate) fn kmac_cmd(
     strength: Strength,

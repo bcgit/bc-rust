@@ -7,10 +7,10 @@
 //! public API (it is a `Secret` field), and a round-trip through the cipher cannot check it: a
 //! wrong `w[i]` is used by encryption and decryption alike, so the round trip still succeeds.
 //! Every word of all three expansions is instead checked against Appendix A inside
-//! `src/schedule.rs`, where the stored schedule can be unpacked and compared directly.
+//! `src/aes/schedule.rs`, where the stored schedule can be unpacked and compared directly.
 //!
 //! Known-answer coverage for AES-192 and AES-256, which Appendix B does not reach, is in
-//! `sp800_38a_ecb_tests.rs` and `ecb_bc-test-data.rs`.
+//! `aes_sp800_38a_ecb_tests.rs` and `aes_ecb_bc-test-data.rs`.
 //!
 //! All values here are transcribed from the published FIPS 197 (Update 1) PDF.
 

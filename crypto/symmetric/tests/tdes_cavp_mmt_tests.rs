@@ -15,7 +15,7 @@
 //! encrypting `PLAINTEXT` must give `CIPHERTEXT` and decrypting `CIPHERTEXT` must give
 //! `PLAINTEXT`. The `[DECRYPT]` cases use different keys from the `[ENCRYPT]` ones, so this doubles
 //! the coverage rather than repeating it. The two-key files have only a `[DECRYPT]` section --
-//! NIST tests two-key TDEA in that direction alone, as this crate does.
+//! NIST tests two-key TDEA in that direction alone, as this module does.
 //!
 //! # How the modes are driven
 //!

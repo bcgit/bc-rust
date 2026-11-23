@@ -275,7 +275,7 @@ impl KeccakInternal {
     /// # Contract
     /// This private function has preconditions to entry that the caller must uphold:
     /// ## `bits_in_queue` is byte-aligned (a multiple of 8) on entry.
-    /// currently all call sites within the crate respect this, and there are unit tests to trigger
+    /// currently all call sites within the module respect this, and there are unit tests to trigger
     /// the embedded debug_assert for existing call sites, but any new call sites to this MUST
     /// respect this precondition. If we ever open up the [`KeccakInternal`] object to be called publicly,
     /// then we'll have to add proper error-handling here.

@@ -5,7 +5,7 @@
 //! 128-, 192- and 256-bit key data) and RFC 5649 Sec 6 (both KWP examples, the second of which is
 //! the 7-octet case that takes the single-block path of SP 800-38F Algorithm 5 step 5 and
 //! Algorithm 6 step 3). SP 800-38F itself publishes no vectors; the NIST ACVP sets are in
-//! `kw_bc-test-data.rs`. The structural tests of the two algorithms are toy-driven, in
+//! `aes_kw_bc-test-data.rs`. The structural tests of the two algorithms are toy-driven, in
 //! `crypto/symmetric/tests/modes/kw_tests.rs`; the framework runs here because its tamper checks
 //! need a permutation with diffusion.
 

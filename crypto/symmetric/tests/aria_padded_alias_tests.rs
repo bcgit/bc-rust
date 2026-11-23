@@ -1,6 +1,6 @@
 //! The padded CBC mode through the ARIA keys, via the shared suite: the padding parameter selects
 //! the scheme, the schemes are not interchangeable, and the IV is fresh per encryption. Which type
-//! each alias resolves to is pinned in `alg_name_tests.rs`.
+//! each alias resolves to is pinned in `aria_alg_name_tests.rs`.
 
 use bouncycastle_cipher_test_framework::padded;
 use bouncycastle_symmetric::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};

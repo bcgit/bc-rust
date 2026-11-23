@@ -35,7 +35,7 @@
 //!
 //! A bit-oriented message (FIPS 180-4 s. 5.1) is finished with
 //! [`do_final_partial_bits`](Hash::do_final_partial_bits), the trailing bits being the most
-//! significant bits of the last byte, as in the SHA-2 crate. A computation in progress can be
+//! significant bits of the last byte, as in the SHA-2 module. A computation in progress can be
 //! suspended and resumed through [`Suspendable`], also as there.
 //!
 //! # Memory Usage

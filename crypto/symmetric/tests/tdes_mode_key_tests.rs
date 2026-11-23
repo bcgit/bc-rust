@@ -74,7 +74,8 @@ fn every_mode_key_enforces_the_material_policy() {
 
 /// The key-wrap suite over the three-key bundle: round trips, the length helpers, the error
 /// cases and tamper rejection, at the shortest plaintext and two longer ones. The answers are
-/// CAVP's, in `tkw_cavp_tests.rs`; the two-key bundle unwraps only, in `tkw_reference_tests.rs`.
+/// CAVP's, in `tdes_tkw_cavp_tests.rs`; the two-key bundle unwraps only, in
+/// `tdes_tkw_reference_tests.rs`.
 #[test]
 fn tkw_keys_pass_the_key_wrap_framework() {
     let tf = TestFrameworkKeyWrap::new();
@@ -120,7 +121,7 @@ fn stream_mode_keys_pass_the_stream_cipher_framework() {
 
 /// A two-key key hands out decryptors for every mode, and they decrypt what the raw two-key
 /// permutation encrypted. (Its encryptors do not compile; see `TDES2Internal`.) The CAVP MMT2
-/// vectors in `cavp_mmt_tests.rs` are the real check; this pins the wiring.
+/// vectors in `tdes_cavp_mmt_tests.rs` are the real check; this pins the wiring.
 #[test]
 fn two_key_keys_decrypt() {
     let perm = TDES2Internal::new(&material::<KEY_LEN_2KEY>()).unwrap();

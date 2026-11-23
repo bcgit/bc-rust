@@ -9,8 +9,8 @@
 //!
 //! Make sure you build in release mode!
 //!
-//! The crate docs' stack figure is the deepest frame chain from [`measure`] down, as for the
-//! ECC CDH harness. It is the stack only: scrypt's working memory, `ScryptParams::work_len`
+//! The `scrypt` module docs' stack figure is the deepest frame chain from [`measure`] down, as for
+//! the ECC CDH harness. It is the stack only: scrypt's working memory, `ScryptParams::work_len`
 //! bytes, is the caller's buffer, a heap allocation here, made outside the measured region.
 //!
 //! Note: print!() forces the compiler not to optimize away the actual code. The name of the bench

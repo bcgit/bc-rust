@@ -1,7 +1,7 @@
 //! Shared plumbing for the ACVP AES-GCM and AES-GMAC known-answer test files
-//! (`gcm_bc-test-data.rs`, `gmac_bc-test-data.rs`), whose request/response JSON shape is identical
-//! between the two: GMAC is just the `payloadLen = 0` slice of the same ACVP AES-GCM protocol
-//! (SP 800-38D Sec 5.2: GMAC is GCM restricted to `P = ""`).
+//! (`aes_gcm_bc-test-data.rs`, `aes_gmac_bc-test-data.rs`), whose request/response JSON shape is
+//! identical between the two: GMAC is just the `payloadLen = 0` slice of the same ACVP AES-GCM
+//! protocol (SP 800-38D Sec 5.2: GMAC is GCM restricted to `P = ""`).
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
 //! relative to the root of this git project. If it is absent, callers print a warning and skip,

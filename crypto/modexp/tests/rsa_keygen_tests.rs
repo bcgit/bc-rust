@@ -6,7 +6,7 @@
 //! Key generation is randomized, so there is no fixed expected key; the generated pair is checked
 //! against the criteria the generator claims to meet -- the candidates' top bits and parity (A.1.3
 //! steps 4.2.1/4.3), `e` coprime to `p - 1` and `q - 1` (A.1.1 2(a)), `|p - q| > 2^(nlen/2 - 100)`
-//! (2(d)), `n = p * q`, and the primality of `p` and `q` under this crate's own Miller-Rabin,
+//! (2(d)), `n = p * q`, and the primality of `p` and `q` under this module's own Miller-Rabin,
 //! whose known-answer tests are in this file too -- and by signing and verifying with it under
 //! both schemes, which exercises every CRT component. The primality facts asserted below (the
 //! documented Wycheproof `p`/`q` are prime, `p + 2` has the factor 173, `p + 6` is composite with

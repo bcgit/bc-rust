@@ -14,10 +14,10 @@
 //!   provider as `SM4/ECB/NoPadding`.
 //!
 //! These are GB/T 32907-2016's own Example 1 and Example 2, so they coincide with Appendix A.1.1
-//! through A.1.3 of draft-ribose-cfrg-sm4-10 in `gbt32907_tests.rs`. They are kept as a separate
-//! file so that agreement with the source implementation is asserted in its own terms, including
-//! the decryption half of `test1000000()`, which the draft does not print. That test is ignored in
-//! unoptimised builds (see its attribute) and runs under `cargo test --release`.
+//! through A.1.3 of draft-ribose-cfrg-sm4-10 in `sm4_gbt32907_tests.rs`. They are kept as a
+//! separate file so that agreement with the source implementation is asserted in its own terms,
+//! including the decryption half of `test1000000()`, which the draft does not print. That test is
+//! ignored in unoptimised builds (see its attribute) and runs under `cargo test --release`.
 
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::hex;

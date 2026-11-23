@@ -1,7 +1,7 @@
 //! Tests for BLAKE2b-512 and keyed BLAKE2b-512 (RFC 7693).
 //!
 //! Vector sources: RFC 7693 Appendix A; the official BLAKE2 KAT (blake2-kat.json, embedded below);
-//! and the bc-test-data sweep in `bc_test_data.rs`. Wycheproof has no BLAKE2 vectors, so the
+//! and the bc-test-data sweep in `blake2_bc_test_data.rs`. Wycheproof has no BLAKE2 vectors, so the
 //! QUALITY_AND_STYLE.md "against wycheproof" requirement is satisfied vacuously.
 
 #[cfg(test)]

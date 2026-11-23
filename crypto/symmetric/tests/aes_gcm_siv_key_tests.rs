@@ -1,6 +1,6 @@
 //! The AES-GCM-SIV keys through the shared suites of `bouncycastle-cipher-test-framework`: the
 //! construction policy, and the in-place AEAD contract that is the key's only role, at the two
-//! key lengths RFC 8452 defines. What is GCM-SIV's own is in `gcm_siv_tests.rs`, and the known
+//! key lengths RFC 8452 defines. What is GCM-SIV's own is in `aes_gcm_siv_tests.rs`, and the known
 //! answers are in the vector suites beside this file.
 
 use bouncycastle_cipher_test_framework::material::{material, rng};
@@ -26,7 +26,7 @@ fn gcm_siv_keys_pass_the_in_place_aead_framework() {
     mode_keys::gcm_siv_in_place::<AES256Internal, 32>();
 }
 
-/// The aliases are the mode-bound keys, and the lengths the crate re-exports are the mode's.
+/// The aliases are the mode-bound keys, and the lengths the module re-exports are the mode's.
 #[test]
 fn the_aliases_name_the_mode_bound_keys() {
     let _: AES128Key<GCM_SIV> = AES_GCM_SIV_128::from_key_material(&material::<16>()).unwrap();

@@ -4,7 +4,7 @@
 //! Known answers are Wycheproof's `rsa_oaep_*_test.json` files, which are decryption vectors:
 //! a private key, and for each case a ciphertext, a label and either the message or the verdict
 //! that it does not decrypt (`InvalidOaepPadding`, `InvalidCiphertext`). Every group at a
-//! modulus size this crate has a private key for (2048, 3072, 4096 and 8192 bits) is run, for
+//! modulus size this module has a private key for (2048, 3072, 4096 and 8192 bits) is run, for
 //! every pairing of label hash and MGF1 hash, SHA-1 included; `rsa_oaep_misc_test.json` also
 //! has groups at 1024, 1536 and other sizes, which are skipped and counted. The messages are
 //! recovered through the key-transport role, which takes a message of any length.

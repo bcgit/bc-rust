@@ -19,7 +19,7 @@ use core::marker::PhantomData;
 /// RFC 7693 s. 2.1: "Block bytes | bb = 128".
 const BB: usize = 128;
 
-/// RFC 7693 s. 2.1: "Hash bytes | 1 <= nn <= 64". This crate implements only nn = 64.
+/// RFC 7693 s. 2.1: "Hash bytes | 1 <= nn <= 64". This module implements only nn = 64.
 const NN: usize = 64;
 
 /// RFC 7693 s. 2.1: "Key bytes | 0 <= kk <= 64".

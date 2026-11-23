@@ -1,7 +1,7 @@
 //! Suspend/resume for the SP 800-185 functions: round trips in each phase, the rejections that
 //! keep one function's state out of another, and the field checks of each layout.
 //!
-//! Offsets used below, from the layouts in the crate: 3 version bytes, then the variant tag at
+//! Offsets used below, from the layouts in the module: 3 version bytes, then the variant tag at
 //! 3, the sponge's `squeezing` flag at 404 (tag + 400 bytes of Keccak state), the cSHAKE
 //! `customized` byte at 405, and whatever the function adds from 406.
 
@@ -323,7 +323,7 @@ fn corrupt_fields_are_rejected() {
     assert!(TupleHash128::from_suspended(edge).is_ok(), "the cap itself resumes");
 }
 
-/// Every type in the crate writes a different variant tag, so no state can be misread as
+/// Every type in the module writes a different variant tag, so no state can be misread as
 /// another's: the six FIPS 202 types and the eight SP 800-185 types at each width.
 #[test]
 fn state_tags_are_distinct() {

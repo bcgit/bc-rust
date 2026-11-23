@@ -1,5 +1,5 @@
 //! TKW against SP 800-38F Algorithm 7 written out over the raw TDEA permutation, for both key
-//! bundles. The CAVP sample files pin the three-key answers in `tkw_cavp_tests.rs`; this file
+//! bundles. The CAVP sample files pin the three-key answers in `tdes_tkw_cavp_tests.rs`; this file
 //! pins the loop itself, with the 32-bit step counter and ICV3, against a direct transcription,
 //! and is the only known answer for two-key unwrapping, since no wrapper exists for a two-key
 //! bundle and CAVP tests TKW with three keys only.

@@ -52,7 +52,7 @@ fn cbc() {
     check_decrypting::<TDES2_CBC<'_, PKCS7>>("TDES2_CBC");
 }
 
-/// CMAC has no alias in this crate (it is reached through the generic `BlockCipherKey`), so the
+/// CMAC has no alias in this module (it is reached through the generic `BlockCipherKey`), so the
 /// worker is named directly; the two-key engine has only the verifying direction.
 #[test]
 fn cmac() {
@@ -110,7 +110,7 @@ fn the_engines_keep_their_own_names() {
 const _: () = assert!(!<TDESInternal as BlockPermutation<BLOCK_LEN>>::DECRYPT_ONLY);
 const _: () = assert!(<TDES2Internal as BlockPermutation<BLOCK_LEN>>::DECRYPT_ONLY);
 
-/// The engines are exactly their packed schedules, the sizes the crate docs quote: sixteen
+/// The engines are exactly their packed schedules, the sizes the module docs quote: sixteen
 /// two-word round keys per DEA key, three or two keys, and nothing else.
 #[test]
 fn the_engines_are_exactly_their_schedules() {

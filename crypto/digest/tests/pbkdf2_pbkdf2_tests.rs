@@ -245,7 +245,7 @@ fn the_output_is_typed_from_the_input() {
 }
 
 /// SP 800-132's figures for the key, the salt and the iteration count are the caller's to meet
-/// (the crate's Security Considerations): no minimum is enforced, and this pins that so a
+/// (the module's Security Considerations): no minimum is enforced, and this pins that so a
 /// change is noticed.
 #[test]
 fn no_minimum_is_enforced() {

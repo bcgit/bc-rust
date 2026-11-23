@@ -1,7 +1,7 @@
 //! `finish_squeezer` on SHAKE, cSHAKE and KMACXOF: the squeezing half lent out where the sponge
 //! sits must produce the stream `XOF::into_squeezer` does, however it is read. The official
-//! vectors are run through it in `shake_bc-test-data.rs`, `cshake_bc-test-data.rs` and
-//! `kmac_bc-test-data.rs`.
+//! vectors are run through it in `sha3_shake_bc-test-data.rs`, `sha3_cshake_bc-test-data.rs` and
+//! `sha3_kmac_bc-test-data.rs`.
 
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::hazmat::finish_token;

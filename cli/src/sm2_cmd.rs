@@ -5,7 +5,7 @@
 //! inherent method rather than an implementation of `bouncycastle_ec::ecdsa::keys_common::
 //! DerivePublicKey` (see that method's own doc comment: SM2 was never going to share a single
 //! generic command function with the other seven curves regardless). `--idfile` is mandatory for
-//! `Sign`/`Verify`: the crate has no default identity to fall back to when `ctx` is omitted.
+//! `Sign`/`Verify`: `bouncycastle_ec::sm2` has no default identity to fall back to when `ctx` is omitted.
 
 use crate::helpers::{
     println_stdout, read_input_file, read_secret_file, read_secret_file_or_stdin, stream_stdin,
@@ -29,11 +29,11 @@ pub(crate) enum SM2Action {
     /// Accepts a private key (stdin) and a public key (--pkfile), and checks that they match.
     CheckConsistency,
     /// Sign a message read from stdin with a private key file and output the signature.
-    /// Requires --idfile: SM2 signing needs the signer's identity IDA, and this crate has no
+    /// Requires --idfile: SM2 signing needs the signer's identity IDA, and the library has no
     /// default identity to fall back to.
     Sign,
     /// Verify a message read from stdin with a public key file and a signature file.
-    /// Requires --idfile: SM2 verification needs the signer's identity IDA, and this crate has no
+    /// Requires --idfile: SM2 verification needs the signer's identity IDA, and the library has no
     /// default identity to fall back to.
     Verify,
 }
@@ -116,7 +116,7 @@ fn require_id(idfile: &Option<String>) -> Vec<u8> {
         None => {
             eprintln!(
                 "Error: no idfile provided. SM2 signing and verification require the signer's \
-                 identity IDA (GB/T 32918.2-2016 S5.5); this crate has no default identity to \
+                 identity IDA (GB/T 32918.2-2016 S5.5); the library has no default identity to \
                  fall back to."
             );
             exit(-1);

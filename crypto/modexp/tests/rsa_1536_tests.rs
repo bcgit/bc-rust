@@ -2,7 +2,7 @@
 //! `rsa_pkcs1_1536_sig_gen_test.json`, the same way `rsa_1024_tests.rs` uses its own sig-gen file:
 //! each group's `(n, e)` plus its own `(msg, sig)` pairs, used directly as real "valid" verify
 //! vectors, since a sig-gen file's private key fields are simultaneously valid public key
-//! material and this crate never constructs an RSA-1536 private key at all.
+//! material and this module never constructs an RSA-1536 private key at all.
 
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::hex::decode as hex_decode;

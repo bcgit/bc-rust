@@ -44,7 +44,7 @@ impl<T: ZeroizablePrimitive + NoPadding + PartialEq + Eq + Debug + 'static, cons
 }
 
 /// A modulus size: the marker's view of the engine at one width. Sealed, since an impl is a
-/// routing table into this crate's arithmetic and every length below must agree with it
+/// routing table into this module's arithmetic and every length below must agree with it
 /// ([`check_lengths`]).
 ///
 /// The public-key exponentiation is not a method code outside the crate can call: a public
@@ -122,7 +122,7 @@ pub trait RsaSize:
     fn is_less(x: &Self::Limbs, y: &Self::Limbs) -> bool;
 }
 
-/// A size this crate signs, generates keys and establishes keys at: RSA-2048 and up (SP
+/// A size this module signs, generates keys and establishes keys at: RSA-2048 and up (SP
 /// 800-131A's 112-bit floor).
 ///
 /// The private-key exponentiation is not a method code outside the crate can call, by name or

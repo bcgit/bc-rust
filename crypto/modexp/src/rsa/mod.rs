@@ -39,7 +39,7 @@
 //! [`DeterministicSigningKey`](bouncycastle_core::signature_key::DeterministicSigningKey) for
 //! RSASSA-PKCS1-v1_5, and [`VerifyingKey`](bouncycastle_core::signature_key::VerifyingKey) for
 //! all; one-shot or streaming, the same API shape as this workspace's ECDSA, SM2 and ML-DSA
-//! crates. The key types implement
+//! modules. The key types implement
 //! [`PrivateKey`](bouncycastle_core::traits::PrivateKey)/[`PublicKey`](bouncycastle_core::traits::PublicKey),
 //! the bytes carrying no scheme, so a key file is decoded under the key type it is for. A
 //! signing size generates a pair for one algorithm through [`size::SignatureKeyPair`]
@@ -354,7 +354,7 @@
 //!   check above on some inputs. [`keys::RsaPrivateComponents::validate`] is SP 800-56B Rev. 2
 //!   §6.4.1.4.3's validation of a key pair, primality included, for a key from elsewhere; its
 //!   cost is that of some tens of private-key operations, so it is the caller's to ask for. Keys
-//!   from this crate's own `keygen` meet FIPS 186-5 Appendix A.1.1's criteria by construction.
+//!   from this module's own `keygen` meet FIPS 186-5 Appendix A.1.1's criteria by construction.
 //! - **Key generation is not constant-time.** Rejection sampling of prime candidates is
 //!   inherently data-dependent in how many candidates it draws and where each is rejected, and the
 //!   small-modulus arithmetic on candidates uses ordinary integer division -- see [`keygen`]'s docs
@@ -372,7 +372,7 @@
 //!   needs the binding puts the context in the message itself.
 //! - **RSA-1024 and RSA-1536 are legacy sizes, exposed for verification only.** Both fall below
 //!   the 112-bit security level NIST SP 800-131A requires for new use (RSA-1024 offers roughly
-//!   80 bits, RSA-1536 roughly 96); this crate offers no way to sign with either, or to
+//!   80 bits, RSA-1536 roughly 96); this module offers no way to sign with either, or to
 //!   encapsulate or transport a key toward a public key of either size (see `# Scope`),
 //!   precisely so they can only be used to check signatures against legacy/third-party data, not
 //!   to produce new ones or to protect a key.

@@ -37,7 +37,7 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// implements, is the same construction spelled out. The draft's own Appendix A.2.5 examples take a
 /// different one -- the whole 16-byte IV is `T_1` and the block is incremented as a unit -- which
 /// this split cannot express, so those vectors drive a reference CTR over the permutation in
-/// `tests/stream_mode_tests.rs` and the `CTR` key is checked against that reference.
+/// `tests/sm4_stream_mode_tests.rs` and the `CTR` key is checked against that reference.
 ///
 /// ```
 /// use bouncycastle_symmetric::sm4::SM4Key;

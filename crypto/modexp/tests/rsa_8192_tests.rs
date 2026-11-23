@@ -1,15 +1,15 @@
 //! RSA-8192. Wycheproof has no `rsa_pkcs1_8192_sig_gen_test.json` and no matching-hash-and-MGF
 //! PSS vector file at this size, so there is no real key to recover the way every smaller size in
-//! this crate uses. Two independent checks stand in for that:
+//! this module uses. Two independent checks stand in for that:
 //!
 //! 1. **BC Java cross-check.** A fresh 8192-bit keypair (two independently generated,
 //!    Miller-Rabin-tested 4096-bit primes, `e = 65537`) was fed to BC Java's own RSA
 //!    (`java.security.Signature` via the `BC` provider, `SHA{256,384,512}withRSA` and
 //!    `SHA{256,384,512}withRSAandMGF1`) as an `RSAPrivateCrtKeySpec`, signing the UTF-8 bytes of
 //!    `"hello"`. PKCS#1 v1.5 is deterministic, so its three signatures are checked here byte for
-//!    byte against this crate's own PKCS#1 v1.5 signing (SHA-256/384/512); PSS is randomized, so its
-//!    three signatures (BC Java's default PSS: salt length equal to the digest length, matching
-//!    this crate's own convention) are instead checked with this crate's own
+//!    byte against this module's own PKCS#1 v1.5 signing (SHA-256/384/512); PSS is randomized, so
+//!    its three signatures (BC Java's default PSS: salt length equal to the digest length, matching
+//!    this module's own convention) are instead checked with this module's own
 //!    PSS verifier, a genuine independent-implementation cross-check even though
 //!    it cannot be a byte-for-byte one.
 //! 2. **Real Wycheproof verify vectors.** `rsa_signature_8192_sha{256,384,512}_test.json` exist

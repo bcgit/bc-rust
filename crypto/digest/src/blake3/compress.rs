@@ -106,7 +106,7 @@ fn permute(m: &mut [u32; 16]) {
 /// the first 8 words; the extendable output of s. 2.6 uses all 16.
 ///
 /// The working state and the permuted message copy are ordinary stack locals and are not
-/// zeroized, as in the other hash crates' compression functions; the output goes to the caller's
+/// zeroized, as in the other hash modules' compression functions; the output goes to the caller's
 /// buffer, a `Secret` at every call site.
 pub(in crate::blake3) fn compress(
     h: &[u32; 8],

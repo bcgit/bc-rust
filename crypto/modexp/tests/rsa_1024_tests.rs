@@ -1,5 +1,5 @@
 //! RSA-1024 (verification only, see `rsa_1024.rs`'s docs) against Wycheproof's
-//! `rsa_pkcs1_1024_sig_gen_test.json`. Since this crate never constructs an RSA-1024 private key,
+//! `rsa_pkcs1_1024_sig_gen_test.json`. Since this module never constructs an RSA-1024 private key,
 //! there is nothing to factor here: a sig-gen file's own `privateKey.modulus`/`publicExponent`
 //! fields are simultaneously valid *public* key material, so each group's `(n, e)` plus its own
 //! `(msg, sig)` pairs are used directly as real, independent "valid" verify vectors -- exactly

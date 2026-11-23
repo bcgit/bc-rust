@@ -1,4 +1,5 @@
-//! KMAC and KMACXOF behaviour tests. The SP 800-185 sample values are in `kmac_bc-test-data.rs`.
+//! KMAC and KMACXOF behaviour tests. The SP 800-185 sample values are in
+//! `sha3_kmac_bc-test-data.rs`.
 
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, MACError};

@@ -3,7 +3,7 @@
 //! every CMAC-AES128, -AES192 and -AES256 record, at counter sizes of 8, 16, 24 and 32 bits
 //! with the counter before, after and in the middle of the fixed input data. The other PRFs'
 //! records are counted, so that a change in what is skipped is noticed: HMAC-SHA1 (the
-//! library's release has no SHA-1) and CMAC over TDEA (not a PRF this crate has).
+//! library's release has no SHA-1) and CMAC over TDEA (not a PRF this module has).
 
 #[path = "kbkdf_common/mod.rs"]
 mod common;

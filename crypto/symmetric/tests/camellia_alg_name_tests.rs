@@ -242,7 +242,7 @@ fn the_const_parameters_are_camellias() {
     assert_eq!(LANES * 8, 32, "four lanes of one F-function input each fill the circuit");
 }
 
-/// The engines are exactly their subkeys, the sizes the crate docs quote: 26 or 34 subkeys of 64
+/// The engines are exactly their subkeys, the sizes the module docs quote: 26 or 34 subkeys of 64
 /// bits and nothing else, no direction flag, no round counter, no initialised marker.
 #[test]
 fn the_engines_are_exactly_their_subkeys() {

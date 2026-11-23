@@ -4,8 +4,8 @@
 //! used, that the counter half batches while the CBC-MAC stays serial, that call chunking is
 //! invisible in both directions, what `TAG_LEN` and `NONCE_LEN` do and do not change, that the
 //! stream holds to its frame, and which entry points release unauthenticated plaintext --
-//! independently of the known-answer vectors in the `aes` module's `sp800_38c_tests.rs`,
-//! `ccm_bc-test-data.rs` and `ccm_wycheproof.rs`. The Appendix C file also carries the
+//! independently of the known-answer vectors in the `aes` module's `aes_sp800_38c_tests.rs`,
+//! `aes_ccm_bc-test-data.rs` and `aes_ccm_wycheproof.rs`. The Appendix C file also carries the
 //! fixed-frame `CcmPacketEncryptor` / `CcmPacketDecryptor` pair's contract, the shared framework run and the
 //! memory table, so none of those is repeated here.
 //!
@@ -251,8 +251,8 @@ fn the_four_block_path_is_really_used_in_both_directions() {
 /// four-block batch, a pair batch and a remainder: the batched blocks must line up with the
 /// keystream the small call left partway through, not silently skip over it. None of the Appendix
 /// C vectors is long enough for that -- the largest, C.4, is two blocks -- and every chunking
-/// `sp800_38c_tests.rs` sweeps is uniform, so a call that resumes an open block there is always a
-/// short final remainder, never one big enough to batch.
+/// `aes_sp800_38c_tests.rs` sweeps is uniform, so a call that resumes an open block there is always
+/// a short final remainder, never one big enough to batch.
 #[test]
 fn every_split_agrees_with_the_one_shot_in_both_directions() {
     const LEN: usize = 6 * TOY_LEN + 5;
@@ -391,7 +391,7 @@ fn tag_length_changes_the_tag_but_not_the_ciphertext_and_tags_do_not_nest() {
 
 /// Every nonce length A.1 permits, `n` in `7..=13`, works, and each one implies its own payload
 /// limit: `q = 15 - n` and "by definition, p < 2^8q", which `CCM::MAX_PAYLOAD_LEN` exposes.
-/// `sp800_38c_tests.rs` reaches `n` of 7, 8, 12 and 13 through Appendix C; 9, 10 and 11 are
+/// `aes_sp800_38c_tests.rs` reaches `n` of 7, 8, 12 and 13 through Appendix C; 9, 10 and 11 are
 /// reached only here. Over the toy alone, since where the nonce goes (A.2.1 Table 2, A.3 Table 3)
 /// is the mode's business and not the permutation's.
 #[test]

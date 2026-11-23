@@ -1,7 +1,7 @@
 //! The contract of the three `AESInternal` engines that is neither a known-answer value nor a
 //! trait conformance property: their size, name and strength.
 //!
-//! The "Memory Usage" table in the crate docs quotes the sizes, and the whole point of the crate
+//! The "Memory Usage" table in the module docs quotes the sizes, and the whole point of the module
 //! is that they are this small: `4 * (Nr + 1)` words of schedule (FIPS 197 Sec 5.2), nothing
 //! else, and no tables anywhere. A size that matches `4 * (Nr + 1) * 4` bytes exactly also shows
 //! there is no round counter, direction flag or initialised marker alongside the schedule, which
@@ -26,7 +26,7 @@ fn the_engines_match_the_documented_memory_table_names_and_strengths() {
     check_engine::<AES128Internal>(10, 16, "AES-128");
     check_engine::<AES192Internal>(12, 24, "AES-192");
     check_engine::<AES256Internal>(14, 32, "AES-256");
-    // The literal figures the crate docs' table quotes, so a wrong `nr` above cannot hide one.
+    // The literal figures the module docs' table quotes, so a wrong `nr` above cannot hide one.
     assert_eq!(size_of::<AES128Internal>(), 176);
     assert_eq!(size_of::<AES192Internal>(), 208);
     assert_eq!(size_of::<AES256Internal>(), 240);

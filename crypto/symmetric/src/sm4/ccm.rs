@@ -19,7 +19,7 @@ pub const CCM_TAG_LEN: usize = 16;
 /// the SM4 permutation, from an `SM4Key<CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>`. A
 /// message of any length goes through `SM4Key<CCM<NONCE_LEN, TAG_LEN>>` and its declared-length
 /// pair instead. With a 12-byte nonce and a 16-byte tag it is RFC 8998 Sec 3.5.2's
-/// `AEAD_SM4_CCM`, whose Appendix A.2 vector is pinned in `tests/rfc8998_tests.rs`. The
+/// `AEAD_SM4_CCM`, whose Appendix A.2 vector is pinned in `tests/sm4_rfc8998_tests.rs`. The
 /// construction, the parameter rules (`NONCE_LEN` in `7..=13`, `TAG_LEN` one of 4, 6, .., 16),
 /// the API and its security considerations are those of [`crate::modes::ccm`] and,
 /// alias for alias, of `AES_CCM_128` in `bouncycastle_symmetric::aes`; only the permutation differs.

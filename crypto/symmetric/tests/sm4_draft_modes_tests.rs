@@ -3,8 +3,8 @@
 //!
 //! ECB applies the raw permutation to each block independently (Sec 8.3), so an ECB example
 //! vector *is* a block-permutation test vector, and the two-block plaintext exercises the trait's
-//! pair methods against published answers. (That is the only reason ECB appears in this crate;
-//! see the crate docs on why you must not use it to encrypt anything.)
+//! pair methods against published answers. (That is the only reason ECB appears in this module;
+//! see the module docs on why you must not use it to encrypt anything.)
 //!
 //! The CBC vectors go through `SM4Key<CBC<Blocks>>`, the block-aligned key the padded `SM4_CBC`
 //! alias wraps. There is no API for supplying an IV, so encryption is driven through the key's
@@ -100,7 +100,7 @@ fn a_2_1_2_ecb_example_2() {
 fn check_cbc(section: &str, key: &str, expected: &str) {
     // The A.2.2 vectors are whole blocks, so they go through the block pair of a `CBC<Blocks>`
     // key rather than the padded `SM4_CBC` alias, which would append a padding block to this
-    // already-aligned message. `padded_alias_tests.rs` covers the alias.
+    // already-aligned message. `sm4_padded_alias_tests.rs` covers the alias.
     let key = SM4Key::<CBC<Blocks>>::from_key_material(&key_material(key)).unwrap();
     let iv: [u8; 16] = bytes(IV);
     let pt: [u8; 32] = bytes(PLAINTEXT);

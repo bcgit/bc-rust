@@ -26,7 +26,7 @@
 //! has to be kept from generation time. Private and public key files use the raw fixed-width layout
 //! `RsaPrivateKey`/`RsaPublicKey`'s `PrivateKey`/`PublicKey` impls encode
 //! (documented under `# Encoding` on `RsaPrivateComponents`/`RsaPublicComponents`): not PEM,
-//! not ASN.1 DER -- this crate has no encoder for either -- so a key produced by another RSA
+//! not ASN.1 DER -- the library has no encoder for either -- so a key produced by another RSA
 //! implementation cannot be fed to this CLI directly.
 //!
 //! 1024- and 1536-bit RSA are verification-only in `bouncycastle_modexp::rsa` (see its module docs' `#

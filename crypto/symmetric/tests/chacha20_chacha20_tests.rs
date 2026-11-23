@@ -141,7 +141,7 @@ fn key_capacity_does_not_replace_key_length() {
     }
 }
 
-/// The figures in the crate docs' Memory Usage table.
+/// The figures in the module docs' Memory Usage table.
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn sizes_match_the_documented_memory_table() {

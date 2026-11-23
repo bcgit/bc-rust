@@ -283,8 +283,8 @@
 //! * **Source engine.** The `SIGMA` constants, `camelliaF2` linear layer, `camelliaFLs` and
 //!   subkey layout this module reproduces, and the `SBOX1` table the circuit is verified against,
 //!   come from Bouncy Castle Java's `CamelliaEngine` and `CamelliaLightEngine`. A direct
-//!   transcription of `CamelliaLightEngine` lives in the tests (`tests/common/mod.rs`) and this
-//!   engine is checked against it on thousands of inputs.
+//!   transcription of `CamelliaLightEngine` lives in the tests (`tests/camellia_common/mod.rs`) and
+//!   this engine is checked against it on thousands of inputs.
 //! * **Normative reference: RFC 3713**, "A Description of the Camellia Encryption Algorithm"
 //!   (Matsui, Nakajima, Moriai; April 2004). Every function cites its section. The `SBOX1` table
 //!   and the `Sigma` constants were extracted mechanically from the text of the RFC.
@@ -293,17 +293,17 @@
 //!   new combinational logic minimization technique with applications to cryptology",
 //!   <https://eprint.iacr.org/2009/191.pdf>, as transcribed in `bouncycastle_symmetric::aes`.
 //! * **The bit-plane transpose** is translated from BearSSL's `aes_ct` by Thomas Pornin (MIT
-//!   licence), as in the AES and SM4 crates.
+//!   licence), as in the AES and SM4 modules.
 //! * Verified against the three vectors of RFC 3713 Appendix A; all 3840 vectors of NTT's CRYPTREC
 //!   test-vector file `t_camellia.txt` (ten keys per key length, 128 single-bit plaintexts each),
-//!   both directions; the nine vectors of `tests/bc_java_tests.rs` (RFC 3713 and NESSIE); the CBC,
-//!   CFB128 and OFB vectors of OpenSSL's `evpciph_camellia.txt` through the CBC, CFB and OFB
-//!   aliases; RFC 5528's nine Camellia-CTR vectors, through a reference built from the SP 800-38A
-//!   Sec 6.5 equations which the CTR keys are then held to (see `tests/stream_mode_tests.rs` for
-//!   why RFC 5528's counter blocks are not ones they produce); and the transcription of
-//!   `CamelliaLightEngine` on thousands of keys and blocks in every lane. Project Wycheproof's
-//!   `camellia_cbc_pkcs5_test.json` runs through the padded CBC keys and its
-//!   `camellia_ccm_test.json` through the `CCM` mode traits over the engines.
+//!   both directions; the nine vectors of `tests/camellia_bc_java_tests.rs` (RFC 3713 and NESSIE);
+//!   the CBC, CFB128 and OFB vectors of OpenSSL's `evpciph_camellia.txt` through the CBC, CFB and
+//!   OFB aliases; RFC 5528's nine Camellia-CTR vectors, through a reference built from the SP
+//!   800-38A Sec 6.5 equations which the CTR keys are then held to (see
+//!   `tests/camellia_stream_mode_tests.rs` for why RFC 5528's counter blocks are not ones they
+//!   produce); and the transcription of `CamelliaLightEngine` on thousands of keys and blocks in
+//!   every lane. Project Wycheproof's `camellia_cbc_pkcs5_test.json` runs through the padded CBC
+//!   keys and its `camellia_ccm_test.json` through the `CCM` mode traits over the engines.
 
 mod bitslice;
 mod cbc;

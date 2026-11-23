@@ -295,7 +295,7 @@
 //! * **Source engine.** The constants, byte-array `A`, `SL1`/`SL2`, `FO`/`FE` and key schedule
 //!   this module reproduces, and the S-box tables the circuits are verified against, come from
 //!   Bouncy Castle Java's `ARIAEngine`. A direct transcription of it, including its fused
-//!   multiply-broadcast round, lives in the tests (`tests/common/mod.rs`) and this engine is
+//!   multiply-broadcast round, lives in the tests (`tests/aria_common/mod.rs`) and this engine is
 //!   checked against it on thousands of inputs.
 //! * **Normative reference: RFC 5794**, "A Description of the ARIA Encryption Algorithm" (Lee,
 //!   Lee, Kim, Kwon, Kim; March 2010). Every function cites its section. The S-box tables, the
@@ -305,12 +305,12 @@
 //!   new combinational logic minimization technique with applications to cryptology",
 //!   <https://eprint.iacr.org/2009/191.pdf>, as transcribed in `bouncycastle_symmetric::aes`.
 //! * **The bit-plane transpose** is translated from BearSSL's `aes_ct` by Thomas Pornin (MIT
-//!   licence), as in the AES crate.
+//!   licence), as in the AES module.
 //! * Verified against RFC 5794 Appendix A -- the three ciphertexts, and for the 128-bit key every
 //!   round key `ek1 .. ek13` and every intermediate value `P1 .. P11`; the ECB, CBC, CFB128, CFB8,
 //!   OFB and CTR vectors of OpenSSL's `evpciph_aria.txt`, which are KISA's published ARIA test
 //!   vectors (10 blocks under each key length); the vectors and invariants of
-//!   `tests/bc_java_tests.rs`; the transcription of the source engine on thousands of keys and
+//!   `tests/aria_bc_java_tests.rs`; the transcription of the source engine on thousands of keys and
 //!   blocks in every lane, both directions; and Project Wycheproof's `aria_cbc_pkcs5_test.json`
 //!   through the padded CBC keys, with `aria_ccm_test.json` and `aria_gcm_test.json` through the
 //!   `CCM` and `GCM` mode traits over the engines.

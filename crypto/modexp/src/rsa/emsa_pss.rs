@@ -7,7 +7,7 @@
 //!
 //! RFC 8017 encodes into `emLen = ceil(emBits / 8)` octets, where `emBits = modBits - 1`, and
 //! steps 11/9 clear the leftmost `8 * emLen - emBits` bits of the encoded message's first octet
-//! so that `OS2IP(EM) < 2^emBits <= n`. Every modulus size this crate offers is a whole number of
+//! so that `OS2IP(EM) < 2^emBits <= n`. Every modulus size this module offers is a whole number of
 //! 64-bit limbs, and a key's modulus has exactly its size's bit length: the constructors
 //! [`RsaPublicComponents::new`](crate::rsa::keys::RsaPublicComponents::new) and
 //! [`RsaPrivateComponents::from_crt_components`](crate::rsa::keys::RsaPrivateComponents::from_crt_components),
@@ -147,11 +147,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    //! `emsa_pss_encode_from_hash`/`emsa_pss_verify_from_hash` are crate-private (only
+    //! `emsa_pss_encode_from_hash`/`emsa_pss_verify_from_hash` are module-private (only
     //! [`crate::rsa::rsassa_pss`] needs them), so they are exercised here rather than from `tests/` --
     //! the same "high-risk code that cannot be reached through the public API" exception
     //! `rsa_core`'s tests use. The KAT is a direct Python transliteration of RFC 8017 SS9.1.1's
-    //! own steps (not from recall), reusing this crate's own `mgf1` reference values (`mgf1.rs`'s
+    //! own steps (not from recall), reusing this module's own `mgf1` reference values (`mgf1.rs`'s
     //! own tests) for the mask. The `encode`/`verify` helpers below add step 2's `mHash = Hash(M)`
     //! back on top, so the tests can speak in terms of messages.
 
@@ -238,7 +238,7 @@ mod tests {
     }
 
     /// RFC 8017 SS9.1.2 step 6: the leftmost bit of `maskedDB`'s first octet must already be 0
-    /// (see the module docs on why this crate always needs exactly one bit clear).
+    /// (see the module docs on why this module always needs exactly one bit clear).
     #[test]
     fn verify_rejects_top_bit_set() {
         let mut em = EXPECTED_EM;

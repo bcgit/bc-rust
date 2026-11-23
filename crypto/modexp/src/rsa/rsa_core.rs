@@ -1,6 +1,6 @@
 //! RSASP1 and RSAVP1 (RFC 8017 §5.2.1, §5.2.2): the raw signature and verification primitives,
 //! and the checked CRT exponentiation RSASP1 and RSADP (§5.1.2) share.
-//! [`rsasp1`] and [`rsavp1`] are private to the crate and reached through a padding scheme
+//! [`rsasp1`] and [`rsavp1`] are private to the module and reached through a padding scheme
 //! only. Code generic over a size reaches the exponentiations beneath them at one width
 //! through the size: `public_exp` of `size::sealed::PublicKeyEngine` and `crt_exp` of
 //! `size::sealed::PrivateKeyEngine`, supertraits of [`RsaSize`] and [`RsaSigningSize`] whose
@@ -323,8 +323,8 @@ pub(in crate::rsa) fn crt_exp<
 
 #[cfg(test)]
 mod tests {
-    //! `rsasp1`/`rsavp1` are deliberately crate-private (see the module docs), so they cannot be
-    //! reached from `tests/` the way every other primitive in this crate is exercised -- this is
+    //! `rsasp1`/`rsavp1` are deliberately module-private (see the module docs), so they cannot be
+    //! reached from `tests/` the way every other primitive in this module is exercised -- this is
     //! the "high-risk code that ... cannot be reached through the public API" exception
     //! `CLAUDE.md`'s testing notes describe. The key is a genuine RSA-2048 key pair, the first
     //! SHA-256 group of Wycheproof's `rsa_pkcs1_2048_sig_gen_test.json` (`e = 65537`; see

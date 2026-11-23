@@ -33,12 +33,12 @@
 //! Worth stating, so the gaps stay visible rather than looking like coverage:
 //!
 //! * **`ivLen` is 96 in every group**, so `n = 12` and `q = 3` throughout. The nonce-length /
-//!   payload-limit tradeoff of A.1 is entirely untested here; `sp800_38c_tests.rs` covers `q` of 8,
-//!   7, 3 and 2 against Appendix C.
+//!   payload-limit tradeoff of A.1 is entirely untested here; `aes_sp800_38c_tests.rs` covers `q`
+//!   of 8, 7, 3 and 2 against Appendix C.
 //! * **`tagLen` is only 96 or 128.** The short tags A.1 permits (`t` of 4 or 6) appear in Appendix
 //!   C instead.
 //! * **No empty AAD and no empty payload**: `aadLen` is 128 or 256 bits and `payloadLen` is 64,
-//!   128 or 192. Sec 5.3 permits both to be empty, and `sp800_38c_tests.rs` covers that.
+//!   128 or 192. Sec 5.3 permits both to be empty, and `aes_sp800_38c_tests.rs` covers that.
 //! * **Every payload is 8, 16 or 24 bytes**, i.e. one or two blocks, so nothing here stresses a
 //!   long message. The `chunks` sweep below and the Appendix C.4 case cover the multi-block paths.
 //!

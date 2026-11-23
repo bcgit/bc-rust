@@ -80,7 +80,7 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
     /// Ends absorbing with a caller-chosen domain separator and returns the squeezing half.
     ///
     /// SHAKE uses "1111" (FIPS 202 s. 6.2), but cSHAKE uses "00" (SP 800-185 s. 3.3, the `00` in
-    /// the `KECCAK[c](... || X || 00, L)` branch), so the suffix cannot be baked in here. Crate
+    /// the `KECCAK[c](... || X || 00, L)` branch), so the suffix cannot be baked in here. Module
     /// internal: callers outside pick a function, and the function picks its own separator.
     ///
     /// Panics, as [`Hash::do_update`] does, on a value that has been finished already; otherwise

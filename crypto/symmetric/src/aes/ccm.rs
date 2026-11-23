@@ -1,5 +1,5 @@
 //! Type aliases for AES in CCM mode (NIST SP 800-38C). The docs are on [`AES_CCM_128`], which the
-//! crate root re-exports.
+//! module root re-exports.
 
 use crate::Direction;
 use crate::aes::AES_BLOCK_LEN;

@@ -62,7 +62,7 @@ pub use key::BlockCipherKey;
 
 // The direction markers are `bouncycastle_core::direction`'s, re-exported so that
 // `bouncycastle_symmetric::{Encrypting, Decrypting, Direction}` is the path the block cipher
-// modules use; the MAC crates take them from `core`, which does not depend on this crate.
+// modules use; the MAC modules take them from `core`, which does not depend on this crate.
 pub use bouncycastle_core::direction::{Decrypting, Direction, Encrypting};
 
 pub(crate) mod sealed {

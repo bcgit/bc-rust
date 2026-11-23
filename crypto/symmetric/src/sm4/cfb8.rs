@@ -26,7 +26,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// for when that is the right trade.
 ///
 /// The draft defines the mode but publishes no example for it -- Appendix A.2.4's vectors are all
-/// `s = 128` -- so `tests/stream_mode_tests.rs` pins this alias against the Sec 8.5.2 equations
+/// `s = 128` -- so `tests/sm4_stream_mode_tests.rs` pins this alias against the Sec 8.5.2 equations
 /// evaluated directly over the permutation instead.
 ///
 /// ```

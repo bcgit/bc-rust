@@ -1,6 +1,6 @@
 //! No worker of `bouncycastle_symmetric::modes` is `Clone` (issue #173): two copies of an encryptor would go on
 //! from one nonce, counter or keystream position and encrypt two messages under the same
-//! keystream. A second worker is made from the key instead. Workers that live in their own crates
+//! keystream. A second worker is made from the key instead. Workers that live in their own modules
 //! (Ascon, ChaCha20, Poly1305) are asserted there.
 //!
 //! The check is at compile time. `NotClone<A>` has one impl for every type and a second for

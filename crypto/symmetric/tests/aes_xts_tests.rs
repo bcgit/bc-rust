@@ -6,8 +6,8 @@
 //! block to eight and a half; the refusal of a data unit outside the bounds at both key sizes;
 //! and the key constructor's refusals.
 //!
-//! The published vectors are in `xts_acvp_tests.rs` and `xts_wycheproof.rs`. The bounds on the
-//! data-unit length are tested at both ends over a toy permutation in
+//! The published vectors are in `aes_xts_acvp_tests.rs` and `aes_xts_wycheproof.rs`. The bounds on
+//! the data-unit length are tested at both ends over a toy permutation in
 //! `crypto/symmetric/tests/modes/xts_tests.rs`.
 
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};

@@ -1,11 +1,11 @@
 //! Big-endian byte-string <-> little-endian limb-array conversion: RFC 8017 §4's OS2IP/I2OSP,
-//! specialized to this crate's fixed-width keys (every modulus size this crate offers is a whole
+//! specialized to this module's fixed-width keys (every modulus size this module offers is a whole
 //! number of 64-bit limbs, so the byte length is always exactly `8 * L`) rather than OS2IP's
 //! arbitrary-length octet string. `BYTES = 8 * L` is a separate const parameter rather than a
 //! computed one for the same reason [`bouncycastle_utils::montgomery`]'s `L2 = 2 * L` is: stable
 //! Rust cannot express one const generic as a function of another.
 //!
-//! Fixed arrays throughout, not slices with a runtime length check: every caller in this crate
+//! Fixed arrays throughout, not slices with a runtime length check: every caller in this module
 //! knows `BYTES` at compile time (it is the modulus's own byte length), so there is nothing to
 //! validate at a boundary here -- both directions are infallible.
 

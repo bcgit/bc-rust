@@ -1,5 +1,5 @@
 //! Criterion benches for RSA-1536: verification only (see `bouncycastle_modexp::rsa::rsa_1536`'s docs --
-//! this crate has no RSA-1536 private key type at all). Public keys and signatures are Wycheproof
+//! this module has no RSA-1536 private key type at all). Public keys and signatures are Wycheproof
 //! `rsa_pkcs1_1536_sig_gen_test.json`'s own genuine `(n, e)` and real `(msg, sig)` pairs, the same
 //! provenance `tests/rsa_1536_tests.rs` uses.
 

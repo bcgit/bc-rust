@@ -1,7 +1,7 @@
 //! `AES*Key<CMAC>` against the NIST CSRC AES-CMAC examples through the MAC trait test framework,
 //! plus the streaming split points and the key's construction policy over the real cipher. The
 //! structural tests are in `bouncycastle_symmetric::modes` over a toy; the large vector
-//! sets are in `cmac_bc-test-data.rs` and `cmac_wycheproof.rs`.
+//! sets are in `aes_cmac_bc-test-data.rs` and `aes_cmac_wycheproof.rs`.
 
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::hazmat::do_hazardous_operations;

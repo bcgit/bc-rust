@@ -35,14 +35,14 @@
 //! `bench_aes_mem_usage`: build this binary with
 //! `RUSTFLAGS="-C remark=prologepilog -C remark=stack-frame-layout"`, with `main` calling every
 //! bench so none is dead-stripped, and sum the deepest chain of frames below each `measure`
-//! closure (`objdump -d` shows which of the crate's functions keep a frame of their own under it,
-//! each with its 8-byte return address). The engine is built in an `#[inline(never)]` helper so
-//! its frame is a sibling of the operation's, and the operation runs in a non-inlined,
+//! closure (`objdump -d` shows which of the `aria` module's functions keep a frame of their own
+//! under it, each with its 8-byte return address). The engine is built in an `#[inline(never)]`
+//! helper so its frame is a sibling of the operation's, and the operation runs in a non-inlined,
 //! non-returning closure so nothing crosses back across the boundary. The persistent cost, the
 //! round keys, is what `print_struct_sizes` prints. There are no lookup tables; a table-driven
 //! engine adds 1 KiB of S-box tables and 256 bytes of diffusion masks on top.
 //!
-//! The crate docs' Memory Usage table is the result; its caption says the toolchain.
+//! The `aria` module docs' Memory Usage table is the result; its caption says the toolchain.
 
 #![allow(dead_code)]
 

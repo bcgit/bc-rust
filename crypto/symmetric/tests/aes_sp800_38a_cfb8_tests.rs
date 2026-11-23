@@ -3,7 +3,7 @@
 //! Sections **F.3.7 through F.3.12**: CFB8-AES128, CFB8-AES192 and CFB8-AES256, Encrypt and
 //! Decrypt. These are the `s = 8` subsections, the ones [`Cfb8`] implements. The `s = b`
 //! subsections F.3.13-F.3.18 belong to [`Cfb`](bouncycastle_symmetric::modes::Cfb) and are in
-//! `sp800_38a_cfb_tests.rs`; F.3.1-F.3.6 are CFB1, which this crate does not provide.
+//! `aes_sp800_38a_cfb_tests.rs`; F.3.1-F.3.6 are CFB1, which this crate does not provide.
 //!
 //! All six share the same IV. The plaintext is the **first 18 bytes** of the Appendix F plaintext:
 //! the preamble notes that the CFB1 and CFB8 subsections truncate it, and each of these tabulates

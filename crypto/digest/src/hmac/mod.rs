@@ -59,7 +59,7 @@
 //! 2. Implement [`HMACParams`] for that hash type, supplying the HMAC's name, claimed security
 //!    strength and OID, plus `KeyMaterial<{OUTPUT_LEN}>` as the key type that
 //!    [`HmacKey::keygen_from_rng`] returns, which is also what fixes the tag length of the MAC
-//!    roles. This allows this crate to provide blanket [`Algorithm`], [`AlgorithmOID`] and role
+//!    roles. This allows this module to provide blanket [`Algorithm`], [`AlgorithmOID`] and role
 //!    impls.
 //! 3. Publish a type alias for the instantiation, `HMAC<SHA256, Dir>`.
 //!
@@ -143,9 +143,9 @@ use core::marker::PhantomData;
 /// [`HmacKey::keygen_from_rng`] can be impl'd generically rather than being written out once
 /// per hash.
 ///
-/// Each hash crate is expected to implement this trait for its own hash types and publishes the resulting type
-/// alias. For example,`HMAC_SHA256` lives in `bouncycastle_digest::sha2::hmac` and `HMAC_SHA3_256` in
-/// `bouncycastle_digest::sha3::hmac`.
+/// Each hash module is expected to implement this trait for its own hash types and publishes the
+/// resulting type alias. For example,`HMAC_SHA256` lives in `bouncycastle_digest::sha2::hmac` and
+/// `HMAC_SHA3_256` in `bouncycastle_digest::sha3::hmac`.
 ///
 /// The block length and the generated-key length do not need to be restated here since they are already
 /// carried by the hash itself as [`HashAlgParams::BLOCK_LEN`] and [`HashAlgParams::OUTPUT_LEN`].
@@ -203,7 +203,7 @@ impl<HASH: HMACParams, Dir> AlgorithmOID for HMAC<'_, HASH, Dir> {
 /// The scratch the pad blocks are built in must hold one block of the underlying hash: per RFC 2104
 /// Section 2 step (1) the key is zero-padded to B bytes, and only a key longer than B is pre-hashed
 /// first (Section 3). The scratch is sliced to the hash's own block. HKDF sizes the MAC-key copies
-/// it hands this crate from the same constant.
+/// it hands this module from the same constant.
 pub const LARGEST_HASHER_BLOCK_LEN: usize = 144;
 
 /// The largest output length across the supported hashes (SHA-512, SHA3-512), which sizes the key
@@ -357,7 +357,7 @@ impl<HASH: HMACParams> FromAnyKeyMaterial for HmacKey<HASH> {
 impl<HASH: HMACParams> HmacKey<HASH> {
     /// `H` after absorbing `K XOR ipad`, ready for the text: the start of RFC 2104 Section 2
     /// step (4). What a worker's updates feed; `finish_out` is its other half. The pair is
-    /// reachable outside the crate only through [`hazmat`].
+    /// reachable outside the module only through [`hazmat`].
     pub(in crate::hmac) fn inner_state(&self) -> HASH {
         self.inner.clone()
     }

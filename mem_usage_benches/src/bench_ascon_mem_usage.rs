@@ -30,7 +30,7 @@
 //! the AEAD one-shots. That is below the floor of the process's own start-up that
 //! `bench_aes_mem_usage` describes, so the massif number is the floor, not a measurement.
 //!
-//! The numbers in the crate docs come from the compiler instead, read the way
+//! The numbers in the `ascon` module docs come from the compiler instead, read the way
 //! `bench_aes_mem_usage` does: `-C remark=prologepilog` gives each function's frame and
 //! `--emit=asm` its calls, after LTO, and a figure is the deepest chain of frames below the entry
 //! point plus 8 bytes of return address per call. The panic and unwind paths (`unwrap_failed`,

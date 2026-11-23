@@ -1,9 +1,9 @@
 //! Tests for [`BLAKE3KeyedHashKey`], the [`BLAKE3KeyedHash`] worker it hands out (`keyed_hash`
 //! mode) and [`BLAKE3KeyedSqueezer`].
 //!
-//! Vector sources: the official BLAKE3 test vectors (see `vectors/mod.rs`). bc-test-data has no
-//! BLAKE3 data, and Wycheproof has no BLAKE vectors (C2SP/wycheproof testvectors_v1 has no blake*
-//! file), so the "against bc-test-data and wycheproof" requirement is met vacuously.
+//! Vector sources: the official BLAKE3 test vectors (see `blake3_vectors/mod.rs`). bc-test-data has
+//! no BLAKE3 data, and Wycheproof has no BLAKE vectors (C2SP/wycheproof testvectors_v1 has no
+//! blake* file), so the "against bc-test-data and wycheproof" requirement is met vacuously.
 
 #[path = "blake3_vectors/mod.rs"]
 mod vectors;

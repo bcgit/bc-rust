@@ -1,7 +1,7 @@
 //! Known-answer tests against the NIST ACVP `ACVP-AES-OFB` vectors from the `bc-test-data` repo.
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
-//! relative to the root of this git project; see `cfb_bc-test-data.rs`, whose structure this
+//! relative to the root of this git project; see `aes_cfb_bc-test-data.rs`, whose structure this
 //! file follows, for what happens when it is absent and how the request and response files are
 //! joined on `tcId`.
 //!

@@ -5,7 +5,7 @@
 //! Appendix D error propagation, and the "forward cipher function only" rule of Sec 6.4 --
 //! independently of any real cipher. The known-answer tests against SP 800-38A Appendix F.4 are
 //! in the `aes` module, `crypto/symmetric/tests/aes_sp800_38a_ofb_tests.rs`, and the ACVP OFB set in
-//! `ofb_bc-test-data.rs` beside it.
+//! `aes_ofb_bc-test-data.rs` beside it.
 
 mod common;
 

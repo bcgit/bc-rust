@@ -1,6 +1,6 @@
 //! RSA-4096 against Wycheproof: `rsa_pkcs1_4096_sig_gen_test.json` (sign), `rsa_signature_4096_
 //! sha{256,384,512}_test.json` (verify, all three hashes), and `rsa_pss_4096_sha{256,384,512}
-//! _mgf1_*_test.json` (PSS verify, all three hashes -- unlike every other size in this crate,
+//! _mgf1_*_test.json` (PSS verify, all three hashes -- unlike every other size in this module,
 //! Wycheproof has matching-hash-and-MGF PSS vectors for all three at 4096 bits). Only SHA-256 has
 //! sig-gen key material to check signing against a known-correct output, so every other sign
 //! pairing (PKCS#1 v1.5/SHA-384 and /SHA-512 signing, and PSS signing under all three hashes

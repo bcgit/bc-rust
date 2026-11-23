@@ -1,7 +1,7 @@
 //! Ascon-AEAD128 tests (NIST SP 800-232).
 //!
 //! - A small embedded set of NIST LWC known-answer vectors (always-on correctness, no external
-//!   repo required). The full sweep lives in `ascon_bc-test-data.rs`.
+//!   repo required). The full sweep lives in `ascon_ascon_bc-test-data.rs`.
 //! - Behavioral / contract tests (round-trips, streaming chunk-boundary equivalence, authentication
 //!   failures, determinism), driven through the pair under a caller-supplied nonce.
 //! - The shared conformance framework (`core-test-framework`), which exercises the
@@ -74,7 +74,7 @@ fn pattern(len: usize) -> Vec<u8> {
 /// Build a `KeyMaterial<16>` suitable for Ascon-AEAD128. The NIST LWC KAT vectors include an
 /// all-zero key (Count=1), which `KeyMaterial::from_bytes_as_type` would otherwise tag
 /// `KeyType::Zeroized` / `SecurityStrength::None`; force the type/strength the way a caller who
-/// knows the provenance of the key would (see `cli/src/helpers.rs::parse_seed`).
+/// knows the provenance of the key would (see `cli/src/helpers/mod.rs::parse_seed`).
 fn key_material(key: &[u8; 16]) -> KeyMaterial<16> {
     let mut km = KeyMaterial::<16>::from_bytes_as_type(key, KeyType::SymmetricCipherKey).unwrap();
     do_hazardous_operations(&mut km, |k| {

@@ -1,7 +1,7 @@
 //! Cross-check against BC Java 1.84's four RIPEMD digests (and, for RIPEMD-128 and RIPEMD-160,
 //! the designers' reference C code, which agrees with it) on 262 messages, 1048 vectors over the
 //! four functions: every length from 0 to 255 bytes and a few longer ones, so that every padding
-//! residue and both one- and two-block finals are covered. See `cross_vectors_data/mod.rs`.
+//! residue and both one- and two-block finals are covered. See `ripemd_cross_vectors_data/mod.rs`.
 
 #[path = "ripemd_cross_vectors_data/mod.rs"]
 mod cross_vectors_data;

@@ -5,7 +5,7 @@
 //! matching the other vector suites in this crate and the ML-KEM and ML-DSA ones -- `cargo test`
 //! must stay green for someone who has only cloned this repository.
 //!
-//! These are the counterpart to `ecb_bc-test-data.rs`, which consumes the
+//! These are the counterpart to `aes_ecb_bc-test-data.rs`, which consumes the
 //! `ACVP-AES-ECB` file to test the raw permutation. CBC is a mode, so its vectors belong here.
 //!
 //! # Joining the request and response files

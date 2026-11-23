@@ -46,7 +46,7 @@ where
                 other => panic!("{filename} tcId {tc_id}: unexpected result {other}"),
             };
             // Some keys are shorter than the hash's security strength (128-bit keys for
-            // HMAC-SHA-512, say); the key-strength policy is tested in `hmac_tests.rs`.
+            // HMAC-SHA-512, say); the key-strength policy is tested in `hmac_hmac_tests.rs`.
             let material = KeyMaterial::<MAX_KEY_LEN>::from_bytes_as_type(
                 &hex_field(test, "key", tc_id),
                 KeyType::MACKey,

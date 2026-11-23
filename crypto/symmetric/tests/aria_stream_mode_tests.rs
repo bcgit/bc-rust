@@ -18,7 +18,7 @@
 //!   tests through the key too.
 //!
 //! The same 160-byte plaintext runs through all four modes, and it is the one the ECB and CBC
-//! vectors in `kisa_vectors_tests.rs` use.
+//! vectors in `aria_kisa_vectors_tests.rs` use.
 
 #[path = "aria_common/mod.rs"]
 mod common;

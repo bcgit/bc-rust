@@ -5,11 +5,11 @@
 //! matching the other vector suites in this crate and the ML-KEM and ML-DSA ones -- `cargo test`
 //! must stay green for someone who has only cloned this repository.
 //!
-//! This is the CFB128 counterpart to `cbc_bc-test-data.rs` (AES-CBC) and to
-//! `ecb_bc-test-data.rs` (AES-ECB, the raw permutation). The `CFB128` file is
+//! This is the CFB128 counterpart to `aes_cbc_bc-test-data.rs` (AES-CBC) and to
+//! `aes_ecb_bc-test-data.rs` (AES-ECB, the raw permutation). The `CFB128` file is
 //! the one that matches [`Cfb`]; `ACVP-AES-CFB8` matches `Cfb8` and is read by
-//! `cfb8_bc-test-data.rs`. `ACVP-AES-CFB1` is the one segment size this crate does not implement,
-//! and is deliberately not read.
+//! `aes_cfb8_bc-test-data.rs`. `ACVP-AES-CFB1` is the one segment size this crate does not
+//! implement, and is deliberately not read.
 //!
 //! # Joining the request and response files
 //!

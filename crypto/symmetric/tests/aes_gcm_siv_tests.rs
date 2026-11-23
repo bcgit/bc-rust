@@ -1,8 +1,8 @@
 //! AES-GCM-SIV (RFC 8452) through the key objects: what the in-place one-shots of
 //! `AES128Key<GCM_SIV>` and `AES256Key<GCM_SIV>` promise beyond the known answers, which are in
-//! `gcm_siv_rfc8452_tests.rs`, and beyond the shared in-place AEAD suite, which
-//! `gcm_siv_key_tests.rs` runs: longer messages and more AAD lengths, every byte of the tag, the
-//! ciphertext and the nonce tampered with, and the mode's own property under a repeated nonce.
+//! `aes_gcm_siv_rfc8452_tests.rs`, and beyond the shared in-place AEAD suite, which
+//! `aes_gcm_siv_key_tests.rs` runs: longer messages and more AAD lengths, every byte of the tag,
+//! the ciphertext and the nonce tampered with, and the mode's own property under a repeated nonce.
 
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};

@@ -13,8 +13,8 @@ use crate::sm4::hazmat::SM4Internal;
 ///
 /// GM/T 0006 identifies the two as `sms4_wrap`, 1.2.156.10197.1.104.11, and `sms4_wrap_pad`,
 /// 1.2.156.10197.1.104.12, as BC Java's `GMObjectIdentifiers` records them. No test vectors are
-/// published for either; `tests/kw_reference_tests.rs` pins the composition against RFC 3394 and
-/// RFC 5649 written out over the raw permutation.
+/// published for either; `tests/sm4_kw_reference_tests.rs` pins the composition against RFC 3394
+/// and RFC 5649 written out over the raw permutation.
 ///
 /// # Usage Examples
 ///

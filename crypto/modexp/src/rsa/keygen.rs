@@ -1,8 +1,8 @@
 //! RSA key pair generation: FIPS 186-5 Appendix A.1.3, "Generation of Random Primes that are
 //! Probably Prime", with Appendix B.3.1's Miller-Rabin test (behind Appendix B.7-style trial
-//! division) and Appendix A.1.1's criteria on `e`, `p`, `q` and `d`, over this crate's fixed-width
+//! division) and Appendix A.1.1's criteria on `e`, `p`, `q` and `d`, over this module's fixed-width
 //! limb arithmetic -- there is no arbitrary-precision integer type here, as in the rest of the
-//! crate. Structured after BC Java's `org.bouncycastle.crypto.generators.RSAKeyPairGenerator`
+//! module. Structured after BC Java's `org.bouncycastle.crypto.generators.RSAKeyPairGenerator`
 //! (its candidate loop, small-factor sieve and `d` lower-bound check are what this follows), with
 //! FIPS 186-5 as the reference for every step and cited inline.
 //!
@@ -36,7 +36,7 @@ use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::num::NonZeroUsize;
 
-/// The public exponent every key pair this crate generates uses: `F4 = 2^16 + 1 = 65537`.
+/// The public exponent every key pair this module generates uses: `F4 = 2^16 + 1 = 65537`.
 /// FIPS 186-5 Appendix A.1.1 criterion 1 asks for an odd `e` with `2^16 < e < 2^256`, "selected
 /// prior to generating the primes"; this is the smallest such value and the near-universal choice
 /// (it is what Wycheproof's and BC Java's test keys use). Its primality is what lets criterion
@@ -284,7 +284,7 @@ fn div<const N: usize>(a: &[u64; N], d: &[u64; N]) -> [u64; N] {
     quotient
 }
 
-/// Fills the whole of `out` from `rng`, for every draw this crate makes. `RNG::next_bytes_out`
+/// Fills the whole of `out` from `rng`, for every draw this module makes. `RNG::next_bytes_out`
 /// returns the number of bytes it wrote, and a count short of the buffer is the RNG failing to
 /// deliver: an error, as its own error is, with `out` wiped either way, since what it holds
 /// then is part of a prime candidate, a salt, a seed or a key.
@@ -691,7 +691,7 @@ where
 /// `nlen`, which the RNG must meet (step 3 and the paragraph above the process). The size modules
 /// fix all three; see `RSA2048`'s `RsaSigningSize` impl for the RSA-2048 values.
 ///
-/// Returns the pair as this crate's key types: `(n, e)` and the CRT quintuple, with `dP = e^-1 mod
+/// Returns the pair as this module's key types: `(n, e)` and the CRT quintuple, with `dP = e^-1 mod
 /// (p - 1)`, `dQ = e^-1 mod (q - 1)` (which equal `d mod (p - 1)` and `d mod (q - 1)` for the
 /// `d = e^-1 mod LCM(p - 1, q - 1)` of Appendix A.1.1 criterion 3(b)) and `qInv = q^-1 mod p`.
 /// Criterion 3(a), `d > 2^(nlen/2)`, is checked on that `d` and the whole process restarts if it

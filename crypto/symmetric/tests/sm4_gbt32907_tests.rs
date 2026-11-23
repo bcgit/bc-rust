@@ -8,8 +8,9 @@
 //! The per-round `rk_i` and `X_i` columns that Appendix A.1 also prints are **not** tested here:
 //! the round keys are deliberately not public API (a `Secret` field) and the round outputs are
 //! internal to the round loop, so both are pinned in the `#[cfg(test)]` modules of
-//! `src/schedule.rs` and `src/hazmat/sm4.rs`, where they can be reached. A round trip through
-//! the cipher cannot check either -- a wrong `rk_i` is used by encryption and decryption alike.
+//! `src/sm4/schedule.rs` and `src/sm4/hazmat/sm4.rs`, where they can be reached. A round trip
+//! through the cipher cannot check either -- a wrong `rk_i` is used by encryption and decryption
+//! alike.
 //!
 //! Key-handling behaviour (type, length, strength, `Debug` redaction) is tested here too.
 //!

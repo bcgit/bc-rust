@@ -1,7 +1,7 @@
 //! Criterion benches for RSA-1024: verification only (see `bouncycastle_modexp::rsa::rsa_1024`'s docs --
-//! this crate has no RSA-1024 private key type at all). The public key and signature are Wycheproof
-//! `rsa_pkcs1_1024_sig_gen_test.json`'s own genuine `(n, e)` and one real `(msg, sig)` pair, the
-//! same provenance `tests/rsa_1024_tests.rs` uses.
+//! this module has no RSA-1024 private key type at all). The public key and signature are
+//! Wycheproof `rsa_pkcs1_1024_sig_gen_test.json`'s own genuine `(n, e)` and one real `(msg, sig)`
+//! pair, the same provenance `tests/rsa_1024_tests.rs` uses.
 
 use bouncycastle_core::signature_key::OneShotVerifyingKey;
 use criterion::{Criterion, criterion_group, criterion_main};

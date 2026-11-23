@@ -80,7 +80,7 @@
 //!
 //! Plane `k` holds bit `k` of every byte (bit 0 least significant), for inputs and outputs alike.
 //! The Boyar-Peralta sections keep their signal names (`y*`, `t*`, `z*`) so they can be diffed
-//! against the AES crate. In [`sb1`] the SLP's own input and output names
+//! against the AES module. In [`sb1`] the SLP's own input and output names
 //! `U0 .. U7` / `S0 .. S7` appear with `U0` the most significant bit, i.e. plane `q[7]`; in the
 //! generated circuits the inputs are bound from the top layer, so that convention never appears.
 

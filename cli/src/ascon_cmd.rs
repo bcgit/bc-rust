@@ -99,7 +99,8 @@ pub(crate) fn cxof128_cmd(customization: &[u8], output_len: usize, output_hex: b
 /// Both directions stream stdin in fixed-size chunks (no full-buffer slurp). Encryption emits
 /// ciphertext eagerly, before the tag is known; note that in the decryption direction, plaintext
 /// is likewise emitted before the tag has been checked, so it should not be treated as
-/// authentic until this command exits with status 0 (see the crate's "Security Considerations").
+/// authentic until this command exits with status 0 (see the `ascon` module's "Security
+/// Considerations").
 #[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn aead128_cmd(
     key: &Option<String>,

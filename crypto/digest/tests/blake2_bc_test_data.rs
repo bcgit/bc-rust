@@ -6,7 +6,7 @@
 //! `bc-test-data/crypto/Blake2KAT.txt` holds records of five lines: `<alg>`, `<input hex>`,
 //! `<key hex, may be empty>`, `<digest hex>`, `#`. The blake2b and blake2s records (512 of each:
 //! input lengths 0..=255, unkeyed and keyed) are checked here; the blake2bp, blake2sp, blake2xb and
-//! blake2xs records are variants this crate does not implement and are skipped.
+//! blake2xs records are variants this module does not implement and are skipped.
 
 #[cfg(test)]
 mod bc_test_data {

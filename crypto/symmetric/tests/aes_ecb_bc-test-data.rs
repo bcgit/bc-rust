@@ -8,8 +8,8 @@
 //! # Why ECB, and where the other ACVP AES files are used
 //!
 //! ECB applies the raw permutation to each block independently, so an ECB test vector *is* a
-//! block-permutation test vector -- which is the only reason ECB is mentioned in this crate. See
-//! the crate docs on why you must never use ECB to encrypt data.
+//! block-permutation test vector -- which is the only reason ECB is mentioned in this module. See
+//! the module docs on why you must never use ECB to encrypt data.
 //!
 //! `bc-test-data` ships sixteen ACVP AES vector sets, one per mode. This file deliberately
 //! consumes only `ACVP-AES-ECB`, because that is the one that tests the permutation rather than a
@@ -18,15 +18,15 @@
 //! | Vector set | Consumed by |
 //! |---|---|
 //! | `ACVP-AES-ECB` | this file (the permutation; the `Ecb` mode's own tests are toy-driven, in `crypto/symmetric/tests/modes/ecb_tests.rs`) |
-//! | `ACVP-AES-CBC` | `cbc_bc-test-data.rs` |
+//! | `ACVP-AES-CBC` | `aes_cbc_bc-test-data.rs` |
 //! | `ACVP-AES-CBC-CS1` / `-CS2` / `-CS3` | nothing yet (ciphertext stealing is unimplemented) |
-//! | `ACVP-AES-CCM` | `ccm_bc-test-data.rs` |
-//! | `ACVP-AES-CFB128` | `cfb_bc-test-data.rs` |
-//! | `ACVP-AES-CFB8` | `cfb8_bc-test-data.rs` |
-//! | `ACVP-AES-OFB` | `ofb_bc-test-data.rs` |
-//! | `ACVP-AES-CTR` | `ctr_bc-test-data.rs` |
-//! | `ACVP-AES-GCM` / `-GMAC` | `gcm_bc-test-data.rs` / `gmac_bc-test-data.rs` |
-//! | `ACVP-AES-KW` / `-KWP` | `kw_bc-test-data.rs` |
+//! | `ACVP-AES-CCM` | `aes_ccm_bc-test-data.rs` |
+//! | `ACVP-AES-CFB128` | `aes_cfb_bc-test-data.rs` |
+//! | `ACVP-AES-CFB8` | `aes_cfb8_bc-test-data.rs` |
+//! | `ACVP-AES-OFB` | `aes_ofb_bc-test-data.rs` |
+//! | `ACVP-AES-CTR` | `aes_ctr_bc-test-data.rs` |
+//! | `ACVP-AES-GCM` / `-GMAC` | `aes_gcm_bc-test-data.rs` / `aes_gmac_bc-test-data.rs` |
+//! | `ACVP-AES-KW` / `-KWP` | `aes_kw_bc-test-data.rs` |
 //! | `ACVP-AES-FF1` / `-FF3-1` | nothing yet (format-preserving encryption is unimplemented) |
 //!
 //! So an unused vector set here means an unimplemented mode, not an untested one. Adding a mode
@@ -64,7 +64,7 @@ const RESPONSE_FILE: &str = "ACVP-AES-ECB.4014527.rsp.json";
 /// plaintext under a zero key). `KeyMaterial` tags an all-zero buffer as [`KeyType::Zeroized`]
 /// and will not promote it outside a [`do_hazardous_operations`] closure, which is the right
 /// default -- an all-zero key normally means a broken RNG, and `AESInternal128::new` rejecting it is
-/// tested in `fips197_tests.rs`. Here the zero key is deliberate and comes from NIST, so this
+/// tested in `aes_fips197_tests.rs`. Here the zero key is deliberate and comes from NIST, so this
 /// opts in explicitly rather than the library weakening its guard.
 fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
     assert_eq!(bytes.len(), N, "key length should match the parameter set");

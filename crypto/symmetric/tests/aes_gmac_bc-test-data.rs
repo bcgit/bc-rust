@@ -2,7 +2,7 @@
 //!
 //! Every case also runs through `AES*Key<GMAC>` (`aes_common/gmac_helpers.rs`).
 //!
-//! Same joiner and shape as `gcm_bc-test-data.rs` (see its module docs for the `bc-test-data`
+//! Same joiner and shape as `aes_gcm_bc-test-data.rs` (see its module docs for the `bc-test-data`
 //! requirement and what is and is not covered against `bc-test-data`), over the GMAC set
 //! (`ACVP-AES-GMAC.4014543`, 270 cases): `payloadLen` is 0 throughout -- SP 800-38D Sec 5.2, GMAC is
 //! GCM restricted to `P = ""` -- with AAD lengths of 128/192/256 bits, both directions, all three
@@ -78,7 +78,7 @@ fn acvp_aes_gmac_known_answer_tests() {
                     let tag = hex_field(test, "tag", tc_id);
                     let answer =
                         answers.get(&tc_id).unwrap_or_else(|| panic!("tcId {tc_id}: no answer"));
-                    // See `gcm_bc-test-data.rs`: a forgery reports `testPassed: false`; a valid
+                    // See `aes_gcm_bc-test-data.rs`: a forgery reports `testPassed: false`; a valid
                     // case reports success with no `testPassed` field at all (here there is no `pt`
                     // to report either, since GMAC's plaintext is always empty).
                     if answer.get("testPassed").and_then(Value::as_bool) == Some(false) {

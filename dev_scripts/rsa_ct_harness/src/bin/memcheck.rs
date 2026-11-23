@@ -18,7 +18,6 @@ use bouncycastle_modexp::rsa::RSA2048;
 use bouncycastle_modexp::rsa::ct_harness::{PrivateKeyEngine, token};
 use bouncycastle_modexp::rsa::keys::RsaPrivateComponents;
 use bouncycastle_modexp::rsa::modexp::MontgomeryContext;
-use bouncycastle_modexp::rsa::size::RsaSigningSize;
 use std::alloc::{Layout, alloc};
 use std::hint::black_box;
 

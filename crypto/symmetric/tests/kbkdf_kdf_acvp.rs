@@ -5,7 +5,7 @@
 //!
 //! Run: every group over HMAC with SHA-224, -256, -384, -512 and the four SHA-3 hashes, and
 //! over CMAC with AES-128, -192 and -256, whose output length is a whole number of bytes. Counted
-//! and not run, so that a change in what is skipped is noticed: the MACs this crate or the
+//! and not run, so that a change in what is skipped is noticed: the MACs this module or the
 //! library's release does not have (HMAC-SHA-1, HMAC-SHA2-512/224 and -512/256, CMAC-TDES), the
 //! groups whose output length is not a whole number of bytes, and the cases whose counter sits
 //! at a bit offset inside the fixed input data. A missing `bc-test-data` checkout fails the test

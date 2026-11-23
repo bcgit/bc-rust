@@ -1,5 +1,5 @@
 //! TupleHash and TupleHashXOF behaviour tests. The SP 800-185 sample values are in
-//! `tuplehash_bc-test-data.rs`.
+//! `sha3_tuplehash_bc-test-data.rs`.
 
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};

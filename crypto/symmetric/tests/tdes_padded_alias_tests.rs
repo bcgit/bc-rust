@@ -5,7 +5,7 @@
 //! behaviour rather than being decorative. The mode and the padding layer are tested in
 //! `bouncycastle_symmetric::modes`; this checks the wiring between them and the 8-byte block, through the
 //! key that hands the aliases out. Which type each alias resolves to is pinned in
-//! `alg_name_tests.rs`.
+//! `tdes_alg_name_tests.rs`.
 
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};

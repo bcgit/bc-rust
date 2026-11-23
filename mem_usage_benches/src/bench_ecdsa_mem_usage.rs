@@ -70,8 +70,8 @@ fn bench_do_nothing() {
     print!("{}", 1 + 1);
 }
 
-/// d = 42, well within [1, n-1]: the same fixed-key trick the crate's own tests use, so keygen's
-/// own stack cost is not folded into a sign or verify measurement.
+/// d = 42, well within [1, n-1]: the same fixed-key trick the `ecdsa` module's own tests use, so
+/// keygen's own stack cost is not folded into a sign or verify measurement.
 fn fixed_key<C, H, const SK_LEN: usize>() -> ECDSAPrivateKey<C, H>
 where
     C: Curve<ScalarBytes = [u8; SK_LEN]>,

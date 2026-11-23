@@ -1,4 +1,4 @@
-//! The key object every block cipher crate aliases: a key bound to one permutation and one mode,
+//! The key object every block cipher module aliases: a key bound to one permutation and one mode,
 //! validated and expanded once, from which the mode's workers are made. The docs are on
 //! [`BlockCipherKey`], which the crate root re-exports.
 
@@ -22,7 +22,7 @@ use bouncycastle_core::traits::{Algorithm, RNG};
 
 /// A block cipher key for the permutation `P` under the mode `M`: one type per cipher, key
 /// length and mode, so a key is bound to all three by the Rust type rather than by the length of
-/// a byte buffer and the call site. The cipher crates alias it per key length, `AES128Key<M>`,
+/// a byte buffer and the call site. The cipher modules alias it per key length, `AES128Key<M>`,
 /// `ARIA256Key<M>`, `SM4Key<M>` and so on, and those aliases are what a caller names.
 ///
 /// Validation and key expansion happen once, in [`from_key_material`](FromKeyMaterial), and every
@@ -62,7 +62,7 @@ use bouncycastle_core::traits::{Algorithm, RNG};
 ///
 /// # Memory Usage
 ///
-/// A key is its mode's per-key state: the expanded schedule, whose size each cipher crate states
+/// A key is its mode's per-key state: the expanded schedule, whose size each cipher module states
 /// on its alias, plus what the mode keeps per key. The cost is paid per key, not per message.
 pub struct BlockCipherKey<P, M: Mode<P>> {
     state: M::KeyState,

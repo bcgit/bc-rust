@@ -9,8 +9,9 @@
 //!
 //! Make sure you build in release mode!
 //!
-//! The crate docs' stack table is the deepest frame chain from each [`measure`] instance down,
-//! as for the ECC CDH harness; `main` calls every bench for that build so none is dead-stripped.
+//! The `hpke` module docs' stack table is the deepest frame chain from each [`measure`] instance
+//! down, as for the ECC CDH harness; `main` calls every bench for that build so none is
+//! dead-stripped.
 //!
 //! Note: print!() forces the compiler not to optimize away the actual code. The name of the bench
 //! goes to stderr so that the junk on stdout can be piped to /dev/null.

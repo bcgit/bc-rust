@@ -158,7 +158,7 @@ fn the_aliases_name_the_expected_types() {
     let _: SM4_OFB<'_, Decrypting> = key.create_decryptor(&iv);
 }
 
-/// The const parameters SM4 fills in are the ones the crate exports, CTR's nonce leaves the
+/// The const parameters SM4 fills in are the ones the module exports, CTR's nonce leaves the
 /// four-byte counter the mode's maximum, and four lanes of four-byte words fill the 16 byte
 /// positions of the `u16` planes.
 #[test]
@@ -169,7 +169,7 @@ fn the_const_parameters_are_sm4s() {
     assert_eq!(LANES * 4, BLOCK_LEN, "four lanes of one word each fill the circuit's 16 bytes");
 }
 
-/// The engine is exactly the 32 round keys the crate docs quote as 128 bytes: no direction
+/// The engine is exactly the 32 round keys the module docs quote as 128 bytes: no direction
 /// flag, no round counter, no initialised marker.
 #[test]
 fn the_engine_is_exactly_the_round_keys() {

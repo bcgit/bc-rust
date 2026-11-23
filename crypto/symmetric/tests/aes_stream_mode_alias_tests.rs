@@ -1,7 +1,7 @@
 //! The stream modes CFB, CFB8, OFB and CTR through the AES keys, via the shared suite: any length,
 //! any chunking, fresh init data per encryption, and the four modes distinct from each other.
 //! The known answers are in the vector suites beside this file, and which type each alias
-//! resolves to is pinned in `alg_name_tests.rs`.
+//! resolves to is pinned in `aes_alg_name_tests.rs`.
 
 use bouncycastle_cipher_test_framework::stream;
 use bouncycastle_symmetric::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};

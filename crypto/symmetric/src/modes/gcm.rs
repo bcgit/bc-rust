@@ -214,7 +214,7 @@ const MAX_DATA_LEN: u64 = (1 << 36) - 32;
 /// The GCM mode type: the `M` of a mode-bound key such as `AES128Key<GCM>`. `GCM` is GCM with
 /// the full 128-bit tag; `GCM<12>` and so on select a shorter tag, within the `12..=16` byte range
 /// [`Gcm`] accepts. The [`Mode`] and AEAD mode-trait impls below are generic over any
-/// [`BlockPermutation`] with a 128-bit block, so a permutation crate's key type needs nothing of
+/// [`BlockPermutation`] with a 128-bit block, so a permutation module's key type needs nothing of
 /// its own.
 pub struct GCM<const TAG_LEN: usize = 16>;
 

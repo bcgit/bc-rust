@@ -44,8 +44,8 @@ pub(in crate::sha2) const SHA512_H0: [u64; 8] = [
 ];
 
 /// Rejects, at compile time, every `t` for which SHA-512/t is not defined or not representable
-/// here. See [`sha512t_h0`] for where each rule comes from; the multiple-of-8 rule is this crate's,
-/// the rest are FIPS 180-4 s. 5.3.6's.
+/// here. See [`sha512t_h0`] for where each rule comes from; the multiple-of-8 rule is this
+/// module's, the rest are FIPS 180-4 s. 5.3.6's.
 pub(in crate::sha2) const fn check_t(t: usize) {
     // FIPS 180-4 s. 5.3.6: "t is any positive integer ... such that t < 512".
     assert!(t > 0, "FIPS 180-4 s. 5.3.6: t must be a positive integer");
@@ -53,7 +53,7 @@ pub(in crate::sha2) const fn check_t(t: usize) {
     // FIPS 180-4 s. 5.3.6: "and t is not 384". SHA-384 is its own algorithm (s. 5.3.4 / s. 6.5)
     // with an IV that is not the one this function would generate.
     assert!(t != 384, "FIPS 180-4 s. 5.3.6: t must not be 384 -- use SHA384 instead");
-    // This crate's restriction, not the standard's: the digest must be a whole number of bytes.
+    // This module's restriction, not the standard's: the digest must be a whole number of bytes.
     assert!(t.is_multiple_of(8), "SHA-512/t here requires t to be a multiple of 8");
 }
 
@@ -69,7 +69,7 @@ pub(in crate::sha2) const fn t_digits(t: usize) -> usize {
     }
 }
 
-/// This crate's algorithm name for SHA-512/t, `"SHA512/t"` with `t` in decimal -- `"SHA512/224"`,
+/// This module's algorithm name for SHA-512/t, `"SHA512/t"` with `t` in decimal -- `"SHA512/224"`,
 /// `"SHA512/256"`, `"SHA512/8"` -- returned NUL-padded to the longest form, with
 /// [`alg_name_len`] giving the significant prefix. Two pieces because
 /// [`Algorithm::ALG_NAME`](bouncycastle_core::traits::Algorithm::ALG_NAME) is a `&'static str` and
@@ -77,7 +77,7 @@ pub(in crate::sha2) const fn t_digits(t: usize) -> usize {
 ///
 /// Note this is *not* the s. 5.3.6 spelling: the string the IV Generation Function hashes is
 /// "SHA-512/t", with the hyphen, and is built separately in [`sha512t_h0`]. This one follows the
-/// crate's existing names, [`SHA512_224_NAME`](crate::sha2::SHA512_224_NAME) and
+/// module's existing names, [`SHA512_224_NAME`](crate::sha2::SHA512_224_NAME) and
 /// [`SHA512_256_NAME`](crate::sha2::SHA512_256_NAME), which it has to keep reproducing exactly.
 pub(in crate::sha2) const fn alg_name_bytes(t: usize) -> [u8; ALG_NAME_BUF_LEN] {
     let mut buf = [b'S', b'H', b'A', b'5', b'1', b'2', b'/', 0, 0, 0];
@@ -319,7 +319,7 @@ impl<PARAMS: SHA512InitValue> Sha512State<PARAMS> {
 
 /// Internal struct for SHA512.
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
-/// parameter sets this crate provides.
+/// parameter sets this module provides.
 #[derive(Clone)]
 pub struct SHA512Internal<PARAMS: SHA512InitValue> {
     _params: core::marker::PhantomData<PARAMS>,

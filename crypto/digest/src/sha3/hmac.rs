@@ -168,7 +168,7 @@
 //! | `HmacKey` for `HMAC_SHA3_224` .. `HMAC_SHA3_512`         | 880          |
 //! | `HMAC_SHA3_224` .. `HMAC_SHA3_512` worker                | 448          |
 //!
-//! The key is two Keccak-f\[1600\] sponges (440 bytes each, see the crate-level Memory Usage
+//! The key is two Keccak-f\[1600\] sponges (440 bytes each, see `crate::sha3`'s Memory Usage
 //! section): the inner and the outer pad state. The worker is the inner sponge plus a reference
 //! to the key it borrows.
 //!

@@ -23,7 +23,7 @@
 //! files a record with `FAIL` in place of `PT` is a forgery, which must be rejected.
 //!
 //! The Wycheproof `aes_gcm_test.json` set, which `bc-test-data` also carries, is run by
-//! `gcm_wycheproof.rs`.
+//! `aes_gcm_wycheproof.rs`.
 
 #[path = "aes_common/acvp_gcm_helpers.rs"]
 mod acvp_gcm_helpers;

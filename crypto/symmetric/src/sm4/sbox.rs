@@ -62,7 +62,7 @@
 //!
 //! Plane `k` holds bit `k` of every byte (bit 0 least significant), for inputs and outputs alike.
 //! The Boyar-Peralta section keeps its own signal names (`y*`, `t*`, `z*`) so it can be diffed
-//! against the AES crate; its inputs are bound from the generated top layer, so its `U0`-is-MSB
+//! against the AES module; its inputs are bound from the generated top layer, so its `U0`-is-MSB
 //! convention never appears here.
 
 use crate::sm4::LANES;

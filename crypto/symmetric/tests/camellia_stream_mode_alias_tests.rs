@@ -2,7 +2,7 @@
 //! length, any chunking, fresh init data per encryption, and the four modes distinct from each
 //! other.
 //! The known answers are in the vector suites beside this file, and which type each alias
-//! resolves to is pinned in `alg_name_tests.rs`.
+//! resolves to is pinned in `camellia_alg_name_tests.rs`.
 
 use bouncycastle_cipher_test_framework::stream;
 use bouncycastle_symmetric::camellia::hazmat::{

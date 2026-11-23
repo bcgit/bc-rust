@@ -1,9 +1,9 @@
 //! Tests for [`BLAKE3`] (`hash` mode), [`BLAKE3DeriveKey`] (`derive_key` mode) and
 //! [`BLAKE3Squeezer`].
 //!
-//! Vector sources: the official BLAKE3 test vectors (see `vectors/mod.rs`). bc-test-data has no
-//! BLAKE3 data, and Wycheproof has no BLAKE vectors (C2SP/wycheproof testvectors_v1 has no blake*
-//! file), so the "against bc-test-data and wycheproof" requirement is met vacuously.
+//! Vector sources: the official BLAKE3 test vectors (see `blake3_vectors/mod.rs`). bc-test-data has
+//! no BLAKE3 data, and Wycheproof has no BLAKE vectors (C2SP/wycheproof testvectors_v1 has no
+//! blake* file), so the "against bc-test-data and wycheproof" requirement is met vacuously.
 
 #[path = "blake3_vectors/mod.rs"]
 mod vectors;
@@ -282,7 +282,7 @@ mod blake3_tests {
         assert_eq!(SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN, 116);
     }
 
-    /// Prints, and pins, the `size_of` figures quoted in the crate docs' Memory Usage table.
+    /// Prints, and pins, the `size_of` figures quoted in the module docs' Memory Usage table.
     #[test]
     fn print_sizes() {
         assert_eq!(size_of::<BLAKE3>(), 1880);

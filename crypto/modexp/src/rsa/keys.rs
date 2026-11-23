@@ -14,7 +14,7 @@
 //! implementation) through [`RsaPrivateComponents::from_crt_components`] or the keys' own
 //! `from_crt_components`. RFC 8017's first representation, the plain `(n, d)` pair, is not
 //! supported: every real RSA private key ships as the CRT form because CRT-based signing (RFC
-//! 8017 §5.2.1 step 2.b) is the only signing path this crate implements.
+//! 8017 §5.2.1 step 2.b) is the only signing path this module implements.
 //!
 //! The keys implement `bouncycastle_core`'s `PublicKey` / `PrivateKey`, the
 //! private key only at a [`RsaSigningSize`], with the byte layouts described on the components.
@@ -38,7 +38,7 @@ use core::marker::PhantomData;
 ///
 /// The keys' `PublicKey::encode`/`from_bytes` use the raw layout `n || e`: `n` as `K::K_LEN`
 /// big-endian bytes (RFC 8017 §4.1's I2OSP), then `e` as 8 big-endian bytes, `K::PK_LEN` in all.
-/// Not an RFC 8017 or ASN.1 format -- this crate has no DER encoder/decoder -- just a fixed-width
+/// Not an RFC 8017 or ASN.1 format -- this module has no DER encoder/decoder -- just a fixed-width
 /// layout that round-trips, for `cli/src/rsa_cmd.rs` to read and write public keys as files.
 /// Decoding validates `(n, e)` the same way [`Self::new`] does; the scheme is not encoded.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -330,7 +330,7 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     /// §6.4.1.4.3 (`crt_pkv`) does: beyond what the constructor checked, that `e` is at least
     /// 65,537, that `p` and `q` are each at least `sqrt(2) * 2^(nBits/2 - 1)`, more than
     /// `2^(nBits/2 - 100)` apart and probably prime, and that the private exponent
-    /// `d = e^-1 mod LCM(p - 1, q - 1)` is above `2^(nBits/2)`. A key from this crate's key
+    /// `d = e^-1 mod LCM(p - 1, q - 1)` is above `2^(nBits/2)`. A key from this module's key
     /// generation passes; this is for a key from elsewhere.
     ///
     /// Primality is the Miller-Rabin test with bases from `rng`, at
@@ -683,7 +683,7 @@ where
 
 /// The security strength SP 800-57 Part 1 Rev. 5 Table 2 assigns an RSA modulus of `limbs`
 /// 64-bit limbs: 112 bits at 2048, 128 at 3072 and 4096, 192 at 7680 and above, and none below
-/// 2048 (the legacy sizes this crate verifies with but will not sign with).
+/// 2048 (the legacy sizes this module verifies with but will not sign with).
 pub const fn modulus_strength(limbs: usize) -> SecurityStrength {
     let bits = limbs * 64;
     if bits >= 7680 {

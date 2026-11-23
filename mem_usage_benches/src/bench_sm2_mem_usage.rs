@@ -35,7 +35,7 @@ use bouncycastle::rng::DefaultRNG;
 const MSG: &[u8] = b"peak stack usage of SM2 sign/verify, held constant across runs";
 
 /// SM2 requires `ctx` to carry the signer's identity `IDA`; this is a fixed placeholder, not a
-/// crate-provided default (the crate has none -- see `bouncycastle_ec::sm2::sm2`'s docs).
+/// module-provided default (the `sm2` module has none -- see `bouncycastle_ec::sm2::sm2`'s docs).
 const ID: &[u8] = b"1234567812345678";
 
 /// This prints the in-memory size of the public and private key structs, plus their on-disk
@@ -67,7 +67,7 @@ fn bench_sm2_keygen() {
 fn bench_sm2_sign() {
     eprintln!("SM2/Sign");
 
-    // dA = 42, well within [1, n-1] -- same fixed-key trick the crate's own tests use, so
+    // dA = 42, well within [1, n-1] -- same fixed-key trick the `sm2` module's own tests use, so
     // keygen's own stack cost is not folded into this measurement.
     let mut bytes = [0u8; SK_LEN];
     bytes[SK_LEN - 1] = 0x2A;

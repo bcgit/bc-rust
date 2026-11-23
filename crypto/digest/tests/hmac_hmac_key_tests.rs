@@ -121,7 +121,7 @@ fn construction_applies_the_key_type_and_strength_policy() {
     assert!(HmacKey::<SHA256>::from_key_material_allow_weak(&weak).is_ok());
 
     // An empty (zeroized) key, HKDF's absent salt, is admitted by the weak form and is the
-    // all-zero key of RFC 2104 step (1): the zero-length-key vector from `hmac_tests.rs`.
+    // all-zero key of RFC 2104 step (1): the zero-length-key vector from `hmac_hmac_tests.rs`.
     let no_salt = KeyMaterial256::new();
     let salt_key = HmacKey::<SHA256>::from_key_material_allow_weak(&no_salt).unwrap();
     assert_eq!(
