@@ -48,12 +48,12 @@
 
 use crate::helpers::block_mode_helpers::{CipherDirection, InputLimit, load_key_object};
 use crate::helpers::{read_secret_stdin_all, wipe, write_secret_bytes_or_hex};
-use bouncycastle::cipher::BlockCipherKey;
-use bouncycastle::cipher::modes::ModeNames;
-use bouncycastle::cipher::modes::{KW, KWP};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{KeyUnwrappingKey, KeyWrappingKey};
+use bouncycastle::symmetric::BlockCipherKey;
+use bouncycastle::symmetric::modes::ModeNames;
+use bouncycastle::symmetric::modes::{KW, KWP};
 use std::process::exit;
 
 /// KW under a `KEY_LEN`-byte key-encryption key for the permutation `P`; `alg` names the cipher

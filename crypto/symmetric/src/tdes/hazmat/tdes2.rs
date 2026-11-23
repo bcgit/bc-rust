@@ -1,5 +1,6 @@
 //! Two-key TDEA (SP 800-67r2 Sec 3.1, "2TDEA"), for decryption of legacy data only.
 
+use crate::modes::ModeNames;
 use crate::tdes::BLOCK_LEN;
 use crate::tdes::KEY_LEN_2KEY;
 use crate::tdes::des::Subkeys;
@@ -7,7 +8,6 @@ use crate::tdes::hazmat::tdes::{
     Block, REPEATED_KEY, any_weak, forward, inverse, same_key, validate_wrapper,
 };
 use crate::tdes::schedule::expand;
-use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
@@ -21,15 +21,15 @@ use bouncycastle_utils::secret::Secret;
 /// **Decryption only.** SP 800-67r2 Sec 3.1 allows two-key TDEA "for legacy use only, as defined
 /// in SP 800-131A", and SP 800-131A Rev 2 Table 1 has it as "Disallowed" for encryption and
 /// "Legacy use" for decryption. This type therefore sets
-/// [`BlockPermutation::DECRYPT_ONLY`], and every mode in `bouncycastle_cipher::modes` refuses to
+/// [`BlockPermutation::DECRYPT_ONLY`], and every mode in `bouncycastle_symmetric::modes` refuses to
 /// make an encrypting worker over it **at compile time**: a two-key key's `create_encryptor`
 /// and `create_encryptor_nonce` do not compile. (The error is reported after monomorphization, by `cargo build`
 /// or `cargo test`, with its span in the mode's code; `cargo check` does not reach it.)
 ///
 /// ```compile_fail
 /// use bouncycastle_symmetric::tdes::TDES2Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::PKCS7;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 /// use bouncycastle_rng::HashDRBG_SHA512;
@@ -47,8 +47,8 @@ use bouncycastle_utils::secret::Secret;
 ///
 /// ```compile_fail
 /// use bouncycastle_symmetric::tdes::TDES2Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::PKCS7;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 ///
@@ -66,7 +66,7 @@ use bouncycastle_utils::secret::Secret;
 ///
 /// ```compile_fail
 /// use bouncycastle_symmetric::tdes::{BLOCK_LEN, CTR_NONCE_LEN, TDES2Key};
-/// use bouncycastle_cipher::modes::CTR;
+/// use bouncycastle_symmetric::modes::CTR;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 /// use bouncycastle_rng::HashDRBG_SHA512;
@@ -82,7 +82,7 @@ use bouncycastle_utils::secret::Secret;
 ///
 /// ```compile_fail
 /// use bouncycastle_symmetric::tdes::TDES2Key;
-/// use bouncycastle_cipher::modes::OFB;
+/// use bouncycastle_symmetric::modes::OFB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 ///
@@ -99,8 +99,8 @@ use bouncycastle_utils::secret::Secret;
 /// a MAC role over TDEA (SP 800-131A Rev 2 Table 9); the same key's `create_verifier` works:
 ///
 /// ```compile_fail
-/// use bouncycastle_cipher::BlockCipherKey;
-/// use bouncycastle_cipher::modes::CMAC;
+/// use bouncycastle_symmetric::BlockCipherKey;
+/// use bouncycastle_symmetric::modes::CMAC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey};
 /// use bouncycastle_symmetric::tdes::hazmat::TDES2Internal;

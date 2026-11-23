@@ -5,11 +5,6 @@
 //! direction and the padding are type parameters of one algorithm, not different algorithms, so
 //! every combination of them must report the same name.
 
-use bouncycastle_cipher::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr, OFB, Ofb};
-use bouncycastle_cipher::padding::{
-    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
-};
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
@@ -17,11 +12,16 @@ use bouncycastle_core::symmetric_key::{
 };
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_rng::HashDRBG_SHA512;
+use bouncycastle_symmetric::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr, OFB, Ofb};
+use bouncycastle_symmetric::padding::{
+    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
+};
 use bouncycastle_symmetric::sm4::hazmat::SM4Internal;
 use bouncycastle_symmetric::sm4::{
     BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, LANES, SM4_CBC, SM4_CFB, SM4_CFB8, SM4_CTR, SM4_KW, SM4_KWP,
     SM4_OFB, SM4Key,
 };
+use bouncycastle_symmetric::{Decrypting, Encrypting};
 use core::mem::size_of;
 
 /// Both directions of one algorithm report `name` at the 128-bit strength.

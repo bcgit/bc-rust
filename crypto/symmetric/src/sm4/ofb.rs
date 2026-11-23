@@ -1,19 +1,19 @@
 //! Type alias for SM4 in OFB mode (draft-ribose-cfrg-sm4-10 Sec 8.6; NIST SP 800-38A Sec 6.4).
 //! The docs are on [`SM4_OFB`], which the module root re-exports.
 
+use crate::modes::Ofb;
 use crate::sm4::BLOCK_LEN;
 use crate::sm4::hazmat::SM4Internal;
-use bouncycastle_cipher::modes::Ofb;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
 
-/// SM4 in OFB mode, the draft's **SM4-OFB**. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`].
+/// SM4 in OFB mode, the draft's **SM4-OFB**. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`].
 ///
-/// See `bouncycastle_cipher::modes::ofb` for the construction and its security considerations.
+/// See `bouncycastle_symmetric::modes::ofb` for the construction and its security considerations.
 /// The alias is a stream cipher: the data is a `&mut [u8]` of any length, encrypted or decrypted
 /// in place. It comes from a key, [`SM4Key<OFB>`](crate::sm4::SM4Key), through the
 /// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one block, drawn from
@@ -23,7 +23,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::sm4::SM4Key;
-/// use bouncycastle_cipher::modes::OFB;
+/// use bouncycastle_symmetric::modes::OFB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

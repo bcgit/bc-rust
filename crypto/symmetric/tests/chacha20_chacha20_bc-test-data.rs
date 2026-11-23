@@ -1,14 +1,14 @@
 //! RFC vectors live in the sibling bc-test-data repository, never in the crate package.
-use bouncycastle_cipher::Encrypting;
-use bouncycastle_cipher::stream::hazmat::stream_cipher_over;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::FromKeyMaterial;
 use bouncycastle_core::traits::StreamCipherEncryptor;
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data_json;
+use bouncycastle_symmetric::Encrypting;
 use bouncycastle_symmetric::chacha20::hazmat::keystream_at;
 use bouncycastle_symmetric::chacha20::{ChaCha20, ChaCha20Key};
+use bouncycastle_symmetric::stream::hazmat::stream_cipher_over;
 
 #[test]
 fn rfc8439_blocks_encryption_and_one_time_keys() {

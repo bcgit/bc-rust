@@ -8,12 +8,12 @@
 //! draft-ribose-cfrg-sm4-10's Appendix A.2.5 examples make the whole 16-byte IV the first counter
 //! block, which the 12-byte-nonce split these commands use cannot produce (see the `SM4_CTR` docs),
 //! so there is no vector to decrypt here. Instead the command is required to agree with
-//! `bouncycastle_cipher::modes::Ctr` over the SM4 permutation, which
+//! `bouncycastle_symmetric::modes::Ctr` over the SM4 permutation, which
 //! `crypto/symmetric/tests/sm4_stream_mode_tests.rs` pins against the Sec 8.7.1 equations.
 
 mod common;
-use bouncycastle::cipher::modes::CTR;
 use bouncycastle::sm4::SM4Key;
+use bouncycastle::symmetric::modes::CTR;
 use common::{
     Framing, KEY16, KEY32, any_input_length, fresh_prefix_per_invocation, key_object,
     library_stream_decrypt, listed_in_help, pseudo_random, round_trips, run_ok, tohex, unhex,

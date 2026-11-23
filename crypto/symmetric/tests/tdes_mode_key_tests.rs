@@ -2,9 +2,6 @@
 //! can carry, then the block, symmetric and stream suites on the three-key key, and the one thing
 //! a two-key key can do, decrypt.
 
-use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, ModeNames, OFB, TKW};
-use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, EcbDecryptionKey, KeyExpansion, Mode};
@@ -23,6 +20,9 @@ use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
+use bouncycastle_symmetric::modes::hazmat::ecb::ECB;
+use bouncycastle_symmetric::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, ModeNames, OFB, TKW};
+use bouncycastle_symmetric::padding::{NoPadding, PKCS7};
 use bouncycastle_symmetric::tdes::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle_symmetric::tdes::{
     BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key,
@@ -261,7 +261,7 @@ fn a_mac_mode_key_refuses_every_material_consistently() {
 
 /// The counter limit, through a key: under `CTR<7, 8>` the counter is one byte, so the 256th
 /// block is the last the mode will produce, and the byte after it is refused rather than
-/// repeating the keystream (`bouncycastle_cipher::modes::Ctr`'s rule, pinned here on a TDES key
+/// repeating the keystream (`bouncycastle_symmetric::modes::Ctr`'s rule, pinned here on a TDES key
 /// so that the key-object path reaches it).
 #[test]
 fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {

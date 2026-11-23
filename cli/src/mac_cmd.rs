@@ -8,7 +8,6 @@ use crate::helpers::{
 };
 use crate::sha3_cmd::{MAX_FIXED_OUTPUT_LEN, Strength};
 use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
-use bouncycastle::cipher::modes::{CMAC, GMAC};
 use bouncycastle::core::errors::MACError;
 use bouncycastle::core::hazmat::finish_token;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -28,6 +27,7 @@ use bouncycastle::sha3::kmac::{
 };
 use bouncycastle::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKEParams};
 use bouncycastle::sm3::SM3;
+use bouncycastle::symmetric::modes::{CMAC, GMAC};
 use bouncycastle_utils::ct::ct_eq_bytes;
 use std::process::exit;
 

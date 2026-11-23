@@ -23,7 +23,6 @@
 #[path = "aria_common/mod.rs"]
 mod common;
 
-use bouncycastle_cipher::modes::{CFB, CFB8, CTR, OFB};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -32,6 +31,7 @@ use bouncycastle_core::symmetric_key::{
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_symmetric::aria::{ARIA128Key, ARIA192Key, ARIA256Key, BLOCK_LEN, CTR_NONCE_LEN};
+use bouncycastle_symmetric::modes::{CFB, CFB8, CTR, OFB};
 use common::bytes;
 
 /// The 160-byte plaintext shared by all twelve vectors.
@@ -411,7 +411,7 @@ fn the_published_cfb128_and_cfb8_vectors_differ_after_the_first_byte() {
 
 /// The counter limit, through a key: under `CTR<15>` the counter is one byte, so the 256th block
 /// is the last the mode will produce, and the byte after it is refused rather than repeating the
-/// keystream (`bouncycastle_cipher::modes::Ctr`'s rule, pinned here on an ARIA key so that the
+/// keystream (`bouncycastle_symmetric::modes::Ctr`'s rule, pinned here on an ARIA key so that the
 /// key-object path reaches it).
 #[test]
 fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {

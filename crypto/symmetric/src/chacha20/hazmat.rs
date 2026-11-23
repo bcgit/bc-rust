@@ -8,7 +8,7 @@
 //! and is the cipher to use.
 
 use crate::chacha20::{BLOCK_LEN, ChaCha20Key, KEY_LEN, NONCE_LEN};
-use bouncycastle_cipher::stream::hazmat::PermutationFreeKeyStream;
+use crate::stream::hazmat::PermutationFreeKeyStream;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

@@ -76,7 +76,7 @@ fn gmac_keys_tag_and_verify_under_a_nonce() {
 /// subkey under `GCM`.
 #[test]
 fn key_sizes_are_the_documented_ones() {
-    use bouncycastle_cipher::modes::{CTR, GCM};
+    use bouncycastle_symmetric::modes::{CTR, GCM};
     use bouncycastle_symmetric::sm4::SM4Key;
     use core::mem::size_of;
     assert_eq!(size_of::<SM4Key<CTR>>(), 128);

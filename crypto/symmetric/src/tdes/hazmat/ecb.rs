@@ -1,7 +1,7 @@
 //! Type aliases for TDES in ECB mode (NIST SP 800-38A Sec 6.1; "TECB" in SP 800-38A Appendix E),
 //! with padding.
 //!
-//! See `bouncycastle_cipher::modes::hazmat::ecb` for the construction. The aliases name the
+//! See `bouncycastle_symmetric::modes::hazmat::ecb` for the construction. The aliases name the
 //! padded workers, handed out by a [`TDES3Key`](crate::tdes::TDES3Key) under `ECB<Pad>` through the
 //! [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; under `ECB<Blocks>` the key
 //! hands out the unpadded `Ecb` through [`EcbEncryptionKey`] / [`EcbDecryptionKey`] instead, and
@@ -20,16 +20,16 @@
 //! `INIT_DATA_LEN` is 0: encryption returns an empty array and decryption takes one, and the
 //! ciphertext is exactly the padded plaintext with nothing prepended.
 
+use crate::Direction;
+use crate::modes::hazmat::ecb::Ecb;
+use crate::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use crate::tdes::BLOCK_LEN;
 use crate::tdes::hazmat::{TDES2Internal, TDESInternal};
-use bouncycastle_cipher::Direction;
-use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
-use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use crate::{Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_cipher::padding::{NoPadding, PKCS7};
+use crate::padding::{NoPadding, PKCS7};
 #[allow(unused_imports)]
 use bouncycastle_core::hazmat::{EcbDecryptionKey, EcbEncryptionKey};
 #[allow(unused_imports)]
@@ -48,8 +48,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES3Key;
-/// use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_symmetric::modes::hazmat::ecb::ECB;
+/// use bouncycastle_symmetric::padding::PKCS7;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -76,8 +76,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES3Key;
-/// use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-/// use bouncycastle_cipher::padding::NoPadding;
+/// use bouncycastle_symmetric::modes::hazmat::ecb::ECB;
+/// use bouncycastle_symmetric::padding::NoPadding;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 /// use bouncycastle_rng::HashDRBG_SHA512;
@@ -108,8 +108,8 @@ pub type TDES_ECB<'k, Dir, Pad> = <Dir as Direction>::Select<
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES2Key;
-/// use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-/// use bouncycastle_cipher::padding::NoPadding;
+/// use bouncycastle_symmetric::modes::hazmat::ecb::ECB;
+/// use bouncycastle_symmetric::padding::NoPadding;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 ///

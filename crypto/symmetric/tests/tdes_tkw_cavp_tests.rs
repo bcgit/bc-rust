@@ -8,12 +8,12 @@
 //! `FAIL`, 20 forgeries per section. The forward cipher function is the designated one (the
 //! `_inv` files of the zip are not used). `K` is `KEY1 || KEY2 || KEY3`, 24 bytes.
 
-use bouncycastle_cipher::modes::TKW;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
+use bouncycastle_symmetric::modes::TKW;
 use bouncycastle_symmetric::tdes::{KEY_LEN, TDES3Key};
 
 const CAVP_DIR: &str = "crypto/aes_tdes_vectors/TDES";

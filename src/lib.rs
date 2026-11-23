@@ -1,5 +1,3 @@
-pub use bouncycastle_aes as aes;
-pub use bouncycastle_cipher as cipher;
 pub use bouncycastle_core as core;
 pub use bouncycastle_core::base64;
 pub use bouncycastle_core::hex;
@@ -32,6 +30,7 @@ pub use bouncycastle_rng as rng;
 pub use bouncycastle_rsa as rsa;
 pub use bouncycastle_sm2 as sm2;
 pub use bouncycastle_symmetric as symmetric;
+pub use bouncycastle_symmetric::aes;
 pub use bouncycastle_symmetric::aria;
 pub use bouncycastle_symmetric::ascon;
 pub use bouncycastle_symmetric::camellia;

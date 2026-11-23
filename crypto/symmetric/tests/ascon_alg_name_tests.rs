@@ -2,13 +2,13 @@
 //! the factories match on are those same names. The direction of `Ascon_AEAD128` is a type
 //! parameter of one algorithm, not a different algorithm, so both directions report the same name.
 
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_symmetric::ascon::{
     ASCON_AEAD128_NAME, ASCON_CXOF128_NAME, ASCON_HASH256_NAME, ASCON_XOF128_NAME, Ascon_AEAD128,
     AsconCXof128, AsconHash256, AsconXof128,
 };
+use bouncycastle_symmetric::{Decrypting, Encrypting};
 
 /// `A` reports `name` and `strength`, and `constant` is that same name.
 fn check<A: Algorithm>(name: &str, constant: &str, strength: SecurityStrength) {

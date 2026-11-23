@@ -1,16 +1,16 @@
 //! Type alias for SM4 in CBC mode (NIST SP 800-38A Sec 6.2; draft-ribose-cfrg-sm4-10 Sec 8.4), with
 //! padding. The docs are on [`SM4_CBC`], which the module root re-exports.
 
+use crate::Direction;
+use crate::modes::Cbc;
+use crate::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use crate::sm4::BLOCK_LEN;
 use crate::sm4::hazmat::SM4Internal;
-use bouncycastle_cipher::Direction;
-use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use crate::{Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_cipher::padding::{NoPadding, PKCS7};
+use crate::padding::{NoPadding, PKCS7};
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
@@ -19,7 +19,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// hands out. `Dir` is [`Encrypting`] or [`Decrypting`] and `Pad` is [`PKCS7`] or [`NoPadding`];
 /// the wrong direction is a compile error, not a runtime check.
 ///
-/// See `bouncycastle_cipher::modes::cbc` for the construction. The alias names the padded
+/// See `bouncycastle_symmetric::modes::cbc` for the construction. The alias names the padded
 /// workers, which accept input of any size; `NoPadding` accepts only whole blocks but goes through
 /// the same adapter. The workers come from a key: [`SM4Key<CBC<PKCS7>>`](crate::sm4::SM4Key) (or
 /// `CBC<NoPadding>`) hands them out through the [`SymmetricEncryptionKey`] /
@@ -33,8 +33,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::sm4::SM4Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::PKCS7;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -57,8 +57,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::sm4::SM4Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::NoPadding;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::NoPadding;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 /// use bouncycastle_rng::HashDRBG_SHA512;

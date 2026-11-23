@@ -300,9 +300,9 @@ fn cbc_pads_and_ecb_does_not() {
 /// 6-byte nonce: the library's key object decrypts it.
 #[test]
 fn tdes_ctr_under_a_supplied_nonce_agrees_with_the_library() {
-    use bouncycastle::cipher::modes::CTR;
     use bouncycastle::core::key_material::{KeyMaterial, KeyType};
     use bouncycastle::core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+    use bouncycastle::symmetric::modes::CTR;
     use bouncycastle::tdes::{BLOCK_LEN, CTR_NONCE_LEN, TDES3Key};
 
     let nonce = "000102030405";

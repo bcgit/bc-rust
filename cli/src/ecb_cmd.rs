@@ -19,12 +19,12 @@
 use crate::helpers::block_mode_helpers::{
     CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
 };
-use bouncycastle::cipher::BlockCipherKey;
-use bouncycastle::cipher::modes::ModeNames;
-use bouncycastle::cipher::modes::hazmat::ecb::ECB;
-use bouncycastle::cipher::padding::NoPadding;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
+use bouncycastle::symmetric::BlockCipherKey;
+use bouncycastle::symmetric::modes::ModeNames;
+use bouncycastle::symmetric::modes::hazmat::ecb::ECB;
+use bouncycastle::symmetric::padding::NoPadding;
 
 /// The 128-bit block of the ciphers these commands serve; TDES has its own commands.
 const BLOCK_LEN: usize = 16;

@@ -6,7 +6,7 @@
 //! commands exist and round-trip at any length.
 //!
 //! Vectors are NIST SP 800-38A Appendix F.4.1, F.4.3 and F.4.5 (OFB-AES128/192/256.Encrypt); see
-//! `crypto/aes/tests/sp800_38a_ofb_tests.rs`.
+//! `crypto/symmetric/tests/aes_sp800_38a_ofb_tests.rs`.
 
 mod common;
 use common::{

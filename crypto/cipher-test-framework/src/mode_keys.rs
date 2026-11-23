@@ -4,13 +4,6 @@
 
 use crate::Permutation;
 use crate::material::{mac_material, material, material_flipped, rng};
-use bouncycastle_cipher::BlockCipherKey;
-use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::modes::hazmat::gcm_siv::GcmSivPermutation;
-use bouncycastle_cipher::modes::{
-    Blocks, CBC, CCM_Packet, CFB, CFB8, CMAC, CTR, GCM, GCM_SIV, GMAC, KW, KWP, OFB,
-};
-use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{EcbEncryptionKey, Mode};
@@ -34,6 +27,13 @@ use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
+use bouncycastle_symmetric::BlockCipherKey;
+use bouncycastle_symmetric::modes::hazmat::ecb::ECB;
+use bouncycastle_symmetric::modes::hazmat::gcm_siv::GcmSivPermutation;
+use bouncycastle_symmetric::modes::{
+    Blocks, CBC, CCM_Packet, CFB, CFB8, CMAC, CTR, GCM, GCM_SIV, GMAC, KW, KWP, OFB,
+};
+use bouncycastle_symmetric::padding::{NoPadding, PKCS7};
 
 /// A 32-byte frame for the fixed-frame CCM key, within the framework's seed buffer.
 type Packet = CCM_Packet<12, 16, 64, 32>;
@@ -123,7 +123,7 @@ pub fn aead_modes<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
 
     // the declared-length role's drawing one-shots zeroize the buffer before an RNG error too;
     // the core suite reaches only the plain AEAD role's
-    let packet = make_key::<P, bouncycastle_cipher::modes::CCM<12, 16>, KEY_LEN>();
+    let packet = make_key::<P, bouncycastle_symmetric::modes::CCM<12, 16>, KEY_LEN>();
     let msg = [0x42u8; 32];
     let mut stale = [0xA5u8; 48];
     assert!(
@@ -145,7 +145,7 @@ pub fn aead_modes<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     // ...and so do its supplied-nonce and decrypting one-shots when the declared lengths are
     // refused (a 13-byte CCM nonce caps the payload at 2^16 - 1 bytes) or the inline ciphertext
     // is shorter than a tag
-    let short_nonce_key = make_key::<P, bouncycastle_cipher::modes::CCM<13, 16>, KEY_LEN>();
+    let short_nonce_key = make_key::<P, bouncycastle_symmetric::modes::CCM<13, 16>, KEY_LEN>();
     let nonce = [0u8; 13];
     let too_long = vec![0u8; 1 << 16];
     let mut stale = vec![0xA5u8; too_long.len() + 16];

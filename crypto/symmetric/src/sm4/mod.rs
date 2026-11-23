@@ -18,7 +18,7 @@
 //!
 //! ## Modes of operation
 //!
-//! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
+//! A key is built once, under a mode from `bouncycastle_symmetric::modes`, and used for as many
 //! messages as needed: `CBC<PKCS7>` for CBC (Sec 8.4; NIST SP 800-38A Sec 6.2) with PKCS#7 padding,
 //! `CFB` for SM4-CFB-128 (Sec 8.5.1), `CFB8` for SM4-CFB-8, the `s = 8` segment size, which is a
 //! different and non-interoperable mode costing one SM4 call per byte, `OFB` for SM4-OFB (Sec 8.6),
@@ -31,13 +31,13 @@
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
 //! padding scheme to bridge the difference; the CFB modes, OFB and CTR are stream ciphers and take
-//! any length with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the
+//! any length with no padding at all. See the `bouncycastle_symmetric::modes` module docs for the
 //! comparison, and [`SM4_CBC`] for why the scheme is named in the type.
 //!
 //! ```
 //! use bouncycastle_symmetric::sm4::SM4Key;
-//! use bouncycastle_cipher::modes::CBC;
-//! use bouncycastle_cipher::padding::PKCS7;
+//! use bouncycastle_symmetric::modes::CBC;
+//! use bouncycastle_symmetric::padding::PKCS7;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 //! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -63,7 +63,7 @@
 //!
 //! ```
 //! use bouncycastle_symmetric::sm4::SM4Key;
-//! use bouncycastle_cipher::modes::CTR;
+//! use bouncycastle_symmetric::modes::CTR;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 //! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -267,7 +267,7 @@
 //! * **The non-linear section of the S-box circuit** is from the 113-gate straight-line program
 //!   `SLP_AES_113.txt` in Peralta's circuit collection, described in J. Boyar and R. Peralta, "A
 //!   new combinational logic minimization technique with applications to cryptology",
-//!   <https://eprint.iacr.org/2009/191.pdf>, as transcribed in `bouncycastle-aes`. The
+//!   <https://eprint.iacr.org/2009/191.pdf>, as transcribed in `bouncycastle_symmetric::aes`. The
 //!   algebraic structure of the SM4 S-box that makes the reuse possible is analysed in Liu, Ji,
 //!   Hu, Ding and Lv, "Analysis of the SMS4 Block Cipher" (ACISP 2007); here it was re-derived by
 //!   search and verified exhaustively.

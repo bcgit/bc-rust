@@ -6,12 +6,6 @@
 //! type parameters of one algorithm, not different algorithms, so every combination of them must
 //! report the same name.
 
-use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
-use bouncycastle_cipher::modes::{CBC, Cbc, Cfb, Cfb8, Cmac, Ctr, OFB, Ofb};
-use bouncycastle_cipher::padding::{
-    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
-};
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::{BlockPermutation, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -20,11 +14,17 @@ use bouncycastle_core::symmetric_key::{
 };
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_rng::HashDRBG_SHA512;
+use bouncycastle_symmetric::modes::hazmat::ecb::{ECB, Ecb};
+use bouncycastle_symmetric::modes::{CBC, Cbc, Cfb, Cfb8, Cmac, Ctr, OFB, Ofb};
+use bouncycastle_symmetric::padding::{
+    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
+};
 use bouncycastle_symmetric::tdes::hazmat::{TDES_ECB, TDES2_ECB, TDES2Internal, TDESInternal};
 use bouncycastle_symmetric::tdes::{
     BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, TDES_CBC, TDES_CFB, TDES_CFB8, TDES_CTR, TDES_OFB, TDES_TKW,
     TDES2_CBC, TDES2_CFB, TDES2_CFB8, TDES2_CTR, TDES2_OFB, TDES2_TKW, TDES3Key,
 };
+use bouncycastle_symmetric::{Decrypting, Encrypting};
 use core::mem::size_of;
 
 /// Both directions of one algorithm report `name` and `strength`.

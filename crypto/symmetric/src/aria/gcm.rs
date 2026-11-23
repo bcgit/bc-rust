@@ -2,20 +2,20 @@
 //! module root re-exports.
 
 use crate::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle_cipher::modes::Gcm;
+use crate::modes::Gcm;
 
-/// ARIA-128 in GCM with a 128-bit tag: the `Gcm` worker of `bouncycastle-cipher` over the ARIA
+/// ARIA-128 in GCM with a 128-bit tag: the `Gcm` worker of `bouncycastle_symmetric::modes` over the ARIA
 /// permutation, from an `ARIA128Key<GCM>` through the `AeadEncryptionKey` / `AeadDecryptionKey`
 /// pair. The construction, the API and its security considerations are those of
-/// [`bouncycastle_cipher::modes::gcm`] and, alias for alias, of `AES_GCM_128` in
-/// `bouncycastle-aes`; only the permutation differs. RFC 5794 Appendix B names it
+/// [`crate::modes::gcm`] and, alias for alias, of `AES_GCM_128` in
+/// `bouncycastle_symmetric::aes`; only the permutation differs. RFC 5794 Appendix B names it
 /// `id-aria128-gcm`.
 ///
 /// # Usage Examples
 ///
 /// ```
 /// use bouncycastle_symmetric::aria::ARIA256Key;
-/// use bouncycastle_cipher::modes::GCM;
+/// use bouncycastle_symmetric::modes::GCM;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 /// use bouncycastle_rng::HashDRBG_SHA512;

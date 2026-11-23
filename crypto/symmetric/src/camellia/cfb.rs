@@ -3,18 +3,18 @@
 
 use crate::camellia::BLOCK_LEN;
 use crate::camellia::hazmat::{Camellia128Internal, Camellia192Internal, Camellia256Internal};
-use bouncycastle_cipher::modes::Cfb;
+use crate::modes::Cfb;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
 
-/// Camellia-128 in CFB128 mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// Camellia-128 in CFB128 mode. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`]; the wrong direction is a compile error, not a runtime
 /// check.
 ///
-/// See `bouncycastle_cipher::modes::cfb` for the construction. The aliases are stream ciphers:
+/// See `bouncycastle_symmetric::modes::cfb` for the construction. The aliases are stream ciphers:
 /// the data is a `&mut [u8]` of any length, encrypted or decrypted in place. They come from a key,
 /// [`Camellia128Key<CFB>`](crate::camellia::Camellia128Key) and friends, through the
 /// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one block, drawn from
@@ -23,11 +23,11 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// The segment size is the full block, so these are **CFB128**. SP 800-38A's `s = 8` variant is a
 /// different, non-interoperable mode with its own aliases --
 /// [`Camellia_CFB8_128`](crate::camellia::Camellia_CFB8_128) and friends -- and `s = 1` is not implemented;
-/// see the `bouncycastle_cipher::modes::Cfb` docs.
+/// see the `bouncycastle_symmetric::modes::Cfb` docs.
 ///
 /// ```
 /// use bouncycastle_symmetric::camellia::Camellia128Key;
-/// use bouncycastle_cipher::modes::CFB;
+/// use bouncycastle_symmetric::modes::CFB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

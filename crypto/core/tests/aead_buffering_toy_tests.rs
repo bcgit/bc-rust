@@ -17,7 +17,7 @@
 /// three bytes at a time before releasing them -- more than the tag the decryptor has to hold
 /// back anyway -- the property `TestFrameworkAEADCipher::test_key` cannot pin on its own, since
 /// a key's workers might hold back nothing but the tag (Ascon-AEAD128 holds back
-/// nothing else). Modelled on the toy permutations `crypto/cipher/tests/modes/common/mod.rs` uses for
+/// nothing else). Modelled on the toy permutations `crypto/symmetric/tests/modes/common/mod.rs` uses for
 /// the equivalent block-cipher property.
 ///
 /// The toy's "ciphertext" is the plaintext with a per-byte counter XORed in, released three

@@ -3,13 +3,13 @@
 //! which the module root re-exports.
 
 use crate::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle_cipher::modes::{Kw, Kwp};
+use crate::modes::{Kw, Kwp};
 
-/// ARIA-128 Key Wrap: the `Kw` worker of `bouncycastle-cipher` over the ARIA permutation, which
+/// ARIA-128 Key Wrap: the `Kw` worker of `bouncycastle_symmetric::modes` over the ARIA permutation, which
 /// implements `KeyWrapper` and `KeyUnwrapper`, from an `ARIA128Key<KW>` of
 /// `KeyType::SymmetricCipherKey` material through `KeyWrappingKey` and `KeyUnwrappingKey`. The
 /// construction, the length rules, the one-shots and the security considerations are those of
-/// [`bouncycastle_cipher::modes::kw`] and, alias for alias, of `AES_KW_128` in `bouncycastle-aes`;
+/// [`crate::modes::kw`] and, alias for alias, of `AES_KW_128` in `bouncycastle_symmetric::aes`;
 /// only the permutation differs. [`ARIA_KWP_128`] is the padded form, as `AES_KWP_128` is.
 ///
 /// RFC 5794 Appendix B names them: `id-aria128-kw`, `id-aria192-kw` and `id-aria256-kw` are
@@ -20,7 +20,7 @@ use bouncycastle_cipher::modes::{Kw, Kwp};
 ///
 /// ```
 /// use bouncycastle_symmetric::aria::{ARIA128Key, ARIA256Key};
-/// use bouncycastle_cipher::modes::{KW, KWP};
+/// use bouncycastle_symmetric::modes::{KW, KWP};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 ///

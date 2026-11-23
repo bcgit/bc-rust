@@ -4,9 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-bouncycastle-aes.workspace = true
 bouncycastle-symmetric.workspace = true
-bouncycastle-cipher.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-dhkem.workspace = true
 bouncycastle-digest.workspace = true

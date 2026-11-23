@@ -66,9 +66,9 @@
 
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::aes::{XTS_AES_128, XTS_AES_256};
-use bouncycastle::cipher::modes::XTSKey;
 use bouncycastle::core::hazmat::BlockPermutation;
 use bouncycastle::core::symmetric_key::FromKeyMaterial;
+use bouncycastle::symmetric::modes::XTSKey;
 
 use mem_usage_benches::block_cipher_mem_usage as bench;
 

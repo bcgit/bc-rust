@@ -4,10 +4,10 @@
 //! and is the only known answer for two-key unwrapping, since no wrapper exists for a two-key
 //! bundle and CAVP tests TKW with three keys only.
 
-use bouncycastle_cipher::modes::TKW;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
+use bouncycastle_symmetric::modes::TKW;
 use bouncycastle_symmetric::tdes::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle_symmetric::tdes::{KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key};
 

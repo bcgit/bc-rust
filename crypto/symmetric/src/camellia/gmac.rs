@@ -3,22 +3,22 @@
 //! module root re-exports.
 
 use crate::camellia::hazmat::{Camellia128Internal, Camellia192Internal, Camellia256Internal};
-use bouncycastle_cipher::modes::Gmac;
+use crate::modes::Gmac;
 
-/// Camellia-128 in GMAC with a 128-bit tag: the `Gmac` worker of `bouncycastle-cipher` over the Camellia
-/// permutation, `Dir` [`Encrypting`](bouncycastle_cipher::Encrypting) to generate a tag or [`Decrypting`](bouncycastle_cipher::Decrypting) to verify one. A GMAC
+/// Camellia-128 in GMAC with a 128-bit tag: the `Gmac` worker of `bouncycastle_symmetric::modes` over the Camellia
+/// permutation, `Dir` [`Encrypting`](crate::Encrypting) to generate a tag or [`Decrypting`](crate::Decrypting) to verify one. A GMAC
 /// tag is bound to a nonce, so the key, `Camellia128Key<GMAC>` of `KeyType::MACKey` material,
 /// carries the nonce-bound role pair `NonceMacGenerationKey` / `NonceMacVerificationKey`:
 /// `create_generator` draws the nonce, `create_generator_nonce` takes the caller's, and
 /// `create_verifier` checks under it. The construction, the nonce rule and the security
-/// considerations are those of [`bouncycastle_cipher::modes::gmac`] and, alias for alias, of
-/// `AES_GMAC_128` in `bouncycastle-aes`; only the permutation differs.
+/// considerations are those of [`crate::modes::gmac`] and, alias for alias, of
+/// `AES_GMAC_128` in `bouncycastle_symmetric::aes`; only the permutation differs.
 ///
 /// # Usage Examples
 ///
 /// ```
 /// use bouncycastle_symmetric::camellia::Camellia256Key;
-/// use bouncycastle_cipher::modes::GMAC;
+/// use bouncycastle_symmetric::modes::GMAC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, NonceMacGenerationKey, NonceMacVerificationKey};
 /// use bouncycastle_core::traits::MACGenerator;

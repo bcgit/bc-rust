@@ -10,7 +10,7 @@
 //! Make sure you build in release mode!
 //!
 //! As for `bench_aes_mem_usage`, massif cannot see these: a call needs well under the 7.7 kB the
-//! process's own start-up reaches. The figures in `bouncycastle-aes`'s `AES_GCM_SIV_128` docs are
+//! process's own start-up reaches. The figures in `bouncycastle_symmetric::aes`'s `AES_GCM_SIV_128` docs are
 //! the deepest frame chain below each [`measure`] instance, from a release build with
 //! `RUSTFLAGS="-C remark=prologepilog -C remark=stack-frame-layout"` (the "N stack bytes in
 //! function" lines) and the binary's call graph (`objdump -d`), summed with a return address per

@@ -3,7 +3,7 @@
 
 use crate::aria::BLOCK_LEN;
 use crate::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle_cipher::modes::Ctr;
+use crate::modes::Ctr;
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -13,11 +13,11 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// The nonce length these aliases use, leaving a 4-byte counter.
 pub const CTR_NONCE_LEN: usize = 12;
 
-/// ARIA-128 in CTR mode with a 12-byte nonce. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// ARIA-128 in CTR mode with a 12-byte nonce. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`]; the wrong direction is a compile error, not a runtime
 /// check.
 ///
-/// See `bouncycastle_cipher::modes::ctr` for the construction. The alias is a stream cipher: the
+/// See `bouncycastle_symmetric::modes::ctr` for the construction. The alias is a stream cipher: the
 /// data is a `&mut [u8]` of any length, encrypted or decrypted in place. It comes from a key,
 /// [`ARIA128Key<CTR>`](crate::aria::ARIA128Key), through the [`SymmetricEncryptionKey`] /
 /// [`SymmetricDecryptionKey`] pair; the nonce is drawn from the caller's RNG by encryption and
@@ -33,7 +33,7 @@ pub const CTR_NONCE_LEN: usize = 12;
 ///
 /// ```
 /// use bouncycastle_symmetric::aria::ARIA128Key;
-/// use bouncycastle_cipher::modes::CTR;
+/// use bouncycastle_symmetric::modes::CTR;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

@@ -5,7 +5,7 @@ use crate::camellia::schedule::{
     Camellia128Params, Camellia192Params, Camellia256Params, CamelliaParams, expand, k, ke, kw,
 };
 use crate::camellia::{BLOCK_LEN, LANES};
-use bouncycastle_cipher::modes::ModeNames;
+use crate::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

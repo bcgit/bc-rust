@@ -8,13 +8,13 @@
 //!
 //! draft-ribose-cfrg-sm4-10 defines SM4-CFB-8 (Sec 8.5.1) but publishes no example of it, so there
 //! is no vector to decrypt here. Instead the command is required to agree with
-//! `bouncycastle_cipher::modes::Cfb8` over the SM4 permutation, which
+//! `bouncycastle_symmetric::modes::Cfb8` over the SM4 permutation, which
 //! `crypto/symmetric/tests/sm4_stream_mode_tests.rs` pins against the Sec 8.5.2 equations. That is the same
 //! thing the AES CFB8 suite gets from SP 800-38A F.3, one step removed.
 
 mod common;
-use bouncycastle::cipher::modes::CFB8;
 use bouncycastle::sm4::SM4Key;
+use bouncycastle::symmetric::modes::CFB8;
 use common::{
     Framing, KEY16, KEY32, any_input_length, key_object, large_payload_on_an_error_path,
     library_stream_decrypt, listed_in_help, pseudo_random, round_trips, run_ok, unhex,

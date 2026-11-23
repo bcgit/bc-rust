@@ -12,12 +12,12 @@ use crate::key_material::KeyType;
 
 /// A keyed block permutation: the `CIPH_K` / `CIPH^-1_K` of NIST SP 800-38A Sec 5.1, already
 /// keyed. A key object builds it through [`KeyExpansion::new`]; the modes in
-/// `bouncycastle_cipher::modes` bound on this trait alone.
+/// `bouncycastle_symmetric::modes` bound on this trait alone.
 ///
 /// # 🚨 Security Considerations 🚨
 /// A permutation applied to data block by block is ECB: equal plaintext blocks give equal
 /// ciphertext blocks, so the structure of the plaintext survives. This is the primitive under
-/// CBC, CTR, GCM and the rest of `bouncycastle_cipher::modes`, not a cipher for data; see the
+/// CBC, CTR, GCM and the rest of `bouncycastle_symmetric::modes`, not a cipher for data; see the
 /// [module docs](crate::hazmat) for the supported uses.
 ///
 /// Implementors are expected to hold the key schedule in a zeroize-on-drop wrapper
@@ -59,7 +59,7 @@ pub trait BlockPermutation<const BLOCK_LEN: usize>: Algorithm + Sized {
     /// The forward cipher function on two *independent* blocks, in place.
     ///
     /// Required, with no default, so that every implementor decides for itself how to run a pair.
-    /// A bit-sliced engine whose natural unit is a pair (see `bouncycastle-aes`) runs both blocks
+    /// A bit-sliced engine whose natural unit is a pair (see `bouncycastle_symmetric::aes`) runs both blocks
     /// in one pass for barely more than the cost of one; an engine with no unit wider than a block
     /// makes two [`BlockPermutation::encrypt_block`] calls. A default of two single-block calls
     /// would be right only for the second kind, and silently wrong -- twice the work, with nothing
@@ -89,7 +89,7 @@ pub trait BlockPermutation<const BLOCK_LEN: usize>: Algorithm + Sized {
     /// the order of the four results. `TestFrameworkElectronicCodeBook` pins that.
     ///
     /// Modes with parallel structure chunk their data into fours first, then pairs, then single
-    /// blocks; see CBC decryption in `bouncycastle_cipher::modes`.
+    /// blocks; see CBC decryption in `bouncycastle_symmetric::modes`.
     fn encrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]);
 
     /// The inverse cipher function on four *independent* blocks, in place.
@@ -112,7 +112,7 @@ pub trait KeyExpansion<const KEY_LEN: usize>: Sized {
 }
 
 /// A [`BlockPermutation`] with its [`KeyExpansion`]: the bound the modes in
-/// `bouncycastle_cipher::modes` place on their permutation, tying the key length a mode trait
+/// `bouncycastle_symmetric::modes` place on their permutation, tying the key length a mode trait
 /// names to the block length the permutation has. Implemented for every type that implements
 /// both; implement those two, not this.
 pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:

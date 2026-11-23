@@ -1,16 +1,16 @@
 //! Type aliases for Camellia (RFC 3713) in CBC mode (NIST SP 800-38A Sec 6.2), with padding. The
 //! docs are on [`Camellia_CBC_128`], which the module root re-exports.
 
+use crate::Direction;
 use crate::camellia::BLOCK_LEN;
 use crate::camellia::hazmat::{Camellia128Internal, Camellia192Internal, Camellia256Internal};
-use bouncycastle_cipher::Direction;
-use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use crate::modes::Cbc;
+use crate::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use crate::{Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_cipher::padding::{NoPadding, PKCS7};
+use crate::padding::{NoPadding, PKCS7};
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
@@ -20,7 +20,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// [`Decrypting`] and `Pad` is [`PKCS7`] or [`NoPadding`]; the wrong direction is a compile error,
 /// not a runtime check.
 ///
-/// See `bouncycastle_cipher::modes::cbc` for the construction. The aliases name the padded
+/// See `bouncycastle_symmetric::modes::cbc` for the construction. The aliases name the padded
 /// workers, which accept input of any size; `NoPadding` accepts only whole blocks but goes through
 /// the same adapter. The workers come from a key:
 /// [`Camellia128Key<CBC<PKCS7>>`](crate::camellia::Camellia128Key)
@@ -35,8 +35,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::camellia::Camellia128Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::PKCS7;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -60,8 +60,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::camellia::Camellia128Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::NoPadding;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::NoPadding;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 /// use bouncycastle_rng::HashDRBG_SHA512;

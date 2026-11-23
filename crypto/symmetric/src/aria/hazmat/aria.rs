@@ -3,7 +3,7 @@
 use crate::aria::round::{RoundKey, diffuse, rounds};
 use crate::aria::schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams, ek, expand};
 use crate::aria::{BLOCK_LEN, LANES};
-use bouncycastle_cipher::modes::ModeNames;
+use crate::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

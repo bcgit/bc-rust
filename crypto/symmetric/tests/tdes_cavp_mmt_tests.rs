@@ -36,7 +36,6 @@
 //! The Monte Carlo Test files (`tdesmct_intermediate.zip`) are **not** used: their chained update
 //! rule is defined by SP 800-20, and implementing it is a separate piece of work from the engine.
 
-use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, OFB};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion, Mode};
 use bouncycastle_core::hex;
@@ -49,6 +48,7 @@ use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
 };
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
+use bouncycastle_symmetric::modes::{Blocks, CBC, CFB, CFB8, OFB};
 use bouncycastle_symmetric::tdes::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle_symmetric::tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key};
 

@@ -25,8 +25,8 @@
 //! derived from its position.
 //!
 //! ```
-//! use bouncycastle_aes::AES128Key;
-//! use bouncycastle_cipher::modes::GCM;
+//! use bouncycastle_symmetric::aes::AES128Key;
+//! use bouncycastle_symmetric::modes::GCM;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 //! use bouncycastle_ed::x25519::keygen;
 //! use bouncycastle_hybrid::hpke::{HpkeParams, HpkeRecipient, HpkeSender, NT};

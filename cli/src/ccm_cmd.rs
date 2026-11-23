@@ -49,15 +49,15 @@
 
 use std::process::exit;
 
-use bouncycastle::cipher::BlockCipherKey;
-use bouncycastle::cipher::modes::CCM;
-use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::symmetric_key::{
     AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, FromKeyMaterial,
 };
+use bouncycastle::symmetric::BlockCipherKey;
+use bouncycastle::symmetric::modes::CCM;
+use bouncycastle::symmetric::modes::ModeNames;
 
 use crate::helpers;
 use crate::helpers::block_mode_helpers::{CipherDirection, load_key};

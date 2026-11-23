@@ -9,7 +9,6 @@
 //!   the detached-tag (`*_detached`) and the inline `ciphertext || tag` layouts -- the latter also
 //!   through the `SymmetricCipherEncryptor`/`SymmetricCipherDecryptor` traits they extend.
 
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::hex;
@@ -23,6 +22,7 @@ use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_symmetric::ascon::{ASCON_AEAD128_NAME, Ascon_AEAD128, AsconAEAD128Key};
+use bouncycastle_symmetric::{Decrypting, Encrypting};
 
 // All embedded vectors use this fixed key/nonce (the NIST LWC KAT convention).
 const KEY: [u8; 16] = [

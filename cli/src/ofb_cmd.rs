@@ -22,10 +22,10 @@
 
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::cipher::BlockCipherKey;
-use bouncycastle::cipher::modes::ModeNames;
-use bouncycastle::cipher::modes::OFB;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
+use bouncycastle::symmetric::BlockCipherKey;
+use bouncycastle::symmetric::modes::ModeNames;
+use bouncycastle::symmetric::modes::OFB;
 
 /// The 128-bit block of the ciphers these commands serve; TDES has its own commands.
 const BLOCK_LEN: usize = 16;

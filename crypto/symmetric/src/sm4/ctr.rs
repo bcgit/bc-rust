@@ -1,9 +1,9 @@
 //! Type alias for SM4 in CTR mode (draft-ribose-cfrg-sm4-10 Sec 8.7; NIST SP 800-38A Sec 6.5). The
 //! docs are on [`SM4_CTR`], which the module root re-exports.
 
+use crate::modes::Ctr;
 use crate::sm4::BLOCK_LEN;
 use crate::sm4::hazmat::SM4Internal;
-use bouncycastle_cipher::modes::Ctr;
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -13,11 +13,11 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// The nonce length this alias uses, leaving a 4-byte counter.
 pub const CTR_NONCE_LEN: usize = 12;
 
-/// SM4 in CTR mode with a 12-byte nonce. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// SM4 in CTR mode with a 12-byte nonce. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`]; the wrong direction is a compile error, not a runtime
 /// check.
 ///
-/// See `bouncycastle_cipher::modes::ctr` for the construction. The alias is a stream cipher: the
+/// See `bouncycastle_symmetric::modes::ctr` for the construction. The alias is a stream cipher: the
 /// data is a `&mut [u8]` of any length, encrypted or decrypted in place. It comes from a key,
 /// [`SM4Key<CTR>`](crate::sm4::SM4Key), through the [`SymmetricEncryptionKey`] /
 /// [`SymmetricDecryptionKey`] pair; the nonce is drawn from the caller's RNG by encryption and
@@ -41,7 +41,7 @@ pub const CTR_NONCE_LEN: usize = 12;
 ///
 /// ```
 /// use bouncycastle_symmetric::sm4::SM4Key;
-/// use bouncycastle_cipher::modes::CTR;
+/// use bouncycastle_symmetric::modes::CTR;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

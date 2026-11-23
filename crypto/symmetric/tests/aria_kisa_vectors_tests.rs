@@ -14,7 +14,6 @@
 #[path = "aria_common/mod.rs"]
 mod common;
 
-use bouncycastle_cipher::modes::{Blocks, CBC};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -24,6 +23,7 @@ use bouncycastle_symmetric::aria::hazmat::{
     ARIA128Internal, ARIA192Internal, ARIA256Internal, ARIAInternal,
 };
 use bouncycastle_symmetric::aria::{ARIA128Key, ARIA192Key, ARIA256Key, ARIAParams, BLOCK_LEN};
+use bouncycastle_symmetric::modes::{Blocks, CBC};
 use common::bytes;
 
 /// The 160-byte plaintext shared by all six vectors.

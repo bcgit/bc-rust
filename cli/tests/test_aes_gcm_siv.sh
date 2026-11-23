@@ -5,7 +5,7 @@
 # plaintext), then the 16-byte tag, and with `--nonce` only `ciphertext || tag`. Unlike aes*-gcm
 # the command reads all of stdin first, and a failed tag check writes no plaintext at all. The
 # fixed inputs are RFC 8452 Appendix C.1 and C.2, copied from
-# crypto/aes/tests/gcm_siv_rfc8452_tests.rs; everything else comes from `bc-rust rng`.
+# crypto/symmetric/tests/aes_gcm_siv_rfc8452_tests.rs; everything else comes from `bc-rust rng`.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 

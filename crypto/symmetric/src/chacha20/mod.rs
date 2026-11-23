@@ -78,9 +78,9 @@
 
 pub mod hazmat;
 
-use bouncycastle_cipher::stream::StreamCipher;
-use bouncycastle_cipher::stream::hazmat::stream_cipher_over;
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use crate::stream::StreamCipher;
+use crate::stream::hazmat::stream_cipher_over;
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{

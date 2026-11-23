@@ -1,4 +1,4 @@
-//! The two bodies of `PlaneWord::splat` from `crypto/aes/src/bitslice.rs`, with the barrier the
+//! The two bodies of `PlaneWord::splat` from `crypto/symmetric/src/aes/bitslice.rs`, with the barrier the
 //! crate applies off x86-64 and aarch64 and without it, each out of line so that it lands in the
 //! assembly as one symbol; and the TDES round function, whose `spread` carries the same guard,
 //! compiled from the crate's own `des.rs` and `sbox.rs` (included by path, unmodified), with a

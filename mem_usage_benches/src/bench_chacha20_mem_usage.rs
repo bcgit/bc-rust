@@ -24,7 +24,6 @@
 use core::hint::black_box;
 
 use bouncycastle::chacha20::{ChaCha20, ChaCha20Key, KEY_LEN, NONCE_LEN};
-use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::{RNGError, SymmetricCipherError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
@@ -32,6 +31,7 @@ use bouncycastle::core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle::core::traits::{RNG, StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle::symmetric::{Decrypting, Encrypting};
 
 type Enc = ChaCha20<'static, Encrypting>;
 type Dec = ChaCha20<'static, Decrypting>;

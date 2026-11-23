@@ -7,7 +7,7 @@
 //! holds bit `k` of every byte in the state. An S-box is then a Boolean circuit over the planes:
 //! one `&` or `^` on a plane applies that gate to every byte position at once, and no memory
 //! access is ever indexed by a secret value. How many bytes a plane holds is the word width,
-//! which is why everything here is generic over [`PlaneWord`]: `bouncycastle-aes` uses `u16`,
+//! which is why everything here is generic over [`PlaneWord`]: `bouncycastle_symmetric::aes` uses `u16`,
 //! `u32` and `u64` planes for one, two and four blocks, `bouncycastle_symmetric::aria` and `::sm4`
 //! `u16` planes for four blocks' worth of one word each, and `bouncycastle_symmetric::camellia` `u32` planes.
 //! Each crate's own `bitslice` module says which bytes it puts where; nothing here depends on it.
@@ -21,7 +21,7 @@
 //! R. Peralta, "A new combinational logic minimization technique with applications to
 //! cryptology", <https://eprint.iacr.org/2009/191.pdf>; the same gates appear in BearSSL's
 //! `br_aes_ct_bitslice_Sbox`, whose variable naming is kept so the two can be diffed. The
-//! transcription is the one `bouncycastle-aes` carried, and `test_aes_sbox_through_the_section`
+//! transcription is the one `bouncycastle_symmetric::aes` carried, and `test_aes_sbox_through_the_section`
 //! below pins it against FIPS 197 Table 4 through AES's own affine layers.
 
 use crate::ct;
@@ -435,7 +435,7 @@ mod tests {
     ];
 
     /// The AES S-box through the section: the top linear transformation and the bottom affine
-    /// map of `SLP_AES_113.txt`, as `bouncycastle-aes` writes them, around
+    /// map of `SLP_AES_113.txt`, as `bouncycastle_symmetric::aes` writes them, around
     /// [`gf256_inverse_nonlinear`]. Plane `q[k]` holds bit `k`; the SLP's `U0` is the MSB.
     fn aes_sbox(q: &mut Planes<u16>) {
         let u0 = q[7];

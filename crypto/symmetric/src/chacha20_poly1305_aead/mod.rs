@@ -103,8 +103,8 @@ use crate::chacha20::hazmat::{ChaCha20KeyStream, keystream_at};
 use crate::chacha20::{ChaCha20, ChaCha20Key};
 use crate::poly1305::hazmat::key_from_bytes;
 use crate::poly1305::{Poly1305, Poly1305Key};
-use bouncycastle_cipher::stream::hazmat::stream_cipher_over;
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use crate::stream::hazmat::stream_cipher_over;
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -151,7 +151,7 @@ pub const MAX_MESSAGE_LEN: u64 = u32::MAX as u64 * 64;
 ///
 /// ```compile_fail
 /// # use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20_Poly1305;
-/// # use bouncycastle_cipher::Encrypting;
+/// # use bouncycastle_symmetric::Encrypting;
 /// fn cloneable<T: Clone>() {}
 /// cloneable::<ChaCha20_Poly1305<'static, Encrypting>>();
 /// ```
@@ -160,7 +160,7 @@ pub const MAX_MESSAGE_LEN: u64 = u32::MAX as u64 * 64;
 ///
 /// ```
 /// # use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20_Poly1305;
-/// # use bouncycastle_cipher::Encrypting;
+/// # use bouncycastle_symmetric::Encrypting;
 /// fn cloneable<T: Clone>() {}
 /// let _ = core::mem::size_of::<ChaCha20_Poly1305<'static, Encrypting>>();
 /// ```

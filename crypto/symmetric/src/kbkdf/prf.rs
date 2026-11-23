@@ -4,10 +4,10 @@
 //! Authentication Code (KMAC) ... as pseudorandom functions". KMAC is not iterated (Section 4.4)
 //! and so is not a [`Prf`].
 
+use crate::BlockCipherKey;
+use crate::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use crate::kbkdf::{k_in_into, k_in_len};
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::BlockCipherKey;
-use bouncycastle_cipher::modes::CMAC;
+use crate::modes::CMAC;
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::KeyExpansion;
 use bouncycastle_core::hazmat::Mode;

@@ -7,10 +7,10 @@
 //! library's own answer, and that they exist, fail closed and are listed.
 
 mod common;
-use bouncycastle::cipher::modes::{KW, KWP};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::symmetric_key::{FromKeyMaterial, KeyWrappingKey};
 use bouncycastle::sm4::SM4Key;
+use bouncycastle::symmetric::modes::{KW, KWP};
 use common::{listed_in_help, run_err_silent, run_ok, tohex, unhex};
 
 const KEK: &str = "0123456789abcdeffedcba9876543210";

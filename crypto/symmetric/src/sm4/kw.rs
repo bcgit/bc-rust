@@ -1,14 +1,14 @@
 //! Type aliases for SM4 Key Wrap, KW, and Key Wrap with Padding, KWP (NIST SP 800-38F Sec 6.2 and
 //! 6.3 over the SM4 permutation). The docs are on [`SM4_KW`], which the module root re-exports.
 
+use crate::modes::{Kw, Kwp};
 use crate::sm4::hazmat::SM4Internal;
-use bouncycastle_cipher::modes::{Kw, Kwp};
 
-/// SM4 Key Wrap: the `Kw` worker of `bouncycastle-cipher` over the SM4 permutation, which
+/// SM4 Key Wrap: the `Kw` worker of `bouncycastle_symmetric::modes` over the SM4 permutation, which
 /// implements `KeyWrapper` and `KeyUnwrapper`, from an `SM4Key<KW>` of
 /// `KeyType::SymmetricCipherKey` material through `KeyWrappingKey` and `KeyUnwrappingKey`. The
 /// construction, the length rules, the one-shots and the security considerations are those of
-/// [`bouncycastle_cipher::modes::kw`] and, alias for alias, of `AES_KW_128` in `bouncycastle-aes`;
+/// [`crate::modes::kw`] and, alias for alias, of `AES_KW_128` in `bouncycastle_symmetric::aes`;
 /// only the permutation differs. [`SM4_KWP`] is the padded form, as `AES_KWP_128` is.
 ///
 /// GM/T 0006 identifies the two as `sms4_wrap`, 1.2.156.10197.1.104.11, and `sms4_wrap_pad`,
@@ -19,7 +19,7 @@ use bouncycastle_cipher::modes::{Kw, Kwp};
 /// # Usage Examples
 ///
 /// ```
-/// use bouncycastle_cipher::modes::{KW, KWP};
+/// use bouncycastle_symmetric::modes::{KW, KWP};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 /// use bouncycastle_symmetric::sm4::SM4Key;

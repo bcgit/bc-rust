@@ -6,14 +6,14 @@
 
 #![allow(dead_code)]
 
-use bouncycastle::cipher::BlockCipherKey;
-use bouncycastle::cipher::modes::{GCM, ModeNames};
 use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::symmetric_key::{
     AeadDecryptionKey, FromKeyMaterial, SymmetricDecryptionKey,
 };
 use bouncycastle::core::traits::StreamCipherDecryptor;
+use bouncycastle::symmetric::BlockCipherKey;
+use bouncycastle::symmetric::modes::{GCM, ModeNames};
 use std::io::{ErrorKind, Write};
 use std::process::{Command, Output, Stdio};
 

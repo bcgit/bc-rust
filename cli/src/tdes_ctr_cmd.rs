@@ -41,7 +41,7 @@
 use crate::helpers::block_mode_helpers::TDEA_LIMIT;
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode_bounded;
-use bouncycastle::cipher::modes::CTR;
+use bouncycastle::symmetric::modes::CTR;
 use bouncycastle::tdes::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, TDES3Key};
 
 pub(crate) fn tdes_ctr_cmd(

@@ -1,16 +1,16 @@
 //! CFB, CFB8, OFB and CTR through the key: the direction selects the encryptor or the decryptor,
 //! the init data is the length the mode defines, and the four modes are distinct from each other.
-//! The modes are tested in their own right in `bouncycastle_cipher::modes`; this is the wiring.
+//! The modes are tested in their own right in `bouncycastle_symmetric::modes`; this is the wiring.
 
 use crate::Permutation;
 use crate::material::{filler, material, rng};
-use bouncycastle_cipher::BlockCipherKey;
-use bouncycastle_cipher::modes::{CFB, CFB8, CTR, OFB};
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_symmetric::BlockCipherKey;
+use bouncycastle_symmetric::modes::{CFB, CFB8, CTR, OFB};
 
 const BLOCK_LEN: usize = 16;
 const CTR_NONCE_LEN: usize = 12;

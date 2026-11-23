@@ -1,7 +1,7 @@
 //! Shared plumbing for the AEAD subcommands: `aes{128,192,256}-gcm` and `chacha20-poly1305`.
 //!
 //! Parallel to [`crate::helpers::stream_mode_helpers`], but for an AEAD key -- one bound to
-//! [`bouncycastle::cipher::modes::GCM`], or a ChaCha20-Poly1305 key -- rather than a stream mode:
+//! [`bouncycastle::symmetric::modes::GCM`], or a ChaCha20-Poly1305 key -- rather than a stream mode:
 //! an AEAD carries additional authenticated data and a tag, neither of which the stream traits
 //! have room for, so this module drives the key's AEAD workers through [`AEADCipherEncryptor`] /
 //! [`AEADCipherDecryptor`], which add `do_update_aad` to the symmetric-cipher streaming methods.

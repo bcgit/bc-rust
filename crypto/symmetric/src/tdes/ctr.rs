@@ -1,10 +1,10 @@
 //! Type aliases for TDES in CTR mode (NIST SP 800-38A Sec 6.5). The docs are on [`TDES_CTR`], which
 //! the module root re-exports.
 
+use crate::Decrypting;
+use crate::modes::Ctr;
 use crate::tdes::BLOCK_LEN;
 use crate::tdes::hazmat::{TDES2Internal, TDESInternal};
-use bouncycastle_cipher::Decrypting;
-use bouncycastle_cipher::modes::Ctr;
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -14,8 +14,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// The nonce length the [`TDES_CTR`] alias uses, leaving a 2-byte counter. See the module docs.
 pub const CTR_NONCE_LEN: usize = 6;
 
-/// TDES in CTR mode with a 6-byte nonce. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// TDES in CTR mode with a 6-byte nonce. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`]; the wrong direction is a compile error, not a runtime
 /// check.
 ///
 /// A message longer than 65 536 blocks (512 KiB) is an error, not a repeated counter; see the
@@ -23,7 +23,7 @@ pub const CTR_NONCE_LEN: usize = 6;
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::{BLOCK_LEN, CTR_NONCE_LEN, TDES3Key};
-/// use bouncycastle_cipher::modes::CTR;
+/// use bouncycastle_symmetric::modes::CTR;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -60,7 +60,7 @@ pub const CTR_NONCE_LEN: usize = 6;
 /// assert_eq!(rest, [1u8; 30]);
 /// ```
 ///
-/// See `bouncycastle_cipher::modes::ctr` for the construction. The aliases are stream ciphers:
+/// See `bouncycastle_symmetric::modes::ctr` for the construction. The aliases are stream ciphers:
 /// the data is a `&mut [u8]` of any length, encrypted or decrypted in place since the ciphertext
 /// is exactly as long as the plaintext. They come from a key,
 /// [`TDES3Key<CTR<CTR_NONCE_LEN, BLOCK_LEN>>`](crate::tdes::TDES3Key), through the
@@ -105,7 +105,7 @@ pub type TDES_CTR<'k, Dir> = Ctr<'k, TDESInternal, Dir, BLOCK_LEN, CTR_NONCE_LEN
 /// ```
 /// use bouncycastle_symmetric::tdes::hazmat::TDES2Internal;
 /// use bouncycastle_symmetric::tdes::{BLOCK_LEN, CTR_NONCE_LEN, TDES2Key};
-/// use bouncycastle_cipher::modes::CTR;
+/// use bouncycastle_symmetric::modes::CTR;
 /// use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};

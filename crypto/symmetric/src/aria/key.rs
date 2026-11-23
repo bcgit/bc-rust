@@ -1,8 +1,8 @@
 //! ARIA key objects: [`BlockCipherKey`] over the ARIA permutations, one alias per key length.
 //! The docs are on [`ARIA128Key`], which the module root re-exports.
 
+use crate::BlockCipherKey;
 use crate::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle_cipher::BlockCipherKey;
 
 /// An ARIA-128 key for the mode `M`: 16 bytes of material, expanded to a 12-round schedule.
 ///
@@ -16,8 +16,8 @@ use bouncycastle_cipher::BlockCipherKey;
 ///
 /// ```
 /// use bouncycastle_symmetric::aria::ARIA256Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::PKCS7;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

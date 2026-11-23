@@ -1,17 +1,17 @@
-//! CMAC over TDEA through the generic `bouncycastle_cipher::BlockCipherKey`, the one key with a
+//! CMAC over TDEA through the generic `bouncycastle_symmetric::BlockCipherKey`, the one key with a
 //! MAC role over this crate's permutations (`TDESKey` has none): three-key generates and
 //! verifies, two-key verifies only (SP 800-131A Rev 2 Table 9), its generator being a compile
 //! error pinned by the doctest on `TDES2Internal`. Known answers from NIST's CMAC example file for
 //! TDES (csrc.nist.gov, "TDES_CMAC.pdf"), both the three-key set and the two-key set
 //! (`Key3 = Key1`), all four samples each.
 
-use bouncycastle_cipher::BlockCipherKey;
-use bouncycastle_cipher::modes::CMAC;
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::MACVerifier;
+use bouncycastle_symmetric::BlockCipherKey;
+use bouncycastle_symmetric::modes::CMAC;
 use bouncycastle_symmetric::tdes::BLOCK_LEN;
 use bouncycastle_symmetric::tdes::hazmat::{TDES2Internal, TDESInternal};
 

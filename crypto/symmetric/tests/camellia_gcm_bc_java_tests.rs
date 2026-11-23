@@ -14,10 +14,10 @@
 #[path = "camellia_common/mod.rs"]
 mod common;
 
-use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_symmetric::camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
+use bouncycastle_symmetric::modes::GCM;
 use common::bytes;
 
 fn nonce() -> [u8; 12] {

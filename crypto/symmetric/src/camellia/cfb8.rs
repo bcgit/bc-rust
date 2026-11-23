@@ -3,18 +3,18 @@
 
 use crate::camellia::BLOCK_LEN;
 use crate::camellia::hazmat::{Camellia128Internal, Camellia192Internal, Camellia256Internal};
-use bouncycastle_cipher::modes::Cfb8;
+use crate::modes::Cfb8;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
 
-/// Camellia-128 in CFB8 mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// Camellia-128 in CFB8 mode. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`]; the wrong direction is a compile error, not a runtime
 /// check.
 ///
-/// See `bouncycastle_cipher::modes::cfb8` for the construction. The aliases are stream ciphers with
+/// See `bouncycastle_symmetric::modes::cfb8` for the construction. The aliases are stream ciphers with
 /// a one-byte segment, and come from a key, [`Camellia128Key<CFB8>`](crate::camellia::Camellia128Key) and
 /// friends, through the [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one
 /// block, drawn from the caller's RNG by encryption and returned.
@@ -22,11 +22,11 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// CFB8 is a **different, non-interoperable mode** from CFB128, not a variant of it: their
 /// ciphertexts differ from the second byte, and it costs a full Camellia call per byte, sixteen
 /// times the work of [`Camellia_CFB_128`](crate::camellia::Camellia_CFB_128). See the
-/// `bouncycastle_cipher::modes::Cfb8` docs for when that is the right trade.
+/// `bouncycastle_symmetric::modes::Cfb8` docs for when that is the right trade.
 ///
 /// ```
 /// use bouncycastle_symmetric::camellia::Camellia128Key;
-/// use bouncycastle_cipher::modes::{CFB, CFB8};
+/// use bouncycastle_symmetric::modes::{CFB, CFB8};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

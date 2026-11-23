@@ -2,20 +2,20 @@
 //! module root re-exports.
 
 use crate::camellia::hazmat::{Camellia128Internal, Camellia192Internal, Camellia256Internal};
-use bouncycastle_cipher::modes::Cmac;
+use crate::modes::Cmac;
 
-/// Camellia-128 in CMAC: the `Cmac` worker of `bouncycastle-cipher` over the Camellia permutation, a
+/// Camellia-128 in CMAC: the `Cmac` worker of `bouncycastle_symmetric::modes` over the Camellia permutation, a
 /// `MACGenerator` (`Dir = Encrypting`) or `MACVerifier` (`Dir = Decrypting`) with a 16-byte tag,
 /// from an `Camellia128Key<CMAC>` of `KeyType::MACKey` material through `MacGenerationKey` and
 /// `MacVerificationKey`. The construction, the key requirements and the security considerations
-/// are those of [`bouncycastle_cipher::modes::cmac`] and, alias for alias, of `AES_CMAC_128` in
-/// `bouncycastle-aes`; only the permutation differs.
+/// are those of [`crate::modes::cmac`] and, alias for alias, of `AES_CMAC_128` in
+/// `bouncycastle_symmetric::aes`; only the permutation differs.
 ///
 /// # Usage Examples
 ///
 /// ```
 /// use bouncycastle_symmetric::camellia::Camellia256Key;
-/// use bouncycastle_cipher::modes::CMAC;
+/// use bouncycastle_symmetric::modes::CMAC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 /// use bouncycastle_core::traits::MACGenerator;

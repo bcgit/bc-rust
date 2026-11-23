@@ -22,7 +22,7 @@
 //!
 //! `SB1` is the AES S-box (Sec 2.4.2's table is FIPS 197 Table 4, which `test_sb1_is_the_aes_sbox`
 //! checks), so [`sb1`] is the 113-gate Boyar-Peralta straight-line program for it, as
-//! `bouncycastle-aes` transcribes it from Peralta's `SLP_AES_113.txt`, with the SLP's `U0`-is-MSB
+//! `bouncycastle_symmetric::aes` transcribes it from Peralta's `SLP_AES_113.txt`, with the SLP's `U0`-is-MSB
 //! input convention mapped onto the planes; its non-linear section is the one
 //! shared with the other bit-sliced ciphers as [`bouncycastle_utils::bitslice::gf256_inverse_nonlinear`].
 //!

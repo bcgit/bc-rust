@@ -1,5 +1,3 @@
-use bouncycastle_cipher::stream::hazmat::stream_cipher_over;
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -14,6 +12,8 @@ use bouncycastle_core_test_framework::symmetric_ciphers::{
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_symmetric::chacha20::hazmat::{ChaCha20KeyStream, keystream_at};
 use bouncycastle_symmetric::chacha20::{ChaCha20, ChaCha20Key};
+use bouncycastle_symmetric::stream::hazmat::stream_cipher_over;
+use bouncycastle_symmetric::{Decrypting, Encrypting};
 
 fn material() -> KeyMaterial<32> {
     KeyMaterial::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap()

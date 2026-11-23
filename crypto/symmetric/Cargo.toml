@@ -1,6 +1,6 @@
 [package]
 name = "bouncycastle-symmetric"
-description = "Symmetric algorithms: the ARIA, Camellia, SM4 and Triple DES block ciphers, Ascon (NIST SP 800-232), ChaCha20, Poly1305, ChaCha20-Poly1305 and the SP 800-108 KDFs"
+description = "Symmetric algorithms: the block cipher modes and padding, the AES, ARIA, Camellia, SM4 and Triple DES block ciphers, Ascon (NIST SP 800-232), ChaCha20, Poly1305, ChaCha20-Poly1305 and the SP 800-108 KDFs"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,8 +11,6 @@ default = ["std"]
 std = ["bouncycastle-core/std"]
 
 [dependencies]
-bouncycastle-aes.workspace = true
-bouncycastle-cipher.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-digest.workspace = true
 bouncycastle-utils.workspace = true
@@ -59,3 +57,87 @@ harness = false
 [[bench]]
 name = "tdes_tdes_benches"
 harness = false
+
+[[bench]]
+name = "aes_aes_benches"
+harness = false
+
+[[bench]]
+name = "aes_aes_modes_benches"
+harness = false
+
+[[bench]]
+name = "aes_aes_gcm_packet_benches"
+harness = false
+
+[[bench]]
+name = "aes_aes_xts_benches"
+harness = false
+
+[[test]]
+name = "padding_nopadding_tests"
+path = "tests/padding/nopadding_tests.rs"
+
+[[test]]
+name = "padding_padded_tests"
+path = "tests/padding/padded_tests.rs"
+
+[[test]]
+name = "padding_pkcs7_tests"
+path = "tests/padding/pkcs7_tests.rs"
+
+[[test]]
+name = "modes_alg_name_tests"
+path = "tests/modes/alg_name_tests.rs"
+
+[[test]]
+name = "modes_cbc_tests"
+path = "tests/modes/cbc_tests.rs"
+
+[[test]]
+name = "modes_ccm_tests"
+path = "tests/modes/ccm_tests.rs"
+
+[[test]]
+name = "modes_cfb8_tests"
+path = "tests/modes/cfb8_tests.rs"
+
+[[test]]
+name = "modes_cfb_tests"
+path = "tests/modes/cfb_tests.rs"
+
+[[test]]
+name = "modes_cmac_tests"
+path = "tests/modes/cmac_tests.rs"
+
+[[test]]
+name = "modes_ctr_tests"
+path = "tests/modes/ctr_tests.rs"
+
+[[test]]
+name = "modes_ecb_tests"
+path = "tests/modes/ecb_tests.rs"
+
+[[test]]
+name = "modes_gcm_tests"
+path = "tests/modes/gcm_tests.rs"
+
+[[test]]
+name = "modes_gmac_tests"
+path = "tests/modes/gmac_tests.rs"
+
+[[test]]
+name = "modes_kw_tests"
+path = "tests/modes/kw_tests.rs"
+
+[[test]]
+name = "modes_ofb_tests"
+path = "tests/modes/ofb_tests.rs"
+
+[[test]]
+name = "modes_symmetric_cipher_api_tests"
+path = "tests/modes/symmetric_cipher_api_tests.rs"
+
+[[test]]
+name = "modes_xts_tests"
+path = "tests/modes/xts_tests.rs"

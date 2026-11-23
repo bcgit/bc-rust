@@ -4,7 +4,7 @@
 usage: python3 -I lift_polyval_vectors.py <rfc8452.txt> <errata-rfc8452.html>
 
 Every value is located by the RFC's own wording; nothing is typed in here. The output is the
-block between the BEGIN/END markers in crypto/cipher/src/modes/polyval.rs.
+block between the BEGIN/END markers in crypto/symmetric/src/modes/polyval.rs.
 """
 import re
 import sys

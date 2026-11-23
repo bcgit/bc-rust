@@ -98,7 +98,7 @@ way when adding a harness, or `cargo test --workspace` fails to compile them.
 
 The workspace has four top-level kinds of member:
 
-1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework` and `cipher-test-framework` described below. Most are one primitive each; some, such as `cipher`, hold generic building blocks (modes, padding) as sub-modules; `pqc`, `digest`, `symmetric` and `hybrid` are family crates, holding their primitives as modules (see [the layout below](#sub-crate-layout-convention)). The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is named `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`; the two test frameworks, `cli` and `mem_usage_benches` are `publish = false`, which works because every dev-dependency is path-only and so is dropped from a packaged crate.
+1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework` and `cipher-test-framework` described below. Most are one primitive each; `pqc`, `digest`, `symmetric` and `hybrid` are family crates, holding their primitives as modules (see [the layout below](#sub-crate-layout-convention)). The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is named `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`; the two test frameworks, `cli` and `mem_usage_benches` are `publish = false`, which works because every dev-dependency is path-only and so is dropped from a packaged crate.
 2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::sm3`, `bouncycastle::pqc`), and of a family crate's primitive modules under the names they had as crates (`bouncycastle::mlkem` is `bouncycastle_pqc::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
 3. `cli/` — the `bc-rust` binary built on top of `bouncycastle`, exposing every primitive as a streaming stdin→stdout subcommand using `clap`.
 4. `mem_usage_benches/` — stand-alone binary crates that measure peak stack usage of algorithms (cannot be done via criterion).
@@ -107,7 +107,7 @@ The workspace has four top-level kinds of member:
 
 - `crypto/core` defines the abstract traits (`Hash`, `KDF`, `MACGenerator` / `MACVerifier`, `KEM`, `Signature`, `RNG`, `Algorithm`, `HashAlgParams`, …), error enums (`HashError`, `KDFError`, `KEMError`, `MACError`, `RNGError`, `SignatureError`), and the `KeyMaterial` / `KeyType` wrapper that all sensitive byte buffers are required to use (see `Secret` super-trait requirement in QUALITY_AND_STYLE.md).
 - `crypto/core-test-framework` contains the shared per-trait test suite (`hash.rs`, `kdf.rs`, `kem.rs`, `mac.rs`, `signature.rs`). New implementations of a core trait must be exercised through this framework — it's how trait conformance and error-condition coverage stay consistent across implementations.
-- `crypto/cipher-test-framework` holds the suites every block cipher crate runs over `BlockCipherKey<P, M>`: the keys under every mode through the core suites, the padded and stream-mode wiring checks, and the Wycheproof runners, each generic over the permutation and run at one key length per call. It is a sibling of `core-test-framework` rather than part of it because it names `bouncycastle-cipher`'s types, and that crate's own tests depend on the core framework. A new block cipher's `mode_key_tests.rs`, `padded_alias_tests.rs`, `stream_mode_alias_tests.rs` and `*_wycheproof.rs` are calls into it; what stays in the crate is the cipher's own known answers, aliases and sizes.
+- `crypto/cipher-test-framework` holds the suites every block cipher crate runs over `BlockCipherKey<P, M>`: the keys under every mode through the core suites, the padded and stream-mode wiring checks, and the Wycheproof runners, each generic over the permutation and run at one key length per call. It is a sibling of `core-test-framework` rather than part of it because it names `bouncycastle-symmetric`'s types (`BlockCipherKey`, `modes`, `padding`), and that crate's own tests depend on the core framework. A new block cipher's `mode_key_tests.rs`, `padded_alias_tests.rs`, `stream_mode_alias_tests.rs` and `*_wycheproof.rs` are calls into it; what stays in the crate is the cipher's own known answers, aliases and sizes.
 - There is no factory crate: `bouncycastle-factory` (string-name enums such as `HashFactory` and `MACFactory`) was removed in November 2026, unused inside the workspace. Algorithms are named by type.
 
 Trait/CLI is the standard layering: a new algorithm typically requires (a) the primitive crate, (b) implementing the relevant `core` trait, (c) a CLI subcommand in `cli/src/*_cmd.rs` registered in `cli/src/main.rs`.
@@ -129,8 +129,10 @@ A family crate holds its primitives as modules, each with the layout it had as a
 `bouncycastle-hybrid` (`crypto/hybrid`: `hpke`), `bouncycastle-digest` (`crypto/digest`: `blake2`,
 `blake3`, `concatkdf`, `hkdf`, `hmac`, `pbkdf2`, `ripemd`, `scrypt`, `sha1`, `sha2`, `sha3`, `sm3`,
 `x963kdf`), `bouncycastle-symmetric`
-(`crypto/symmetric`: `aria`, `ascon`, `camellia`, `chacha20`, `chacha20_poly1305_aead`, `kbkdf`,
-`poly1305`, `sm4`, `tdes`) and `bouncycastle-pqc` (`crypto/pqc`: `mldsa`,
+(`crypto/symmetric`: `aes`, `aria`, `ascon`, `camellia`, `chacha20`, `chacha20_poly1305_aead`,
+`kbkdf`, `poly1305`, `sm4`, `tdes`, under the block cipher modes, padding, stream helpers and
+`BlockCipherKey` at its root, whose tests are `tests/modes/`, `tests/padding/` and the unprefixed
+files) and `bouncycastle-pqc` (`crypto/pqc`: `mldsa`,
 `mldsa_lowmemory`, `mlkem`, `mlkem_lowmemory`, and the `mldsa_common` / `mlkem_common` modules the
 two forms of each share).
 
@@ -259,7 +261,7 @@ What that taught, as mechanics for the next trait that sheds a constructor:
 - **The key length stops at the key.** `BlockPermutation<BLOCK_LEN>` carries the block methods
   and `ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` adds only `new`, so a worker and a mode's
   `Mode<P>` impl bound on the former and never name a key length; the GCM, GMAC and CMAC impls
-  are generic in `cipher` for that reason. `KEY_LEN` stays on the mode traits' worker-producing
+  are generic in `bouncycastle_symmetric::modes` for that reason. `KEY_LEN` stays on the mode traits' worker-producing
   halves as the tie between a key's length and its permutation's, through
   `P: ElectronicCodeBook<KEY_LEN, ..>`, which is what keeps a key object's role impls to the one
   length. A mode that must know the block length (`CMAC<BLOCK_LEN>`, `CTR<N, BLOCK_LEN>`) takes
@@ -269,7 +271,7 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   wrong type is rejected" belongs to the construction suite, once, not to each mode's tests.
   Known-answer suites pin their IV through `create_encryptor_nonce`.
 - **Workers borrow the key.** The role and mode traits hand out workers through a generic
-  associated type with a lifetime, `type Encryptor<'k>`, and the cipher-crate workers hold
+  associated type with a lifetime, `type Encryptor<'k>`, and the `bouncycastle_symmetric::modes` workers hold
   `&'k` to the mode's key state, so `create_encryptor` copies no schedule and a worker cannot
   outlive its key. Spell the mode traits' GAT bound `where P: 'k`, not `where Self::KeyState: 'k`:
   rustc rejects a generic impl whose key state is a struct over `P` (E0276) under the latter. A
@@ -362,7 +364,7 @@ direction in the worker types. Mechanics to reuse:
 - **Two traits with a `do_update` each need two types.** A type implementing both makes
   `w.do_update(..)` ambiguous wherever both traits are in scope, so every MAC worker carries
   `Dir` (`HMAC<'k, H, Dir>`, `Poly1305<Dir>`) and implements one trait per marker. The
-  markers live in `core::direction` so that crates `cipher` does not reach can name them.
+  markers live in `core::direction` so that crates `bouncycastle-symmetric` does not reach can name them.
 - **A const the parameters already spell as a type reaches a const parameter through an
   associated-type equality bound.** `HmacKey<H>: MacGenerationKey<N> where
   H: HMACParams<MACKey = KeyMaterial<N>>`: the solver normalizes `MACKey` and unifies `N`, so
@@ -399,8 +401,8 @@ end its message, and took `Clone` off the cipher workers. QUALITY_AND_STYLE.md h
   `do_*_final` no longer compiles, the `finish_` method being the required one; convert a
   branch's workers before it merges a release tip that has the token (`feature/rsa-sig`'s
   signers and verifiers had to be).
-- **Not-`Clone` is asserted at compile time, per crate.** `crypto/aes/tests/worker_not_clone_tests.rs`
-  lists the cipher crate's workers over the AES permutation and fails to compile if one becomes
+- **Not-`Clone` is asserted at compile time, per crate.** `crypto/symmetric/tests/aes_worker_not_clone_tests.rs`
+  lists the `bouncycastle_symmetric::modes` workers over the AES permutation and fails to compile if one becomes
   `Clone`; add a new mode's workers to it. A worker in its own crate is asserted there, by the
   same test (Ascon) or a doctest (ChaCha20, Poly1305). A wrapper over another worker must be
   named over a `Clone` inner type, or a derived `Clone`, being conditional, passes unnoticed.
@@ -484,7 +486,7 @@ Eight workflows under `.github/workflows/`, all triggered by pull requests:
 - `rust-docs.yml`: `cargo doc --all` on stable.
 - `aes-ct-asm.yml`: `dev_scripts/check_aes_ct_asm.sh` on **nightly** with `rust-src`: builds
   `dev_scripts/aes_ct_harness` for thumbv6m and riscv32i and greps the assembly of the AES round-key
-  widening for a multiply, call or branch (see the comment on `PlaneWord::splat` in the aes crate).
+  widening for a multiply, call or branch (see the comment on `PlaneWord::splat` in `crypto/symmetric/src/aes/bitslice.rs`).
 - `oaep-ct.yml`: `dev_scripts/check_oaep_ct.sh` with valgrind and **nightly** `rust-src`: runs
   `dev_scripts/oaep_ct_harness` (the EME-OAEP decode, included by path) under memcheck with the encoded
   message undefined, with a variable-time control, and greps its thumbv6m and riscv32i assembly for a

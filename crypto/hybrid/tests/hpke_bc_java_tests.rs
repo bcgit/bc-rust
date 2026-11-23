@@ -11,8 +11,6 @@
 //! AES-128-GCM (Base), and P-521 with HKDF-SHA384, export-only (PSK). The 80-byte export is
 //! HKDF-SHA384's two-block expand.
 
-use bouncycastle_aes::{AES128Key, AES256Key};
-use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
@@ -24,7 +22,9 @@ use bouncycastle_hybrid::hpke::{
     ExportOnly, HpkeAead, HpkeAuthRecipient, HpkeCipher, HpkeContext, HpkeParams, HpkeRecipient,
     Psk, Recipient,
 };
+use bouncycastle_symmetric::aes::{AES128Key, AES256Key};
 use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20Poly1305Key;
+use bouncycastle_symmetric::modes::GCM;
 use std::collections::HashMap;
 
 /// The sets, separated by blank lines, as the driver printed them.

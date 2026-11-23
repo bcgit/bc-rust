@@ -1,8 +1,8 @@
 //! SM4 key objects: [`BlockCipherKey`] over the SM4 permutation. The docs are on [`SM4Key`], which
 //! the module root re-exports.
 
+use crate::BlockCipherKey;
 use crate::sm4::hazmat::SM4Internal;
-use bouncycastle_cipher::BlockCipherKey;
 
 /// An SM4 key for the mode `M`: 16 bytes of material, expanded to the 32 round keys.
 ///
@@ -17,8 +17,8 @@ use bouncycastle_cipher::BlockCipherKey;
 ///
 /// ```
 /// use bouncycastle_symmetric::sm4::SM4Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::PKCS7;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

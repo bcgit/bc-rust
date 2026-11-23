@@ -2,12 +2,12 @@
 //! SM4 permutation. No key-wrap vectors are published for SM4, so this is the known answer: the
 //! index-based wrapping loop of RFC 3394, which is also SP 800-38F Algorithm 1, transcribed here
 //! and composed with `SM4Internal` directly, must agree with what `SM4Key<KW>` and `SM4Key<KWP>`
-//! produce. The algorithm's own answers under AES are pinned in `bouncycastle-aes`.
+//! produce. The algorithm's own answers under AES are pinned in `bouncycastle_symmetric::aes`.
 
-use bouncycastle_cipher::modes::{KW, KWP};
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
+use bouncycastle_symmetric::modes::{KW, KWP};
 use bouncycastle_symmetric::sm4::hazmat::SM4Internal;
 use bouncycastle_symmetric::sm4::{KEY_LEN, SM4Key};
 

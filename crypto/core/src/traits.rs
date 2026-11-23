@@ -1565,7 +1565,7 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
 ///
 /// This is the layer a caller with *data* uses, as opposed to the block-aligned
 /// [`BlockCipherEncryptor`] a mode implements. Its shape is that of the padding adapters in
-/// `bouncycastle_cipher::padding`, which are its first implementors: an authenticated cipher or a stream
+/// `bouncycastle_symmetric::padding`, which are its first implementors: an authenticated cipher or a stream
 /// cipher fits the same shape, with the tag or nothing in place of the final padded block.
 ///
 /// `FINAL_LEN` is the fixed length of what [`do_encrypt_final`](Self::do_encrypt_final) produces

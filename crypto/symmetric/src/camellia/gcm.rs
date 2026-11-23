@@ -2,20 +2,20 @@
 //! module root re-exports.
 
 use crate::camellia::hazmat::{Camellia128Internal, Camellia192Internal, Camellia256Internal};
-use bouncycastle_cipher::modes::Gcm;
+use crate::modes::Gcm;
 
-/// Camellia-128 in GCM with a 128-bit tag: the `Gcm` worker of `bouncycastle-cipher` over the Camellia
+/// Camellia-128 in GCM with a 128-bit tag: the `Gcm` worker of `bouncycastle_symmetric::modes` over the Camellia
 /// permutation, from an `Camellia128Key<GCM>` through the `AeadEncryptionKey` / `AeadDecryptionKey`
 /// pair. The construction, the API and its security considerations are those of
-/// [`bouncycastle_cipher::modes::gcm`] and, alias for alias, of `AES_GCM_128` in
-/// `bouncycastle-aes`; only the permutation differs. RFC 6367 defines Camellia in GCM
+/// [`crate::modes::gcm`] and, alias for alias, of `AES_GCM_128` in
+/// `bouncycastle_symmetric::aes`; only the permutation differs. RFC 6367 defines Camellia in GCM
 /// for TLS.
 ///
 /// # Usage Examples
 ///
 /// ```
 /// use bouncycastle_symmetric::camellia::Camellia256Key;
-/// use bouncycastle_cipher::modes::GCM;
+/// use bouncycastle_symmetric::modes::GCM;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 /// use bouncycastle_rng::HashDRBG_SHA512;

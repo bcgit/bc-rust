@@ -8,7 +8,6 @@
 //! These full sweeps (1025–1089 cases each) complement the small embedded vector sets in the
 //! per-primitive test files.
 
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -23,6 +22,7 @@ use bouncycastle_symmetric::ascon::AsconCXof128;
 use bouncycastle_symmetric::ascon::AsconHash256;
 use bouncycastle_symmetric::ascon::AsconXof128;
 use bouncycastle_symmetric::ascon::{Ascon_AEAD128, AsconAEAD128Key};
+use bouncycastle_symmetric::{Decrypting, Encrypting};
 use std::collections::BTreeMap;
 
 const TEST_DATA_DIR: &str = "crypto/ascon";

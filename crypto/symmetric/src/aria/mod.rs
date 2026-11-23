@@ -18,7 +18,7 @@
 //!
 //! ## Modes of operation
 //!
-//! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
+//! A key is built once, under a mode from `bouncycastle_symmetric::modes`, and used for as many
 //! messages as needed: `CBC<PKCS7>` for CBC (NIST SP 800-38A Sec 6.2) with PKCS#7 padding, `CFB`
 //! for CFB128 (Sec 6.3), `CFB8` for the `s = 8` segment size, a different and non-interoperable
 //! mode costing one ARIA call per byte, `OFB` for OFB (Sec 6.4), and `CTR` for CTR (Sec 6.5) with a
@@ -32,12 +32,12 @@
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
 //! padding scheme to bridge the difference; the CFB modes, OFB and CTR are stream ciphers and take
 //! any length with no padding at all; GCM and CCM authenticate as well as encrypt, and are the
-//! modes to prefer. See the `bouncycastle_cipher::modes` crate docs for the comparison.
+//! modes to prefer. See the `bouncycastle_symmetric::modes` module docs for the comparison.
 //!
 //! ```
 //! use bouncycastle_symmetric::aria::ARIA256Key;
-//! use bouncycastle_cipher::modes::CBC;
-//! use bouncycastle_cipher::padding::PKCS7;
+//! use bouncycastle_symmetric::modes::CBC;
+//! use bouncycastle_symmetric::padding::PKCS7;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 //! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -64,7 +64,7 @@
 //!
 //! ```
 //! use bouncycastle_symmetric::aria::ARIA256Key;
-//! use bouncycastle_cipher::modes::CTR;
+//! use bouncycastle_symmetric::modes::CTR;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 //! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -303,7 +303,7 @@
 //! * **The non-linear section of the S-box circuits** is from the 113-gate straight-line program
 //!   `SLP_AES_113.txt` in Peralta's circuit collection, described in J. Boyar and R. Peralta, "A
 //!   new combinational logic minimization technique with applications to cryptology",
-//!   <https://eprint.iacr.org/2009/191.pdf>, as transcribed in `bouncycastle-aes`.
+//!   <https://eprint.iacr.org/2009/191.pdf>, as transcribed in `bouncycastle_symmetric::aes`.
 //! * **The bit-plane transpose** is translated from BearSSL's `aes_ct` by Thomas Pornin (MIT
 //!   licence), as in the AES crate.
 //! * Verified against RFC 5794 Appendix A -- the three ciphertexts, and for the 128-bit key every

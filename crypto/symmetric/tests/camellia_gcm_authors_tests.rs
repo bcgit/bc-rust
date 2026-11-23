@@ -12,7 +12,6 @@
 #[path = "camellia_common/mod.rs"]
 mod common;
 
-use bouncycastle_cipher::modes::{GCM, GMAC};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -20,6 +19,7 @@ use bouncycastle_core::symmetric_key::{
     AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial, NonceMacGenerationKey,
 };
 use bouncycastle_symmetric::camellia::{Camellia128Key, Camellia256Key};
+use bouncycastle_symmetric::modes::{GCM, GMAC};
 use common::bytes;
 
 /// (case, key, IV, AAD, plaintext, ciphertext, tag).

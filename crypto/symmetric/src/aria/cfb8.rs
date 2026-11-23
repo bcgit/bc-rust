@@ -3,30 +3,30 @@
 
 use crate::aria::BLOCK_LEN;
 use crate::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle_cipher::modes::Cfb8;
+use crate::modes::Cfb8;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
 
-/// ARIA-128 in CFB8 mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// ARIA-128 in CFB8 mode. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`]; the wrong direction is a compile error, not a runtime
 /// check.
 ///
-/// See `bouncycastle_cipher::modes::cfb8` for the construction. The alias is a stream cipher with
+/// See `bouncycastle_symmetric::modes::cfb8` for the construction. The alias is a stream cipher with
 /// a one-byte segment, and comes from a key, [`ARIA128Key<CFB8>`](crate::aria::ARIA128Key), through the
 /// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one block, drawn from
 /// the caller's RNG by encryption and returned.
 ///
 /// CFB8 is a **different, non-interoperable mode** from CFB128, not a variant of it: their
 /// ciphertexts differ from the second byte, and it costs a full ARIA call per byte, sixteen times
-/// the work of [`ARIA_CFB_128`](crate::aria::ARIA_CFB_128). See the `bouncycastle_cipher::modes::Cfb8`
+/// the work of [`ARIA_CFB_128`](crate::aria::ARIA_CFB_128). See the `bouncycastle_symmetric::modes::Cfb8`
 /// docs for when that is the right trade.
 ///
 /// ```
 /// use bouncycastle_symmetric::aria::ARIA128Key;
-/// use bouncycastle_cipher::modes::{CFB, CFB8};
+/// use bouncycastle_symmetric::modes::{CFB, CFB8};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

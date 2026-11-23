@@ -18,7 +18,7 @@
 
 use core::fmt::{self, Debug, Display, Formatter};
 
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -69,7 +69,7 @@ enum Phase {
 ///
 /// ```
 /// use bouncycastle_symmetric::ascon::{Ascon_AEAD128, AsconAEAD128Key};
-/// use bouncycastle_cipher::{Decrypting, Encrypting};
+/// use bouncycastle_symmetric::{Decrypting, Encrypting};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};

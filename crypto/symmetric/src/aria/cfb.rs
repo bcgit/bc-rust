@@ -3,18 +3,18 @@
 
 use crate::aria::BLOCK_LEN;
 use crate::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle_cipher::modes::Cfb;
+use crate::modes::Cfb;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
 
-/// ARIA-128 in CFB128 mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// ARIA-128 in CFB128 mode. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`]; the wrong direction is a compile error, not a runtime
 /// check.
 ///
-/// See `bouncycastle_cipher::modes::cfb` for the construction. The alias is a stream cipher: the
+/// See `bouncycastle_symmetric::modes::cfb` for the construction. The alias is a stream cipher: the
 /// data is a `&mut [u8]` of any length, encrypted or decrypted in place. It comes from a key,
 /// [`ARIA128Key<CFB>`](crate::aria::ARIA128Key), through the [`SymmetricEncryptionKey`] /
 /// [`SymmetricDecryptionKey`] pair; the IV is one block, drawn from the caller's RNG by encryption
@@ -22,11 +22,11 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// The segment size is the full block, so this is **CFB128**. SP 800-38A's `s = 8` variant is a
 /// different, non-interoperable mode with its own alias, [`ARIA_CFB8_128`](crate::aria::ARIA_CFB8_128),
-/// and `s = 1` is not implemented; see the `bouncycastle_cipher::modes::Cfb` docs.
+/// and `s = 1` is not implemented; see the `bouncycastle_symmetric::modes::Cfb` docs.
 ///
 /// ```
 /// use bouncycastle_symmetric::aria::ARIA128Key;
-/// use bouncycastle_cipher::modes::CFB;
+/// use bouncycastle_symmetric::modes::CFB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

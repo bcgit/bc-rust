@@ -15,8 +15,8 @@ use crate::helpers::block_mode_helpers::{
     CipherDirection, DecryptOnlyAction, TDEA_LIMIT_TKW, load_key_object,
 };
 use crate::kw_cmd::{run, run_with};
-use bouncycastle::cipher::modes::TKW;
 use bouncycastle::core::symmetric_key::KeyUnwrappingKey;
+use bouncycastle::symmetric::modes::TKW;
 use bouncycastle::tdes::{KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key};
 
 pub(crate) fn tdes_tkw_cmd(

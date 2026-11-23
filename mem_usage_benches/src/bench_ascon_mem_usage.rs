@@ -61,7 +61,6 @@ use bouncycastle::ascon::{Ascon_AEAD128, AsconAEAD128Key};
 use bouncycastle::ascon::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
 use bouncycastle::ascon::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};
 use bouncycastle::ascon::{AsconXof128, AsconXof128Squeezer, SUSPENDED_ASCON_XOF128_STATE_LEN};
-use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::{HashError, RNGError, SymmetricCipherError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
@@ -70,6 +69,7 @@ use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Hash, HashOneShot, RNG, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor, XOF, XOFSqueezer,
 };
+use bouncycastle::symmetric::{Decrypting, Encrypting};
 
 type Enc = Ascon_AEAD128<Encrypting>;
 type Dec = Ascon_AEAD128<Decrypting>;

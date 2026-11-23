@@ -11,10 +11,8 @@ version = "0.1.4"
 
 # *** Internal Dependencies ***
 bouncycastle = { path = "./" }
-bouncycastle-aes = { path = "./crypto/aes" }
 bouncycastle-symmetric = { path = "./crypto/symmetric" }
 bouncycastle-digest = { path = "./crypto/digest" }
-bouncycastle-cipher = { path = "./crypto/cipher" }
 bouncycastle-core = { path = "crypto/core" }
 bouncycastle-cipher-test-framework = { path = "./crypto/cipher-test-framework" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
@@ -55,10 +53,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-bouncycastle-aes.workspace = true
 bouncycastle-symmetric.workspace = true
 bouncycastle-digest.workspace = true
-bouncycastle-cipher.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-ec.workspace = true
 bouncycastle-eccdh.workspace = true
