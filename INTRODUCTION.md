@@ -246,7 +246,7 @@ This alpha release includes the following cryptographic primitives:
 * MACs and KDFs: HMAC, HKDF, CMAC, GMAC, Poly1305, PBKDF2, scrypt, the SP 800-56C and X9.63 KDFs, and the SP 800-108
   KDFs
 * The NIST HashDRBG random number generator
-* Block ciphers (AES, ARIA, Camellia, SM4, Triple-DES) under the usual modes, including GCM, GCM-SIV, CCM and key
+* Block ciphers (AES, ARIA, Camellia, SM4, Triple-DES) under the usual modes, including GCM, GCM-SIV, CCM, XTS and key
   wrap, plus ChaCha20-Poly1305 and Ascon
 * Signatures (Ed25519, Ed448, ML-DSA, ECDSA, SM2, RSA)
 * Key Establishment (X25519, X448, ML-KEM, ECDH, RSA, and HPKE over them)

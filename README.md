@@ -8,8 +8,8 @@
 > [!WARNING]
 > This package is currently in ALPHA, meaning that it is not complete or production-ready and will be evolving rapidly
 over the coming months.
-> We are releasing only a small set of cryptographic algorithms in order to get feedback from the community on the API
-and build structure.
+> The set of cryptographic algorithms is still growing, and we are releasing it in order to get feedback from the
+community on the API and build structure.
 
 
 The Bouncy Castle Crypto package is a Rust implementation of cryptographic algorithms, it was developed by the Legion of
@@ -17,8 +17,8 @@ the Bouncy Castle, a registered Australian Charity, with a little help! The Legi
 package, can be found at https://www.bouncycastle.org.
 
 The aim of this package is to bring the Bouncy Castle team's experience building easy-to-use and FIPS-validated
-cryptography to Rust. The build system is designed so that you can build the entire library, a single algorithm, or
-anything in between. It also comes with a command-line interface for all the supported algorithms.
+cryptography to Rust. The build system is designed so that you can build the entire library, a single family of
+algorithms, or anything in between. It also comes with a command-line interface for all the supported algorithms.
 
 If you are interested in purchasing a support contract or accelerating the development of this package, please contact
 us at [office@bouncycastle.org](mailto:office@bouncycastle.org)
@@ -53,14 +53,15 @@ rust code by placing:
 #![forbid(unsafe_code)]
 ```
 
-at the top of every sub-crate. We also avoid (except where absolutely necessary) third-party depencendencies which could
-themselves introduce unsafe code.
+at the top of every sub-crate, with one exception: `bouncycastle-utils` holds the constant-time and secure-zeroization
+code that cannot be accomplished reliably within safe rust, jailed to two of its modules. We also avoid (except where
+absolutely necessary) third-party dependencies which could themselves introduce unsafe code.
 
 This gives maximum portability because our code will compile on any platform supported by the Rust compiler. It also
 means that our code automatically inherits all the memory and type safety guarantees of Rust. However, it unfortunately
 means that we cannot guarantee constant-time since the Rust compiler itself does not guarantee constant-time. We do a
 best-effort to write constant-time code; for example our Hex and Base64 implementations are both based on the
-constant-time implementation recommended in (Sieck, 2021)](https://arxiv.org/pdf/2108.04600.pdf), and our cryptographic
+constant-time implementation recommended in [(Sieck, 2021)](https://arxiv.org/pdf/2108.04600.pdf), and our cryptographic
 primitives use bitshift-and-XOR constructions instead of loop-and-if constructions but we cannot fully guarantee that
 the Rust compiler does not make optimizations that break the constant-time properties. This means that Bouncy Castle
 Rust should be constant-time enough for most applications, however, if your threat model includes resisting attacks by
@@ -74,24 +75,24 @@ This alpha release includes the following cryptographic primitives:
 
 * Hex (constant-time)
 * Base64 (constant-time)
-* SHA-2
-* SHA-3
-* HMAC
-* HKDF
+* Hashes: SHA-2, SHA-3 and its derived functions (SHAKE, cSHAKE, KMAC, TupleHash, ParallelHash), BLAKE2, BLAKE3,
+  RIPEMD, SM3, and SHA-1 for existing protocols
+* MACs and KDFs: HMAC, HKDF, CMAC, GMAC, Poly1305, PBKDF2, scrypt, the SP 800-56C and X9.63 KDFs, and the SP 800-108
+  KDFs
 * The NIST HashDRBG random number generator
-* ML-DSA
-* ML-KEM
+* Block ciphers (AES, ARIA, Camellia, SM4, Triple-DES) under the usual modes, including GCM, GCM-SIV, CCM, XTS and key
+  wrap, plus ChaCha20-Poly1305 and Ascon
+* Signatures (Ed25519, Ed448, ML-DSA, ECDSA, SM2, RSA)
+* Key Establishment (X25519, X448, ML-KEM, ECDH, RSA, and HPKE over them)
 
 But more than anything, the alpha release focuses on the design of the public trait and error type system contained in
-the `core-interface` sub-crate.
+the `bouncycastle-core` crate.
 
-Next up will be to round out the set of cryptographic primitives:
+Next up will be to round out the set of cryptographic primitives, SLH-DSA being the main one still missing.
 
-* Block ciphers (AES)
-* Signatures (Ed25519, Ed448, ML-DSA, SLH-DSA)
-* Key Establishment (X25519, X448, ML-KEM)
-
-(yes, you have noticed that RSA, ECDSA and ECDH are not on the list. I suppose we could, but we'd really rather not.)
+(an earlier draft of this roadmap left out RSA, ECDSA and ECDH on purpose; there has been a change of heart, and they
+are implemented on the same terms as everything else: fixed-width constant-time arithmetic, no runtime-described
+parameters.)
 
 After that, we'll tackle in some kind of order (depending on public interest and funding):
 
@@ -116,7 +117,8 @@ or [mike@bouncycastle.org](mailto:mike@bouncycastle.org).
 
 ## Building
 
-This project is structured as a cargo workspace with each cryptographic algorithm segmented into a sub-crate.
+This project is structured as a cargo workspace of family crates (digests, symmetric ciphers, elliptic curves and so
+on), with each cryptographic algorithm a module of its family.
 
 You can build the main library and the `bc-rust` command-line utility with:
 
@@ -138,7 +140,7 @@ Values given inline (`--key`, `--iv`, ...) are hex; files are raw bytes, or hex 
 `--hex-input` flag. The shell tests under `cli/tests/` (`cli/tests/test_all.sh`) show every
 subcommand in use.
 
-Or you can build a single sub-crate by name, for example:
+Or you can build a single family crate by name, for example:
 
 ```
 cargo build -p bouncycastle-digest
