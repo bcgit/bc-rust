@@ -49,9 +49,9 @@
 //! general data as well, but they are deterministic, so for data that may repeat an AEAD is the
 //! better fit (see the [`kw`] security notes).
 //!
-//! **XTS is a storage mode** ([`XTSKey`]): it encrypts one fixed-length data unit, such as a disk
-//! sector, in place under a tweak naming its position, and its ciphertext is no longer than the
-//! plaintext. It is unauthenticated and has no streaming API; see the [`xts`] security notes.
+//! **XTS is a storage mode** ([`XTSKey`]): it encrypts one data unit, such as a disk sector, in
+//! place under a tweak naming its position, and its ciphertext is no longer than the plaintext.
+//! It is unauthenticated and has no streaming API; see the [`xts`] security notes.
 //!
 //! CBC, CFB, CFB8, OFB and CTR all generate their own init data, or take the caller's through the
 //! key's `_nonce` forms: an IV for the first four, a nonce for CTR, which is shorter than a block

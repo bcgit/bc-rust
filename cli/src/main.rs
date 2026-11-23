@@ -3789,12 +3789,13 @@ enum Subcommands {
     /// XTS-AES-128 (NIST SP 800-38E; IEEE Std 1619-2007), for storage: streams stdin to stdout one
     /// data unit at a time.
     ///
-    /// The input is a sequence of data units of `--data-unit-len` bytes -- 512, 1024, 2048 or 4096,
-    /// the usual sector sizes -- and must be a whole number of them; the output is exactly as long
-    /// as the input, with nothing prepended. The first data unit is processed under `--tweak` and
-    /// each one after it under the tweak before it plus one, read as a 128-bit little-endian
-    /// integer. For sectors numbered from n, `--tweak` is n in 16 little-endian bytes: sector 1 is
-    /// 01000000000000000000000000000000. `decrypt` needs the same `--tweak` and `--data-unit-len`.
+    /// The input is a sequence of data units of `--data-unit-len` bytes -- any length from 16 (one
+    /// block) to 16777216 (2^20 blocks), such as a 512- or 4096-byte sector -- and must be a whole
+    /// number of them; the output is exactly as long as the input, with nothing prepended. The
+    /// first data unit is processed under `--tweak` and each one after it under the tweak before
+    /// it plus one, read as a 128-bit little-endian integer. For sectors numbered from n, `--tweak`
+    /// is n in 16 little-endian bytes: sector 1 is 01000000000000000000000000000000. `decrypt`
+    /// needs the same `--tweak` and `--data-unit-len`.
     ///
     /// The key is 32 bytes, Key_1 | Key_2: two AES-128 keys, the first for the data and the second
     /// for the tweak, which must differ (FIPS 140-3 IG C.I) and should be generated independently.
@@ -3802,7 +3803,8 @@ enum Subcommands {
     /// WARNING: XTS provides confidentiality only, and is for data at rest, not in transit. Nothing
     /// detects a modified ciphertext, which decrypts to unpredictable data rather than to an error,
     /// or an old one, which decrypts to the old data, and the same data under the same key and
-    /// tweak always encrypts the same way. Give every data unit under a key its own tweak.
+    /// tweak always encrypts the same way. Give every data unit under a key its own tweak, and the
+    /// same length.
     ///
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
@@ -3824,7 +3826,7 @@ enum Subcommands {
         #[arg(long)]
         tweak: String,
 
-        /// The length of a data unit in bytes: 512, 1024, 2048 or 4096.
+        /// The length of a data unit in bytes, from 16 to 16777216 (2^20 blocks).
         #[arg(long)]
         data_unit_len: usize,
 
@@ -3856,7 +3858,7 @@ enum Subcommands {
         #[arg(long)]
         tweak: String,
 
-        /// The length of a data unit in bytes: 512, 1024, 2048 or 4096.
+        /// The length of a data unit in bytes, from 16 to 16777216 (2^20 blocks).
         #[arg(long)]
         data_unit_len: usize,
 

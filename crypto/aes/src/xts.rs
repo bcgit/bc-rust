@@ -4,17 +4,16 @@
 use crate::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_cipher::modes::XTSKey;
 
-/// XTS-AES-128 (NIST SP 800-38E; IEEE Std 1619-2007) for data units of exactly `DATA_UNIT_LEN`
-/// bytes: a 256-bit key `Key_1 | Key_2`, each half an AES-128 key, `Key_1` for the data and
-/// `Key_2` for the tweak.
+/// XTS-AES-128 (NIST SP 800-38E; IEEE Std 1619-2007): a 256-bit key `Key_1 | Key_2`, each half
+/// an AES-128 key, `Key_1` for the data and `Key_2` for the tweak.
 ///
 /// It is the key object of [`bouncycastle_cipher::modes::xts`], which describes the tweak and the
 /// security considerations; read those before using XTS, which is unauthenticated and meant for
 /// storage. The key is built once with [`FromKeyMaterial`] and encrypts and decrypts one data
 /// unit at a time, in place: [`encrypt_inplace`](XTSKey::encrypt_inplace) and
 /// [`decrypt_inplace`](XTSKey::decrypt_inplace). A data unit is from 16 bytes to 2^20 blocks,
-/// and a length outside that range does not compile. IEEE 1619-2007 Sec 6 defines XTS-AES-128
-/// and XTS-AES-256 only, so there is no XTS-AES-192.
+/// and one outside that range is refused. IEEE 1619-2007 Sec 6 defines XTS-AES-128 and
+/// XTS-AES-256 only, so there is no XTS-AES-192.
 ///
 /// # Usage Examples
 ///
@@ -33,7 +32,7 @@ use bouncycastle_cipher::modes::XTSKey;
 /// ];
 /// let material = KeyMaterial::<32>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
 ///     .expect("a 32-byte symmetric cipher key");
-/// let key = XTS_AES_128::<23>::from_key_material(&material).expect("a valid XTS-AES-128 key");
+/// let key = XTS_AES_128::from_key_material(&material).expect("a valid XTS-AES-128 key");
 ///
 /// let plaintext = [
 ///     0xea, 0xfd, 0xbd, 0x33, 0x05, 0x11, 0xba, 0xa1, 0xc9, 0x12, 0xea, 0x24, 0xb7, 0xb1,
@@ -43,7 +42,7 @@ use bouncycastle_cipher::modes::XTSKey;
 /// let tweak = 202u128.to_le_bytes();
 ///
 /// let mut data_unit = plaintext;
-/// assert_eq!(key.encrypt_inplace(&tweak, &mut data_unit), 23);
+/// assert_eq!(key.encrypt_inplace(&tweak, &mut data_unit), Ok(23));
 /// assert_eq!(
 ///     data_unit,
 ///     [
@@ -51,7 +50,7 @@ use bouncycastle_cipher::modes::XTSKey;
 ///         0x1e, 0x15, 0x17, 0x8b, 0x8c, 0xc3, 0x42, 0x6e, 0x31,
 ///     ]
 /// );
-/// key.decrypt_inplace(&tweak, &mut data_unit);
+/// key.decrypt_inplace(&tweak, &mut data_unit).expect("a 23-byte data unit");
 /// assert_eq!(data_unit, plaintext);
 /// ```
 ///
@@ -63,29 +62,37 @@ use bouncycastle_cipher::modes::XTSKey;
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let mut rng = HashDRBG_SHA512::new_from_os();
-/// let key = XTS_AES_256::<4096>::generate(&mut rng).expect("a 256-bit RNG");
+/// let key = XTS_AES_256::generate(&mut rng).expect("a 256-bit RNG");
 ///
 /// let mut disk = vec![0u8; 8 * 4096];
-/// let (sectors, rest) = disk.as_chunks_mut::<4096>();
-/// assert!(rest.is_empty());
-/// for (n, sector) in (100u128..).zip(sectors.iter_mut()) {
-///     key.encrypt_inplace(&n.to_le_bytes(), sector);
+/// for (n, sector) in (100u128..).zip(disk.chunks_exact_mut(4096)) {
+///     key.encrypt_inplace(&n.to_le_bytes(), sector).expect("a 4096-byte sector");
 /// }
 /// // Equal plaintext sectors, under different sequence numbers, encrypt differently.
-/// assert_ne!(sectors[0], sectors[1]);
+/// assert_ne!(disk[..4096], disk[4096..2 * 4096]);
 /// ```
 ///
 /// # Memory Usage
 ///
 /// A key is two AES schedules: 352 bytes for XTS-AES-128 and 480 for XTS-AES-256. A call works in
-/// the caller's buffer; beside the permutation's own frame it keeps the tweak's mask and the
-/// masks of the four blocks in flight on the stack.
+/// the caller's buffer, so its stack does not grow with the data unit. Measured as the deepest
+/// frame chain below each call in the release build on x86-64 (return addresses included, the
+/// caller's buffer not), over `mem_usage_benches/src/bench_aes_mem_usage.rs`:
+///
+/// | Call | XTS-AES-128 | XTS-AES-256 |
+/// |---|---|---|
+/// | `from_key_material` | 1 568 B | 2 112 B |
+/// | `encrypt_inplace` | 368 B | 368 B |
+/// | `decrypt_inplace` | 472 B | 472 B |
+///
+/// The peak of a call is on its four-block path: the masks of the four blocks in flight, and the
+/// permutation's four-block frame below them.
 ///
 /// [`FromKeyMaterial`]: bouncycastle_core::symmetric_key::FromKeyMaterial
 #[allow(non_camel_case_types)]
-pub type XTS_AES_128<const DATA_UNIT_LEN: usize> = XTSKey<AES128Internal, DATA_UNIT_LEN>;
+pub type XTS_AES_128 = XTSKey<AES128Internal>;
 
-/// XTS-AES-256 (NIST SP 800-38E; IEEE Std 1619-2007) for data units of exactly `DATA_UNIT_LEN`
-/// bytes: a 512-bit key `Key_1 | Key_2`, each half an AES-256 key. See [`XTS_AES_128`].
+/// XTS-AES-256 (NIST SP 800-38E; IEEE Std 1619-2007): a 512-bit key `Key_1 | Key_2`, each half
+/// an AES-256 key. See [`XTS_AES_128`].
 #[allow(non_camel_case_types)]
-pub type XTS_AES_256<const DATA_UNIT_LEN: usize> = XTSKey<AES256Internal, DATA_UNIT_LEN>;
+pub type XTS_AES_256 = XTSKey<AES256Internal>;

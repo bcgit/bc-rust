@@ -3,10 +3,12 @@
 //! independent implementation; every block of a data unit against a reference written here from
 //! the definition (IEEE 1619-2007 Sec 5.2 and 5.3), which pins the roles of the two key halves,
 //! the byte order of the tweak and the multiplication by α; round trips at every length from one
-//! block to eight and a half; and the key constructor's refusals.
+//! block to eight and a half; the refusal of a data unit outside the bounds at both key sizes;
+//! and the key constructor's refusals.
 //!
-//! The published vectors are in `xts_acvp_tests.rs` and `xts_wycheproof.rs`. The compile-time
-//! bounds on the data-unit length are doctests on `bouncycastle_cipher::modes::XTSKey`.
+//! The published vectors are in `xts_acvp_tests.rs` and `xts_wycheproof.rs`. The bounds on the
+//! data-unit length are tested at both ends over a toy permutation in
+//! `crypto/cipher/tests/modes/xts_tests.rs`.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_aes::{XTS_AES_128, XTS_AES_256};
@@ -40,61 +42,48 @@ fn material<const KEY_LEN: usize>(bytes: &[u8]) -> KeyMaterial<KEY_LEN> {
     KeyMaterial::<KEY_LEN>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey).unwrap()
 }
 
-fn xts_key<P, const KEY_LEN: usize, const N: usize>(bytes: &[u8; KEY_LEN]) -> XTSKey<P, N>
+fn xts_key<P, const KEY_LEN: usize>(bytes: &[u8; KEY_LEN]) -> XTSKey<P>
 where
-    XTSKey<P, N>: FromKeyMaterial<KEY_LEN>,
+    XTSKey<P>: FromKeyMaterial<KEY_LEN>,
 {
-    XTSKey::<P, N>::from_key_material(&material(bytes)).expect("a valid XTS key")
+    XTSKey::<P>::from_key_material(&material(bytes)).expect("a valid XTS key")
 }
 
 // ---- known answers from OpenSSL ----------------------------------------------------------------
 
 /// The first n bytes of `pattern` under `key_bytes()` and `TWEAK` encrypt to `ct`, and back.
-fn kat<P, const KEY_LEN: usize, const N: usize>(ct: &str)
+fn kat<P, const KEY_LEN: usize>(n: usize, ct: &str)
 where
     P: BlockPermutation<16>,
-    XTSKey<P, N>: FromKeyMaterial<KEY_LEN>,
+    XTSKey<P>: FromKeyMaterial<KEY_LEN>,
 {
-    let key = xts_key::<P, KEY_LEN, N>(&key_bytes());
-    let pt: [u8; N] = pattern(N).try_into().unwrap();
-    let ct: [u8; N] = hex::decode(ct).unwrap().try_into().expect("an N-byte ciphertext");
+    let key = xts_key::<P, KEY_LEN>(&key_bytes());
+    let pt = pattern(n);
+    let ct = hex::decode(ct).unwrap();
+    assert_eq!(ct.len(), n, "the table's {n}-byte ciphertext");
 
-    let mut data_unit = pt;
-    assert_eq!(key.encrypt_inplace(&TWEAK, &mut data_unit), N);
-    assert_eq!(data_unit, ct, "{N}-byte data unit: encryption");
+    let mut data_unit = pt.clone();
+    assert_eq!(key.encrypt_inplace(&TWEAK, &mut data_unit), Ok(n));
+    assert_eq!(data_unit, ct, "{n}-byte data unit: encryption");
     let mut data_unit = ct;
-    assert_eq!(key.decrypt_inplace(&TWEAK, &mut data_unit), N);
-    assert_eq!(data_unit, pt, "{N}-byte data unit: decryption");
+    assert_eq!(key.decrypt_inplace(&TWEAK, &mut data_unit), Ok(n));
+    assert_eq!(data_unit, pt, "{n}-byte data unit: decryption");
 }
 
 /// The lengths of the tables below: one block, one block and one byte, one byte short of two,
 /// two, two and a byte, six and a quarter, one byte short of eight, and a 512-byte sector.
-macro_rules! kats {
-    ($perm:ty, $key_len:literal, $table:expr) => {
-        for &(n, ct) in $table {
-            match n {
-                16 => kat::<$perm, $key_len, 16>(ct),
-                17 => kat::<$perm, $key_len, 17>(ct),
-                31 => kat::<$perm, $key_len, 31>(ct),
-                32 => kat::<$perm, $key_len, 32>(ct),
-                33 => kat::<$perm, $key_len, 33>(ct),
-                100 => kat::<$perm, $key_len, 100>(ct),
-                127 => kat::<$perm, $key_len, 127>(ct),
-                512 => kat::<$perm, $key_len, 512>(ct),
-                other => panic!("no arm for a {other}-byte known answer"),
-            }
-        }
-    };
-}
-
 #[test]
 fn xts_aes_128_matches_openssl() {
-    kats!(AES128Internal, 32, KATS_128);
+    for &(n, ct) in KATS_128 {
+        kat::<AES128Internal, 32>(n, ct);
+    }
 }
 
 #[test]
 fn xts_aes_256_matches_openssl() {
-    kats!(AES256Internal, 64, KATS_256);
+    for &(n, ct) in KATS_256 {
+        kat::<AES256Internal, 64>(n, ct);
+    }
 }
 
 /// A long known answer: a 16-byte fold of the ciphertext (`fold[k % 16] ^= ct[k]` over every
@@ -107,35 +96,42 @@ struct LongKat {
 
 /// The longest data units against OpenSSL: the mask chain runs to α^(2^20 - 1), and one byte
 /// short of the limit a ciphertext block is stolen at the far end.
-fn long_kat<P, const KEY_LEN: usize, const N: usize>(expected: &LongKat)
+fn long_kat<P, const KEY_LEN: usize>(n: usize, expected: &LongKat)
 where
     P: BlockPermutation<16>,
-    XTSKey<P, N>: FromKeyMaterial<KEY_LEN>,
+    XTSKey<P>: FromKeyMaterial<KEY_LEN>,
 {
-    let key = xts_key::<P, KEY_LEN, N>(&key_bytes());
-    let pt = pattern(N);
-    let mut buf = pt.clone();
-    let data_unit: &mut [u8; N] = buf.as_mut_slice().try_into().unwrap();
+    let key = xts_key::<P, KEY_LEN>(&key_bytes());
+    let pt = pattern(n);
+    let mut data_unit = pt.clone();
 
-    assert_eq!(key.encrypt_inplace(&TWEAK, data_unit), N);
+    assert_eq!(key.encrypt_inplace(&TWEAK, &mut data_unit), Ok(n));
     let mut fold = [0u8; 16];
     for (k, byte) in data_unit.iter().enumerate() {
         fold[k % 16] ^= byte;
     }
-    assert_eq!(hex::encode(fold), expected.fold, "{N} bytes: the fold of the ciphertext");
-    assert_eq!(hex::encode(&data_unit[..16]), expected.first, "{N} bytes: the first block");
-    assert_eq!(hex::encode(&data_unit[N - 32..]), expected.last, "{N} bytes: the last 32 bytes");
+    assert_eq!(hex::encode(fold), expected.fold, "{n} bytes: the fold of the ciphertext");
+    assert_eq!(hex::encode(&data_unit[..16]), expected.first, "{n} bytes: the first block");
+    assert_eq!(hex::encode(&data_unit[n - 32..]), expected.last, "{n} bytes: the last 32 bytes");
 
-    assert_eq!(key.decrypt_inplace(&TWEAK, data_unit), N);
-    assert!(*data_unit == *pt, "{N} bytes: decryption restores the plaintext");
+    assert_eq!(key.decrypt_inplace(&TWEAK, &mut data_unit), Ok(n));
+    assert!(data_unit == pt, "{n} bytes: decryption restores the plaintext");
 }
 
-/// 2^20 blocks under XTS-AES-128, and one byte less under XTS-AES-256: each key size, and each
-/// end of a maximal data unit, once. (About seven seconds each in a debug build.)
+// The two longest data units, each key size and each end of a maximal data unit once, are two
+// tests so that the test harness runs them in parallel: each takes several seconds in a debug
+// build.
+
+/// 2^20 blocks under XTS-AES-128: the longest data unit there is.
 #[test]
-fn the_longest_data_units_match_openssl() {
-    long_kat::<AES128Internal, 32, XTS_MAX_DATA_UNIT_LEN>(&LONG_128_MAX);
-    long_kat::<AES256Internal, 64, { XTS_MAX_DATA_UNIT_LEN - 1 }>(&LONG_256_MAX_MINUS_1);
+fn the_longest_data_unit_matches_openssl() {
+    long_kat::<AES128Internal, 32>(XTS_MAX_DATA_UNIT_LEN, &LONG_128_MAX);
+}
+
+/// One byte short of 2^20 blocks under XTS-AES-256: the last whole block is stolen from.
+#[test]
+fn one_byte_short_of_the_longest_data_unit_matches_openssl() {
+    long_kat::<AES256Internal, 64>(XTS_MAX_DATA_UNIT_LEN - 1, &LONG_256_MAX_MINUS_1);
 }
 
 // ---- the definition, block by block ------------------------------------------------------------
@@ -156,7 +152,7 @@ fn times_alpha(t: [u8; 16]) -> [u8; 16] {
 fn follows_the_definition<P, const HALF: usize, const KEY_LEN: usize>()
 where
     P: KeyExpansion<HALF> + BlockPermutation<16>,
-    XTSKey<P, 512>: FromKeyMaterial<KEY_LEN>,
+    XTSKey<P>: FromKeyMaterial<KEY_LEN>,
 {
     let key_bytes = key_bytes::<KEY_LEN>();
     let key1 = P::new(&material::<HALF>(&key_bytes[..HALF])).unwrap();
@@ -177,9 +173,9 @@ where
         t = times_alpha(t);
     }
 
-    let key = xts_key::<P, KEY_LEN, 512>(&key_bytes);
+    let key = xts_key::<P, KEY_LEN>(&key_bytes);
     let mut data_unit = pt;
-    key.encrypt_inplace(&TWEAK, &mut data_unit);
+    assert_eq!(key.encrypt_inplace(&TWEAK, &mut data_unit), Ok(512));
     assert_eq!(data_unit, expected);
 }
 
@@ -206,86 +202,73 @@ fn the_reference_multiplication_reduces() {
 
 // ---- round trips and tweaks --------------------------------------------------------------------
 
-fn round_trip<const N: usize>() {
-    let pt: [u8; N] = pattern(N).try_into().unwrap();
-    let k128 = xts_key::<AES128Internal, 32, N>(&key_bytes());
-    let k256 = xts_key::<AES256Internal, 64, N>(&key_bytes());
+fn round_trip(n: usize) {
+    let pt = pattern(n);
+    let k128 = xts_key::<AES128Internal, 32>(&key_bytes());
+    let k256 = xts_key::<AES256Internal, 64>(&key_bytes());
 
-    let mut a = pt;
-    assert_eq!(k128.encrypt_inplace(&TWEAK, &mut a), N);
-    assert_ne!(a, pt, "{N} bytes: XTS-AES-128 changed nothing");
-    assert_eq!(k128.decrypt_inplace(&TWEAK, &mut a), N);
-    assert_eq!(a, pt, "{N} bytes: XTS-AES-128 round trip");
+    let mut a = pt.clone();
+    assert_eq!(k128.encrypt_inplace(&TWEAK, &mut a), Ok(n));
+    assert_ne!(a, pt, "{n} bytes: XTS-AES-128 changed nothing");
+    assert_eq!(k128.decrypt_inplace(&TWEAK, &mut a), Ok(n));
+    assert_eq!(a, pt, "{n} bytes: XTS-AES-128 round trip");
 
-    let mut b = pt;
-    k256.encrypt_inplace(&TWEAK, &mut b);
-    assert_ne!(b, pt, "{N} bytes: XTS-AES-256 changed nothing");
-    k256.decrypt_inplace(&TWEAK, &mut b);
-    assert_eq!(b, pt, "{N} bytes: XTS-AES-256 round trip");
-}
-
-macro_rules! round_trips {
-    ($($n:literal),* $(,)?) => {
-        $(round_trip::<$n>();)*
-    };
+    let mut b = pt.clone();
+    assert_eq!(k256.encrypt_inplace(&TWEAK, &mut b), Ok(n));
+    assert_ne!(b, pt, "{n} bytes: XTS-AES-256 changed nothing");
+    assert_eq!(k256.decrypt_inplace(&TWEAK, &mut b), Ok(n));
+    assert_eq!(b, pt, "{n} bytes: XTS-AES-256 round trip");
 }
 
 /// Every length from one block to one byte short of nine: every tail length, and every way the
 /// blocks before it divide into fours, twos and ones, in both directions.
 #[test]
 fn round_trips_at_every_length_up_to_nine_blocks() {
-    round_trips!(
-        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,
-        39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61,
-        62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84,
-        85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105,
-        106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123,
-        124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141,
-        142, 143,
-    );
+    for n in 16..144 {
+        round_trip(n);
+    }
 }
 
 /// A tweak that differs in any one bit, the first or the last, gives a ciphertext that differs in
 /// every block, including the stolen one.
-fn every_tweak_bit_matters<const N: usize>() {
-    let key = xts_key::<AES128Internal, 32, N>(&key_bytes());
-    let pt: [u8; N] = pattern(N).try_into().unwrap();
-    let mut base = pt;
-    key.encrypt_inplace(&TWEAK, &mut base);
+fn every_tweak_bit_matters(n: usize) {
+    let key = xts_key::<AES128Internal, 32>(&key_bytes());
+    let pt = pattern(n);
+    let mut base = pt.clone();
+    key.encrypt_inplace(&TWEAK, &mut base).unwrap();
     for bit in [0, 127] {
         let mut tweak = TWEAK;
         tweak[bit / 8] ^= 1 << (bit % 8);
-        let mut other = pt;
-        key.encrypt_inplace(&tweak, &mut other);
+        let mut other = pt.clone();
+        key.encrypt_inplace(&tweak, &mut other).unwrap();
         for (j, (a, b)) in base.chunks(16).zip(other.chunks(16)).enumerate() {
-            assert_ne!(a, b, "{N} bytes, tweak bit {bit}: block {j} did not change");
+            assert_ne!(a, b, "{n} bytes, tweak bit {bit}: block {j} did not change");
         }
         // And it does not decrypt under the original tweak.
-        key.decrypt_inplace(&TWEAK, &mut other);
+        key.decrypt_inplace(&TWEAK, &mut other).unwrap();
         assert_ne!(other, pt);
     }
 }
 
 #[test]
 fn every_tweak_bit_matters_to_every_block() {
-    every_tweak_bit_matters::<16>();
-    every_tweak_bit_matters::<17>();
-    every_tweak_bit_matters::<47>();
-    every_tweak_bit_matters::<512>();
+    for n in [16, 17, 47, 512] {
+        every_tweak_bit_matters(n);
+    }
 }
 
 /// Consecutive sequence numbers, `n.to_le_bytes()`, are distinct tweaks: equal sectors under
 /// them encrypt differently, and each decrypts only under its own.
 #[test]
 fn consecutive_sequence_numbers_encrypt_equal_sectors_differently() {
-    let key = xts_key::<AES256Internal, 64, 512>(&key_bytes());
+    let key = xts_key::<AES256Internal, 64>(&key_bytes());
     let sector = [0x11u8; 512];
     let mut s0 = sector;
     let mut s1 = sector;
-    key.encrypt_inplace(&0u128.to_le_bytes(), &mut s0);
-    key.encrypt_inplace(&1u128.to_le_bytes(), &mut s1);
+    key.encrypt_inplace(&0u128.to_le_bytes(), &mut s0).unwrap();
+    key.encrypt_inplace(&1u128.to_le_bytes(), &mut s1).unwrap();
     assert_ne!(s0, s1);
-    key.decrypt_inplace(&1u128.to_le_bytes(), &mut s1);
+    key.decrypt_inplace(&1u128.to_le_bytes(), &mut s1).unwrap();
     assert_eq!(s1, sector);
 }
 
@@ -293,9 +276,9 @@ fn consecutive_sequence_numbers_encrypt_equal_sectors_differently() {
 /// position has its own mask.
 #[test]
 fn equal_blocks_encrypt_differently_at_every_position() {
-    let key = xts_key::<AES128Internal, 32, 512>(&key_bytes());
+    let key = xts_key::<AES128Internal, 32>(&key_bytes());
     let mut data_unit = [0u8; 512];
-    key.encrypt_inplace(&TWEAK, &mut data_unit);
+    key.encrypt_inplace(&TWEAK, &mut data_unit).unwrap();
     let (blocks, _) = data_unit.as_chunks::<16>();
     for i in 0..blocks.len() {
         for j in i + 1..blocks.len() {
@@ -313,8 +296,8 @@ fn equal_blocks_encrypt_differently_at_every_position() {
 #[test]
 fn the_keys_enforce_the_material_policy() {
     let framework = TestFrameworkFromKeyMaterial::new();
-    framework.test::<32, XTS_AES_128<512>>("XTS_AES_128", SecurityStrength::_128bit);
-    framework.test::<64, XTS_AES_256<512>>("XTS_AES_256", SecurityStrength::_256bit);
+    framework.test::<32, XTS_AES_128>("XTS_AES_128", SecurityStrength::_128bit);
+    framework.test::<64, XTS_AES_256>("XTS_AES_256", SecurityStrength::_256bit);
 }
 
 // The refusals of the 32-byte key -- equal halves, a zero half, a short key -- are tested over
@@ -322,7 +305,7 @@ fn the_keys_enforce_the_material_policy() {
 // The 64-byte key is a second impl, which only a permutation with a 32-byte key reaches.
 
 fn refusal_256(key: &KeyMaterial<64>) -> KeyMaterialError {
-    match XTS_AES_256::<16>::from_key_material(key) {
+    match XTS_AES_256::from_key_material(key) {
         Err(SymmetricCipherError::KeyMaterialError(e)) => e,
         Err(e) => panic!("refused, but not as a KeyMaterialError: {e:?}"),
         Ok(_) => panic!("accepted"),
@@ -335,7 +318,7 @@ fn xts_aes_256_refuses_equal_halves() {
     let mut bytes: [u8; 64] = core::array::from_fn(|i| (i % 32) as u8 + 0x40);
     assert!(matches!(refusal_256(&material(&bytes)), KeyMaterialError::GenericError(_)));
     bytes[63] ^= 0x01;
-    XTS_AES_256::<16>::from_key_material(&material(&bytes)).expect("halves that differ");
+    XTS_AES_256::from_key_material(&material(&bytes)).expect("halves that differ");
 }
 
 /// A half that is all zeros is refused, as an all-zero AES key is; so is an all-zero key.
@@ -369,9 +352,48 @@ fn swapping_the_halves_changes_the_ciphertext() {
     swapped[16..].copy_from_slice(&bytes[..16]);
     let mut a = [0u8; 32];
     let mut b = [0u8; 32];
-    xts_key::<AES128Internal, 32, 32>(&bytes).encrypt_inplace(&TWEAK, &mut a);
-    xts_key::<AES128Internal, 32, 32>(&swapped).encrypt_inplace(&TWEAK, &mut b);
+    xts_key::<AES128Internal, 32>(&bytes).encrypt_inplace(&TWEAK, &mut a).unwrap();
+    xts_key::<AES128Internal, 32>(&swapped).encrypt_inplace(&TWEAK, &mut b).unwrap();
     assert_ne!(a, b);
+}
+
+// ---- the length of a data unit -----------------------------------------------------------------
+
+/// Under either key, a data unit shorter than one block or longer than 2^20 blocks is refused in
+/// both directions and left as it was. (That the bounds themselves are accepted is in the known
+/// answers: 16 bytes in the tables, 2^20 blocks in the longest.)
+fn refuses_out_of_bounds<P, const KEY_LEN: usize>()
+where
+    P: BlockPermutation<16>,
+    XTSKey<P>: FromKeyMaterial<KEY_LEN>,
+{
+    let key = xts_key::<P, KEY_LEN>(&key_bytes());
+    for len in [0, XTS_MIN_DATA_UNIT_LEN - 1, XTS_MAX_DATA_UNIT_LEN + 1] {
+        let original = pattern(len);
+        let mut data_unit = original.clone();
+        let refusals = [
+            key.encrypt_inplace(&TWEAK, &mut data_unit),
+            key.decrypt_inplace(&TWEAK, &mut data_unit),
+        ];
+        for refusal in refusals {
+            match refusal {
+                Err(SymmetricCipherError::InvalidInputLength(_)) => {
+                    assert!(len < XTS_MIN_DATA_UNIT_LEN)
+                }
+                Err(SymmetricCipherError::DataLimitExceeded) => {
+                    assert!(len > XTS_MAX_DATA_UNIT_LEN)
+                }
+                other => panic!("{len} bytes: {other:?}"),
+            }
+        }
+        assert!(data_unit == original, "{len} bytes: the refused data unit was changed");
+    }
+}
+
+#[test]
+fn data_units_outside_the_bounds_are_refused() {
+    refuses_out_of_bounds::<AES128Internal, 32>();
+    refuses_out_of_bounds::<AES256Internal, 64>();
 }
 
 #[test]
@@ -379,11 +401,11 @@ fn sizes() {
     assert_eq!(XTS_TWEAK_LEN, 16);
     assert_eq!(XTS_MIN_DATA_UNIT_LEN, 16);
     assert_eq!(XTS_MAX_DATA_UNIT_LEN, 1 << 24);
-    // A key is its two schedules, whatever its data-unit length.
-    assert_eq!(size_of::<XTS_AES_128<16>>(), 2 * size_of::<AES128Internal>());
-    assert_eq!(size_of::<XTS_AES_128<4096>>(), 352);
-    assert_eq!(size_of::<XTS_AES_256<4096>>(), 2 * size_of::<AES256Internal>());
-    assert_eq!(size_of::<XTS_AES_256<4096>>(), 480);
+    // A key is its two schedules.
+    assert_eq!(size_of::<XTS_AES_128>(), 2 * size_of::<AES128Internal>());
+    assert_eq!(size_of::<XTS_AES_128>(), 352);
+    assert_eq!(size_of::<XTS_AES_256>(), 2 * size_of::<AES256Internal>());
+    assert_eq!(size_of::<XTS_AES_256>(), 480);
 }
 
 // ---- the known answers -------------------------------------------------------------------------

@@ -16,76 +16,32 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::FromKeyMaterial;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 
-/// Checks one case through `XTSKey<P, N>` under its `KEY_LEN`-byte key, in both directions.
-fn check<P, const KEY_LEN: usize, const N: usize>(case: &Value, tc_id: u64)
+/// Checks one case through `XTSKey<P>` under its `KEY_LEN`-byte key, in both directions.
+fn check<P, const KEY_LEN: usize>(case: &Value, tc_id: u64)
 where
     P: BlockPermutation<16>,
-    XTSKey<P, N>: FromKeyMaterial<KEY_LEN>,
+    XTSKey<P>: FromKeyMaterial<KEY_LEN>,
 {
     let material = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
         &hex_field(case, "key", tc_id),
         KeyType::SymmetricCipherKey,
     )
     .unwrap();
-    let key = XTSKey::<P, N>::from_key_material(&material)
+    let key = XTSKey::<P>::from_key_material(&material)
         .unwrap_or_else(|e| panic!("tcId {tc_id}: the key is refused: {e:?}"));
 
     let iv = hex_field(case, "iv", tc_id);
     let mut tweak = [0u8; 16];
     tweak[..iv.len()].copy_from_slice(&iv);
 
-    let msg: [u8; N] = hex_field(case, "msg", tc_id).try_into().unwrap();
-    let ct: [u8; N] = hex_field(case, "ct", tc_id).try_into().unwrap();
+    let msg = hex_field(case, "msg", tc_id);
+    let ct = hex_field(case, "ct", tc_id);
 
-    let mut data_unit = msg;
-    key.encrypt_inplace(&tweak, &mut data_unit);
+    let mut data_unit = msg.clone();
+    assert_eq!(key.encrypt_inplace(&tweak, &mut data_unit), Ok(msg.len()), "tcId {tc_id}");
     assert_eq!(data_unit, ct, "tcId {tc_id}: encryption");
-    key.decrypt_inplace(&tweak, &mut data_unit);
+    assert_eq!(key.decrypt_inplace(&tweak, &mut data_unit), Ok(msg.len()), "tcId {tc_id}");
     assert_eq!(data_unit, msg, "tcId {tc_id}: decryption");
-}
-
-fn check_128<const N: usize>(case: &Value, tc_id: u64) {
-    check::<AES128Internal, 32, N>(case, tc_id);
-}
-
-fn check_256<const N: usize>(case: &Value, tc_id: u64) {
-    check::<AES256Internal, 64, N>(case, tc_id);
-}
-
-/// Calls `$check::<N>` for the message length `$len`. The data-unit length is a const parameter
-/// of the key type, so every length in the file needs an arm; a new one fails loudly.
-macro_rules! dispatch {
-    ($len:expr, $check:ident, $case:expr, $tc_id:expr) => {
-        match $len {
-            16 => $check::<16>($case, $tc_id),
-            17 => $check::<17>($case, $tc_id),
-            18 => $check::<18>($case, $tc_id),
-            19 => $check::<19>($case, $tc_id),
-            20 => $check::<20>($case, $tc_id),
-            21 => $check::<21>($case, $tc_id),
-            22 => $check::<22>($case, $tc_id),
-            23 => $check::<23>($case, $tc_id),
-            24 => $check::<24>($case, $tc_id),
-            25 => $check::<25>($case, $tc_id),
-            26 => $check::<26>($case, $tc_id),
-            27 => $check::<27>($case, $tc_id),
-            28 => $check::<28>($case, $tc_id),
-            29 => $check::<29>($case, $tc_id),
-            30 => $check::<30>($case, $tc_id),
-            31 => $check::<31>($case, $tc_id),
-            32 => $check::<32>($case, $tc_id),
-            33 => $check::<33>($case, $tc_id),
-            48 => $check::<48>($case, $tc_id),
-            51 => $check::<51>($case, $tc_id),
-            64 => $check::<64>($case, $tc_id),
-            68 => $check::<68>($case, $tc_id),
-            96 => $check::<96>($case, $tc_id),
-            102 => $check::<102>($case, $tc_id),
-            128 => $check::<128>($case, $tc_id),
-            136 => $check::<136>($case, $tc_id),
-            other => panic!("tcId {}: no arm for a {other}-byte message; add one", $tc_id),
-        }
-    };
 }
 
 #[test]
@@ -99,14 +55,13 @@ fn wycheproof_aes_xts() {
         for case in group["tests"].as_array().expect("tests") {
             let tc_id = case["tcId"].as_u64().expect("tcId");
             assert_eq!(case["result"], "valid", "tcId {tc_id}: only valid cases are expected");
-            let len = hex_field(case, "msg", tc_id).len();
             match key_size {
                 256 => {
-                    dispatch!(len, check_128, case, tc_id);
+                    check::<AES128Internal, 32>(case, tc_id);
                     ran_128 += 1;
                 }
                 512 => {
-                    dispatch!(len, check_256, case, tc_id);
+                    check::<AES256Internal, 64>(case, tc_id);
                     ran_256 += 1;
                 }
                 384 => skipped_192 += 1,

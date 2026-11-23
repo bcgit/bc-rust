@@ -6,8 +6,8 @@
 //!
 //! Every case that is one data unit of a whole number of bytes is run, in both directions
 //! whichever one it was generated for. The rest are counted and skipped: an ACVP data unit can be
-//! any number of bits, where this API takes whole bytes, and the 2.0 set's cases whose
-//! `dataUnitLen` differs from their `payloadLen` are not a data unit of the key's one length. The
+//! any number of bits, where this API takes whole bytes, and the payload of a 2.0 case whose
+//! `dataUnitLen` differs from its `payloadLen` is not one data unit of the stated length. The
 //! counts are asserted, so a case cannot drop out of the run unnoticed.
 //!
 //! A case of tweak mode "number" gives the data unit's sequence number, and the tweak is its
@@ -26,50 +26,25 @@ fn number(v: &Value) -> u64 {
     v.as_u64().unwrap_or_else(|| v.as_str().expect("a number").parse().expect("a number"))
 }
 
-/// Checks one case through `XTSKey<P, N>` under its `KEY_LEN`-byte key, in both directions.
-fn check<P, const KEY_LEN: usize, const N: usize>(
-    key: &[u8],
-    tweak: &[u8; 16],
-    pt: &[u8],
-    ct: &[u8],
-    tc_id: u64,
-) where
+/// Checks one case through `XTSKey<P>` under its `KEY_LEN`-byte key, in both directions.
+fn check<P, const KEY_LEN: usize>(key: &[u8], tweak: &[u8; 16], pt: &[u8], ct: &[u8], tc_id: u64)
+where
     P: BlockPermutation<16>,
-    XTSKey<P, N>: FromKeyMaterial<KEY_LEN>,
+    XTSKey<P>: FromKeyMaterial<KEY_LEN>,
 {
     let material =
         KeyMaterial::<KEY_LEN>::from_bytes_as_type(key, KeyType::SymmetricCipherKey).unwrap();
-    let key = XTSKey::<P, N>::from_key_material(&material)
+    let key = XTSKey::<P>::from_key_material(&material)
         .unwrap_or_else(|e| panic!("tcId {tc_id}: the key is refused: {e:?}"));
-    let pt: [u8; N] = pt.try_into().expect("an N-byte plaintext");
-    let ct: [u8; N] = ct.try_into().expect("an N-byte ciphertext");
+    assert_eq!(ct.len(), pt.len(), "tcId {tc_id}: the ciphertext is as long as the plaintext");
 
-    let mut data_unit = pt;
-    assert_eq!(key.encrypt_inplace(tweak, &mut data_unit), N, "tcId {tc_id}");
+    let mut data_unit = pt.to_vec();
+    assert_eq!(key.encrypt_inplace(tweak, &mut data_unit), Ok(pt.len()), "tcId {tc_id}");
     assert_eq!(data_unit, ct, "tcId {tc_id}: encryption");
 
-    let mut data_unit = ct;
-    assert_eq!(key.decrypt_inplace(tweak, &mut data_unit), N, "tcId {tc_id}");
+    let mut data_unit = ct.to_vec();
+    assert_eq!(key.decrypt_inplace(tweak, &mut data_unit), Ok(ct.len()), "tcId {tc_id}");
     assert_eq!(data_unit, pt, "tcId {tc_id}: decryption");
-}
-
-fn check_128<const N: usize>(key: &[u8], tweak: &[u8; 16], pt: &[u8], ct: &[u8], tc_id: u64) {
-    check::<AES128Internal, 32, N>(key, tweak, pt, ct, tc_id);
-}
-
-fn check_256<const N: usize>(key: &[u8], tweak: &[u8; 16], pt: &[u8], ct: &[u8], tc_id: u64) {
-    check::<AES256Internal, 64, N>(key, tweak, pt, ct, tc_id);
-}
-
-/// Calls `$check::<N>` for the data-unit length `$len`. The length is a const parameter of the
-/// key type, so every whole-byte length in the two files has an arm.
-macro_rules! dispatch {
-    ($len:expr, $check:ident, $args:tt, $tc_id:expr, [$($n:literal)*]) => {
-        match $len {
-            $($n => $check::<$n> $args,)*
-            other => panic!("tcId {}: no arm for a {other}-byte data unit; add one", $tc_id),
-        }
-    };
 }
 
 /// Runs every whole-byte, single-data-unit case of one revision's vector set, and returns how
@@ -120,24 +95,13 @@ fn run(revision: &str) -> Option<(usize, usize, usize)> {
             };
             assert_eq!(pt.len(), len, "tcId {tc_id}: the plaintext is payloadLen bits");
 
-            #[rustfmt::skip]
-            macro_rules! by_len {
-                ($check:ident) => {
-                    dispatch!(len, $check, (&key, &tweak, &pt, &ct, tc_id), tc_id, [
-                        16 21 23 27 29 31 46 48 56 57 59 62 64 75 77 78 84 86 92 93 94 100 119 126
-                        262 308 320 559 669 912 919 1184 1447 1451 1568 1616 1950 2051 2528 2538
-                        2669 2792 3001 3152 3216 3536 3632 3744 3788 4000 4151 4539 4610 5166 5344
-                        5375 5909 6317 6321 6494 6528 6672 6732 6780 7089 7312 7856 7968 8024 8192
-                    ])
-                };
-            }
             match key_len {
                 128 => {
-                    by_len!(check_128);
+                    check::<AES128Internal, 32>(&key, &tweak, &pt, &ct, tc_id);
                     ran_128 += 1;
                 }
                 256 => {
-                    by_len!(check_256);
+                    check::<AES256Internal, 64>(&key, &tweak, &pt, &ct, tc_id);
                     ran_256 += 1;
                 }
                 other => panic!("tcId {tc_id}: unexpected keyLen {other}"),

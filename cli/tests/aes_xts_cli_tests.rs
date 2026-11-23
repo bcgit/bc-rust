@@ -1,10 +1,13 @@
-//! Tests for the `aes128-xts` and `aes256-xts` subcommands: the library's answer at every offered
-//! data-unit length, and an OpenSSL known answer, through the command; consecutive tweaks across
-//! data units, including a carry; the refusals of partial data units, a wrapping tweak and bad
-//! arguments; and the help listing.
+//! Tests for the `aes128-xts` and `aes256-xts` subcommands: the library's answer at data-unit
+//! lengths from one block to a 4 KiB sector, and an OpenSSL known answer, through the command;
+//! consecutive tweaks across data units, including a carry; the refusals of partial data units, a
+//! wrapping tweak and bad arguments, a data-unit length outside the bounds among them; and the
+//! help listing.
 
 mod common;
 use bouncycastle::aes::{XTS_AES_128, XTS_AES_256};
+use bouncycastle::cipher::modes::{XTS_MAX_DATA_UNIT_LEN, XTS_MIN_DATA_UNIT_LEN, XTSKey};
+use bouncycastle::core::hazmat::BlockPermutation;
 use common::{
     KEY32, key_object, listed_in_help, pseudo_random, run, run_err_silent, run_ok, unhex,
 };
@@ -16,34 +19,35 @@ const KEY64: &str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1
 
 const TWEAK: &str = "f0e1d2c3b4a5968778695a4b3c2d1e0f";
 
-/// The library's answer for `data` as consecutive `N`-byte data units from the tweak `first`.
-fn library_128<const N: usize>(key: &str, first: &str, data: &[u8], encrypt: bool) -> Vec<u8> {
-    let key: XTS_AES_128<N> = key_object::<32, _>(key);
+/// The library's answer for `data` as consecutive `len`-byte data units from the tweak `first`.
+fn library<P: BlockPermutation<16>>(
+    key: &XTSKey<P>,
+    first: &str,
+    len: usize,
+    data: &[u8],
+    encrypt: bool,
+) -> Vec<u8> {
     let first = u128::from_le_bytes(unhex(first).try_into().unwrap());
     let mut out = data.to_vec();
-    for (n, unit) in (first..).zip(out.as_chunks_mut::<N>().0) {
-        if encrypt {
-            key.encrypt_inplace(&n.to_le_bytes(), unit);
+    for (n, unit) in (first..).zip(out.chunks_exact_mut(len)) {
+        let processed = if encrypt {
+            key.encrypt_inplace(&n.to_le_bytes(), unit)
         } else {
-            key.decrypt_inplace(&n.to_le_bytes(), unit);
-        }
+            key.decrypt_inplace(&n.to_le_bytes(), unit)
+        };
+        assert_eq!(processed, Ok(len));
     }
     out
 }
 
-/// As [`library_128`], for XTS-AES-256.
-fn library_256<const N: usize>(key: &str, first: &str, data: &[u8], encrypt: bool) -> Vec<u8> {
-    let key: XTS_AES_256<N> = key_object::<64, _>(key);
-    let first = u128::from_le_bytes(unhex(first).try_into().unwrap());
-    let mut out = data.to_vec();
-    for (n, unit) in (first..).zip(out.as_chunks_mut::<N>().0) {
-        if encrypt {
-            key.encrypt_inplace(&n.to_le_bytes(), unit);
-        } else {
-            key.decrypt_inplace(&n.to_le_bytes(), unit);
-        }
-    }
-    out
+/// [`library`] under the XTS-AES-128 key `key`.
+fn library_128(key: &str, first: &str, len: usize, data: &[u8], encrypt: bool) -> Vec<u8> {
+    library(&key_object::<32, XTS_AES_128>(key), first, len, data, encrypt)
+}
+
+/// [`library`] under the XTS-AES-256 key `key`.
+fn library_256(key: &str, first: &str, len: usize, data: &[u8], encrypt: bool) -> Vec<u8> {
+    library(&key_object::<64, XTS_AES_256>(key), first, len, data, encrypt)
 }
 
 /// The arguments of `cmd` in `direction` under `key`, from `tweak`, in `len`-byte data units.
@@ -71,32 +75,20 @@ fn agrees(cmd: &str, key: &str, len: usize, data: &[u8], expected: &[u8]) {
     assert_eq!(pt, data, "{cmd} at {len}: decrypt");
 }
 
+/// One block, one block and a byte, the usual sector sizes, and lengths between them that leave
+/// a partial block.
 #[test]
-fn the_commands_agree_with_the_library_at_every_data_unit_length() {
-    for len in [512, 1024, 2048, 4096] {
+fn the_commands_agree_with_the_library_at_any_data_unit_length() {
+    for len in [16, 17, 512, 1000, 1024, 2048, 4096] {
         let data = pseudo_random(3 * len, len as u32);
-        let expected = match len {
-            512 => library_128::<512>(KEY32, TWEAK, &data, true),
-            1024 => library_128::<1024>(KEY32, TWEAK, &data, true),
-            2048 => library_128::<2048>(KEY32, TWEAK, &data, true),
-            _ => library_128::<4096>(KEY32, TWEAK, &data, true),
-        };
+        let expected = library_128(KEY32, TWEAK, len, &data, true);
         agrees("aes128-xts", KEY32, len, &data, &expected);
     }
-    for len in [512, 4096] {
+    for len in [16, 512, 4095, 4096] {
         let data = pseudo_random(3 * len, len as u32 + 1);
-        let expected = match len {
-            512 => library_256::<512>(KEY64, TWEAK, &data, true),
-            _ => library_256::<4096>(KEY64, TWEAK, &data, true),
-        };
+        let expected = library_256(KEY64, TWEAK, len, &data, true);
         agrees("aes256-xts", KEY64, len, &data, &expected);
-        assert_eq!(
-            match len {
-                512 => library_256::<512>(KEY64, TWEAK, &expected, false),
-                _ => library_256::<4096>(KEY64, TWEAK, &expected, false),
-            },
-            data
-        );
+        assert_eq!(library_256(KEY64, TWEAK, len, &expected, false), data);
     }
 }
 
@@ -140,7 +132,7 @@ fn consecutive_data_units_take_consecutive_tweaks() {
         &data[512..],
     );
     assert_eq!(both[512..], second[..]);
-    assert_eq!(both, library_128::<512>(KEY32, "ff000000000000000000000000000000", &data, true));
+    assert_eq!(both, library_128(KEY32, "ff000000000000000000000000000000", 512, &data, true));
 }
 
 /// Input that is not a whole number of data units is refused; the whole ones before the
@@ -173,22 +165,29 @@ fn the_tweak_does_not_wrap() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("cannot go past 2^128 - 1"));
 }
 
-/// A wrong key length, equal key halves, a malformed tweak and an unsupported data-unit length
-/// are all refused before anything is written.
+/// A wrong key length, equal key halves, a malformed tweak and a data-unit length outside the
+/// bounds, at either end, are all refused before anything is written.
 #[test]
 fn bad_arguments_are_refused() {
     let short_key = &KEY32[..62];
     let equal_halves = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
-    let cases: [(&str, &str, &str, usize, &str); 6] = [
+    let bounds = "--data-unit-len must be from 16 to 16777216 bytes";
+    let cases: [(&str, &str, &str, usize, &str); 9] = [
         ("aes128-xts", short_key, TWEAK, 512, "needs a 32-byte key"),
         ("aes256-xts", KEY32, TWEAK, 512, "needs a 64-byte key"),
         ("aes128-xts", equal_halves, TWEAK, 512, "Key_1 != Key_2"),
         ("aes128-xts", KEY32, &TWEAK[..30], 512, "the tweak is 15 bytes"),
         ("aes128-xts", KEY32, "not hex", 512, "`--tweak` must be hex"),
-        ("aes256-xts", KEY64, TWEAK, 1000, "--data-unit-len must be 512, 1024, 2048 or 4096"),
+        ("aes128-xts", KEY32, TWEAK, 0, bounds),
+        ("aes128-xts", KEY32, TWEAK, XTS_MIN_DATA_UNIT_LEN - 1, bounds),
+        ("aes256-xts", KEY64, TWEAK, XTS_MAX_DATA_UNIT_LEN + 1, bounds),
+        ("aes256-xts", KEY64, TWEAK, usize::MAX, bounds),
     ];
     for (cmd, key, tweak, len, msg) in cases {
-        let err = run_err_silent(&args(&xts(cmd, "encrypt", key, tweak, len)), &[0x42; 512]);
+        let out = run(&args(&xts(cmd, "encrypt", key, tweak, len)), &[0x42; 512]);
+        assert!(!out.status.success(), "{cmd} {key} {tweak} {len}: accepted");
+        assert!(out.stdout.is_empty(), "{cmd} {key} {tweak} {len}: wrote output");
+        let err = String::from_utf8_lossy(&out.stderr);
         assert!(err.contains(msg), "{cmd} {key} {tweak} {len}: stderr was: {err}");
     }
 }

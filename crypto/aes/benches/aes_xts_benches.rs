@@ -31,30 +31,26 @@ fn key<const N: usize>() -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap()
 }
 
-/// Encryption and decryption of one `N`-byte data unit, reported as `label`.
-fn data_unit<P, const KEY_LEN: usize, const N: usize>(
+/// Encryption and decryption of one `len`-byte data unit, reported as `label`.
+fn data_unit<P, const KEY_LEN: usize>(
     group: &mut BenchmarkGroup<'_, WallTime>,
+    len: usize,
     label: &str,
 ) where
     P: BlockPermutation<16>,
-    XTSKey<P, N>: FromKeyMaterial<KEY_LEN>,
+    XTSKey<P>: FromKeyMaterial<KEY_LEN>,
 {
-    let key = XTSKey::<P, N>::from_key_material(&key::<KEY_LEN>()).unwrap();
-    let plaintext: Box<[u8; N]> = (0..N)
-        .map(|i| (i as u8).wrapping_mul(31))
-        .collect::<Vec<u8>>()
-        .into_boxed_slice()
-        .try_into()
-        .unwrap();
+    let key = XTSKey::<P>::from_key_material(&key::<KEY_LEN>()).unwrap();
+    let plaintext: Vec<u8> = (0..len).map(|i| (i as u8).wrapping_mul(31)).collect();
     let mut ciphertext = plaintext.clone();
-    key.encrypt_inplace(&TWEAK, &mut ciphertext);
+    key.encrypt_inplace(&TWEAK, &mut ciphertext).unwrap();
 
-    group.throughput(Throughput::Bytes(N as u64));
+    group.throughput(Throughput::Bytes(len as u64));
     group.bench_function(format!("encrypt {label}"), |b| {
         b.iter_batched(
             || plaintext.clone(),
             |mut unit| {
-                key.encrypt_inplace(black_box(&TWEAK), &mut unit);
+                key.encrypt_inplace(black_box(&TWEAK), &mut unit).unwrap();
                 black_box(&unit);
             },
             BatchSize::SmallInput,
@@ -64,7 +60,7 @@ fn data_unit<P, const KEY_LEN: usize, const N: usize>(
         b.iter_batched(
             || ciphertext.clone(),
             |mut unit| {
-                key.decrypt_inplace(black_box(&TWEAK), &mut unit);
+                key.decrypt_inplace(black_box(&TWEAK), &mut unit).unwrap();
                 black_box(&unit);
             },
             BatchSize::SmallInput,
@@ -74,21 +70,21 @@ fn data_unit<P, const KEY_LEN: usize, const N: usize>(
 
 fn bench_xts_aes_128(c: &mut Criterion) {
     let mut group = c.benchmark_group("modes::xts::XTS_AES_128");
-    data_unit::<AES128Internal, 32, 16>(&mut group, "16B (one block)");
-    data_unit::<AES128Internal, 32, 512>(&mut group, "512B sector");
-    data_unit::<AES128Internal, 32, 4096>(&mut group, "4KiB sector");
-    data_unit::<AES128Internal, 32, 4095>(&mut group, "4095B (ciphertext stealing)");
-    data_unit::<AES128Internal, 32, 65536>(&mut group, "64KiB");
+    data_unit::<AES128Internal, 32>(&mut group, 16, "16B (one block)");
+    data_unit::<AES128Internal, 32>(&mut group, 512, "512B sector");
+    data_unit::<AES128Internal, 32>(&mut group, 4096, "4KiB sector");
+    data_unit::<AES128Internal, 32>(&mut group, 4095, "4095B (ciphertext stealing)");
+    data_unit::<AES128Internal, 32>(&mut group, 65536, "64KiB");
     group.finish();
 }
 
 fn bench_xts_aes_256(c: &mut Criterion) {
     let mut group = c.benchmark_group("modes::xts::XTS_AES_256");
-    data_unit::<AES256Internal, 64, 16>(&mut group, "16B (one block)");
-    data_unit::<AES256Internal, 64, 512>(&mut group, "512B sector");
-    data_unit::<AES256Internal, 64, 4096>(&mut group, "4KiB sector");
-    data_unit::<AES256Internal, 64, 4095>(&mut group, "4095B (ciphertext stealing)");
-    data_unit::<AES256Internal, 64, 65536>(&mut group, "64KiB");
+    data_unit::<AES256Internal, 64>(&mut group, 16, "16B (one block)");
+    data_unit::<AES256Internal, 64>(&mut group, 512, "512B sector");
+    data_unit::<AES256Internal, 64>(&mut group, 4096, "4KiB sector");
+    data_unit::<AES256Internal, 64>(&mut group, 4095, "4095B (ciphertext stealing)");
+    data_unit::<AES256Internal, 64>(&mut group, 65536, "64KiB");
     group.finish();
 }
 
@@ -98,10 +94,10 @@ fn bench_xts_init(c: &mut Criterion) {
     let material_128 = key::<32>();
     let material_256 = key::<64>();
     group.bench_function("XTS_AES_128 from_key_material (two key schedules)", |b| {
-        b.iter(|| black_box(XTS_AES_128::<4096>::from_key_material(black_box(&material_128))))
+        b.iter(|| black_box(XTS_AES_128::from_key_material(black_box(&material_128))))
     });
     group.bench_function("XTS_AES_256 from_key_material (two key schedules)", |b| {
-        b.iter(|| black_box(XTS_AES_256::<4096>::from_key_material(black_box(&material_256))))
+        b.iter(|| black_box(XTS_AES_256::from_key_material(black_box(&material_256))))
     });
     group.finish();
 }

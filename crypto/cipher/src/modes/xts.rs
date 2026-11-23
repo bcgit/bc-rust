@@ -15,12 +15,11 @@
 //! The key is [`XTSKey`], built with `from_key_material` from the XTS key `Key = Key_1 | Key_2`
 //! (IEEE 1619-2007 Sec 5.3.1): two keys for the permutation, `Key_1` encrypting the data and
 //! `Key_2` the tweak, so 32 bytes over a permutation with a 16-byte key and 64 over one with a
-//! 32-byte key, the 256- and 512-bit keys of XTS-AES-128 and XTS-AES-256 (Sec 6). The data-unit
-//! length is the key type's `DATA_UNIT_LEN`, because SP 800-38E Sec 4 defines an instance of
-//! XTS-AES by "a secret key" and "a single, fixed length for the data units that the key
-//! protects"; a length outside the range is a compile error. The ready-made `XTS_AES_128` /
-//! `XTS_AES_256` aliases are in `bouncycastle-aes`. IEEE 1619 specifies XTS for AES only, and AES
-//! is the only cipher SP 800-38E approves it for.
+//! 32-byte key, the 256- and 512-bit keys of XTS-AES-128 and XTS-AES-256 (Sec 6). Each call takes
+//! one data unit of any length in that range and refuses one outside it; keeping every data unit
+//! under a key to one length is the caller's to do (see the security considerations). The
+//! ready-made `XTS_AES_128` / `XTS_AES_256` aliases are in `bouncycastle-aes`. IEEE 1619 specifies
+//! XTS for AES only, and AES is the only cipher SP 800-38E approves it for.
 //!
 //! # The tweak
 //!
@@ -47,14 +46,14 @@
 //! let material = KeyMaterial::<32>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
 //!
-//! // 512-byte data units: the length is part of the key's type.
-//! let key = XTSKey::<ToyBlockCipher, 512>::from_key_material(&material).expect("an XTS key");
+//! let key = XTSKey::<ToyBlockCipher>::from_key_material(&material).expect("an XTS key");
 //!
+//! // A 512-byte sector, under its sequence number.
 //! let mut sector = [0x5Au8; 512];
-//! let tweak = 7u128.to_le_bytes(); // the data unit's sequence number
-//! assert_eq!(key.encrypt_inplace(&tweak, &mut sector), 512);
+//! let tweak = 7u128.to_le_bytes();
+//! assert_eq!(key.encrypt_inplace(&tweak, &mut sector), Ok(512));
 //! assert_ne!(sector, [0x5Au8; 512]);
-//! assert_eq!(key.decrypt_inplace(&tweak, &mut sector), 512);
+//! assert_eq!(key.decrypt_inplace(&tweak, &mut sector), Ok(512));
 //! assert_eq!(sector, [0x5Au8; 512]);
 //! ```
 //!
@@ -80,12 +79,14 @@
 //! ## One key scope per key
 //!
 //! IEEE 1619-2007 Sec 6 allows a key only one *key scope*: a run of data units of one length
-//! under consecutive tweak values, so every data unit under the key has its own tweak. Two data
-//! units encrypted under one key and one tweak are encrypted under the same masks, so a block that
-//! is equal in both, at the same offset, has an equal ciphertext in both, and a ciphertext block
-//! of one can be pasted into the other. A key type keeps to one length, its `DATA_UNIT_LEN`; a
-//! second key type of another length made from the same material, or a second disk under the
-//! same key, steps outside the key scope.
+//! under consecutive tweak values, so every data unit under the key has its own tweak. SP 800-38E
+//! Sec 4 likewise defines an instance of XTS-AES by "a secret key" and "a single, fixed length for
+//! the data units that the key protects". Two data units encrypted under one key and one tweak are
+//! encrypted under the same masks, so a block that is equal in both, at the same offset, has an
+//! equal ciphertext in both, and a ciphertext block of one can be pasted into the other. The key
+//! takes a data unit of any valid length at every call, so keeping all of its data units to one
+//! length, each under its own tweak, is the caller's obligation: a second length, or a second
+//! disk, under the same key steps outside the key scope.
 //!
 //! ## A bounded amount of data per key
 //!
@@ -129,16 +130,13 @@ pub const XTS_MIN_DATA_UNIT_LEN: usize = BLOCK_LEN;
 /// The longest data unit, in bytes: 2^20 blocks, 16 MiB (SP 800-38E Sec 4).
 pub const XTS_MAX_DATA_UNIT_LEN: usize = (1 << 20) * BLOCK_LEN;
 
-/// An XTS key over the permutation `P`, for data units of exactly `DATA_UNIT_LEN` bytes:
-/// `Key_1` and `Key_2`, each expanded once, when the key is made.
+/// An XTS key over the permutation `P`: `Key_1` and `Key_2`, each expanded once, when the key is
+/// made.
 ///
 /// Built with [`FromKeyMaterial`] from `Key = Key_1 | Key_2`, which is 32 bytes over a permutation
 /// with a 16-byte key and 64 over one with a 32-byte key, tagged [`KeyType::SymmetricCipherKey`].
 /// It encrypts and decrypts one data unit at a time, in place, under the data unit's tweak; see
 /// the [module docs](self) for the tweak, and for the security considerations.
-///
-/// The only state is the two expanded keys, which the permutation holds so that they are
-/// zeroized on drop; the key has no `Debug` and no way to read the material back.
 ///
 /// # Construction
 ///
@@ -149,109 +147,80 @@ pub const XTS_MAX_DATA_UNIT_LEN: usize = (1 << 20) * BLOCK_LEN;
 /// * [`KeyMaterialError::GenericError`] if `Key_1` and `Key_2` are equal (FIPS 140-3 IG C.I);
 /// * [`KeyMaterialError::SecurityStrength`] if it is tagged below the permutation's strength.
 ///   Each half carries the key's strength, capped at what the half's length can carry.
-///
-/// # The data-unit length is checked at compile time
-///
-/// A `DATA_UNIT_LEN` below [`XTS_MIN_DATA_UNIT_LEN`], an empty data unit included, or above
-/// [`XTS_MAX_DATA_UNIT_LEN`] does not build. The check runs where the key type is used, so
-/// `cargo build` and `cargo test` report it, and `cargo check` does not:
-///
-/// ```compile_fail
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-/// # use toy::ToyBlockCipher;
-/// # use bouncycastle_cipher::modes::{XTS_MAX_DATA_UNIT_LEN, XTSKey};
-/// # use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// # use bouncycastle_core::symmetric_key::FromKeyMaterial;
-/// # let bytes: [u8; 32] = core::array::from_fn(|i| i as u8 + 1);
-/// # let km = KeyMaterial::<32>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
-/// #     .expect("a 32-byte key");
-/// // Shorter than one block.
-/// let key = XTSKey::<ToyBlockCipher, 15>::from_key_material(&km);
-/// ```
-///
-/// ```compile_fail
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-/// # use toy::ToyBlockCipher;
-/// # use bouncycastle_cipher::modes::{XTS_MAX_DATA_UNIT_LEN, XTSKey};
-/// # use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// # use bouncycastle_core::symmetric_key::FromKeyMaterial;
-/// # let bytes: [u8; 32] = core::array::from_fn(|i| i as u8 + 1);
-/// # let km = KeyMaterial::<32>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
-/// #     .expect("a 32-byte key");
-/// // Longer than 2^20 blocks.
-/// let key = XTSKey::<ToyBlockCipher, { XTS_MAX_DATA_UNIT_LEN + 1 }>::from_key_material(&km);
-/// ```
-///
-/// The two bounds themselves build:
-///
-/// ```
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-/// # use toy::ToyBlockCipher;
-/// # use bouncycastle_cipher::modes::{XTS_MAX_DATA_UNIT_LEN, XTSKey};
-/// # use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// # use bouncycastle_core::symmetric_key::FromKeyMaterial;
-/// # let bytes: [u8; 32] = core::array::from_fn(|i| i as u8 + 1);
-/// # let km = KeyMaterial::<32>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
-/// #     .expect("a 32-byte key");
-/// let shortest = XTSKey::<ToyBlockCipher, 16>::from_key_material(&km);
-/// let longest = XTSKey::<ToyBlockCipher, { XTS_MAX_DATA_UNIT_LEN }>::from_key_material(&km);
-/// # assert!(shortest.is_ok() && longest.is_ok());
-/// ```
-pub struct XTSKey<P, const DATA_UNIT_LEN: usize> {
+pub struct XTSKey<P> {
+    // Nothing but the two expanded keys, which the permutation holds and wipes on drop (AES keeps
+    // its schedule in a `Secret`).
     /// `Key_1`, which encrypts the data.
     key1: P,
     /// `Key_2`, which encrypts the tweak.
     key2: P,
 }
 
-impl<P, const DATA_UNIT_LEN: usize> XTSKey<P, DATA_UNIT_LEN> {
-    /// The bounds on the data-unit length, a compile-time error where the key type is used:
-    /// evaluated when a constructor or a method is monomorphised, so that the private functions
-    /// below are never handed a data unit outside them.
-    const DATA_UNIT_LEN_CHECK: () = assert!(
-        DATA_UNIT_LEN >= XTS_MIN_DATA_UNIT_LEN && DATA_UNIT_LEN <= XTS_MAX_DATA_UNIT_LEN,
-        "an XTS data unit is 1 to 2^20 blocks (IEEE 1619-2007 Sec 5.1, SP 800-38E Sec 4)"
-    );
-}
-
-impl<P: BlockPermutation<BLOCK_LEN>, const DATA_UNIT_LEN: usize> XTSKey<P, DATA_UNIT_LEN> {
+impl<P: BlockPermutation<BLOCK_LEN>> XTSKey<P> {
     /// Encrypts one data unit in place under its tweak, and returns the number of bytes written,
-    /// which is always `DATA_UNIT_LEN`: the ciphertext is as long as the plaintext. Over a
-    /// permutation that decrypts only ([`BlockPermutation::DECRYPT_ONLY`]) it does not compile.
+    /// `data_unit.len()`: the ciphertext is as long as the plaintext. Over a permutation that
+    /// decrypts only ([`BlockPermutation::DECRYPT_ONLY`]) it does not compile.
+    ///
+    /// # Errors
+    ///
+    /// A data unit shorter than [`XTS_MIN_DATA_UNIT_LEN`] is refused with
+    /// [`SymmetricCipherError::InvalidInputLength`], and one longer than
+    /// [`XTS_MAX_DATA_UNIT_LEN`] with [`SymmetricCipherError::DataLimitExceeded`]; a refused data
+    /// unit is left as it was.
     pub fn encrypt_inplace(
         &self,
         tweak: &[u8; XTS_TWEAK_LEN],
-        data_unit: &mut [u8; DATA_UNIT_LEN],
-    ) -> usize {
-        const { Self::DATA_UNIT_LEN_CHECK };
+        data_unit: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
         const {
             assert!(
                 !P::DECRYPT_ONLY,
                 "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no data unit may be encrypted over it"
             )
         };
+        check_data_unit_len(data_unit.len())?;
         encrypt(&self.key1, &self.key2, tweak, data_unit);
-        DATA_UNIT_LEN
+        Ok(data_unit.len())
     }
 
     /// Decrypts one data unit in place under the tweak it was encrypted under, and returns the
-    /// number of bytes written, which is always `DATA_UNIT_LEN`. There is nothing to verify: any
-    /// data unit decrypts, a modified one to unpredictable plaintext.
+    /// number of bytes written, `data_unit.len()`. There is nothing to verify: any data unit of a
+    /// valid length decrypts, a modified one to unpredictable plaintext.
+    ///
+    /// # Errors
+    ///
+    /// As for [`encrypt_inplace`](Self::encrypt_inplace): a data unit shorter than
+    /// [`XTS_MIN_DATA_UNIT_LEN`] or longer than [`XTS_MAX_DATA_UNIT_LEN`] is refused, and left as
+    /// it was.
     pub fn decrypt_inplace(
         &self,
         tweak: &[u8; XTS_TWEAK_LEN],
-        data_unit: &mut [u8; DATA_UNIT_LEN],
-    ) -> usize {
-        const { Self::DATA_UNIT_LEN_CHECK };
+        data_unit: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        check_data_unit_len(data_unit.len())?;
         decrypt(&self.key1, &self.key2, tweak, data_unit);
-        DATA_UNIT_LEN
+        Ok(data_unit.len())
     }
+}
+
+/// The bounds on a data unit's length, checked before the data unit is touched, so that the
+/// private functions below are never handed one outside them.
+fn check_data_unit_len(len: usize) -> Result<(), SymmetricCipherError> {
+    if len < XTS_MIN_DATA_UNIT_LEN {
+        return Err(SymmetricCipherError::InvalidInputLength(
+            "an XTS data unit is at least one block, 16 bytes (IEEE 1619-2007 Sec 5.1)",
+        ));
+    }
+    if len > XTS_MAX_DATA_UNIT_LEN {
+        return Err(SymmetricCipherError::DataLimitExceeded);
+    }
+    Ok(())
 }
 
 // One impl per key length, because the XTS key's length, twice the permutation's, cannot be
 // written as an expression over the permutation's on stable Rust.
 
-impl<P, const DATA_UNIT_LEN: usize> FromKeyMaterial<32> for XTSKey<P, DATA_UNIT_LEN>
+impl<P> FromKeyMaterial<32> for XTSKey<P>
 where
     P: KeyExpansion<16> + BlockPermutation<BLOCK_LEN>,
 {
@@ -260,13 +229,12 @@ where
     /// Splits the 32-byte `Key_1 | Key_2` into two 16-byte keys and expands each; see
     /// [`XTSKey`] for when it refuses.
     fn from_key_material(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
-        const { Self::DATA_UNIT_LEN_CHECK };
         let (key1, key2) = expand_halves::<P, 16, 32>(key)?;
         Ok(Self { key1, key2 })
     }
 }
 
-impl<P, const DATA_UNIT_LEN: usize> FromKeyMaterial<64> for XTSKey<P, DATA_UNIT_LEN>
+impl<P> FromKeyMaterial<64> for XTSKey<P>
 where
     P: KeyExpansion<32> + BlockPermutation<BLOCK_LEN>,
 {
@@ -275,7 +243,6 @@ where
     /// Splits the 64-byte `Key_1 | Key_2` into two 32-byte keys and expands each; see
     /// [`XTSKey`] for when it refuses.
     fn from_key_material(key: &KeyMaterial<64>) -> Result<Self, SymmetricCipherError> {
-        const { Self::DATA_UNIT_LEN_CHECK };
         let (key1, key2) = expand_halves::<P, 32, 64>(key)?;
         Ok(Self { key1, key2 })
     }
@@ -477,7 +444,7 @@ fn first_mask<P: BlockPermutation<BLOCK_LEN>>(key2: &P, i: &Block) -> Secret<Blo
 
 /// XTS-AES-Enc (IEEE 1619-2007 Sec 5.3.2) of the data unit `data`, in place, under the tweak
 /// `i`. `data` is from [`XTS_MIN_DATA_UNIT_LEN`] to [`XTS_MAX_DATA_UNIT_LEN`] bytes long, which
-/// the callers check at compile time.
+/// the callers check.
 fn encrypt<P: BlockPermutation<BLOCK_LEN>>(key1: &P, key2: &P, i: &Block, data: &mut [u8]) {
     let mut t = first_mask(key2, i);
 
