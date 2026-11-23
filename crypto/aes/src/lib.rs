@@ -28,9 +28,10 @@
 //! * [`AES_OFB_128`]
 //! * [`XTS_AES_128`], for storage: one data unit at a time, in place, under a tweak
 //!
-//! Each mode is used through a mode-bound key object such as [`AES256Key<GCM>`](AES256Key),
-//! which validates and expands the material once and hands out the mode's encryptors and
-//! decryptors; see [`AES128Key`].
+//! Each mode but XTS is used through a mode-bound key object such as
+//! [`AES256Key<GCM>`](AES256Key), which validates and expands the material once and hands out
+//! the mode's encryptors and decryptors; see [`AES128Key`]. XTS has a key type of its own,
+//! [`XTS_AES_128`], with no workers: the key encrypts and decrypts a data unit itself.
 //!
 //! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
 //! it is a building block for other modes, not itself a confidentiality mode for data.
