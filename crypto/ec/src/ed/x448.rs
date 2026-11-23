@@ -192,6 +192,7 @@
 use crate::dhkem::{
     AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEM, DHKEMParams, DeriveKeyPairForm, HpkeKem,
 };
+use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
 use bouncycastle_core::errors::{
     KEMError, KeyAgreementError, KeyDecodingError, KeyMaterialError, RNGError,
@@ -796,21 +797,13 @@ fn ladder_double(x: &mut FieldElement448, z: &mut FieldElement448) {
 /// stack it used is overwritten afterwards.
 fn scalar_mult_into(k: &[u8; SCALAR_LEN], u: &X448PublicKey, out: &mut [u8; POINT_LEN]) {
     scalar_mult_in_own_frame(k, u, out);
-    wipe_stack_below();
+    wipe_stack_below::<WIPED_STACK_WORDS>();
 }
 
 /// How much stack [`wipe_stack_below`] overwrites, in 64-bit words: more than
 /// [`scalar_mult_in_own_frame`] and everything it calls use (1800 bytes in the x86-64 release
 /// build that was measured), with room for a compiler that lays the frames out less tightly.
 const WIPED_STACK_WORDS: usize = 320;
-
-/// Overwrites the stack that the previous call made from the caller's frame used, by taking a
-/// frame of its own over the same memory and wiping it. Never inlined: the frame is the point.
-#[inline(never)]
-fn wipe_stack_below() {
-    let mut scratch = Secret::<[u64; WIPED_STACK_WORDS]>::new();
-    core::hint::black_box(&mut *scratch);
-}
 
 /// The computation of [`scalar_mult_into`]. Never inlined, so that what it spills lies below
 /// its caller's frame, where [`wipe_stack_below`] reaches it.

@@ -8,6 +8,7 @@
 //! buffer.
 
 use crate::ed::{nat, wnaf};
+use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::Secret;
 
@@ -194,21 +195,13 @@ pub(super) fn calculate_S(
     S: &mut [u8; SCALAR_LEN],
 ) {
     calculate_S_in_own_frame(r, k, s, S);
-    wipe_stack_below();
+    wipe_stack_below::<WIPED_STACK_WORDS>();
 }
 
 /// How much stack [`wipe_stack_below`] overwrites, in 64-bit words: more than
 /// [`calculate_S_in_own_frame`] and everything it calls use, with room for a compiler that
 /// lays the frames out less tightly.
 const WIPED_STACK_WORDS: usize = 256;
-
-/// Overwrites the stack that the previous call made from the caller's frame used, by taking a
-/// frame of its own over the same memory and wiping it. Never inlined: the frame is the point.
-#[inline(never)]
-fn wipe_stack_below() {
-    let mut scratch = Secret::<[u64; WIPED_STACK_WORDS]>::new();
-    core::hint::black_box(&mut *scratch);
-}
 
 /// The computation of [`calculate_S`]. Never inlined, so that what it spills lies below its
 /// caller's frame, where [`wipe_stack_below`] reaches it.
