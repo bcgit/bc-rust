@@ -202,6 +202,13 @@
 //! Section 5.6.2.2.1 requires full validation of a static peer key and Section 5.6.2.2.2 allows the
 //! partial routine for an ephemeral one on an approved curve; either way it happens in the
 //! key-agreement layer, before this function runs.
+//!
+//! # Features
+//!
+//! `alloc`, and `std`, which is on by default and implies it, turn on the features of those names
+//! in `bouncycastle-core` and `bouncycastle-digest`: the allocating one-shots and `_boxed` finals
+//! of the core traits. The crate has nothing of its own behind either, and without them needs no
+//! allocator.
 
 #![no_std]
 #![forbid(unsafe_code)]

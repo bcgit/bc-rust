@@ -10,6 +10,9 @@ use bouncycastle_utils::secret::Secret;
 use core::fmt::{Debug, Display};
 use core::marker::Sized;
 
+#[cfg(feature = "alloc")]
+use alloc::{boxed::Box, vec, vec::Vec};
+
 // Imports needed for docs
 #[allow(unused_imports)]
 use crate::key_material::KeyMaterial;
@@ -19,7 +22,7 @@ use crate::key_material::KeyType;
 
 /// What an AEAD key's allocating one-shot with a detached tag hands back:
 /// `(nonce, ciphertext, tag)`
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub type AEADEncryptedTuple<const NONCE_LEN: usize, const TAG_LEN: usize> =
     ([u8; NONCE_LEN], Vec<u8>, [u8; TAG_LEN]);
 
@@ -86,6 +89,9 @@ pub trait AEADCipherDecryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
     /// [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out) for a worker held
     /// as `Box<dyn AEADCipherDecryptor>`. The box is consumed, and nothing is moved out of it:
     /// the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_decrypt_final_detached_out_boxed(
         mut self: Box<Self>,
         tag: &[u8; TAG_LEN],
@@ -240,6 +246,9 @@ pub trait AEADCipherEncryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
     /// [`do_encrypt_final_detached_out`](Self::do_encrypt_final_detached_out) for a worker held
     /// as `Box<dyn AEADCipherEncryptor>`. The box is consumed, and nothing is moved out of it:
     /// the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_encrypt_final_detached_out_boxed(
         mut self: Box<Self>,
         ciphertext: &mut [u8; FINAL_LEN],
@@ -521,8 +530,8 @@ pub trait Hash: AlgorithmInfo {
     /// Finish absorbing input and produce the hashes output.
     /// Consumes self, so this must be the final call to this object.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_final(mut self) -> Vec<u8>
     where
         Self: Sized,
@@ -553,6 +562,9 @@ pub trait Hash: AlgorithmInfo {
     /// [`do_final_out`](Self::do_final_out) for a hash held as `Box<dyn Hash>`, which cannot call
     /// a method that takes `self` by value. The box is consumed, so a stored hash is finished
     /// exactly once, and nothing is moved out of it: the state is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_final_out_boxed(mut self: Box<Self>, output: &mut [u8]) -> usize {
         self.finish_into(&FinishToken::new(), output)
     }
@@ -575,8 +587,8 @@ pub trait Hash: AlgorithmInfo {
     /// 0 is a valid value and means the message ends on a byte boundary (equivalent to [`Hash::do_final`]).
     /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_final_partial_bits(
         mut self,
         partial_byte: u8,
@@ -607,6 +619,9 @@ pub trait Hash: AlgorithmInfo {
 
     /// [`do_final_partial_bits_out`](Self::do_final_partial_bits_out) for a hash held as
     /// `Box<dyn Hash>`; see [`do_final_out_boxed`](Self::do_final_out_boxed).
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_final_partial_bits_out_boxed(
         mut self: Box<Self>,
         partial_byte: u8,
@@ -636,8 +651,8 @@ pub trait HashOneShot: Hash + Default {
 
     /// Hashes `data` and returns the digest.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn hash(data: &[u8]) -> Vec<u8> {
         let mut h = Self::default();
         h.do_update(data);
@@ -743,12 +758,12 @@ pub trait KDF: AlgorithmInfo {
     ) -> Result<usize, KDFError>;
 
     /// One-shot: `len` bytes, at most [`KDF_ONE_SHOT_MAX_LEN`], as new key material. Provided
-    /// over [`derive_key_out`](Self::derive_key_out). Only available with the `std` feature.
+    /// over [`derive_key_out`](Self::derive_key_out). Only available with the `alloc` feature.
     ///
     /// # Errors
     /// [`KDFError::InvalidLength`] if `len` exceeds [`KDF_ONE_SHOT_MAX_LEN`], else as
     /// [`derive_key_out`](Self::derive_key_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn derive_key(
         &self,
         ikm: &dyn KeyMaterialTrait,
@@ -764,11 +779,11 @@ pub trait KDF: AlgorithmInfo {
     }
 
     /// One-shot over [`derive_key_from_multiple_out`](Self::derive_key_from_multiple_out). Only
-    /// available with the `std` feature.
+    /// available with the `alloc` feature.
     ///
     /// # Errors
     /// As [`derive_key`](Self::derive_key).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn derive_key_from_multiple(
         &self,
         ikms: &[&dyn KeyMaterialTrait],
@@ -786,7 +801,7 @@ pub trait KDF: AlgorithmInfo {
 
 /// The one-shots' refusal of a length past [`KDF_ONE_SHOT_MAX_LEN`]; the `_out` forms take any
 /// length the function and the buffer allow.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 const ONE_SHOT_TOO_LONG: &str =
     "the KDF one-shots derive at most KDF_ONE_SHOT_MAX_LEN bytes; use the _out form for more";
 
@@ -1086,6 +1101,9 @@ pub trait MACGenerator<const MAC_LEN: usize>: AlgorithmInfo {
 
     /// [`do_final_out`](Self::do_final_out) for a worker held as `Box<dyn MACGenerator>`. The box
     /// is consumed, and nothing is moved out of it: the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_final_out_boxed(mut self: Box<Self>, out: &mut [u8; MAC_LEN]) -> usize {
         self.finish_mac_into(&FinishToken::new(), out)
     }
@@ -1123,6 +1141,9 @@ pub trait MACVerifier<const MAC_LEN: usize>: AlgorithmInfo {
 
     /// [`do_verify_final`](Self::do_verify_final) for a worker held as `Box<dyn MACVerifier>`.
     /// The box is consumed, and nothing is moved out of it: the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_verify_final_boxed(mut self: Box<Self>, mac: &[u8; MAC_LEN]) -> Result<(), MACError> {
         self.finish_mac_verify(&FinishToken::new(), mac)
     }
@@ -1267,6 +1288,9 @@ pub trait SignatureSigner<const SIG_LEN: usize>: AlgorithmInfo {
 
     /// [`do_final_out`](Self::do_final_out) for a worker held as `Box<dyn SignatureSigner>`. The
     /// box is consumed, and nothing is moved out of it: the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_final_out_boxed(
         mut self: Box<Self>,
         output: &mut [u8; SIG_LEN],
@@ -1306,6 +1330,9 @@ pub trait SignatureVerifier: AlgorithmInfo {
 
     /// [`do_verify_final`](Self::do_verify_final) for a worker held as
     /// `Box<dyn SignatureVerifier>`. The box is consumed, and nothing is moved out of it.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_verify_final_boxed(mut self: Box<Self>, sig: &[u8]) -> Result<(), SignatureError> {
         self.finish_signature_verify(&FinishToken::new(), sig)
     }
@@ -1484,11 +1511,11 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     /// Streaming, allocating: as [`do_decrypt_out`](Self::do_decrypt_out), returning the
     /// plaintext released by this call as a `Vec<u8>` of exactly
     /// [`do_decrypt_out_len`](Self::do_decrypt_out_len) bytes -- which may be empty, if the whole
-    /// of `ciphertext` was held back. Only available with the `std` feature.
+    /// of `ciphertext` was held back. Only available with the `alloc` feature.
     ///
     /// # Errors
     /// As [`do_decrypt_out`](Self::do_decrypt_out), except that the buffer is always large enough.
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn do_decrypt(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>, SymmetricCipherError> {
         let needed = self.do_decrypt_out_len(ciphertext.len());
         let mut plaintext = vec![0u8; needed];
@@ -1520,6 +1547,9 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     /// `Box<dyn SymmetricCipherDecryptor>`, which cannot call a method that takes `self` by
     /// value. The box is consumed, so a stored worker is finished exactly once, and nothing is
     /// moved out of it: the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_decrypt_final_boxed(
         mut self: Box<Self>,
     ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
@@ -1576,7 +1606,7 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
 ///
 /// Init data (an IV or nonce) is drawn by the key's `create_encryptor` and returned, never
 /// supplied, for the same reason as in [`BlockCipherEncryptor`]. Everything is `no_std`-friendly
-/// except the allocating [`do_encrypt`](Self::do_encrypt), which sits behind the `std` feature.
+/// except the allocating [`do_encrypt`](Self::do_encrypt), which sits behind the `alloc` feature.
 ///
 /// An implementor writes only [`update_out_len`](Self::do_encrypt_out_len),
 /// [`do_update_out`](Self::do_encrypt_out),
@@ -1630,11 +1660,11 @@ pub trait SymmetricCipherEncryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     /// Streaming, allocating: as [`do_encrypt_out`](Self::do_encrypt_out), returning the
     /// ciphertext released by this call as a `Vec<u8>` of exactly
     /// [`do_encrypt_out_len`](Self::do_encrypt_out_len) bytes -- which may be empty, if the whole
-    /// of `plaintext` was buffered. Only available with the `std` feature.
+    /// of `plaintext` was buffered. Only available with the `alloc` feature.
     ///
     /// # Errors
     /// As [`do_encrypt_out`](Self::do_encrypt_out), except that the buffer is always large enough.
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn do_encrypt(&mut self, plaintext: &[u8]) -> Result<Vec<u8>, SymmetricCipherError> {
         let needed = self.do_encrypt_out_len(plaintext.len());
         let mut ciphertext = vec![0u8; needed];
@@ -1665,6 +1695,9 @@ pub trait SymmetricCipherEncryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     /// `Box<dyn SymmetricCipherEncryptor>`, which cannot call a method that takes `self` by
     /// value. The box is consumed, so a stored worker is finished exactly once, and nothing is
     /// moved out of it: the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_encrypt_final_boxed(
         mut self: Box<Self>,
     ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
@@ -1722,9 +1755,9 @@ pub trait SymmetricCipherEncryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
 pub trait XOFSqueezer {
     /// Produces the next `num_bytes` bytes of the output stream.
     ///
-    /// Provided over [`do_output_out`](Self::do_output_out). Only available with the `std`
+    /// Provided over [`do_output_out`](Self::do_output_out). Only available with the `alloc`
     /// feature.
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
         let mut out = vec![0u8; num_bytes];
         self.do_output_out(&mut out);
@@ -1740,8 +1773,8 @@ pub trait XOFSqueezer {
     /// Consumes self, so this must be the final call to this object. Provided over
     /// [`do_output_final_out`](Self::do_output_final_out).
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_output_final(self, num_bytes: usize) -> Vec<u8>
     where
         Self: Sized,
@@ -1834,8 +1867,8 @@ pub trait XOF: Hash {
     /// The default absorbs and reads in the obvious way; override it only where the type can do
     /// better, as SHAKE does.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn xof(mut self, data: &[u8], result_len: usize) -> Vec<u8>
     where
         Self: Sized,

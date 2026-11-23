@@ -5,7 +5,8 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-bouncycastle-core.workspace = true
+# The suites use the `Vec` one-shots.
+bouncycastle-core = { workspace = true, features = ["std"] }
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-symmetric.workspace = true

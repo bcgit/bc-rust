@@ -10,16 +10,16 @@ version = "0.1.4"
 [workspace.dependencies]
 
 # *** Internal Dependencies ***
-bouncycastle = { path = "./" }
-bouncycastle-symmetric = { path = "./crypto/symmetric" }
-bouncycastle-digest = { path = "./crypto/digest" }
-bouncycastle-core = { path = "crypto/core" }
+bouncycastle = { path = "./", default-features = false }
+bouncycastle-symmetric = { path = "./crypto/symmetric", default-features = false }
+bouncycastle-digest = { path = "./crypto/digest", default-features = false }
+bouncycastle-core = { path = "crypto/core", default-features = false }
 bouncycastle-cipher-test-framework = { path = "./crypto/cipher-test-framework" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
-bouncycastle-ec = { path = "./crypto/ec" }
-bouncycastle-hybrid = { path = "./crypto/hybrid" }
-bouncycastle-modexp = { path = "./crypto/modexp" }
-bouncycastle-pqc = { path = "./crypto/pqc" }
+bouncycastle-ec = { path = "./crypto/ec", default-features = false }
+bouncycastle-hybrid = { path = "./crypto/hybrid", default-features = false }
+bouncycastle-modexp = { path = "./crypto/modexp", default-features = false }
+bouncycastle-pqc = { path = "./crypto/pqc", default-features = false }
 bouncycastle-rng = { path = "./crypto/rng" }
 bouncycastle-utils = { path = "./crypto/utils" }
 
@@ -47,6 +47,33 @@ name = "bouncycastle"
 version.workspace = true
 edition.workspace = true
 
+# `alloc` turns on the `alloc` feature of every library crate, and with it the one-shots that
+# return a `Vec` and the `_boxed` finals of the worker traits. `std`, on by default, implies it,
+# turns on their `std`, and adds `bouncycastle-rng`, which seeds from the operating system and so
+# cannot do without `std`. With neither the crate is a `no_std` build that links no allocator.
+[features]
+default = ["std"]
+std = [
+    "alloc",
+    "dep:bouncycastle-rng",
+    "bouncycastle-core/std",
+    "bouncycastle-digest/std",
+    "bouncycastle-symmetric/std",
+    "bouncycastle-ec/std",
+    "bouncycastle-pqc/std",
+    "bouncycastle-modexp/std",
+    "bouncycastle-hybrid/std",
+]
+alloc = [
+    "bouncycastle-core/alloc",
+    "bouncycastle-digest/alloc",
+    "bouncycastle-symmetric/alloc",
+    "bouncycastle-ec/alloc",
+    "bouncycastle-pqc/alloc",
+    "bouncycastle-modexp/alloc",
+    "bouncycastle-hybrid/alloc",
+]
+
 [dependencies]
 bouncycastle-symmetric.workspace = true
 bouncycastle-digest.workspace = true
@@ -55,4 +82,4 @@ bouncycastle-ec.workspace = true
 bouncycastle-hybrid.workspace = true
 bouncycastle-modexp.workspace = true
 bouncycastle-pqc.workspace = true
-bouncycastle-rng.workspace = true
+bouncycastle-rng = { workspace = true, optional = true }

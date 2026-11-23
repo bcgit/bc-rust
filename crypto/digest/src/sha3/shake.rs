@@ -3,14 +3,14 @@ use crate::sha3::keccak::{
     INPUT_AFTER_FINISH, KeccakInternal, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN,
     deserialize_sha3_family_state, serialize_sha3_family_state,
 };
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, FinishToken, Hash, HashOneShot, Suspendable, XOF, XOFSqueezer,
 };
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
-#[cfg(feature = "std")]
-use std::vec::Vec;
 
 /// Internal struct for SHAKE. Use [`SHAKE128`](crate::sha3::SHAKE128) or [`SHAKE256`](crate::sha3::SHAKE256);
 /// the parameter trait is sealed.
@@ -66,7 +66,7 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         self.keccak.squeezing
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn hash_internal(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
         self.keccak.absorb(data);
         self.into_squeezer().do_output(result_len)
@@ -439,7 +439,7 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         self.into_squeezer_partial_bits_with_suffix(partial_byte, num_bits, 0x0F, 4)
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
         self.hash_internal(data, result_len)
     }

@@ -32,8 +32,27 @@ jobs:
       - name: Build workspace
         run: cargo build --workspace --all-targets --all-features
 
-      # --all-features above never builds a crate with a default feature off. scrypt without
-      # `std` is its caller-supplied-memory configuration, and it once did not compile.
+      # --all-features above never builds a crate with a default feature off. Each library crate
+      # is `#![no_std]`, and with `-p` nothing else turns a feature on, so an item that needs
+      # `std` or `alloc` and is not behind its feature fails here. This is the host target, where
+      # `extern crate std` still resolves; the nightly job in aes-ct-asm.yml checks a bare-metal
+      # one, where it does not.
+      - name: Check the library crates without std
+        run: |
+          for crate in utils core digest symmetric ec pqc modexp hybrid; do
+            cargo check -p "bouncycastle-$crate" --no-default-features
+          done
+          for crate in core digest symmetric ec pqc modexp hybrid; do
+            cargo check -p "bouncycastle-$crate" --no-default-features --features alloc
+          done
+
+      - name: Test bouncycastle-core without std
+        run: |
+          cargo test -p bouncycastle-core --no-default-features
+          cargo test -p bouncycastle-core --no-default-features --features alloc
+
+      # scrypt without `alloc` is its caller-supplied-memory configuration, and it once did not
+      # compile.
       - name: Test bouncycastle-digest without std
         # The vector suites need bc-test-data, which this job does not check out.
         # Every target is built first, so that one that stops compiling without std is seen.

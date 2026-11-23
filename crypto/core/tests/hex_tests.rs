@@ -1,5 +1,5 @@
 // Through the allocating forms.
-#![cfg(feature = "std")]
+#![cfg(feature = "alloc")]
 
 use bouncycastle_core::hex;
 use bouncycastle_core::hex::HexError;

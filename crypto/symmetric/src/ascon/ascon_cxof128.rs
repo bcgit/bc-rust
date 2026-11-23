@@ -16,8 +16,8 @@ use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
 use crate::ascon::ASCON_CXOF128_NAME;
 use crate::ascon::sponge::{RATE, Sponge};
-#[cfg(feature = "std")]
-use std::vec::Vec;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 
 /// Maximum customization-string length in bytes (2048 bits, per SP 800-232 §5.3).
 const MAX_CUSTOMIZATION_BYTES: usize = 256;
@@ -342,8 +342,8 @@ impl AsconCXof128 {
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
         self.do_final()

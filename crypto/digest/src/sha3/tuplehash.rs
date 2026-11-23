@@ -9,7 +9,7 @@
 //!
 //! `TupleHash` has two interfaces: `.hash_tuple()` which takes an array-of-arrays, or successive calls to `.do_update()`.
 //!```
-//! # #[cfg(feature = "std")] {
+//! # #[cfg(feature = "alloc")] {
 //! use bouncycastle_core::traits::Hash;
 //! use bouncycastle_digest::sha3::tuplehash::TupleHash128;
 //!
@@ -36,7 +36,7 @@
 //!
 //! Example of `TupleHashXOF128`:
 //!```
-//! # #[cfg(feature = "std")] {
+//! # #[cfg(feature = "alloc")] {
 //! use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 //! use bouncycastle_digest::sha3::tuplehash::{TupleHash128, TupleHashXOF128};
 //!
@@ -52,6 +52,9 @@
 //! # }
 //! ```
 
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 use crate::sha3::cshake::{
     CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer, absorb_encoded_string_into,
 };
@@ -66,8 +69,6 @@ use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,
 };
-#[cfg(feature = "std")]
-use std::vec::Vec;
 
 /// The name of the TupleHash128 algorithm (NIST SP 800-185 Sec 5).
 pub const TUPLEHASH128_NAME: &str = "TupleHash128";
@@ -157,8 +158,8 @@ impl<PARAMS: SHAKEParams> TupleHashInternal<PARAMS> {
 
     /// Hashes a whole tuple in one call, the shape the specification is written in.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn hash_tuple(mut self, tuple: &[&[u8]]) -> Vec<u8> {
         for element in tuple {
             self.do_update(element);
@@ -391,8 +392,8 @@ impl<PARAMS: SHAKEParams> TupleHashInternal<PARAMS> {
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
         self.do_final()
@@ -410,8 +411,8 @@ impl<PARAMS: SHAKEParams> TupleHashXOFInternal<PARAMS> {
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
         self.do_final()

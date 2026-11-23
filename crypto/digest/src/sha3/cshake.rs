@@ -3,14 +3,14 @@
 use crate::sha3::keccak::{INPUT_AFTER_FINISH, SHA3_FAMILY_STATE_LEN};
 use crate::sha3::shake::{SHAKEBorrowedSqueezer, SHAKEInternal, SHAKESqueezer};
 use crate::sha3::{SHAKE128Params, SHAKE256Params, SHAKEParams};
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
 };
-#[cfg(feature = "std")]
-use std::vec::Vec;
 
 // imports needed for docs
 #[allow(unused_imports)]
@@ -618,8 +618,8 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
         self.do_final()

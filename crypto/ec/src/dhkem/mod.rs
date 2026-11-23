@@ -82,7 +82,6 @@
 //!   and the SHA-256 message schedule of `prk XOR opad` on the dead stack below this module's
 //!   frames, from which the PRK is recoverable; that residue is `hmac`'s and `sha2`'s, and the
 //!   PRK keys one `HmacKey` per expand so it is left once.
-//! * The crate's own source is `no_std`, but `bouncycastle-core`, which it depends on, is not yet.
 
 mod dhkem;
 pub mod hazmat;

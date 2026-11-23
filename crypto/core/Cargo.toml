@@ -4,12 +4,14 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-# `std` gates the ergonomic, allocating (`Vec`- and `Box`-returning) one-shot APIs. It is on by
-# default today; a future `--no-default-features` build is what will let `core` become
-# `#![no_std]` (see the TODO at the top of `src/lib.rs`). No other crate in the workspace
-# builds with it off yet: several override or call the gated methods.
+# `alloc` gates everything that needs a heap: the one-shots that return a `Vec`, a `String` or a
+# `Box<dyn KeyMaterialTrait>`, and the `_boxed` finals of the worker traits, which take
+# `self: Box<Self>`. Without it the crate links no allocator. `std` implies `alloc` and gates
+# nothing of its own: the crate uses nothing from `std`, and the feature is what the crates above
+# forward to.
 default = ["std"]
-std = []
+std = ["alloc"]
+alloc = []
 
 [dependencies]
 bouncycastle-utils.workspace = true
@@ -18,9 +20,28 @@ bouncycastle-utils.workspace = true
 bouncycastle-rng.workspace = true
 criterion.workspace = true
 
+# These tests use the `Vec`- and `String`-returning one-shots.
+[[test]]
+name = "base64_tests"
+required-features = ["alloc"]
+
+[[test]]
+name = "base64_out_tests"
+required-features = ["alloc"]
+
+[[test]]
+name = "without_collision_resistance_tests"
+required-features = ["alloc"]
+
+# The `_boxed` finals.
+[[test]]
+name = "dyn_compatible_tests"
+required-features = ["alloc"]
+
 [[bench]]
 name = "base64_benches"
 harness = false
+required-features = ["alloc"]
 
 [[bench]]
 name = "hex_benches"

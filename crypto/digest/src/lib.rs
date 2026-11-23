@@ -30,18 +30,19 @@
 //!
 //! # Features
 //!
-//! `std`, on by default, gates [`scrypt`]'s `KDF` implementation, which allocates its working
-//! memory, and [`blake3`]'s and [`sha3`]'s one-shots that return a `Vec`; without it `scrypt` is the
-//! caller-supplied-memory function alone.
+//! `alloc` gates [`scrypt`]'s `KDF` implementation, which allocates its working memory, and
+//! [`blake3`]'s and [`sha3`]'s one-shots that return a `Vec`, and turns on `bouncycastle-core`'s
+//! `alloc`; without it `scrypt` is the caller-supplied-memory function alone and the crate needs
+//! no allocator. `std`, on by default, implies `alloc` and gates nothing of its own.
 
 #![no_std]
-// Docs link to the `Vec` one-shots, which a build without `std` does not have.
-#![cfg_attr(not(feature = "std"), allow(rustdoc::broken_intra_doc_links))]
+// Docs link to the `Vec` one-shots, which a build without `alloc` does not have.
+#![cfg_attr(not(feature = "alloc"), allow(rustdoc::broken_intra_doc_links))]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-#[cfg(feature = "std")]
-extern crate std;
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 pub mod blake2;
 pub mod blake3;

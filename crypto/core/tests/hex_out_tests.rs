@@ -1,7 +1,7 @@
 //! The `_out` forms: the same bytes as the allocating forms, the buffer sizes their `_out_len`
 //! functions give, and the output buffer's contract (zeroized first, left zeroized on an error).
 // They compare with the allocating forms.
-#![cfg(feature = "std")]
+#![cfg(feature = "alloc")]
 
 use bouncycastle_core::hex::{self as hex, HexError, decode_out_len, encode_out_len};
 

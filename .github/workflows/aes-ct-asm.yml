@@ -24,3 +24,12 @@ jobs:
 
       - name: Check the round-key widening assembly on Cortex-M0 and RISC-V 32I
         run: ./dev_scripts/check_aes_ct_asm.sh
+
+      # `-Zbuild-std=core` builds no `alloc`, so this fails on a use of `std` or of an allocator in
+      # a build without default features, on a target that has neither.
+      - name: Check the library crates and the umbrella without std or alloc on Cortex-M0
+        run: |
+          for crate in utils core digest symmetric ec pqc modexp hybrid; do
+            cargo +nightly check -Zbuild-std=core --target thumbv6m-none-eabi --no-default-features -p "bouncycastle-$crate"
+          done
+          cargo +nightly check -Zbuild-std=core --target thumbv6m-none-eabi --no-default-features -p bouncycastle

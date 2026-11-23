@@ -119,7 +119,7 @@ A typical primitive crate looks like:
 ```
 crypto/<name>/
   Cargo.toml          # depends on bouncycastle-core; dev-deps on core-test-framework, rng, criterion
-  src/lib.rs          # must contain #![forbid(unsafe_code)], #![forbid(missing_docs)], aim for #![no_std]
+  src/lib.rs          # must contain #![no_std], #![forbid(unsafe_code)], #![forbid(missing_docs)]
   src/*.rs            # implementation
   tests/*.rs          # integration tests, usually driven via core-test-framework
   benches/*.rs        # criterion benches (declared as [[bench]] with harness=false)
@@ -160,7 +160,26 @@ of `mldsa_lowmemory_` and `mldsa_common_`), so select one module's test files by
 by a `--test 'mldsa_*'` glob. In `crypto/ec` the `sm2_` prefix is shared by the SM2 curve's
 arithmetic tests at the root (`sm2_field_tests.rs`) and the `sm2` module's (`sm2_sm2_tests.rs`).
 
-`#![no_std]` is the long-term goal but the `core` crate still has a `Vec`-removal TODO blocking it (see the comment at the top of `crypto/core/src/lib.rs`). Don't add new `Vec` usage where a const-sized array would do.
+Every library crate except `bouncycastle-rng` is `#![no_std]`, and the workspace dependency table takes every one that
+has features with `default-features = false`, so a `--no-default-features` build of a library crate, or of the
+umbrella, has no `std` and no allocator. Each of `core`, `digest`, `symmetric`, `ec`, `pqc`, `modexp`, `hybrid` and the
+umbrella has `default = ["std"]`, `std` implying `alloc`, and both forwarding to the crates below. `alloc` gates
+everything that needs a heap (the `Vec`-, `String`- and `Box`-returning one-shots and the `_boxed` finals in `core`,
+scrypt's `KDF` impl and the `Vec` one-shots in `digest` and `symmetric`); nothing is gated on `std` alone except
+`bouncycastle::rng` in the umbrella, `bouncycastle-rng` being the one crate that needs it. The umbrella, `cli`,
+`mem_usage_benches` and the two test frameworks turn `std` on. What follows from that:
+
+- A crate whose tests, benches or doc examples use a gated API names the feature under `[dev-dependencies]`
+  (`bouncycastle-core = { workspace = true, features = ["std"] }`), never on its normal dependency; a test that needs a
+  feature of its own crate carries `required-features = ["alloc"]`.
+- A crate that depends on another library crate forwards its `std` and `alloc` to it, and never names a feature on
+  the dependency itself.
+- Nothing a crate dev-depends on may turn that crate's own features back on, or its `--no-default-features` test
+  build stops being one: check with `cargo tree -p <crate> --no-default-features -e features -i <crate>`, which
+  lists the features the crate is built with (the uninverted tree does not show them). `bouncycastle-rng` has no
+  features for that reason: `core` and `digest` dev-depend on it.
+- New code gets no `Vec` where a const-sized array would do; what allocates goes behind `alloc` and imports from
+  `alloc::`, not `std::`.
 
 ## Project-specific conventions
 
@@ -481,10 +500,13 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 Eight workflows under `.github/workflows/`, all triggered by pull requests:
 
-- `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then
+- `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then, since
+  `--all-features` never builds a crate with a default feature off: `cargo check -p <crate>
+  --no-default-features`, and again with `--features alloc`, for each `#![no_std]` library crate
+  (host target, so it catches a use of `std`, or of `alloc` outside the feature, but not a
+  bare-metal link), `bouncycastle-core`'s tests with neither feature and with `alloc` alone, and
   `cargo test -p bouncycastle-digest --no-default-features` on the crate's unit tests and scrypt's
-  caller-memory tests (the vector suites need bc-test-data, which that job does not check out),
-  since `--all-features` never builds a crate with a default feature off.
+  caller-memory tests (the vector suites need bc-test-data, which that job does not check out).
 - `rust-test.yml`: `cargo test --all` on stable, with `bcgit/bc-test-data` and `C2SP/wycheproof`
   checked out beside the repository. Wycheproof is pinned to a commit (`ref:` in the workflow), so
   that a change upstream does not fail an unrelated PR: a vector suite that is strict about the
@@ -495,6 +517,9 @@ Eight workflows under `.github/workflows/`, all triggered by pull requests:
 - `aes-ct-asm.yml`: `dev_scripts/check_aes_ct_asm.sh` on **nightly** with `rust-src`: builds
   `dev_scripts/aes_ct_harness` for thumbv6m and riscv32i and greps the assembly of the AES round-key
   widening for a multiply, call or branch (see the comment on `PlaneWord::splat` in `crypto/symmetric/src/aes/bitslice.rs`).
+  Its second step is the bare-metal build check: `cargo check -Zbuild-std=core --target thumbv6m-none-eabi
+  --no-default-features` on the eight `#![no_std]` library crates and the umbrella, which fails on a use of `std`
+  or of an allocator, since `-Zbuild-std=core` builds no `alloc`.
 - `oaep-ct.yml`: `dev_scripts/check_oaep_ct.sh` with valgrind and **nightly** `rust-src`: runs
   `dev_scripts/oaep_ct_harness` (the EME-OAEP decode, included by path) under memcheck with the encoded
   message undefined, with a variable-time control, and greps its thumbv6m and riscv32i assembly for a

@@ -36,17 +36,19 @@
 //!
 //! # Features
 //!
-//! `std`, on by default, gates the one-shots that return a `Vec` (in [`ascon`]).
+//! `alloc` gates the one-shots that return a `Vec` (in [`ascon`]) and turns on
+//! `bouncycastle-core`'s and `bouncycastle-digest`'s `alloc`; without it the crate needs no
+//! allocator. `std`, on by default, implies `alloc` and gates nothing of its own.
 
 #![no_std]
-// Docs link to the `Vec` one-shots, which a build without `std` does not have.
-#![cfg_attr(not(feature = "std"), allow(rustdoc::broken_intra_doc_links))]
+// Docs link to the `Vec` one-shots, which a build without `alloc` does not have.
+#![cfg_attr(not(feature = "alloc"), allow(rustdoc::broken_intra_doc_links))]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+// The unit tests use it whatever the features.
+#[cfg(any(test, feature = "alloc"))]
 extern crate alloc;
-#[cfg(feature = "std")]
-extern crate std;
 
 // `tests/common/toy_block_cipher.rs` names `bouncycastle_symmetric::modes::ModeNames`, and is also
 // `include!`d by unit tests here, where that path would otherwise not resolve.

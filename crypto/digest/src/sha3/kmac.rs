@@ -56,6 +56,9 @@
 //! assert_ne!(bound[..16], first[..]);
 //! ```
 
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 use crate::sha3::cshake::{
     CSHAKE_COMPONENT_LEN, CSHAKEBorrowedSqueezer, CSHAKEInternal, CSHAKESqueezer,
 };
@@ -78,8 +81,6 @@ use bouncycastle_utils::suspendable_state::{
     suspend_component,
 };
 use core::marker::PhantomData;
-#[cfg(feature = "std")]
-use std::vec::Vec;
 
 /// The name of the KMAC128 algorithm (NIST SP 800-185 Sec 4).
 pub const KMAC128_NAME: &str = "KMAC128";
@@ -609,8 +610,8 @@ impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
         self.do_final()

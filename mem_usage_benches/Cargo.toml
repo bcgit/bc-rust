@@ -5,7 +5,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-bouncycastle.workspace = true
+bouncycastle = { workspace = true, features = ["std"] }
 
 
 [[bin]]

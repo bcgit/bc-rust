@@ -6,9 +6,12 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-# `std` gates the one-shots that return a `Vec`; everything else is the same without it.
+# `alloc` gates the one-shots that return a `Vec` (Ascon-CXOF128's) and turns on
+# `bouncycastle-core`'s and `bouncycastle-digest`'s; without it the crate and what it depends on
+# link no allocator. `std` implies `alloc` and gates nothing of its own: it is a forward.
 default = ["std"]
-std = ["bouncycastle-core/std"]
+std = ["alloc", "bouncycastle-core/std", "bouncycastle-digest/std"]
+alloc = ["bouncycastle-core/alloc", "bouncycastle-digest/alloc"]
 
 [dependencies]
 bouncycastle-core.workspace = true
@@ -16,6 +19,8 @@ bouncycastle-digest.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
+# The tests, benches and doc examples use the `Vec` one-shots.
+bouncycastle-core = { workspace = true, features = ["std"] }
 bouncycastle-cipher-test-framework.workspace = true
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-rng.workspace = true
@@ -73,6 +78,11 @@ harness = false
 [[bench]]
 name = "aes_aes_xts_benches"
 harness = false
+
+# Ascon-CXOF128's `Vec`-returning one-shot.
+[[test]]
+name = "ascon_cxof128_tests"
+required-features = ["alloc"]
 
 [[test]]
 name = "padding_nopadding_tests"

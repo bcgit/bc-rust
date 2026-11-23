@@ -12,7 +12,7 @@
 //! calls and behaviours should work as expected.
 //!
 //! ```
-//! # #[cfg(feature = "std")] {
+//! # #[cfg(feature = "alloc")] {
 //! use bouncycastle_core::hex as hex;
 //!
 //! let out = hex::encode(b"\x00\x01\x02\x03"); // "00010203"
@@ -28,11 +28,11 @@
 //!
 //! [`encode_out`] and [`decode_out`] write into the caller's buffer instead, sized by
 //! [`encode_out_len`] and [`decode_out_len`], and need no allocator; [`encode`] and [`decode`]
-//! need the `std` feature.
+//! need the `alloc` feature.
 
+#[cfg(feature = "alloc")]
+use alloc::{string::String, vec, vec::Vec};
 use bouncycastle_utils::ct::Condition;
-#[cfg(feature = "std")]
-use std::{string::String, vec, vec::Vec};
 
 /// Return type for errors relating to Hex encoding and decoding.
 #[derive(Debug)]
@@ -47,8 +47,8 @@ pub enum HexError {
 
 /// One-shot encode from bytes to a hex-encoded string using a constant-time implementation.
 ///
-/// Only available with the `std` feature.
-#[cfg(feature = "std")]
+/// Only available with the `alloc` feature.
+#[cfg(feature = "alloc")]
 pub fn encode<T: AsRef<[u8]>>(input: T) -> String {
     let mut out = vec![0u8; encode_out_len(input.as_ref().len())];
     encode_out(input.as_ref(), &mut out).expect("the buffer is encode_out_len long");
@@ -100,8 +100,8 @@ pub const fn encode_out_len(input_len: usize) -> usize {
 /// One-shot decode from a hex string to a bytes using a constant-time implementation.
 /// ignores whitespace, NUL and \x
 ///
-/// Only available with the `std` feature.
-#[cfg(feature = "std")]
+/// Only available with the `alloc` feature.
+#[cfg(feature = "alloc")]
 pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, HexError> {
     let inref = input.as_ref();
     let mut out: Vec<u8> = vec![0u8; decode_out_len(inref.len())];

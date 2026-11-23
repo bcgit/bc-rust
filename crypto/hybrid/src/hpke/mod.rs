@@ -107,7 +107,6 @@
 //!   already agree on them.
 //! * **A context is returned by value** from its setup, a move that does not wipe where it was
 //!   built; the context itself wipes its key, nonce and exporter secret when dropped.
-//! * The crate's own source is `no_std`, but `bouncycastle-core`, which it depends on, is not yet.
 
 mod scheme;
 

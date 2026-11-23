@@ -8,7 +8,7 @@
 //! Every function also has an `_out` form that writes into the caller's buffer and returns the
 //! number of bytes written ([`encode_out`], [`decode_out`], and `do_update_out` / `do_final_out`
 //! on the streaming types), with `_out_len` functions giving the buffer size needed. Those need
-//! no allocator; the forms that return a `String` or a `Vec` need the `std` feature.
+//! no allocator; the forms that return a `String` or a `Vec` need the `alloc` feature.
 //!
 //! ```
 //! use bouncycastle_core::base64 as base64;
@@ -23,6 +23,7 @@
 //! ```
 //!
 //!```
+//! # #[cfg(feature = "alloc")] {
 //! use bouncycastle_core::base64 as base64;
 //!
 //! let out = base64::encode(b"\x00"); // "AA=="
@@ -43,6 +44,7 @@
 //! assert_eq!(out, out1);
 //! let out2 = base64::decode("AAECAwQFBg").unwrap(); // b"\x00\x01\x02\x03\x04\x05\x06"
 //! assert_eq!(out, out2);
+//! # }
 //! ```
 //!
 //! # Streaming
@@ -56,6 +58,7 @@
 //! partial block until either `do_update` or `do_final` is called.
 //!
 //! ```
+//! # #[cfg(feature = "alloc")] {
 //! use bouncycastle_core::base64 as base64;
 //!
 //! let mut b64_str: String = String::new();
@@ -69,6 +72,7 @@
 //! out_bytes.extend( decoder.do_update("SGVs").unwrap() );
 //! out_bytes.extend( decoder.do_final("bG8sIFdvcmxkIQ==").unwrap() );
 //! assert_eq!(out_bytes, b"Hello, World!");
+//! # }
 //! ```
 //!
 //! # Security and constant-time
@@ -99,12 +103,14 @@
 //     /// "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_="
 //     URLSafe,
 
+#[cfg(feature = "alloc")]
+use alloc::{string::String, vec, vec::Vec};
 use bouncycastle_utils::ct::Condition;
 
 /// One-shot encode from bytes to a base64-encoded string using a constant-time implementation.
 ///
-/// Only available with the `std` feature.
-#[cfg(feature = "std")]
+/// Only available with the `alloc` feature.
+#[cfg(feature = "alloc")]
 pub fn encode<T: AsRef<[u8]>>(input: T) -> String {
     let input = input.as_ref();
     let mut out = vec![0u8; encode_out_len(input.len())];
@@ -128,8 +134,8 @@ pub const fn encode_out_len(input_len: usize) -> usize {
 
 /// One-shot decode from a base64-encoded string to bytes using a constant-time implementation.
 ///
-/// Only available with the `std` feature.
-#[cfg(feature = "std")]
+/// Only available with the `alloc` feature.
+#[cfg(feature = "alloc")]
 pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, Base64Error> {
     let input = input.as_ref();
     let mut out = vec![0u8; decode_out_len(input.len())];
@@ -216,8 +222,8 @@ impl Base64Encoder {
     /// Streaming API that performs Base64 encoding of the provided input, but does not apply
     /// the final padding and will hold an incomplete block while waiting for more input.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn do_update<T: AsRef<[u8]>>(&mut self, input: T) -> String {
         let input = input.as_ref();
         let mut out = vec![0u8; self.update_out_len(input.len())];
@@ -263,8 +269,8 @@ impl Base64Encoder {
     /// As you would expect, do_final() consumes the object along with a final block.
     /// do_final may be called with the entire content; ie without any do_update's before it.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn do_final<T: AsRef<[u8]>>(self, input: T) -> String {
         let input = input.as_ref();
         let mut out = vec![0u8; self.final_out_len(input.len())];
@@ -391,8 +397,8 @@ impl Base64Decoder {
     /// Streaming API that decodes the provided Base64 input, holding an incomplete block of
     /// symbols while waiting for more input. Padding is for [`do_final`](Self::do_final).
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn do_update<T: AsRef<[u8]>>(&mut self, input: T) -> Result<Vec<u8>, Base64Error> {
         let input = input.as_ref();
         let mut out = vec![0u8; self.update_out_len(input.len())];
@@ -500,8 +506,8 @@ impl Base64Decoder {
     /// whitespace, when it is skipped): anything else is [`Base64Error::InvalidPadding`]. Input
     /// ending one symbol into a block is [`Base64Error::TruncatedInput`].
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn do_final<T: AsRef<[u8]>>(self, input: T) -> Result<Vec<u8>, Base64Error> {
         let input = input.as_ref();
         let mut out = vec![0u8; self.final_out_len(input.len())];

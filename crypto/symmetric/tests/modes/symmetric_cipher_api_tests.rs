@@ -44,7 +44,7 @@ fn key_for<M: Mode<Toy>>() -> BlockCipherKey<Toy, M> {
 /// traits -- the same suite the padded adapters run, with `required_alignment` left at 1 because a
 /// stream cipher accepts every length.
 ///
-/// It pins the whole contract: one-shot round trips at every length, the `std` one-shots against
+/// It pins the whole contract: one-shot round trips at every length, the `alloc` one-shots against
 /// the `_out` ones, streaming in eight chunkings with `update_out_len` exact on every call,
 /// `do_encrypt_final_out` / `do_decrypt_final_out` against `do_encrypt_final` / `do_decrypt_final`,
 /// a driven RNG reproducing its init data, corruption detection, short output buffers refused with

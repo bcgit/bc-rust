@@ -9,6 +9,8 @@ use crate::blake3::compress::{
     BLOCK_LEN, CHUNK_END, CHUNK_LEN, CHUNK_START, DERIVE_KEY_CONTEXT, DERIVE_KEY_MATERIAL, IV,
     KEYED_HASH, PARENT, ROOT, compress, words_from_le_bytes,
 };
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
@@ -20,8 +22,6 @@ use bouncycastle_core::traits::{
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{ct, min, secret::Secret};
 use core::marker::PhantomData;
-#[cfg(feature = "std")]
-use std::vec::Vec;
 
 /// BLAKE3 spec s. 2.1: "The chaining value of the root node, encoded as 32 bytes in little-endian
 /// order, is the default-length BLAKE3 hash of the input."
@@ -927,8 +927,8 @@ impl BLAKE3DeriveKey {
     /// One-shot: the 32-byte derived key for the key material `data`. [`HashOneShot`] is for
     /// hashes that take no parameters; this one takes its context string at construction.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
         self.do_final()
