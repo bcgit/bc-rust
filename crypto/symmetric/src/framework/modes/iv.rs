@@ -15,7 +15,9 @@ use bouncycastle_core::traits::RNG;
 /// Appendix C also notes the IV "need not be secret", so this is not wrapped in a `Secret`: it is
 /// returned to the caller to transmit alongside the ciphertext. Its *integrity* is a different
 /// matter -- see the `cbc` module docs about SP 800-38A Appendix D.
-pub(in crate::modes) fn random_iv<const N: usize>(rng: &mut dyn RNG) -> Result<[u8; N], RNGError> {
+pub(in crate::framework::modes) fn random_iv<const N: usize>(
+    rng: &mut dyn RNG,
+) -> Result<[u8; N], RNGError> {
     let mut iv = [0u8; N];
     rng.next_bytes_out(&mut iv)?;
     Ok(iv)

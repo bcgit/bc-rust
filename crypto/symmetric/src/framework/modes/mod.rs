@@ -99,7 +99,7 @@
 //! length, and GCM takes the direction and its tag length:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_symmetric::modes::{Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb, Cfb8, Ctr, Gcm, Ofb};
 //!
@@ -197,28 +197,44 @@ pub mod kwp;
 /// The toys the `tests/modes` integration tests use, shared with the unit tests in this module's
 /// files rather than copied.
 #[cfg(test)]
-#[path = "../../tests/modes/common/mod.rs"]
-pub(in crate::modes) mod modes_common;
+#[path = "../../../tests/modes/common/mod.rs"]
+pub(in crate::framework::modes) mod modes_common;
 pub mod ofb;
 mod polyval;
 pub mod tkw;
 pub mod xts;
 
+// `#[doc(no_inline)]` on each: the targets are below the private `framework`, so rustdoc would
+// otherwise inline them and document every one twice, here and in its own module.
+#[doc(no_inline)]
 pub use cbc::{CBC, Cbc};
+#[doc(no_inline)]
 pub use ccm::{
     CCM, CCM_Packet, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor, CcmPacketEncryptor,
 };
+#[doc(no_inline)]
 pub use cfb::{CFB, Cfb};
+#[doc(no_inline)]
 pub use cfb8::{CFB8, Cfb8};
+#[doc(no_inline)]
 pub use cmac::{CMAC, Cmac, CmacKeyState};
+#[doc(no_inline)]
 pub use ctr::{CTR, Ctr};
+#[doc(no_inline)]
 pub use gcm::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
+#[doc(no_inline)]
 pub use gcm_siv::{GCM_SIV, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN};
+#[doc(no_inline)]
 pub use gmac::{GMAC, Gmac};
+#[doc(no_inline)]
 pub use kw::{KW, KW_BLOCK_LEN, Kw, SEMIBLOCK_LEN};
+#[doc(no_inline)]
 pub use kwp::{KWP, Kwp};
+#[doc(no_inline)]
 pub use ofb::{OFB, Ofb};
+#[doc(no_inline)]
 pub use tkw::{TKW, TKW_BLOCK_LEN, TKW_SEMIBLOCK_LEN, Tkw};
+#[doc(no_inline)]
 pub use xts::{XTS_MAX_DATA_UNIT_LEN, XTS_MIN_DATA_UNIT_LEN, XTS_TWEAK_LEN, XTSKey};
 
 /// Selects the whole-block form of a mode that also has a padded form: `CBC<Blocks>` is a key

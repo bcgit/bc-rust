@@ -16,7 +16,7 @@
 //! data is visible in the ciphertext:
 //!
 //! ```
-//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::hazmat::{EcbDecryptMode, EcbEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -223,7 +223,7 @@ where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// Over an already-keyed permutation: what the [`ECB`] mode impls build.
-    pub(in crate::modes) fn from_perm(perm: &'k P) -> Self {
+    pub(in crate::framework::modes) fn from_perm(perm: &'k P) -> Self {
         Self { perm, _dir: PhantomData }
     }
 }

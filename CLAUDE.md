@@ -133,8 +133,10 @@ A family crate holds its primitives as modules, each with the layout it had as a
 curve arithmetic at the crate root), `bouncycastle-symmetric`
 (`crypto/symmetric`: `aes`, `aria`, `ascon`, `camellia`, `chacha20`, `chacha20_poly1305_aead`,
 `kbkdf`, `poly1305`, `sm4`, `tdes`, under the block cipher modes, padding, stream helpers and
-`BlockCipherKey` at its root, whose tests are `tests/modes/`, `tests/padding/` and the unprefixed
-files) and `bouncycastle-pqc` (`crypto/pqc`: `mldsa`,
+`BlockCipherKey` at its root, which live in the private module `src/framework/` and are
+re-exported from `lib.rs`, so their paths are `bouncycastle_symmetric::modes` and the like; their
+tests are `tests/modes/`, `tests/padding/` and the unprefixed files) and `bouncycastle-pqc`
+(`crypto/pqc`: `mldsa`,
 `mldsa_lowmemory`, `mlkem`, `mlkem_lowmemory`, and the `mldsa_common` / `mlkem_common` modules the
 two forms of each share).
 
@@ -150,7 +152,10 @@ crypto/<family>/
 ```
 
 Inside a family crate `pub(crate)` reaches every primitive in it, so an item private to one
-primitive is `pub(in crate::<module>)`. A module prefix is also a prefix of its siblings' (`mldsa_`
+primitive is `pub(in crate::<module>)`, and one private to the symmetric framework is
+`pub(in crate::framework)` (`pub(in crate::framework::modes)` within the modes: a restriction
+names the defining path, not the re-export). A module prefix is also a prefix of its siblings'
+(`mldsa_`
 of `mldsa_lowmemory_` and `mldsa_common_`), so select one module's test files by name rather than
 by a `--test 'mldsa_*'` glob. In `crypto/ec` the `sm2_` prefix is shared by the SM2 curve's
 arithmetic tests at the root (`sm2_field_tests.rs`) and the `sm2` module's (`sm2_sm2_tests.rs`).

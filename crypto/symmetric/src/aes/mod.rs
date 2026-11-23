@@ -286,8 +286,14 @@ pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use cmac::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
-pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256, GCM_NONCE_LEN};
-pub use gcm_siv::{AES_GCM_SIV_128, AES_GCM_SIV_256, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN};
+// The three lengths are `crate::modes`'s, and `#[doc(no_inline)]` keeps them documented there
+// alone: rustdoc would otherwise inline them, their definitions being below a private module.
+#[doc(no_inline)]
+pub use gcm::GCM_NONCE_LEN;
+pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
+pub use gcm_siv::{AES_GCM_SIV_128, AES_GCM_SIV_256};
+#[doc(no_inline)]
+pub use gcm_siv::{GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN};
 pub use gmac::{AES_GMAC_128, AES_GMAC_192, AES_GMAC_256};
 pub use key::{AES128Key, AES192Key, AES256Key};
 pub use kw::{AES_KW_128, AES_KW_192, AES_KW_256, AES_KWP_128, AES_KWP_192, AES_KWP_256};

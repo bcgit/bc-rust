@@ -59,8 +59,10 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P, const BLOCK_LEN: usize> crate::sealed::Sealed for OfbKeyStream<'k, P, BLOCK_LEN> where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames
+impl<'k, P, const BLOCK_LEN: usize> crate::framework::sealed::Sealed
+    for OfbKeyStream<'k, P, BLOCK_LEN>
+where
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
 }
 
@@ -101,7 +103,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    //! Unit tests for [`OfbKeyStream`], which is `pub(in crate::modes)` and so cannot be reached from
+    //! Unit tests for [`OfbKeyStream`], which is `pub(in crate::framework::modes)` and so cannot be reached from
     //! `tests/modes/ofb_tests.rs`; the same carve-out as `ctr_key_stream.rs`'s.
 
     use super::*;

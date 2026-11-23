@@ -27,7 +27,7 @@
 //! mode traits shown here, which is the route over the toy permutation:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::hazmat::{BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -59,7 +59,7 @@
 //! the concatenation:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::hazmat::{BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
@@ -276,7 +276,7 @@ where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// `C0 = IV`, over an already-keyed permutation: what the [`CBC`] mode impls build.
-    pub(in crate::modes) fn from_perm(perm: &'k P, iv: [u8; BLOCK_LEN]) -> Self {
+    pub(in crate::framework::modes) fn from_perm(perm: &'k P, iv: [u8; BLOCK_LEN]) -> Self {
         Self { perm, chain: iv, _dir: PhantomData }
     }
 

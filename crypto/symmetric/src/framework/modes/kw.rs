@@ -22,7 +22,7 @@
 //! toy permutation the key is [`BlockCipherKey`](crate::BlockCipherKey), as it is for AES:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_symmetric::BlockCipherKey;
 //! use bouncycastle_symmetric::modes::KW;
@@ -55,7 +55,7 @@
 //! under a real cipher any change does.)
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_symmetric::BlockCipherKey;
 //! # use bouncycastle_symmetric::modes::KW;
@@ -150,7 +150,7 @@ const KW_MAX_PLAINTEXT_SEMIBLOCKS: u64 = (1u64 << 54) - 1;
 
 /// Whether `len` bytes is a plaintext length KW is defined on: 2 to 2^54 - 1 whole semiblocks
 /// (SP 800-38F Table 1).
-pub(in crate::modes) const fn kw_plaintext_len_is_valid(len: usize) -> bool {
+pub(in crate::framework::modes) const fn kw_plaintext_len_is_valid(len: usize) -> bool {
     len.is_multiple_of(SEMIBLOCK_LEN)
         && len >= 2 * SEMIBLOCK_LEN
         && (len / SEMIBLOCK_LEN) as u64 <= KW_MAX_PLAINTEXT_SEMIBLOCKS
@@ -158,7 +158,7 @@ pub(in crate::modes) const fn kw_plaintext_len_is_valid(len: usize) -> bool {
 
 /// Whether `len` bytes is a ciphertext length KW-AD is defined on: 3 to 2^54 whole semiblocks
 /// (SP 800-38F Table 1).
-pub(in crate::modes) const fn kw_ciphertext_len_is_valid(len: usize) -> bool {
+pub(in crate::framework::modes) const fn kw_ciphertext_len_is_valid(len: usize) -> bool {
     len.is_multiple_of(SEMIBLOCK_LEN)
         && len >= 3 * SEMIBLOCK_LEN
         && (len / SEMIBLOCK_LEN) as u64 <= KW_MAX_PLAINTEXT_SEMIBLOCKS + 1
@@ -166,7 +166,7 @@ pub(in crate::modes) const fn kw_ciphertext_len_is_valid(len: usize) -> bool {
 
 /// The KW ciphertext length for a plaintext of `len` bytes: one semiblock longer. Algorithm 3
 /// computes `C = W(ICV1 || P)`, and W preserves the length of its input.
-pub(in crate::modes) const fn kw_wrapped_len(len: usize) -> usize {
+pub(in crate::framework::modes) const fn kw_wrapped_len(len: usize) -> usize {
     len.saturating_add(SEMIBLOCK_LEN)
 }
 
@@ -179,7 +179,7 @@ pub(in crate::modes) const fn kw_wrapped_len(len: usize) -> usize {
 ///
 /// Runs in place rather than through the shift register of the spec's step 2; see the module
 /// docs for why the two are the same computation.
-pub(in crate::modes) fn w<P, const BLOCK: usize, const SEMI: usize>(
+pub(in crate::framework::modes) fn w<P, const BLOCK: usize, const SEMI: usize>(
     perm: &P,
     a: &mut [u8; SEMI],
     r: &mut [[u8; SEMI]],
@@ -223,7 +223,7 @@ pub(in crate::modes) fn w<P, const BLOCK: usize, const SEMI: usize>(
 /// `a` holds `C1` and `r` holds `C2 .. Cn`, with `r.len() == n - 1 >= 2`. On return `a` holds
 /// `S1` and `r` holds `S2 .. Sn`. The registers are visited in the reverse of the order [`w`]
 /// visits them, so that step `t` here undoes step `t` there.
-pub(in crate::modes) fn w_inv<P, const BLOCK: usize, const SEMI: usize>(
+pub(in crate::framework::modes) fn w_inv<P, const BLOCK: usize, const SEMI: usize>(
     perm: &P,
     a: &mut [u8; SEMI],
     r: &mut [[u8; SEMI]],
@@ -330,7 +330,7 @@ where
 {
     /// Over an already-keyed permutation, which the worker borrows: what [`KW`]'s mode impls
     /// build for a key's roles.
-    pub(in crate::modes) fn from_perm(perm: &'k P) -> Self {
+    pub(in crate::framework::modes) fn from_perm(perm: &'k P) -> Self {
         Self { perm, _dir: PhantomData }
     }
 }

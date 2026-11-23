@@ -89,7 +89,7 @@ where
     /// whose counter field is `2` -- see `gcm.rs`. Crate-private because the public API's contract
     /// is that a message starts at counter 0; only `gcm.rs` needs otherwise.
     #[inline]
-    pub(in crate::modes) fn start_at(
+    pub(in crate::framework::modes) fn start_at(
         perm: &'k P,
         nonce: [u8; INIT_DATA_LEN],
         counter: u64,
@@ -129,7 +129,7 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> crate::sealed::Sealed
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> crate::framework::sealed::Sealed
     for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
@@ -169,10 +169,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    //! Unit tests for [`CtrKeyStream`], which is `pub(in crate::modes)` and so cannot be reached from
-    //! `tests/modes/ctr_tests.rs` -- exactly the "high-risk code that cannot be reached through
-    //! the public API" case QUALITY_AND_STYLE.md carves out for a unit test here rather than an
-    //! integration test.
+    //! Unit tests for [`CtrKeyStream`], which is `pub(in crate::framework::modes)` and so cannot be
+    //! reached from `tests/modes/ctr_tests.rs` -- exactly the "high-risk code that cannot be
+    //! reached through the public API" case QUALITY_AND_STYLE.md carves out for a unit test here
+    //! rather than an integration test.
 
     use super::*;
     use crate::Encrypting;
@@ -184,7 +184,7 @@ mod tests {
     use toy::ToyBlockCipher;
 
     mod toy {
-        include!("../../../tests/common/toy_block_cipher.rs");
+        include!("../../../../tests/common/toy_block_cipher.rs");
     }
 
     type ToyKeyStream<'k> = CtrKeyStream<'k, ToyBlockCipher, 16, 12>;

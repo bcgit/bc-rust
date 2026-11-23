@@ -56,7 +56,7 @@ const TKW_MAX_PLAINTEXT_SEMIBLOCKS: u64 = (1u64 << 28) - 1;
 
 /// Whether `len` bytes is a plaintext length TKW is defined on: 2 to 2^28 - 1 whole semiblocks
 /// (SP 800-38F Table 1).
-pub(in crate::modes) const fn tkw_plaintext_len_is_valid(len: usize) -> bool {
+pub(in crate::framework::modes) const fn tkw_plaintext_len_is_valid(len: usize) -> bool {
     len.is_multiple_of(TKW_SEMIBLOCK_LEN)
         && len >= 2 * TKW_SEMIBLOCK_LEN
         && (len / TKW_SEMIBLOCK_LEN) as u64 <= TKW_MAX_PLAINTEXT_SEMIBLOCKS
@@ -64,7 +64,7 @@ pub(in crate::modes) const fn tkw_plaintext_len_is_valid(len: usize) -> bool {
 
 /// Whether `len` bytes is a ciphertext length TKW-AD is defined on: 3 to 2^28 whole semiblocks
 /// (SP 800-38F Table 1).
-pub(in crate::modes) const fn tkw_ciphertext_len_is_valid(len: usize) -> bool {
+pub(in crate::framework::modes) const fn tkw_ciphertext_len_is_valid(len: usize) -> bool {
     len.is_multiple_of(TKW_SEMIBLOCK_LEN)
         && len >= 3 * TKW_SEMIBLOCK_LEN
         && (len / TKW_SEMIBLOCK_LEN) as u64 <= TKW_MAX_PLAINTEXT_SEMIBLOCKS + 1
@@ -72,7 +72,7 @@ pub(in crate::modes) const fn tkw_ciphertext_len_is_valid(len: usize) -> bool {
 
 /// The TKW ciphertext length for a plaintext of `len` bytes: one semiblock longer. Algorithm 9
 /// computes `C = TW(ICV3 || P)`, and TW preserves the length of its input.
-pub(in crate::modes) const fn tkw_wrapped_len(len: usize) -> usize {
+pub(in crate::framework::modes) const fn tkw_wrapped_len(len: usize) -> usize {
     len.saturating_add(TKW_SEMIBLOCK_LEN)
 }
 
@@ -147,7 +147,7 @@ where
 {
     /// Over an already-keyed permutation, which the worker borrows: what [`TKW`]'s mode impls
     /// build for a key's roles.
-    pub(in crate::modes) fn from_perm(perm: &'k P) -> Self {
+    pub(in crate::framework::modes) fn from_perm(perm: &'k P) -> Self {
         Self { perm, _dir: PhantomData }
     }
 }

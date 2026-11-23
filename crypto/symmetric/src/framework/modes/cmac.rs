@@ -16,7 +16,7 @@
 //! the shape of the AES one:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_symmetric::BlockCipherKey;
 //! use bouncycastle_symmetric::modes::CMAC;
@@ -32,7 +32,7 @@
 //! Streaming:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_symmetric::BlockCipherKey;
 //! use bouncycastle_symmetric::modes::CMAC;
@@ -162,7 +162,7 @@ impl<P, const BLOCK_LEN: usize> CmacKeyState<P, BLOCK_LEN> {
     };
 
     /// Derives the subkeys from an already-keyed permutation (Sec 6.1): [`CMAC`]'s `Mode` impl.
-    pub(in crate::modes) fn new(perm: P) -> Self
+    pub(in crate::framework::modes) fn new(perm: P) -> Self
     where
         P: BlockPermutation<BLOCK_LEN>,
     {
@@ -214,7 +214,7 @@ where
 {
     /// Begins a MAC over a new message over a key state, which the worker borrows: the
     /// permutation and the subkeys stay in the key. [`CMAC`]'s `MacMode` impl.
-    pub(in crate::modes) fn from_key_state(key: &'k CmacKeyState<P, BLOCK_LEN>) -> Self {
+    pub(in crate::framework::modes) fn from_key_state(key: &'k CmacKeyState<P, BLOCK_LEN>) -> Self {
         Self { key, c: Secret::new(), pending: Secret::new(), pending_len: 0, dir: PhantomData }
     }
 

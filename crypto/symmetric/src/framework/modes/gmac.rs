@@ -25,7 +25,7 @@
 //! the key is [`BlockCipherKey`](crate::BlockCipherKey), as it is for AES:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_symmetric::BlockCipherKey;
 //! use bouncycastle_symmetric::modes::GMAC;
@@ -155,7 +155,7 @@ where
     ///
     /// # Errors
     /// [`MACError::RNGError`] if the nonce draw fails; nothing else can.
-    pub(in crate::modes) fn from_key_state(
+    pub(in crate::framework::modes) fn from_key_state(
         state: &'k GcmKeyState<P>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; GCM_NONCE_LEN]), MACError> {
@@ -167,7 +167,7 @@ where
 
     /// As [`from_key_state`](Self::from_key_state) under a nonce the caller supplies, who takes
     /// on the obligation that it never repeat under this key.
-    pub(in crate::modes) fn from_key_state_nonce(
+    pub(in crate::framework::modes) fn from_key_state_nonce(
         state: &'k GcmKeyState<P>,
         nonce: &[u8; GCM_NONCE_LEN],
     ) -> Self {
@@ -196,7 +196,7 @@ where
     /// Begins verifying a tag made under `nonce` from a key's stored state: what a mode-bound
     /// key's `create_verifier` calls. Infallible: the state is keyed and the nonce length is in
     /// the type.
-    pub(in crate::modes) fn from_key_state(
+    pub(in crate::framework::modes) fn from_key_state(
         state: &'k GcmKeyState<P>,
         nonce: &[u8; GCM_NONCE_LEN],
     ) -> Self {

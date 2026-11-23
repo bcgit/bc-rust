@@ -53,23 +53,13 @@ extern crate std;
 #[cfg(test)]
 extern crate self as bouncycastle_symmetric;
 
-mod key;
-pub mod modes;
-pub mod padding;
-pub mod stream;
-
-pub use key::BlockCipherKey;
+mod framework;
+pub use framework::{BlockCipherKey, modes, padding, stream};
 
 // The direction markers are `bouncycastle_core::direction`'s, re-exported so that
 // `bouncycastle_symmetric::{Encrypting, Decrypting, Direction}` is the path the block cipher
 // modules use; the MAC modules take them from `core`, which does not depend on this crate.
 pub use bouncycastle_core::direction::{Decrypting, Direction, Encrypting};
-
-pub(crate) mod sealed {
-    /// Private supertrait of [`KeyStreamPolicy`](crate::stream::KeyStreamPolicy): only this
-    /// crate's keystream types implement it, beside their definitions.
-    pub trait Sealed {}
-}
 
 pub mod aes;
 pub mod aria;

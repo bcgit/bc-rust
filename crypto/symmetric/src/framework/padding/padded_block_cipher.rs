@@ -60,7 +60,7 @@ where
 {
     /// The adapter over an already-constructed inner cipher, with nothing buffered: what a mode
     /// type's `encrypt_init` builds.
-    pub(crate) fn from_inner(encryptor: E) -> Self {
+    pub(in crate::framework) fn from_inner(encryptor: E) -> Self {
         Self { encryptor, _padding: PhantomData, buf: Secret::new(), buf_len: 0 }
     }
 }
@@ -208,7 +208,7 @@ where
 {
     /// The adapter over an already-constructed inner cipher, with nothing buffered or held
     /// back: what a mode type's `decrypt_init` builds.
-    pub(crate) fn from_inner(decryptor: D) -> Self {
+    pub(in crate::framework) fn from_inner(decryptor: D) -> Self {
         Self { decryptor, _padding: PhantomData, buf: [0u8; BLOCK_LEN], buf_len: 0, held: None }
     }
 }

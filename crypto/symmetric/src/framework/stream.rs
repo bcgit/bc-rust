@@ -9,7 +9,8 @@
 //!
 //! A mode whose keystream depends on the data, such as CFB, implements the traits itself.
 
-use crate::{Decrypting, Direction, Encrypting, sealed};
+use super::sealed;
+use crate::{Decrypting, Direction, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -59,6 +60,55 @@ where
 /// constant; this sealed trait is implemented for the crate's keystream types. A keystream from
 /// outside the crate reaches [`StreamCipher`] only through [`hazmat::stream_cipher_over`], whose
 /// marker trait is the implementor's promise that no such permutation is under it.
+///
+/// It cannot be implemented outside this crate, so a foreign keystream cannot declare a policy
+/// of its own:
+///
+/// ```compile_fail,E0603
+/// use bouncycastle_core::hazmat::KeyStream;
+/// use bouncycastle_core::security_strength::SecurityStrength;
+/// use bouncycastle_core::traits::AlgorithmInfo;
+/// # struct Mine;
+/// # impl AlgorithmInfo for Mine {
+/// #     fn alg_name(&self) -> &'static str { "mine" }
+/// #     fn max_security_strength(&self) -> SecurityStrength { SecurityStrength::None }
+/// # }
+/// # impl KeyStream<12, 64> for Mine {
+/// #     fn remaining_blocks(&self) -> u64 { u64::MAX }
+/// #     fn apply_blocks(&mut self, _blocks: &mut [[u8; 64]]) {}
+/// # }
+/// use bouncycastle_symmetric::stream::KeyStreamPolicy;
+///
+/// // `Mine` is a `KeyStream<12, 64>` defined here.
+/// # // What the impl below needs first. E0603: the supertrait is not nameable from outside.
+/// # impl bouncycastle_symmetric::framework::sealed::Sealed for Mine {}
+/// impl KeyStreamPolicy for Mine {
+///     const DECRYPT_ONLY: bool = false;
+/// }
+/// ```
+///
+/// The same keystream reaches [`StreamCipher`] through [`hazmat::stream_cipher_over`]:
+///
+/// ```
+/// use bouncycastle_core::hazmat::KeyStream;
+/// use bouncycastle_core::security_strength::SecurityStrength;
+/// use bouncycastle_core::traits::AlgorithmInfo;
+/// # struct Mine;
+/// # impl AlgorithmInfo for Mine {
+/// #     fn alg_name(&self) -> &'static str { "mine" }
+/// #     fn max_security_strength(&self) -> SecurityStrength { SecurityStrength::None }
+/// # }
+/// # impl KeyStream<12, 64> for Mine {
+/// #     fn remaining_blocks(&self) -> u64 { u64::MAX }
+/// #     fn apply_blocks(&mut self, _blocks: &mut [[u8; 64]]) {}
+/// # }
+/// use bouncycastle_symmetric::Encrypting;
+/// use bouncycastle_symmetric::stream::hazmat::{PermutationFreeKeyStream, stream_cipher_over};
+///
+/// // `Mine` is a `KeyStream<12, 64>` defined here.
+/// impl PermutationFreeKeyStream for Mine {}
+/// let _cipher = stream_cipher_over::<_, Encrypting, 12, 64>(Mine);
+/// ```
 pub trait KeyStreamPolicy: sealed::Sealed {
     /// The permutation's `DECRYPT_ONLY`.
     const DECRYPT_ONLY: bool;
@@ -72,11 +122,11 @@ where
     /// Wraps a keystream that has already been constructed and positioned, such as one that
     /// starts part-way into its counter space (GCM's GCTR starts at `inc32(J0)`).
     ///
-    /// Crate-private: it bypasses init-data generation (the keystream's nonce is whatever it was
-    /// constructed with, and a repeat under the key is the two-time pad), and a decryptor's
-    /// keystream wrapped in the encrypting direction would be an encryptor over a permutation
-    /// that decrypts only. A key's `create_encryptor` is the public path.
-    pub(crate) fn from_keystream(keystream: KS) -> Self
+    /// Private to the framework: it bypasses init-data generation (the keystream's nonce is
+    /// whatever it was constructed with, and a repeat under the key is the two-time pad), and a
+    /// decryptor's keystream wrapped in the encrypting direction would be an encryptor over a
+    /// permutation that decrypts only. A key's `create_encryptor` is the public path.
+    pub(in crate::framework) fn from_keystream(keystream: KS) -> Self
     where
         KS: KeyStreamPolicy,
         Dir: Direction,
@@ -121,7 +171,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::DataLimitExceeded`] if the call would need more keystream than
     /// remains for this init data, and continuing would repeat keystream.
-    pub(crate) fn accepts(&self, len: usize) -> Result<(), SymmetricCipherError> {
+    pub(in crate::framework) fn accepts(&self, len: usize) -> Result<(), SymmetricCipherError> {
         let pending_len = BLOCK_LEN - self.used;
         // Saturating: a keystream with no practical limit reports `u64::MAX` blocks.
         let capacity = (pending_len as u64)

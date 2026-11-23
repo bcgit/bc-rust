@@ -39,7 +39,7 @@
 //! the plaintext:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyExpansion, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
@@ -67,7 +67,7 @@
 //! Streaming works with chunks of any size:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyExpansion, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
@@ -216,7 +216,7 @@ where
 /// The permitted lengths all work, here through the mode type [`CTR`] a key is bound to:
 ///
 /// ```
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyExpansion, Mode, SymmetricEncryptMode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -246,7 +246,7 @@ pub type Ctr<'k, P, Dir, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> =
 ///
 /// The keystream scratch is one [`Secret`] per width and per call rather than per batch, so every
 /// block of `Oj` is zeroized when this returns.
-pub(in crate::modes) fn apply_counter_blocks<P, const BLOCK_LEN: usize>(
+pub(in crate::framework::modes) fn apply_counter_blocks<P, const BLOCK_LEN: usize>(
     perm: &P,
     next: &mut u64,
     counter_block: impl Fn(u64) -> [u8; BLOCK_LEN],

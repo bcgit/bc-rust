@@ -17,7 +17,7 @@
 //! [`BlockCipherKey`](crate::BlockCipherKey), as it is for AES:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_symmetric::BlockCipherKey;
 //! use bouncycastle_symmetric::modes::KWP;
@@ -85,13 +85,13 @@ const KWP_MAX_CIPHERTEXT_SEMIBLOCKS: u64 = 1u64 << 29;
 
 /// Whether `len` bytes is a plaintext length KWP is defined on: 1 to 2^32 - 1 octets (SP 800-38F
 /// Table 1).
-pub(in crate::modes) const fn kwp_plaintext_len_is_valid(len: usize) -> bool {
+pub(in crate::framework::modes) const fn kwp_plaintext_len_is_valid(len: usize) -> bool {
     len >= 1 && len as u64 <= KWP_MAX_PLAINTEXT_LEN
 }
 
 /// Whether `len` bytes is a ciphertext length KWP-AD is defined on: 2 to 2^29 whole semiblocks
 /// (SP 800-38F Table 1).
-pub(in crate::modes) const fn kwp_ciphertext_len_is_valid(len: usize) -> bool {
+pub(in crate::framework::modes) const fn kwp_ciphertext_len_is_valid(len: usize) -> bool {
     len.is_multiple_of(SEMIBLOCK_LEN)
         && len >= 2 * SEMIBLOCK_LEN
         && (len / SEMIBLOCK_LEN) as u64 <= KWP_MAX_CIPHERTEXT_SEMIBLOCKS
@@ -100,7 +100,7 @@ pub(in crate::modes) const fn kwp_ciphertext_len_is_valid(len: usize) -> bool {
 /// The KWP ciphertext length for a plaintext of `len` bytes: `len` rounded up to a whole number
 /// of semiblocks (Algorithm 5, steps 2-3: `padlen = 8 * ceil(len / 8) - len` zero bytes), plus the
 /// one-semiblock header of step 4.
-pub(in crate::modes) const fn kwp_wrapped_len(len: usize) -> usize {
+pub(in crate::framework::modes) const fn kwp_wrapped_len(len: usize) -> usize {
     len.div_ceil(SEMIBLOCK_LEN).saturating_mul(SEMIBLOCK_LEN).saturating_add(SEMIBLOCK_LEN)
 }
 
@@ -173,7 +173,7 @@ where
 {
     /// Over an already-keyed permutation, which the worker borrows: what [`KWP`]'s mode impls
     /// build for a key's roles.
-    pub(in crate::modes) fn from_perm(perm: &'k P) -> Self {
+    pub(in crate::framework::modes) fn from_perm(perm: &'k P) -> Self {
         Self { perm, _dir: PhantomData }
     }
 }

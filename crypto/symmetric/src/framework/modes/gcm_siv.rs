@@ -94,7 +94,7 @@ const MAX_LEN: u64 = 1 << 36;
 /// AES-128 and AES-256. A key over any other permutation is not a type that can be made:
 ///
 /// ```compile_fail,E0277
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
 /// use bouncycastle_symmetric::BlockCipherKey;
 /// use bouncycastle_symmetric::modes::GCM_SIV;

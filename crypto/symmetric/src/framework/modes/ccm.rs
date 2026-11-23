@@ -24,7 +24,7 @@
 //! permutation:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::errors::SymmetricCipherError;
 //! use bouncycastle_core::hazmat::{AeadInPlaceDecryptMode, AeadInPlaceEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
@@ -128,7 +128,7 @@ use crate::{Decrypting, Direction, Encrypting};
 /// methods and nothing else, and `Ccm<'k, P, Decrypting, ..>` has Sec 6.2's. A.1's shape
 /// conditions on `NONCE_LEN` and `TAG_LEN` are asserted at compile time in `check_shape`, which
 /// every constructor runs; the pair's docs carry the `compile_fail` cases.
-pub(in crate::modes) struct Ccm<
+pub(in crate::framework::modes) struct Ccm<
     'k,
     P,
     Dir,
@@ -178,7 +178,7 @@ where
     /// `q = 8` would make `2^8q` exactly `2^64`, which does not fit a `u64`; there the bound is
     /// `p <= 2^64 - 1`, i.e. `u64::MAX`, which is no bound at all on a `usize` length. Callers
     /// outside the crate have it as [`CCM::MAX_PAYLOAD_LEN`].
-    pub(in crate::modes) const MAX_PAYLOAD_LEN: u64 =
+    pub(in crate::framework::modes) const MAX_PAYLOAD_LEN: u64 =
         if Self::Q_LEN >= 8 { u64::MAX } else { (1u64 << (8 * Self::Q_LEN)) - 1 };
 
     /// The compile-time shape check, from Appendix A.1 and Sec 5.1; run from the constructor.
@@ -214,7 +214,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::GenericError`] if `payload_len` exceeds A.1's `2^8q - 1`.
-    pub(in crate::modes) fn from_perm(
+    pub(in crate::framework::modes) fn from_perm(
         perm: &'k P,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -231,7 +231,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the draw fails.
-    pub(in crate::modes) fn random_nonce(
+    pub(in crate::framework::modes) fn random_nonce(
         rng: &mut dyn RNG,
     ) -> Result<[u8; NONCE_LEN], SymmetricCipherError> {
         const {
@@ -254,7 +254,7 @@ where
     /// length -- which includes any non-empty AAD once the declared amount is complete, and so any
     /// after construction, which declares exactly the AAD it is given. Nothing is absorbed in that
     /// case.
-    pub(in crate::modes) fn do_update_aad(
+    pub(in crate::framework::modes) fn do_update_aad(
         &mut self,
         aad: &[u8],
     ) -> Result<(), SymmetricCipherError> {
@@ -467,7 +467,10 @@ where
     /// `_out` workers before they copy anything into the caller's buffer, and again by
     /// [`take_owed`](Self::take_owed) when the bytes are debited.
     #[inline]
-    pub(in crate::modes) fn accepts_payload(&self, len: usize) -> Result<(), SymmetricCipherError> {
+    pub(in crate::framework::modes) fn accepts_payload(
+        &self,
+        len: usize,
+    ) -> Result<(), SymmetricCipherError> {
         if len > 0 && self.aad_owed != 0 {
             return Err(SymmetricCipherError::StateError(
                 "CCM was given payload before all of the declared AAD; A.2.3 puts the payload \
@@ -533,7 +536,7 @@ where
     /// [`SymmetricCipherError::StateError`] if `data` would take the total past the declared
     /// payload length, or if it is non-empty while declared AAD is still outstanding. Nothing is
     /// consumed in either case.
-    pub(in crate::modes) fn do_encrypt_inplace(
+    pub(in crate::framework::modes) fn do_encrypt_inplace(
         &mut self,
         data: &mut [u8],
     ) -> Result<(), SymmetricCipherError> {
@@ -549,7 +552,7 @@ where
     /// [`SymmetricCipherError::StateError`] if less payload was supplied than the length declared
     /// at construction -- `B0` commits to that length, so a short message would produce a tag no
     /// verifier could reproduce -- or less AAD than declared, for the same reason.
-    pub(in crate::modes) fn finish_tag(
+    pub(in crate::framework::modes) fn finish_tag(
         &mut self,
         token: &FinishToken,
     ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
@@ -587,7 +590,7 @@ where
     /// [`SymmetricCipherError::StateError`] if `data` would take the total past the declared
     /// payload length, or if it is non-empty while declared AAD is still outstanding. Nothing is
     /// consumed in either case.
-    pub(in crate::modes) fn do_decrypt_inplace(
+    pub(in crate::framework::modes) fn do_decrypt_inplace(
         &mut self,
         data: &mut [u8],
     ) -> Result<(), SymmetricCipherError> {
@@ -608,7 +611,7 @@ where
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, and
     /// [`SymmetricCipherError::StateError`] if less ciphertext was supplied than the length declared
     /// at construction, or less AAD than declared.
-    pub(in crate::modes) fn verify_tag(
+    pub(in crate::framework::modes) fn verify_tag(
         &mut self,
         token: &FinishToken,
         tag: &[u8; TAG_LEN],
@@ -731,7 +734,7 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P, const BLOCK_LEN: usize, const NONCE_LEN: usize> crate::sealed::Sealed
+impl<'k, P, const BLOCK_LEN: usize, const NONCE_LEN: usize> crate::framework::sealed::Sealed
     for CcmKeyStream<'k, P, BLOCK_LEN, NONCE_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
@@ -915,7 +918,7 @@ where
 /// see `CcmAdapter`. More is refused.
 ///
 /// ```
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
@@ -966,7 +969,7 @@ where
 /// supplied:
 ///
 /// ```
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -989,7 +992,7 @@ where
 /// ...and not when it would be drawn:
 ///
 /// ```compile_fail
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -1005,7 +1008,7 @@ where
 /// Nor does a `DATA_LEN` that `B0` could not carry under this `NONCE_LEN` (A.1's `p < 2^8q`):
 ///
 /// ```compile_fail
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -1027,7 +1030,7 @@ where
 /// A nonce length A.1 does not permit does not compile, whichever form is used:
 ///
 /// ```compile_fail
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -1043,7 +1046,7 @@ where
 /// Nor does an odd tag length:
 ///
 /// ```compile_fail
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -1112,7 +1115,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
-    pub(in crate::modes) fn from_perm(
+    pub(in crate::framework::modes) fn from_perm(
         perm: &'k P,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
@@ -1123,7 +1126,10 @@ where
 
     /// As [`Self::from_perm`] under a nonce the caller supplies, at any A.1 length: the
     /// constructor a mode-bound key's `encrypt_init_nonce` uses.
-    pub(in crate::modes) fn from_perm_nonce(perm: &'k P, nonce: &[u8; NONCE_LEN]) -> Self {
+    pub(in crate::framework::modes) fn from_perm_nonce(
+        perm: &'k P,
+        nonce: &[u8; NONCE_LEN],
+    ) -> Self {
         Self(CcmAdapter::new(perm, nonce))
     }
 
@@ -1327,7 +1333,7 @@ where
     /// mode-bound key's `decrypt_init` uses. Infallible, as [`AeadDecryptMode::decrypt_init`] is.
     ///
     /// [`AeadDecryptMode::decrypt_init`]: bouncycastle_core::hazmat::AeadDecryptMode::decrypt_init
-    pub(in crate::modes) fn from_perm(perm: &'k P, nonce: &[u8; NONCE_LEN]) -> Self {
+    pub(in crate::framework::modes) fn from_perm(perm: &'k P, nonce: &[u8; NONCE_LEN]) -> Self {
         Self { inner: CcmAdapter::new(perm, nonce), tag: [0u8; TAG_LEN], tag_len: 0 }
     }
 
@@ -2159,7 +2165,7 @@ mod tests {
     #[test]
     fn ccm_keystream_conforms_to_the_key_stream_framework() {
         mod toy {
-            include!("../../tests/common/toy_block_cipher.rs");
+            include!("../../../tests/common/toy_block_cipher.rs");
         }
         use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
         use toy::ToyBlockCipher;

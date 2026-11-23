@@ -35,7 +35,7 @@
 //! carry examples over AES with published vectors:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_symmetric::modes::XTSKey;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -162,7 +162,7 @@ impl<P: BlockPermutation<BLOCK_LEN>> XTSKey<P> {
     /// decrypts only ([`BlockPermutation::DECRYPT_ONLY`]) it does not compile:
     ///
     /// ```compile_fail,E0080
-    /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+    /// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
     /// # use toy::ToyBlockCipher;
     /// use bouncycastle_symmetric::modes::XTSKey;
     /// use bouncycastle_core::hazmat::BlockPermutation;
@@ -206,7 +206,7 @@ impl<P: BlockPermutation<BLOCK_LEN>> XTSKey<P> {
     /// The same key does decrypt:
     ///
     /// ```
-    /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+    /// # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
     /// # use toy::ToyBlockCipher;
     /// use bouncycastle_symmetric::modes::XTSKey;
     /// use bouncycastle_core::hazmat::BlockPermutation;

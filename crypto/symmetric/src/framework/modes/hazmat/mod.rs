@@ -11,7 +11,7 @@
 //! grep -rnE --include='*.rs' 'use .*::hazmat::'
 //! ```
 
-pub(in crate::modes) mod ctr_key_stream;
+pub(in crate::framework::modes) mod ctr_key_stream;
 pub mod ecb;
 pub mod gcm_siv;
-pub(in crate::modes) mod ofb_key_stream;
+pub(in crate::framework::modes) mod ofb_key_stream;

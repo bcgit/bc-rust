@@ -25,7 +25,7 @@
 //! is inlined into the ciphertext as `ciphertext || tag`:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_symmetric::BlockCipherKey;
 //! use bouncycastle_core::errors::SymmetricCipherError;
@@ -70,7 +70,7 @@
 //! `do_update_aad()` after a `do_encrypt()` will result in a [`SymmetricCipherError::StateError`].
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_symmetric::BlockCipherKey;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -107,7 +107,7 @@
 //! The same with an inline tag:
 //!
 //! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_symmetric::BlockCipherKey;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -341,7 +341,7 @@ impl<P: Eq> Eq for GcmKeyState<P> {}
 
 impl<P> GcmKeyState<P> {
     /// Derives `H` from `perm`.
-    pub(in crate::modes) fn new(perm: P) -> Self
+    pub(in crate::framework::modes) fn new(perm: P) -> Self
     where
         P: BlockPermutation<16>,
     {
@@ -450,7 +450,10 @@ where
     /// `AEADCipher*::do_update_aad`. Any number of calls before the first `do_update_out`; a
     /// non-empty call after data has started is [`SymmetricCipherError::StateError`] (Algorithm 4
     /// absorbs `A` before `C` in one GHASH pass, D4). Empty AAD is always a no-op.
-    pub(in crate::modes) fn absorb_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
+    pub(in crate::framework::modes) fn absorb_aad(
+        &mut self,
+        aad: &[u8],
+    ) -> Result<(), SymmetricCipherError> {
         if self.phase == Phase::Data {
             if aad.is_empty() {
                 return Ok(());
@@ -553,7 +556,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
-    pub(in crate::modes) fn from_key_state(
+    pub(in crate::framework::modes) fn from_key_state(
         state: &'k GcmKeyState<P>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
@@ -564,7 +567,7 @@ where
 
     /// As [`Self::from_key_state`] under a nonce the caller supplies: the constructor [`GCM`]'s
     /// `AeadEncryptMode::encrypt_init_nonce` impl calls.
-    pub(in crate::modes) fn from_key_state_nonce(
+    pub(in crate::framework::modes) fn from_key_state_nonce(
         state: &'k GcmKeyState<P>,
         nonce: &[u8; GCM_NONCE_LEN],
     ) -> Self {
@@ -586,7 +589,7 @@ where
 
     /// Algorithm 4 steps 4-6: finishes the message and returns the detached authentication tag,
     /// truncated to `TAG_LEN` bytes (`MSB_t`, step 6). Ends the encryptor's message.
-    pub(in crate::modes) fn finish(&mut self, token: &FinishToken) -> [u8; TAG_LEN] {
+    pub(in crate::framework::modes) fn finish(&mut self, token: &FinishToken) -> [u8; TAG_LEN] {
         // Covers an AAD-only or entirely empty message, where no data was ever encrypted.
         self.begin_data_if_needed();
         let mut full: Secret<[u8; 16]> = Secret::new();
@@ -665,7 +668,7 @@ where
     /// Begins the decryption of a message encrypted under `nonce` from a key's stored state: the
     /// decryption constructor [`GCM`]'s `AeadDecryptMode` impl calls. Infallible: the state is
     /// already keyed and the nonce length is in the type.
-    pub(in crate::modes) fn from_key_state(
+    pub(in crate::framework::modes) fn from_key_state(
         state: &'k GcmKeyState<P>,
         nonce: &[u8; GCM_NONCE_LEN],
     ) -> Self {
@@ -694,7 +697,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not match.
-    pub(in crate::modes) fn finish(
+    pub(in crate::framework::modes) fn finish(
         &mut self,
         token: &FinishToken,
         tag: &[u8; TAG_LEN],
@@ -853,7 +856,7 @@ pub(super) mod ghash {
     use bouncycastle_utils::secret::Secret;
 
     /// A block of `GF(2^128)`, in the two-`u64` form described in the module docs.
-    pub(in crate::modes) type Block = [u64; 2];
+    pub(in crate::framework::modes) type Block = [u64; 2];
 
     /// `R = 11100001 || 0^120` (Sec 6.3): first byte `0xE1`, the rest zero. Used only by
     /// [`mul_reference`]: [`mul`] folds the same constant into its own reduction step directly, as
@@ -964,7 +967,7 @@ pub(super) mod ghash {
     /// a bit-reversal trick (`rev(x)*rev(y) == rev((x*y) << 1)`) to reach the high 64 bits of each
     /// 64x64 product without a 128-bit multiply, followed by the standard two-step reduction by `R`.
     /// Variable names (`h0..h5`, `z0..z3`) match the Java source so the two can be diffed side by side.
-    pub(in crate::modes) fn mul(x: &Block, y: &Block) -> Block {
+    pub(in crate::framework::modes) fn mul(x: &Block, y: &Block) -> Block {
         let (x0, x1) = (x[0], x[1]);
         let (y0, y1) = (y[0], y[1]);
         let (x0r, x1r) = (x0.reverse_bits(), x1.reverse_bits());
@@ -1010,7 +1013,7 @@ pub(super) mod ghash {
     /// intermediate values in the execution of the GCM functions shall be secret"), so both live in a
     /// [`Secret`] and are zeroized on drop; the pending partial block is live plaintext-or-ciphertext
     /// bytes still waiting to be absorbed and is wrapped for the same reason.
-    pub(in crate::modes) struct Ghash {
+    pub(in crate::framework::modes) struct Ghash {
         /// The hash subkey `H = CIPH_K(0^128)`.
         h: Secret<Block>,
         /// `Y_i` of Algorithm 2.
@@ -1023,7 +1026,7 @@ pub(super) mod ghash {
 
     impl Ghash {
         /// `Y_0 = 0^128` (Algorithm 2 step 2), keyed by the hash subkey `H`.
-        pub(in crate::modes) fn new(h: &[u8; 16]) -> Self {
+        pub(in crate::framework::modes) fn new(h: &[u8; 16]) -> Self {
             let mut hs: Secret<Block> = Secret::new();
             hs[0] = u64::from_be_bytes(h[..8].try_into().expect("first half of H is 8 bytes"));
             hs[1] = u64::from_be_bytes(h[8..].try_into().expect("second half of H is 8 bytes"));
@@ -1044,7 +1047,7 @@ pub(super) mod ghash {
         /// Absorbs whole blocks of `data` immediately and buffers any remainder for the next call.
         /// Chunking-independent: a sequence of calls over pieces of a message is equivalent to one call
         /// over the whole message.
-        pub(in crate::modes) fn update(&mut self, mut data: &[u8]) {
+        pub(in crate::framework::modes) fn update(&mut self, mut data: &[u8]) {
             if self.pending_len > 0 {
                 let need = 16 - self.pending_len;
                 let take = need.min(data.len());
@@ -1070,7 +1073,7 @@ pub(super) mod ghash {
         /// The `0^v` / `0^u` zero-padding of Algorithm 4 step 5 / Algorithm 5 step 6: rounds the
         /// pending partial block up to a whole block with zero bytes and absorbs it. A no-op when
         /// nothing is pending, so it is safe to call unconditionally at a phase boundary.
-        pub(in crate::modes) fn pad_to_block(&mut self) {
+        pub(in crate::framework::modes) fn pad_to_block(&mut self) {
             if self.pending_len == 0 {
                 return;
             }
@@ -1088,7 +1091,7 @@ pub(super) mod ghash {
         /// phase already (the `0^v` and `0^u` of step 5), so by the time `finish` runs there is nothing
         /// pending except this one final length block, and no caller should call `update` or
         /// `pad_to_block` again afterward.
-        pub(in crate::modes) fn finish(
+        pub(in crate::framework::modes) fn finish(
             &mut self,
             _token: &FinishToken,
             aad_bits: u64,
