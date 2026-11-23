@@ -98,7 +98,7 @@ way when adding a harness, or `cargo test --workspace` fails to compile them.
 
 The workspace has four top-level kinds of member:
 
-1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework` and `cipher-test-framework` described below. Most are one primitive each; `pqc`, `digest`, `symmetric` and `hybrid` are family crates, holding their primitives as modules (see [the layout below](#sub-crate-layout-convention)). The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is named `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`; the two test frameworks, `cli` and `mem_usage_benches` are `publish = false`, which works because every dev-dependency is path-only and so is dropped from a packaged crate.
+1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework` and `cipher-test-framework` described below. Most are one primitive each; `pqc`, `digest`, `symmetric`, `ec` and `hybrid` are family crates, holding their primitives as modules (see [the layout below](#sub-crate-layout-convention)). The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is named `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`; the two test frameworks, `cli` and `mem_usage_benches` are `publish = false`, which works because every dev-dependency is path-only and so is dropped from a packaged crate.
 2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::sm3`, `bouncycastle::pqc`), and of a family crate's primitive modules under the names they had as crates (`bouncycastle::mlkem` is `bouncycastle_pqc::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
 3. `cli/` — the `bc-rust` binary built on top of `bouncycastle`, exposing every primitive as a streaming stdin→stdout subcommand using `clap`.
 4. `mem_usage_benches/` — stand-alone binary crates that measure peak stack usage of algorithms (cannot be done via criterion).
@@ -128,7 +128,8 @@ crypto/<name>/
 A family crate holds its primitives as modules, each with the layout it had as a crate:
 `bouncycastle-hybrid` (`crypto/hybrid`: `hpke`), `bouncycastle-digest` (`crypto/digest`: `blake2`,
 `blake3`, `concatkdf`, `hkdf`, `hmac`, `pbkdf2`, `ripemd`, `scrypt`, `sha1`, `sha2`, `sha3`, `sm3`,
-`x963kdf`), `bouncycastle-symmetric`
+`x963kdf`), `bouncycastle-ec` (`crypto/ec`: `dhkem`, `eccdh`, `ecdsa`, `ed`, `sm2`, beside the
+curve arithmetic at the crate root), `bouncycastle-symmetric`
 (`crypto/symmetric`: `aes`, `aria`, `ascon`, `camellia`, `chacha20`, `chacha20_poly1305_aead`,
 `kbkdf`, `poly1305`, `sm4`, `tdes`, under the block cipher modes, padding, stream helpers and
 `BlockCipherKey` at its root, whose tests are `tests/modes/`, `tests/padding/` and the unprefixed
@@ -150,7 +151,8 @@ crypto/<family>/
 Inside a family crate `pub(crate)` reaches every primitive in it, so an item private to one
 primitive is `pub(in crate::<module>)`. A module prefix is also a prefix of its siblings' (`mldsa_`
 of `mldsa_lowmemory_` and `mldsa_common_`), so select one module's test files by name rather than
-by a `--test 'mldsa_*'` glob.
+by a `--test 'mldsa_*'` glob. In `crypto/ec` the `sm2_` prefix is shared by the SM2 curve's
+arithmetic tests at the root (`sm2_field_tests.rs`) and the `sm2` module's (`sm2_sm2_tests.rs`).
 
 `#![no_std]` is the long-term goal but the `core` crate still has a `Vec`-removal TODO blocking it (see the comment at the top of `crypto/core/src/lib.rs`). Don't add new `Vec` usage where a const-sized array would do.
 
@@ -420,7 +422,7 @@ software key builds the engine from it. If the description trait or a descriptio
 modified, that property is the one to preserve: every constructor parameter of the KDF
 (HKDF's salt, and whatever a later KDF takes) stays a readable field of the description, never
 only inside the engine it builds, and a parameter with no readable form is a design error, not
-an implementation detail. `crypto/eccdh/tests/token_key_tests.rs` is the check: a key holding no
+an implementation detail. `crypto/ec/tests/eccdh_token_key_tests.rs` is the check: a key holding no
 material agrees through the same parameters as the software key by reading them.
 
 ## Working from specifications

@@ -16,13 +16,21 @@
 //! This crate's custom-curve arithmetic, and the Brainpool and SM2 curves alongside it, are based
 //! on BC Java's (`org.bouncycastle.math.ec.custom`) equivalent per-curve implementations.
 //!
+//! The algorithms over that arithmetic, and the Edwards and Montgomery curves, are modules:
+//!
+//! | Module    | Contents                                                                  |
+//! |-----------|---------------------------------------------------------------------------|
+//! | [`ecdsa`] | ECDSA (FIPS 186-5), randomized and deterministic (RFC 6979)               |
+//! | [`eccdh`] | ECC CDH key agreement (SP 800-56A Rev. 3 Section 5.7.1.2)                 |
+//! | [`sm2`]   | The SM2 digital signature algorithm (GB/T 32918.2-2016)                   |
+//! | [`ed`]    | Ed25519 and Ed448 (RFC 8032), X25519 and X448 (RFC 7748)                  |
+//! | [`dhkem`] | The DHKEM of RFC 9180, generic over the Diffie-Hellman group              |
+//!
 //! # Usage Examples
 //!
-//! Most callers want [`bouncycastle_ecdsa`](../bouncycastle_ecdsa/index.html),
-//! [`bouncycastle_eccdh`](../bouncycastle_eccdh/index.html) or
-//! [`bouncycastle_sm2`](../bouncycastle_sm2/index.html) rather than this crate directly. Their
+//! Most callers want [`ecdsa`], [`eccdh`] or [`sm2`] rather than the arithmetic directly. Their
 //! entry point is a curve marker from here, [`P256`], [`P384`], [`P521`], [`Secp256K1`],
-//! [`Bp256r1`], [`Bp384r1`] or [`Bp512r1`], on which each of those crates implements its key pair
+//! [`Bp256r1`], [`Bp384r1`] or [`Bp512r1`], on which each of those modules implements its key pair
 //! trait (`P256::generate_signature_key_pair(&mut rng)`, `P256::generate_agreement_key_pair(&mut
 //! rng)`); the marker itself carries nothing. What follows is the layer underneath them.
 //!
@@ -139,8 +147,7 @@
 //! variable-time Shamir's-trick multiplication for verification, and SEC 1 point
 //! encoding/decoding with public-key validation (SP 800-186 Appendix D.1.1.1; SEC 1 v2/SEC 2 v2
 //! for secp256k1; RFC 5639 for the brainpool curves). Signature schemes built on top live in
-//! [`bouncycastle_ecdsa`](../bouncycastle_ecdsa/index.html) (the seven ECDSA curves) and
-//! [`bouncycastle_sm2`](../bouncycastle_sm2/index.html).
+//! [`ecdsa`] (the seven ECDSA curves) and [`sm2`].
 //!
 //! # Memory Usage
 //!
@@ -203,7 +210,12 @@
 pub mod barrett;
 pub mod curve;
 mod curves;
+pub mod dhkem;
+pub mod eccdh;
+pub mod ecdsa;
+pub mod ed;
 pub mod hazmat;
 pub mod inverse_vartime;
+pub mod sm2;
 
 pub use curves::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};

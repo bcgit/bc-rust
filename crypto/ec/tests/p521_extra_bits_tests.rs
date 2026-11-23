@@ -9,7 +9,7 @@ use bouncycastle_ec::hazmat::p521_scalar::{N_LIMBS, P521Scalar};
 use bouncycastle_ec::hazmat::p521_sec1;
 use bouncycastle_utils::nat;
 
-/// The width `bouncycastle-ecdsa` draws for P-521: `ceil((521 + 64) / 8)`.
+/// The width `bouncycastle_ec::ecdsa` draws for P-521: `ceil((521 + 64) / 8)`.
 const DRBG_OUTPUT_LEN: usize = 74;
 /// SEC 1 octet width of a P-521 scalar.
 const N_LEN: usize = 66;

@@ -2,8 +2,8 @@
 //! nothing else. A crate that builds a role on a curve (signatures, key agreement) implements
 //! its extension trait on the marker, so the caller starts from the curve and the trait in
 //! scope says what the key pair is for: `P256::generate_signature_key_pair(&mut rng)` from
-//! `bouncycastle_ecdsa`, `P256::generate_agreement_key_pair(&mut rng)` from
-//! `bouncycastle_eccdh`. A marker carries no state; its one impl of this crate's is
+//! `crate::ecdsa`, `P256::generate_agreement_key_pair(&mut rng)` from
+//! `crate::eccdh`. A marker carries no state; its one impl of this crate's is
 //! [`Curve`](crate::curve::Curve), the routing table from the marker to the curve's arithmetic in
 //! [`hazmat`](crate::hazmat), which is what lets a role crate be written once over `C: Curve`.
 

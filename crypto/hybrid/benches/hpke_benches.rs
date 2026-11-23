@@ -4,7 +4,7 @@
 
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
-use bouncycastle_ed::x25519::keygen;
+use bouncycastle_ec::ed::x25519::keygen;
 use bouncycastle_hybrid::hpke::{
     HpkeAuthRecipient, HpkeAuthSender, HpkeCipher, HpkeContext, HpkeKdf, HpkeParams, HpkeRecipient,
     HpkeSender, NT,

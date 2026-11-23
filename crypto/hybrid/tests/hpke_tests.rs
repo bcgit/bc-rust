@@ -19,12 +19,12 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use bouncycastle_dhkem::HpkeKem;
 use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_ec::dhkem::HpkeKem;
+use bouncycastle_ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
+use bouncycastle_ec::ed::x448::{X448PrivateKey, X448PublicKey};
+use bouncycastle_ec::ed::x25519::{X25519PrivateKey, X25519PublicKey};
 use bouncycastle_ec::{P256, P384, P521};
-use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
-use bouncycastle_ed::x448::{X448PrivateKey, X448PublicKey};
-use bouncycastle_ed::x25519::{X25519PrivateKey, X25519PublicKey};
 use bouncycastle_hybrid::hpke::{
     ExportOnly, HpkeAead, HpkeAuthRecipient, HpkeAuthSender, HpkeCipher, HpkeContext, HpkeError,
     HpkeKdf, HpkeParams, HpkeRecipient, HpkeSender, NN, NT, Psk, Recipient, Sender,
@@ -328,10 +328,10 @@ fn rfc_9180_appendix_a_1_2_psk_mode() {
 /// The identifiers of RFC 9180 Section 7, Tables 2, 3 and 5.
 #[test]
 fn the_suite_identifiers_are_the_rfcs() {
-    use bouncycastle_eccdh::dhkem::{
+    use bouncycastle_ec::eccdh::dhkem::{
         DHKEM_P256_HKDF_SHA256, DHKEM_P384_HKDF_SHA384, DHKEM_P521_HKDF_SHA512,
     };
-    use bouncycastle_ed::x25519::DHKEM_X25519_HKDF_SHA256;
+    use bouncycastle_ec::ed::x25519::DHKEM_X25519_HKDF_SHA256;
     assert_eq!(DHKEM_P256_HKDF_SHA256::KEM_ID, 0x0010);
     assert_eq!(DHKEM_P384_HKDF_SHA384::KEM_ID, 0x0011);
     assert_eq!(DHKEM_P521_HKDF_SHA512::KEM_ID, 0x0012);
@@ -395,7 +395,7 @@ where
 }
 
 fn x25519_keys() -> (X25519PublicKey, X25519PrivateKey) {
-    bouncycastle_ed::x25519::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap()
+    bouncycastle_ec::ed::x25519::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap()
 }
 
 #[test]
@@ -406,11 +406,11 @@ fn round_trips_on_every_kem_kdf_and_aead() {
     round_trip::<_, _, SHA512, ChaCha20Poly1305Key, 32, 32>(&pk, &sk);
 
     let mut rng = HashDRBG_SHA512::new_from_os();
-    let (pk, sk) = bouncycastle_eccdh::keys::keygen::<P256>(&mut rng).unwrap();
+    let (pk, sk) = bouncycastle_ec::eccdh::keys::keygen::<P256>(&mut rng).unwrap();
     round_trip::<_, _, SHA256, ChaCha20Poly1305Key, 65, 32>(&pk, &sk);
-    let (pk, sk) = bouncycastle_eccdh::keys::keygen::<P384>(&mut rng).unwrap();
+    let (pk, sk) = bouncycastle_ec::eccdh::keys::keygen::<P384>(&mut rng).unwrap();
     round_trip::<_, _, SHA384, Aes256Gcm, 97, 48>(&pk, &sk);
-    let (pk, sk) = bouncycastle_eccdh::keys::keygen::<P521>(&mut rng).unwrap();
+    let (pk, sk) = bouncycastle_ec::eccdh::keys::keygen::<P521>(&mut rng).unwrap();
     round_trip::<_, _, SHA512, Aes256Gcm, 133, 64>(&pk, &sk);
 }
 
@@ -619,7 +619,7 @@ fn an_exported_secret_carries_the_suites_strength() {
     }
     let (x25519, _) = x25519_keys();
     let mut rng = HashDRBG_SHA512::new_from_os();
-    let (p521, _) = bouncycastle_eccdh::keys::keygen::<P521>(&mut rng).unwrap();
+    let (p521, _) = bouncycastle_ec::eccdh::keys::keygen::<P521>(&mut rng).unwrap();
 
     // X25519 is 128 bits whatever the KDF.
     assert_eq!(strength::<_, SHA256, 32, 32, 32>(&x25519), SecurityStrength::_128bit);
@@ -651,7 +651,7 @@ fn the_kems_errors_are_reported_as_the_kems() {
     assert_eq!(out.key_type(), KeyType::Zeroized);
 
     // An enc that is not a point of P-256.
-    let (_, sk) = bouncycastle_eccdh::keys::keygen::<P256>(&mut rng).unwrap();
+    let (_, sk) = bouncycastle_ec::eccdh::keys::keygen::<P256>(&mut rng).unwrap();
     let enc = [0x04u8; 65];
     assert!(matches!(
         sk.setup_recipient(&enc, params),
@@ -739,15 +739,15 @@ fn the_authenticated_modes_round_trip_and_bind_the_senders_key() {
     auth_round_trip::<_, _, SHA512, ChaCha20Poly1305Key, 32, 32>(&keys[0], &keys[1], &keys[2]);
 
     let mut rng = HashDRBG_SHA512::new_from_os();
-    let mut p256 = || bouncycastle_eccdh::keys::keygen::<P256>(&mut rng).unwrap();
+    let mut p256 = || bouncycastle_ec::eccdh::keys::keygen::<P256>(&mut rng).unwrap();
     let keys = [p256(), p256(), p256()];
     auth_round_trip::<_, _, SHA256, Aes128Gcm, 65, 32>(&keys[0], &keys[1], &keys[2]);
     let mut rng = HashDRBG_SHA512::new_from_os();
-    let mut p384 = || bouncycastle_eccdh::keys::keygen::<P384>(&mut rng).unwrap();
+    let mut p384 = || bouncycastle_ec::eccdh::keys::keygen::<P384>(&mut rng).unwrap();
     let keys = [p384(), p384(), p384()];
     auth_round_trip::<_, _, SHA384, Aes256Gcm, 97, 48>(&keys[0], &keys[1], &keys[2]);
     let mut rng = HashDRBG_SHA512::new_from_os();
-    let mut p521 = || bouncycastle_eccdh::keys::keygen::<P521>(&mut rng).unwrap();
+    let mut p521 = || bouncycastle_ec::eccdh::keys::keygen::<P521>(&mut rng).unwrap();
     let keys = [p521(), p521(), p521()];
     auth_round_trip::<_, _, SHA512, Aes256Gcm, 133, 64>(&keys[0], &keys[1], &keys[2]);
 }

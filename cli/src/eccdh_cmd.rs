@@ -1,4 +1,4 @@
-//! Generic CLI wiring for every curve in `bouncycastle-eccdh`: one instantiation of
+//! Generic CLI wiring for every curve in `bouncycastle_ec::eccdh`: one instantiation of
 //! [`eccdh_cmd`] per curve marker, as `ecdsa_cmd.rs` does for ECDSA. `agree` writes the raw shared secret `Z` of SP 800-56A Rev. 3
 //! Section 5.7.1.2, which is keying material for a KDF (`hkdf-sha256` and friends take it from
 //! a file through `--ikm-file`; the inline `--ikm` would leave it in the command history), not a

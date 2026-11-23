@@ -144,7 +144,7 @@ impl P521ScalarField {
     /// wrapped in [`bouncycastle_utils::secret::Secret`] -- that would cost its `Copy`, its `const
     /// ZERO`/`ONE`, and a scrub on every intermediate including the public ones. The trade is that
     /// scrubbing is the caller's job, on every path out of the function; see
-    /// `bouncycastle_ecdsa`'s `sign_with_k` for the intended use.
+    /// `crate::ecdsa`'s `sign_with_k` for the intended use.
     ///
     /// This does not reach values the compiler kept in registers or spilled itself, and is
     /// defence in depth rather than a guarantee.
@@ -505,7 +505,7 @@ impl P521PublicScalar {
 // tail above) runs unconditionally, but a non-zero carry actually reaching those limbs is rare --
 // verified, when that tail was still a `while carry != 0` loop, by instrumenting it with an
 // unconditional `panic!` and confirming it fired during real signature verification (the
-// wycheproof P-521 suite in `bouncycastle-ecdsa`) -- and this crate's own tests never happened to
+// wycheproof P-521 suite in `crate::ecdsa`) -- and this crate's own tests never happened to
 // produce one: not `algebraic_identities_over_many_pseudorandom_values`
 // (hundreds of thousands of `redc` calls via `invert`'s ~585 multiplications per iteration, over
 // 1000 iterations, all with uniformly random `< n` operands), nor any of this module's other

@@ -1,6 +1,6 @@
 //! RSA-2048/SHA-256 RSASSA-PKCS1-v1_5 against Wycheproof (`rsa_pkcs1_2048_sig_gen_test.json` and
 //! `rsa_signature_2048_sha256_test.json`), following the path/lookup convention
-//! `bouncycastle-ecdsa`'s `tests/wycheproof.rs` documents (symlink the clone at
+//! `bouncycastle-ec`'s `tests/ecdsa_wycheproof_common/mod.rs` documents (symlink the clone at
 //! `/tmp/wycheproof` for `cargo mutants`).
 //!
 //! No CAVP SigGen15/SigVer15 vectors exist in this workspace's `bc-test-data` clone at the time

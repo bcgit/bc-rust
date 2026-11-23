@@ -1,19 +1,19 @@
-//! Generic CLI wiring for every ECDSA curve in `bouncycastle-ecdsa`: one instantiation of
+//! Generic CLI wiring for every ECDSA curve in `bouncycastle_ec::ecdsa`: one instantiation of
 //! [`ecdsa_cmd`] per curve, rather than the per-curve match block `mldsa_cmd.rs`/`mlkem_cmd.rs`
 //! duplicate seven and three times respectively. That duplication is warranted for them -- each
 //! parameter set is its own concrete algorithm with its own quirks (a hash-then-sign variant, a
 //! from-seed variant, a bespoke consistency-check API) -- but every ECDSA curve implements the
-//! identical `Signer`/`SignatureVerifier`/`PrivateKey`/`PublicKey`/
+//! identical `SigningKey`/`DeterministicSigningKey`/`VerifyingKey`/`PrivateKey`/`PublicKey`/
 //! `DerivePublicKey` trait shape with no per-curve deviation, so a single generic function bound
 //! over those traits, monomorphised once per curve below, covers all seven without repeating the
 //! same match block.
 //!
-//! Each curve has two signer types, `ECDSA*` (random `k`) and `ECDetDSA*` (RFC 6979), identical in
-//! trait shape; `--deterministic` picks which one [`ecdsa_cmd`] is instantiated over.
+//! Each key signs through both `SigningKey` (random `k`) and `DeterministicSigningKey` (RFC 6979);
+//! `--deterministic` picks which one [`ecdsa_cmd`] calls.
 //!
-//! `ctx` is not exposed as a CLI flag here: ECDSA has no context input, and `bouncycastle_ecdsa`
+//! `ctx` is not exposed as a CLI flag here: ECDSA has no context input, and `bouncycastle_ec::ecdsa`
 //! refuses a non-empty one, so a `--ctxfile` flag could only fail -- every call below passes
-//! `None` directly instead. `SM2` (`sm2_cmd.rs`) is the curve this crate
+//! `None` directly instead. `SM2` (`sm2_cmd.rs`) is the curve this command
 //! does NOT cover: its `ctx` is mandatory (it carries the signer's identity `IDA`) and its
 //! `derive_pk` is a bespoke inherent method rather than an implementation of `DerivePublicKey`, so
 //! it needs its own command function and its own `--idfile` flag.

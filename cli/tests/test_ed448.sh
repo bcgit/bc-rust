@@ -3,7 +3,7 @@
 # signatures (RFC 8032 Section 5.2) on one key pair, each under an optional context.
 #
 # The known answers are RFC 8032 Section 7.4 (Ed448) and Section 7.5 (Ed448ph), lifted by
-# script from crypto/ed/tests/ed448_rfc8032_tests.rs. Hex keys, contexts and signatures are
+# script from crypto/ec/tests/ed_ed448_rfc8032_tests.rs. Hex keys, contexts and signatures are
 # read under --hex-input; without it they are raw bytes. The message on stdin is always raw.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

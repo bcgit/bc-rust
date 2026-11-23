@@ -1,6 +1,6 @@
 //! FIPS 186-5 Appendix A.4.1, "Conversion of a Bit String to an Integer mod n via Modular
-//! Reduction" -- the "extra random bits" method both `bouncycastle-ecdsa`'s `keys_p384`'s key
-//! generation (Appendix A.2.1) and `bouncycastle-ecdsa`'s `ecdsa_p384`'s randomised per-message
+//! Reduction" -- the "extra random bits" method both `crate::ecdsa::keys`'s key
+//! generation (Appendix A.2.1) and `crate::ecdsa::ecdsa`'s randomised per-message
 //! secret (Appendix A.3.1) use to turn a DRBG output wider than `n` into a value in `[1, n-1]`.
 //! Identical algorithm to [`crate::hazmat::p256_extra_bits`] -- see that module's docs for the full
 //! reasoning -- with P-384's own `n` substituted.
@@ -10,7 +10,7 @@
 //! Not for bias. P-384's `n` is within `2^190` of `2^384`, so Appendix A.4.1 step 2's bound
 //! (`2ρ(1-ρ)(n-1) <= ε·N`, `ε = 2^-64`) already holds at `l = 384` with a bias near `2^-194`, and
 //! FIPS 186-5 Table A.2 accordingly gives `p384` a required and recommended DRBG output of 384
-//! bits for key generation. An earlier version of `bouncycastle-ecdsa` drew exactly 48 bytes for both key
+//! bits for key generation. An earlier version of `crate::ecdsa` drew exactly 48 bytes for both key
 //! generation and the randomised per-message secret on that basis, and reduced with a single
 //! conditional subtraction of `n - 1`.
 //!
@@ -18,7 +18,7 @@
 //! its step 3 says: *"Obtain a bit string of N+t returned_bits from the established DRBG"*. That
 //! is a requirement on the per-message secret's draw independent of how close `n` is to a power
 //! of two, and 384 bits does not meet it. So `ECDSAP384` now draws `N + 64 = 448` bits (56
-//! bytes, `bouncycastle-ecdsa`'s `keys_p384::EXTRA_BITS_DRBG_OUTPUT_LEN`) and reduces them with this module.
+//! bytes, `P384::EXTRA_BITS_DRAW_LEN`) and reduces them with this module.
 //! Key generation draws the same 56 bytes: Table A.2's 384 is a minimum ("not less than"), so
 //! the wider draw is permitted there too, and one reduction path per curve is simpler than two.
 //! The extra bits satisfy the requirement rather than lower the bias: for an `n` this close to a
@@ -51,7 +51,7 @@ const MU_LOW_LIMBS: [u64; 6] = [
 /// FIPS 186-5 Appendix A.4.1 steps 3-5 for `n` = the curve order: reduces the big-endian bit string
 /// `bytes` modulo `n-1` and adds `1`, landing in `[1, n-1]`. `bytes` may be up to `95` bytes
 /// -- `2^760 < (n-1) * 2^384`, Barrett's precondition -- which covers the 56-byte DRBG
-/// output `bouncycastle-ecdsa` draws with room to spare; a longer input is a programming error and panics.
+/// output `crate::ecdsa` draws with room to spare; a longer input is a programming error and panics.
 pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> P384Scalar {
     assert!(
         bytes.len() < 96,

@@ -1,6 +1,6 @@
 //! FIPS 186-5 Appendix A.4.1, "Conversion of a Bit String to an Integer mod n via Modular
-//! Reduction" -- the "extra random bits" method both `bouncycastle-ecdsa`'s `keys_p256`'s key generation (Appendix
-//! A.2.1) and `bouncycastle-ecdsa`'s `ecdsa_p256`'s randomised per-message secret (Appendix A.3.1) use to turn a
+//! Reduction" -- the "extra random bits" method both `crate::ecdsa::keys`'s key generation (Appendix
+//! A.2.1) and `crate::ecdsa::ecdsa`'s randomised per-message secret (Appendix A.3.1) use to turn a
 //! DRBG output wider than `n` into a value in `[1, n-1]` with negligible bias.
 //!
 //! # The algorithm, and why it needs its own reduction
@@ -12,7 +12,7 @@
 //!
 //! SP 800-56A Rev. 3 Section 5.6.1.2.1 steps 5-6 (`d = (c mod (n - 1)) + 1`, key-pair generation
 //! for key establishment) are the same computation, which is why this lives in `bouncycastle-ec`
-//! rather than in the signature crate that first needed it.
+//! rather than in the signature module that first needed it.
 //!
 //! `X` here is 352 bits (44 bytes -- FIPS 186-5 Table A.2's "Recommended" output length for a
 //! DRBG feeding a P-256 private key or per-message secret, `l = N + t` with `N = 256` and `t = 96
@@ -54,7 +54,7 @@ const MU_LOW_LIMBS: [u64; 4] =
 /// FIPS 186-5 Appendix A.4.1 steps 3-5 for `n` = the curve order: reduces the big-endian bit string
 /// `bytes` modulo `n-1` and adds `1`, landing in `[1, n-1]`. `bytes` may be up to `63` bytes
 /// -- `2^504 < (n-1) * 2^256`, Barrett's precondition -- which covers the 44-byte DRBG
-/// output `bouncycastle-ecdsa` draws with room to spare; a longer input is a programming error and panics.
+/// output `crate::ecdsa` draws with room to spare; a longer input is a programming error and panics.
 pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> P256Scalar {
     assert!(
         bytes.len() < 64,

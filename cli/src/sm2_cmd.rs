@@ -1,8 +1,8 @@
-//! CLI wiring for `bouncycastle-sm2`. Bespoke rather than routed through `ecdsa_cmd`'s generic
-//! function: every SM2 `Signer`/`SignatureVerifier` call requires `ctx` to carry the signer's
-//! identity `IDA` (GB/T 32918.2-2016 §5.5; see `bouncycastle_sm2::sm2`'s docs), whereas every
+//! CLI wiring for `bouncycastle_ec::sm2`. Bespoke rather than routed through `ecdsa_cmd`'s generic
+//! function: every SM2 `SigningKey`/`VerifyingKey` call requires `ctx` to carry the signer's
+//! identity `IDA` (GB/T 32918.2-2016 §5.5; see `bouncycastle_ec::sm2::sm2`'s docs), whereas every
 //! curve `ecdsa_cmd` covers ignores `ctx` entirely -- and `SM2PrivateKey::derive_pk` is a plain
-//! inherent method rather than an implementation of `bouncycastle_ecdsa::keys_common::
+//! inherent method rather than an implementation of `bouncycastle_ec::ecdsa::keys_common::
 //! DerivePublicKey` (see that method's own doc comment: SM2 was never going to share a single
 //! generic command function with the other seven curves regardless). `--idfile` is mandatory for
 //! `Sign`/`Verify`: the crate has no default identity to fall back to when `ctx` is omitted.

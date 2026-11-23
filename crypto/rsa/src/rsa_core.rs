@@ -135,7 +135,7 @@ fn is_one<const N: usize>(x: &[u64; N]) -> Condition<u64> {
 /// with the modulus (`T` is a limb array of the size in hand), and `FIXED` words for the part
 /// that does not. Each caller gives the measured figures beside its constants.
 ///
-/// The shape of `wipe_stack_below` in `bouncycastle-ed` (`ed25519/scalar.rs`) and
+/// The shape of `wipe_stack_below` in `bouncycastle_ec::ed` (`ed25519/scalar.rs`) and
 /// `bouncycastle_digest::sha3` (`keccak.rs`), which are private to those modules and of one fixed size.
 /// Like theirs it is sized for an optimised build: an unoptimised build's frames are larger
 /// and are not covered.

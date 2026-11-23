@@ -121,7 +121,7 @@ impl P384ScalarField {
     /// wrapped in [`bouncycastle_utils::secret::Secret`] -- that would cost its `Copy`, its `const
     /// ZERO`/`ONE`, and a scrub on every intermediate including the public ones. The trade is that
     /// scrubbing is the caller's job, on every path out of the function; see
-    /// `bouncycastle_ecdsa`'s `sign_with_k` for the intended use.
+    /// `crate::ecdsa`'s `sign_with_k` for the intended use.
     ///
     /// This does not reach values the compiler kept in registers or spilled itself, and is
     /// defence in depth rather than a guarantee.

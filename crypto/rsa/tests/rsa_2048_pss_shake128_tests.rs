@@ -215,7 +215,7 @@ fn pss_shake128_trait_conformance_suite() {
         );
 }
 
-/// A fixed-output RNG (all-`0x42` bytes), as `bouncycastle-ecdsa`'s tests use: pins that
+/// A fixed-output RNG (all-`0x42` bytes), as `bouncycastle_ec::ecdsa`'s tests use: pins that
 /// `SigningKey::sign` takes its salt from the caller's RNG and nowhere else.
 struct FixedRng;
 impl RNG for FixedRng {

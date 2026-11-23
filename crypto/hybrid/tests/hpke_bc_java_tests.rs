@@ -15,9 +15,9 @@ use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_digest::sha2::SHA384;
+use bouncycastle_ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
+use bouncycastle_ec::ed::x25519::{X25519PrivateKey, X25519PublicKey};
 use bouncycastle_ec::{P384, P521};
-use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
-use bouncycastle_ed::x25519::{X25519PrivateKey, X25519PublicKey};
 use bouncycastle_hybrid::hpke::{
     ExportOnly, HpkeAead, HpkeAuthRecipient, HpkeCipher, HpkeContext, HpkeParams, HpkeRecipient,
     Psk, Recipient,

@@ -1,6 +1,6 @@
 //! FIPS 186-5 Appendix A.4.1, "Conversion of a Bit String to an Integer mod n via Modular
-//! Reduction" -- the "extra random bits" method both `bouncycastle-ecdsa`'s `keys_bp384r1`'s key
-//! generation (Appendix A.2.1) and `bouncycastle-ecdsa`'s `ecdsa_bp384r1`'s randomised per-message
+//! Reduction" -- the "extra random bits" method both `crate::ecdsa::keys`'s key
+//! generation (Appendix A.2.1) and `crate::ecdsa::ecdsa`'s randomised per-message
 //! secret (Appendix A.3.1) use to turn a DRBG output wider than `n` into a value in `[1, n-1]` with
 //! negligible bias. Identical algorithm to [`crate::hazmat::p256_extra_bits`] -- see that module's
 //! docs for the full reasoning -- with brainpoolP384r1's own `n` substituted.
@@ -15,8 +15,8 @@
 //! Appendix A.4.1 step 2's bias-bound check (`2ρ(1-ρ)(n-1) > ε·N`, `ε = 2^-64`) was evaluated
 //! directly (in Python, against `n`'s actual value, not assumed by analogy to any other curve) for
 //! `N = 2^l` at increasing `l`: `l = 384` (matching `n`'s own bit length) fails the check, and the
-//! smallest passing `l` is `445`; `bouncycastle-ecdsa` uses `l = 448` (56 bytes, byte-aligned, three bits of
-//! margin above the minimum) as `bouncycastle-ecdsa`'s `keys_bp384r1::EXTRA_BITS_DRBG_OUTPUT_LEN`.
+//! smallest passing `l` is `445`; `crate::ecdsa` uses `l = 448` (56 bytes, byte-aligned, three bits of
+//! margin above the minimum) as `Bp384r1::EXTRA_BITS_DRAW_LEN`.
 //!
 //! The reduction itself is [`crate::barrett`]'s constant-time Barrett reduction with `m = n - 1`
 //! (see [`crate::hazmat::p256_extra_bits`]'s docs for the constant-time argument);
@@ -44,7 +44,7 @@ const MU_LOW_LIMBS: [u64; 6] = [
 /// FIPS 186-5 Appendix A.4.1 steps 3-5 for `n` = the curve order: reduces the big-endian bit string
 /// `bytes` modulo `n-1` and adds `1`, landing in `[1, n-1]`. `bytes` may be up to `95` bytes
 /// -- `2^760 < (n-1) * 2^384`, Barrett's precondition -- which covers the 56-byte DRBG
-/// output `bouncycastle-ecdsa` draws with room to spare; a longer input is a programming error and panics.
+/// output `crate::ecdsa` draws with room to spare; a longer input is a programming error and panics.
 pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> Bp384r1Scalar {
     assert!(
         bytes.len() < 96,

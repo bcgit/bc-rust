@@ -35,7 +35,7 @@ use bouncycastle::sm2::sm2::SM2;
 const MSG: &[u8] = b"peak stack usage of SM2 sign/verify, held constant across runs";
 
 /// SM2 requires `ctx` to carry the signer's identity `IDA`; this is a fixed placeholder, not a
-/// crate-provided default (the crate has none -- see `bouncycastle_sm2::sm2`'s docs).
+/// crate-provided default (the crate has none -- see `bouncycastle_ec::sm2::sm2`'s docs).
 const ID: &[u8] = b"1234567812345678";
 
 /// This prints the in-memory size of the public and private key structs, plus their on-disk

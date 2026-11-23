@@ -6,15 +6,12 @@ edition.workspace = true
 [dependencies]
 bouncycastle-symmetric.workspace = true
 bouncycastle-core.workspace = true
-bouncycastle-dhkem.workspace = true
 bouncycastle-digest.workspace = true
+bouncycastle-ec.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
-bouncycastle-ec.workspace = true
-bouncycastle-eccdh.workspace = true
-bouncycastle-ed.workspace = true
 bouncycastle-rng.workspace = true
 criterion.workspace = true
 
