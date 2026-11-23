@@ -12,6 +12,7 @@ use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::PublicKey;
 use bouncycastle::ec::ed::x448::{
     DHKEM_SS_LEN, POINT_LEN, SCALAR_LEN, X448PrivateKey, X448PublicKey, keygen_out,
+    keypair_consistency_check,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
@@ -56,7 +57,8 @@ pub(crate) fn x448_cmd(
             let pk = {
                 let mut sk = X448PrivateKey::zeroized();
                 load_sk(skfile, &mut sk);
-                sk.pk()
+                // A decoded key is filled, so it has a public key.
+                sk.pk().unwrap()
             };
             write_bytes_or_hex(&pk.encode(), output_hex);
         }
@@ -66,7 +68,7 @@ pub(crate) fn x448_cmd(
             let matches = {
                 let mut sk = X448PrivateKey::zeroized();
                 load_sk(skfile, &mut sk);
-                sk.pk() == pk
+                keypair_consistency_check(&pk, &sk).is_ok()
             };
             if matches {
                 println_stdout("SUCCESS: pk and sk match.");

@@ -244,13 +244,13 @@ fn check_entry(entry: &Entry) -> usize {
         let (pk, sk) = X448DHKEM::derive_key_pair(&seed(&hex::decode(ikm).unwrap())).unwrap();
         assert_eq!(pk.encode(), get(&format!("pk{who}m")), "count {count} pk{who}m");
         assert_eq!(sk.encode(), clamp(get(&format!("sk{who}m"))), "count {count} sk{who}m");
-        assert_eq!(sk.pk(), pk, "count {count}");
+        assert_eq!(sk.pk().unwrap(), pk, "count {count}");
         derived += 1;
     }
 
     let pk_r = X448PublicKey::from_bytes(&get("pkRm")).unwrap();
     let sk_r = X448PrivateKey::from_bytes(&get("skRm")).unwrap();
-    assert_eq!(sk_r.pk(), pk_r, "count {count}: pk(skRm)");
+    assert_eq!(sk_r.pk().unwrap(), pk_r, "count {count}: pk(skRm)");
     // The ephemeral public key is the ciphertext (Section 4.1: enc = SerializePublicKey(pkE)).
     assert_eq!(entry["enc"], entry["pkEm"], "count {count}");
     let mut rng = FixedSeedRNG::new(get("skEm"));
@@ -590,7 +590,7 @@ const FOUR_TIMES_ORDER: &str = concat!(
 fn the_key_four_times_the_order_is_not_a_dhkem_key() {
     let bytes = decode_56(FOUR_TIMES_ORDER);
     let sk = X448PrivateKey::from_bytes(&bytes).unwrap();
-    assert_eq!(sk.pk().as_bytes(), &[0u8; POINT_LEN]);
+    assert_eq!(sk.pk().unwrap().as_bytes(), &[0u8; POINT_LEN]);
     check_refused_private_key(&sk, || KEMError::DecodingError(""));
 
     let mut six = [0u8; POINT_LEN];
@@ -617,12 +617,12 @@ fn the_key_four_times_the_order_is_not_a_dhkem_key() {
     neighbour[0] ^= 4;
     let key = <X448 as DHKEMParams<56, 56, 56>>::private_key_from_bytes(&neighbour).unwrap();
     assert!(key == X448PrivateKey::from_bytes(&neighbour).unwrap());
-    assert_eq!(<X448 as DHKEMParams<56, 56, 56>>::pk(&key), key.pk());
+    assert_eq!(<X448 as DHKEMParams<56, 56, 56>>::pk(&key), key.pk().unwrap());
     assert!(key.create_decapsulator(()).is_ok());
 
     // Encapsulating to its all-zero public key is refused as any small-order key is.
     assert!(matches!(
-        sk.pk().encaps(&mut HashDRBG_SHA512::new_from_os(), ()),
+        sk.pk().unwrap().encaps(&mut HashDRBG_SHA512::new_from_os(), ()),
         Err(KEMError::InvalidPublicKey(_))
     ));
 }
@@ -645,7 +645,9 @@ fn check_refused_private_key(sk: &X448PrivateKey, expected: impl Fn() -> KEMErro
     let mut enc_out = [0xFFu8; POINT_LEN];
     let mut ss = stale_secret();
     let mut rng = FixedSeedRNG::new([0x5A; 112]);
-    assert!(same(&filled.pk().auth_encaps_out(&mut rng, sk, &mut enc_out, &mut ss).unwrap_err()));
+    assert!(same(
+        &filled.pk().unwrap().auth_encaps_out(&mut rng, sk, &mut enc_out, &mut ss).unwrap_err()
+    ));
     assert_eq!(enc_out, [0u8; POINT_LEN]);
     assert_eq!(ss.key_type(), KeyType::Zeroized);
 
@@ -663,7 +665,7 @@ fn check_refused_private_key(sk: &X448PrivateKey, expected: impl Fn() -> KEMErro
     let mut ss = stale_secret();
     let mut rng = FixedSeedRNG::new([0x5A; 112]);
     assert!(matches!(
-        X448DHKEM::auth_encap_rng_out(&filled.pk(), sk, &mut rng, &mut enc_out, &mut ss),
+        X448DHKEM::auth_encap_rng_out(&filled.pk().unwrap(), sk, &mut rng, &mut enc_out, &mut ss),
         Err(KEMError::InvalidPublicKey(_))
     ));
     assert_eq!(enc_out, [0u8; POINT_LEN]);

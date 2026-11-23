@@ -148,6 +148,9 @@
 //! key says it is meant: both sides have to know. The digest is computed here, from the
 //! message: a caller that holds only a SHA-512 digest cannot sign or verify it as Ed25519ph.
 //!
+//! **Strength.** RFC 8032 Section 8.5 gives Ed25519 and Ed25519ph "a nominal strength of 128
+//! bits", the level they are classed at and what [`keygen`] asks of its RNG.
+//!
 //! **Constant time.** Key expansion and signing are constant time in the private key and
 //! everything derived from it, on a target that multiplies two 64-bit words into 128 bits in
 //! time independent of their values; on a 32-bit target that product is a call into the

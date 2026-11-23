@@ -20,7 +20,7 @@
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
-//! assert_eq!(sk.pk(), pk);
+//! assert_eq!(sk.pk()?, pk);
 //! # Ok::<(), bouncycastle_core::errors::KeyAgreementError>(())
 //! ```
 //!
@@ -97,10 +97,10 @@
 //! ```
 //!
 //! A public key is its 32 bytes, compared as bytes: two encodings of one point (bit 255 set, or
-//! `u + p`) are two keys to [`PartialEq`] and to `check-consistency`, and encapsulating to a
-//! non-canonical encoding of the recipient's key gives a secret the recipient cannot derive from
-//! the canonical one. Both follow RFC 7748 Section 5 and RFC 9180 Section 7.1.1 to the letter;
-//! a protocol that compares keys should compare canonical encodings.
+//! `u + p`) are two keys to [`PartialEq`] and to [`keypair_consistency_check`], and
+//! encapsulating to a non-canonical encoding of the recipient's key gives a secret the recipient
+//! cannot derive from the canonical one. Both follow RFC 7748 Section 5 and RFC 9180 Section
+//! 7.1.1 to the letter; a protocol that compares keys should compare canonical encodings.
 //!
 //! Like any unauthenticated Diffie-Hellman, X25519 on its own resists only passive
 //! eavesdroppers. An active attacker who can substitute public keys in transit can sit in the
@@ -120,20 +120,23 @@
 //!
 //! Per-call stack usage, measured as the deepest frame chain from the `measure` wrapper of
 //! `mem_usage_benches`' x25519 harness down, the wrapper's own frame included, in the release
-//! build (x86-64 Linux, rustc 1.97.0-nightly, return addresses included), on the key agreement
-//! roles with the field element's wipe:
+//! build of the harness with every bench called from one `main` (x86-64 Linux, rustc
+//! 1.97.0-nightly, return addresses included), on the key agreement roles with the field
+//! element's wipe:
 //!
-//! | Entry point                     | Stack  |
-//! |---------------------------------|--------|
-//! | `keygen_from_seed`              | 1288 B |
-//! | `X25519PrivateKey::from_bytes`  | 1272 B |
-//! | `agree` on the private key      | 1320 B |
-//! | `encaps` on the public key      | 2824 B |
-//! | `decaps` on the private key     | 2536 B |
+//! | Entry point                         | Stack  |
+//! |-------------------------------------|--------|
+//! | `keygen_from_seed`                  | 1272 B |
+//! | `keygen_out`                        | 1192 B |
+//! | `X25519PrivateKey::from_bytes`      | 1272 B |
+//! | `X25519PrivateKey::from_bytes_out`  | 1160 B |
+//! | `agree` on the private key          | 1304 B |
+//! | `encaps` on the public key          | 2648 B |
+//! | `decaps` on the private key         | 2312 B |
 //!
 //! Key generation, decoding a private key, and key agreement each run one Montgomery ladder plus
-//! the field inversion: the chain is the in-place scalar multiplication, the ladder and a field
-//! multiplication.
+//! the field inversion: the chain is the in-place scalar multiplication, the field inversion and
+//! a field multiplication. The `keygen_out` figure leaves out the RNG.
 //! The KEM figures additionally run HPKE.DHKEM, and their chain runs through HKDF-SHA256's HMAC
 //! and SHA-256 compression. The `encaps` figure includes the DRBG that draws the ephemeral key.
 //!
@@ -166,17 +169,18 @@
 //! into the caller's buffer, and [`keygen_out`] and [`keygen_from_seed_out`] draw the scalar
 //! straight into a key the caller holds. A value returned by value is moved, and a move does
 //! not wipe its source: that holds for the key pairs of [`keygen`], [`keygen_from_seed`], the
-//! trait's `from_bytes` and `DeriveKeyPair`, for the clamped scalar `encode` returns, and for
-//! the results of `core`'s by-value `agree`, `encaps` and `decaps`. Use the `_out` forms into a
-//! buffer or key you own where that matters. What HKDF's own frames keep is in
-//! `crate::dhkem`'s Security Considerations.
+//! trait's `from_bytes` and `DeriveKeyPair`, for `clone`, for the clamped scalar `encode`
+//! returns, and for the results of `core`'s by-value `agree`, `encaps` and `decaps`. Use the
+//! `_out` forms, [`X25519PrivateKey::from_bytes_out`] and `clone_from`, into a buffer or key you
+//! own where that matters. What HKDF's own frames keep is in `crate::dhkem`'s Security
+//! Considerations.
 //!
 //! These wipes are made in the source, and a copy the compiler makes on its own is beyond them.
-//! A stack probe of this module found four of the five limbs of one intermediate of the field
-//! inversion, `z^((p-5)/8)` for the ladder's final `z`, left below the frame after every
-//! operation that multiplies by a scalar (agreement, key generation, key decoding and
-//! `DeriveKeyPair`), most likely a register spill. The value depends on the private key, and
-//! nothing in this module removes it.
+//! A stack probe of this module found, below the frame after every operation that multiplies by
+//! a scalar (agreement, key generation, key decoding and `DeriveKeyPair`), copies of the field
+//! inversion's input and intermediates for the ladder's final `z`: all five limbs of
+//! `z^((p-5)/8)`, four of the five of `z^3` and one of `z`. The values depend on the private key,
+//! and nothing in this module removes them.
 //!
 //! The pairing's derived key carries the least of X25519's 128 bits, the KDF's and the length's
 //! strength, so a `LEN` below 16 bytes is typed `CryptographicRandom` at less than 128 bits.
@@ -202,7 +206,8 @@ use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorith
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, KEMDecapsulator, KEMEncapsulator, KeyAgreement, PrivateKey, PublicKey, RNG,
+    Algorithm, AlgorithmOID, KEMDecapsulator, KEMEncapsulator, KeyAgreement, PrivateKey, PublicKey,
+    RNG,
 };
 use bouncycastle_digest::hkdf::HkdfDescription;
 use bouncycastle_digest::sha2::SHA256;
@@ -258,6 +263,13 @@ impl Algorithm for X25519 {
 }
 
 impl KeyAgreementAlgorithm for X25519 {}
+
+/// `id-X25519` (RFC 8410 Section 3), which identifies the public key and the private key
+/// alike. The HKDF-SHA256 pairing and the DHKEM have none there.
+impl AlgorithmOID for X25519 {
+    const OID: &'static [u32] = &[1, 3, 101, 110];
+    const OID_DER: &'static [u8] = &[0x06, 0x03, 0x2B, 0x65, 0x6E];
+}
 
 /// Generates a key pair from `rng`, which must offer X25519's 128 bits: the 32 bytes it draws
 /// are the private key (RFC 7748 Section 6.1: "Alice generates 32 random bytes in a\[0\] to
@@ -349,6 +361,21 @@ pub fn keygen_from_seed_out(
     sk.k.copy_from_slice(seed.ref_to_bytes());
     sk.pk = scalar_mult_base(&sk.k);
     Ok(sk.pk)
+}
+
+/// Checks that `pk` is the public key of `sk`. The keys are compared as their 32 bytes, so
+/// another encoding of the same point is not the key of `sk`.
+///
+/// # Errors
+/// [`KeyAgreementError::ConsistencyCheckFailed`] if it is not;
+/// [`KeyMaterialError::ActingOnZeroizedKey`] for a private key that was never filled
+/// ([`X25519PrivateKey::zeroized`]).
+pub fn keypair_consistency_check(
+    pk: &X25519PublicKey,
+    sk: &X25519PrivateKey,
+) -> Result<(), KeyAgreementError> {
+    // Both sides are public keys, so the comparison need not be constant time.
+    if sk.pk()? == *pk { Ok(()) } else { Err(KeyAgreementError::ConsistencyCheckFailed) }
 }
 
 /// `K = X25519(k, u)` of RFC 7748 Section 6.1 into `out`, the u-coordinate of the peer's public
@@ -511,7 +538,6 @@ impl<'p, 's, const LEN: usize> AgreementKey<KdfParams<'p, HkdfDescription<'s, SH
 ///
 /// The public key is computed once, when the private key is created or decoded, and stored with
 /// it.
-#[derive(Clone)]
 pub struct X25519PrivateKey {
     k: Secret<[u8; SCALAR_LEN]>,
     pk: X25519PublicKey,
@@ -520,8 +546,9 @@ pub struct X25519PrivateKey {
 impl X25519PrivateKey {
     /// The all-zero key: the key [`keygen_out`] and [`keygen_from_seed_out`] write into, so
     /// that the scalar is drawn where it will live and never moved. It is not a generated key:
-    /// its public key is all zero until one of them fills it, and until then it makes no
-    /// agreement and no decapsulator ([`KeyMaterialError::ActingOnZeroizedKey`]).
+    /// until one of them fills it, it has no public key and makes no agreement and no
+    /// decapsulator ([`KeyMaterialError::ActingOnZeroizedKey`]), and it is equal to no key that
+    /// was generated or decoded.
     ///
     /// # 🚨 Security Considerations 🚨
     ///
@@ -546,9 +573,36 @@ impl X25519PrivateKey {
         self.pk = X25519PublicKey([0; POINT_LEN]);
     }
 
-    /// The public key, `X25519(k, 9)` (RFC 7748 §6.1).
-    pub fn pk(&self) -> X25519PublicKey {
-        self.pk
+    /// Decodes the 32 bytes of a private key into `sk`, a key you hold: they are copied
+    /// straight into the key and clamped there, so no copy is staged on the way, where the
+    /// trait's [`from_bytes`](PrivateKey::from_bytes) moves the key it returns. `sk` is zeroized
+    /// first and left so on an error.
+    ///
+    /// # Errors
+    ///
+    /// [`KeyDecodingError`] if `bytes` is not 32 bytes.
+    pub fn from_bytes_out(bytes: &[u8], sk: &mut Self) -> Result<(), KeyDecodingError> {
+        sk.clear();
+        if bytes.len() != SCALAR_LEN {
+            return Err(KeyDecodingError("An X25519 private key must be 32 bytes"));
+        }
+        sk.k.copy_from_slice(bytes);
+        clamp(&mut sk.k);
+        sk.pk = scalar_mult_base(&sk.k);
+        Ok(())
+    }
+
+    /// The public key, `X25519(k, 9)` (RFC 7748 §6.1), which was computed when this key was
+    /// made.
+    ///
+    /// # Errors
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] for a key that was never filled
+    /// ([`zeroized`](Self::zeroized)).
+    pub fn pk(&self) -> Result<X25519PublicKey, KeyAgreementError> {
+        if !self.is_filled() {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
+        Ok(self.pk)
     }
 
     /// The key bytes, [`clamp`]ed, into `out`.
@@ -595,24 +649,38 @@ impl PrivateKey<SCALAR_LEN> for X25519PrivateKey {
     ///
     /// [`KeyDecodingError`] if `bytes` is not 32 bytes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
-        let bytes: &[u8; SCALAR_LEN] = bytes
-            .try_into()
-            .map_err(|_| KeyDecodingError("An X25519 private key must be 32 bytes"))?;
-        let mut sk = Self { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) };
-        *sk.k = *bytes;
-        clamp(&mut sk.k);
-        sk.pk = scalar_mult_base(&sk.k);
+        let mut sk = Self::zeroized();
+        Self::from_bytes_out(bytes, &mut sk)?;
         Ok(sk)
     }
 }
 
-/// Constant-time comparison of the clamped scalars.
+/// `clone` returns the copy by value, and a move wipes nothing (the module's Security
+/// Considerations); `clone_from` copies field by field into a key you hold.
+impl Clone for X25519PrivateKey {
+    fn clone(&self) -> Self {
+        let mut sk = Self::zeroized();
+        sk.clone_from(self);
+        sk
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.k.copy_from_slice(&*source.k);
+        self.pk = source.pk;
+    }
+}
+
+/// Constant-time comparison of the clamped scalars. A key that was never filled equals only
+/// another such key.
 impl PartialEq for X25519PrivateKey {
     fn eq(&self, other: &Self) -> bool {
         let (mut a, mut b) = (Secret::<[u8; SCALAR_LEN]>::new(), Secret::<[u8; SCALAR_LEN]>::new());
         self.clamped_into(&mut a);
         other.clamped_into(&mut b);
-        ct_eq_bytes(&*a, &*b)
+        // The filled state is part of the comparison (an unfilled key and the key decoded from
+        // 32 zero bytes hold the same scalar); it is read off the public key, so it is not
+        // secret.
+        ct_eq_bytes(&*a, &*b) & (self.is_filled() == other.is_filled())
     }
 }
 
@@ -817,14 +885,21 @@ fn scalar_mult_into(k: &[u8; SCALAR_LEN], u: &X25519PublicKey, out: &mut [u8; PO
 
     // Every field element here wipes itself when it drops: the result, the ladder's registers
     // and the inversion chain's. The encoding goes straight into the caller's buffer.
-    let r = x2.mul(&z2.inv());
+    let r = x2.mul(&invert(&z2));
     encode_u_coordinate(&r, out);
+}
+
+/// `z^(p-2)`, in a frame of its own: inlined, the inversion chain's temporaries would sit in
+/// [`scalar_mult_into`]'s frame, which is live under [`ladder`]'s, and the two would add up.
+#[inline(never)]
+fn invert(z: &FieldElement25519) -> FieldElement25519 {
+    z.inv()
 }
 
 /// The Montgomery ladder of [`scalar_mult_into`]: writes the projective u-coordinate of `n * x1`
 /// to `(x2, z2)`, for a scalar `n` decoded by [`decode_scalar_25519`].
 // #[inline(never)]: so that the ladder's variables live in a different stack frame and can be popped
-// before scalar_mult's `z2.inv()` runs (which is the other stack-expensive operation).
+// before scalar_mult_into's `invert(&z2)` runs (which is the other stack-expensive operation).
 #[inline(never)]
 fn ladder(
     n: &[u32; 8],
@@ -978,8 +1053,10 @@ impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X25519 {
         Some(key)
     }
 
+    /// The stored public key. For a key that was never filled that is the all-zero key, not a
+    /// public key of `sk`; `dh_into` is what refuses such a key.
     fn pk(sk: &X25519PrivateKey) -> X25519PublicKey {
-        sk.pk()
+        sk.pk
     }
 
     fn dh_into(

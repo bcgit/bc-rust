@@ -406,8 +406,8 @@ impl DeterministicOneShotSigningKey<Ed25519, SIGNATURE_LEN> for Ed25519PrivateKe
         output: &mut [u8; SIGNATURE_LEN],
     ) -> Result<usize, SignatureError> {
         output.fill(0);
-        refuse_context(ctx)?;
         self.check_filled()?;
+        refuse_context(ctx)?;
         scheme::sign(&self.expanded, msg, output)?;
         Ok(SIGNATURE_LEN)
     }

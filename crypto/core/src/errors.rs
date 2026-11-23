@@ -133,6 +133,8 @@ pub enum KeyAgreementError {
     /// The primitive produced no shared secret: for ECC CDH, SP 800-56Ar3 Section 5.7.1.2
     /// step 2, the computed point is the point at infinity.
     AgreementFailed,
+    /// The public and private key of a pair do not belong together.
+    ConsistencyCheckFailed,
     /// An encoded key was not of the expected length or form, or failed the validation its
     /// decoding carries (a public key off the curve, a private key outside `[1, n - 1]`). The
     /// length is part of the form: there is no separate length variant.

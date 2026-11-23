@@ -21,11 +21,15 @@
 #![allow(unused_imports)]
 
 use bouncycastle::core::agreement_key::AgreementKey;
+use bouncycastle::core::hazmat::FixedSeedRNG;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
-use bouncycastle::ec::ed::x25519::{X25519PrivateKey, X25519PublicKey, keygen_from_seed};
+use bouncycastle::ec::ed::x25519::{
+    X25519PrivateKey, X25519PublicKey, keygen_from_seed, keygen_out,
+};
 use bouncycastle::rng::HashDRBG_SHA512;
+use std::hint::black_box;
 
 /// Runs the operation under test in its own stack frame, with the key already loaded by the
 /// caller.
@@ -118,6 +122,18 @@ fn bench_x25519_keygen() {
     });
 }
 
+/// Key generation into a key the caller holds. The RNG only copies its seed out, so the figure
+/// is the key generation's own and not a DRBG's.
+fn bench_x25519_keygen_out() {
+    eprintln!("X25519/KeyGenOut");
+
+    let mut sk = X25519PrivateKey::zeroized();
+    measure(|| {
+        let pk = keygen_out(&mut FixedSeedRNG::new(black_box([0x2Au8; 32])), &mut sk).unwrap();
+        print!("{:x?}", pk.encode());
+    });
+}
+
 /// Decoding a private key, which computes its public key: one fixed-base scalar multiplication.
 fn bench_x25519_from_bytes() {
     eprintln!("X25519/FromBytes");
@@ -125,7 +141,19 @@ fn bench_x25519_from_bytes() {
     let bytes = [0x2Au8; 32];
     measure(|| {
         let sk = X25519PrivateKey::from_bytes(&bytes).unwrap();
-        print!("{:x?}", sk.pk().encode());
+        print!("{:x?}", sk.pk().unwrap().encode());
+    });
+}
+
+/// Decoding a private key into a key the caller holds.
+fn bench_x25519_from_bytes_out() {
+    eprintln!("X25519/FromBytesOut");
+
+    let bytes = [0x2Au8; 32];
+    let mut sk = X25519PrivateKey::zeroized();
+    measure(|| {
+        X25519PrivateKey::from_bytes_out(&bytes, &mut sk).unwrap();
+        print!("{:x?}", sk.pk().unwrap().encode());
     });
 }
 
@@ -175,7 +203,9 @@ fn main() {
     // print_struct_sizes()
     // bench_do_nothing()
     bench_x25519_keygen()
+    // bench_x25519_keygen_out()
     // bench_x25519_from_bytes()
+    // bench_x25519_from_bytes_out()
     // bench_x25519_key_agreement()
     // bench_x25519_encaps()
     // bench_x25519_decaps()

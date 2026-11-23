@@ -4,11 +4,11 @@ use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreementKeys;
 use bouncycastle_ec::ed::x448::{
     POINT_LEN, SCALAR_LEN, X448, X448_HKDF_SHA512, X448_NAME, X448PrivateKey, X448PublicKey,
-    keygen, keygen_from_seed, keygen_from_seed_out, keygen_out,
+    keygen, keygen_from_seed, keygen_from_seed_out, keygen_out, keypair_consistency_check,
 };
 use bouncycastle_rng::DefaultRNG;
 
@@ -26,6 +26,10 @@ const ALICE_PK: &str = concat!(
 fn seed(hex_str: &str, key_type: KeyType) -> KeyMaterial<56> {
     KeyMaterial::<56>::from_bytes_as_type(&hex::decode(hex_str).unwrap(), key_type).unwrap()
 }
+
+/// What `pk()` gives for a key that was never filled.
+const NO_PK: Result<X448PublicKey, KeyAgreementError> =
+    Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey));
 
 fn keygen_default() -> Result<(X448PublicKey, X448PrivateKey), KeyAgreementError> {
     keygen(&mut DefaultRNG::default())
@@ -49,12 +53,21 @@ fn constants() {
     assert_eq!(X448_HKDF_SHA512::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
 }
 
+/// id-X448, RFC 8410 Section 3: `id-X448 OBJECT IDENTIFIER ::= { 1 3 101 111 }`. The RFC prints
+/// no encoding of it; this is the encoding of id-X25519 in the certificate of its Section 10.2,
+/// `06 03 2b 65 6e`, with the last arc one higher.
+#[test]
+fn the_oid_is_id_x448() {
+    assert_eq!(<X448 as AlgorithmOID>::OID, &[1, 3, 101, 111]);
+    assert_eq!(<X448 as AlgorithmOID>::OID_DER, &[0x06, 0x03, 0x2b, 0x65, 0x6f]);
+}
+
 #[test]
 fn keygen_from_seed_takes_a_seed_or_random_material() {
     for key_type in [KeyType::Seed, KeyType::CryptographicRandom] {
         let (pk, sk) = keygen_from_seed(&seed(ALICE_SK, key_type)).unwrap();
         assert_eq!(pk.as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
-        assert_eq!(sk.pk(), pk);
+        assert_eq!(sk.pk().unwrap(), pk);
     }
 }
 
@@ -99,7 +112,7 @@ fn keygen_uses_the_rng_output_as_the_key() {
     let mut rng = FixedSeedRNG::new(seed_bytes);
     let (pk, sk) = keygen(&mut rng).unwrap();
     assert_eq!(pk.as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
-    assert_eq!(sk.pk(), pk);
+    assert_eq!(sk.pk().unwrap(), pk);
 
     // RNG too weak.
     let mut rng = FixedSeedRNG::new(seed_bytes);
@@ -129,7 +142,7 @@ fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
 
     let seed_bytes: [u8; 56] = hex::decode(ALICE_SK).unwrap().try_into().unwrap();
     let zero = X448PrivateKey::zeroized();
-    assert_eq!(zero.pk().as_bytes(), &[0u8; POINT_LEN]);
+    assert_eq!(zero.pk(), NO_PK);
     let unfilled = |sk: &X448PrivateKey| {
         matches!(
             sk.create_agreement(()),
@@ -141,7 +154,7 @@ fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
     let (_, mut sk) = keygen_default().unwrap();
     let pk = keygen_out(&mut FixedSeedRNG::new(seed_bytes), &mut sk).unwrap();
     assert_eq!(pk.as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
-    assert_eq!(sk.pk(), pk);
+    assert_eq!(sk.pk().unwrap(), pk);
     assert!(sk == keygen(&mut FixedSeedRNG::new(seed_bytes)).unwrap().1);
     assert!(!unfilled(&sk));
 
@@ -152,7 +165,7 @@ fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
         Err(KeyAgreementError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm))
     ));
     assert!(sk == zero);
-    assert_eq!(sk.pk(), zero.pk());
+    assert_eq!(sk.pk(), NO_PK);
     assert!(unfilled(&sk));
 
     // An RNG that fails part-way through the key: what it wrote is wiped.
@@ -163,13 +176,13 @@ fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
     ));
     assert!(sk == zero);
     assert_eq!(sk.encode(), zero.encode());
-    assert_eq!(sk.pk(), zero.pk());
+    assert_eq!(sk.pk(), NO_PK);
     assert!(unfilled(&sk));
 
     let (_, mut sk) = keygen_default().unwrap();
     let pk = keygen_from_seed_out(&seed(ALICE_SK, KeyType::Seed), &mut sk).unwrap();
     assert_eq!(pk.as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
-    assert_eq!(sk.pk(), pk);
+    assert_eq!(sk.pk().unwrap(), pk);
     assert!(sk == keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap().1);
     assert!(!unfilled(&sk));
 
@@ -178,7 +191,7 @@ fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
         Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
     ));
     assert!(sk == zero);
-    assert_eq!(sk.pk(), zero.pk());
+    assert_eq!(sk.pk(), NO_PK);
     assert!(unfilled(&sk));
 }
 
@@ -187,20 +200,20 @@ fn keygen_gives_fresh_pairs_whose_public_keys_belong_to_them() {
     let (pk1, sk1) = keygen_default().unwrap();
     let (pk2, sk2) = keygen_default().unwrap();
     assert_ne!(pk1, pk2);
-    assert_eq!(sk1.pk(), pk1);
-    assert_eq!(sk2.pk(), pk2);
-    assert_ne!(sk1.pk(), pk2);
-    assert_ne!(sk2.pk(), pk1);
+    assert_eq!(sk1.pk().unwrap(), pk1);
+    assert_eq!(sk2.pk().unwrap(), pk2);
+    assert_ne!(sk1.pk().unwrap(), pk2);
+    assert_ne!(sk2.pk().unwrap(), pk1);
     assert!(sk1 != sk2);
 }
 
 #[test]
 fn private_key_pk() {
     let (_, sk) = keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap();
-    assert_eq!(sk.pk().as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
+    assert_eq!(sk.pk().unwrap().as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
 
     let (pk, sk) = keygen_default().unwrap();
-    assert_eq!(sk.pk(), pk);
+    assert_eq!(sk.pk().unwrap(), pk);
 }
 
 #[test]
@@ -266,7 +279,7 @@ fn private_key_encoding() {
     let clamped_alice = X448PrivateKey::from_bytes(&clamp(decode_56(ALICE_SK))).unwrap();
     assert_eq!(clamp(raw), clamp(decode_56(ALICE_SK)));
     assert!(sk == clamped_alice);
-    assert_eq!(sk.pk().as_bytes(), &decode_56(ALICE_PK));
+    assert_eq!(sk.pk().unwrap().as_bytes(), &decode_56(ALICE_PK));
 
     let mut out = [0xFF_u8; 56];
     assert_eq!(sk.encode_out(&mut out), 56);
@@ -281,7 +294,7 @@ fn private_key_encoding() {
     let encoded = from_seed.encode();
     let decoded = X448PrivateKey::from_bytes(&encoded).unwrap();
     assert!(decoded == from_seed);
-    assert_eq!(decoded.pk(), from_seed.pk());
+    assert_eq!(decoded.pk().unwrap(), from_seed.pk().unwrap());
 
     // Keys that differ in any other bit differ.
     for (byte, bit) in [(0, 0x04), (27, 0x01), (55, 0x40)] {
@@ -307,7 +320,7 @@ fn from_bytes_out_fills_a_held_key() {
     X448PrivateKey::from_bytes_out(&hex::decode(ALICE_SK).unwrap(), &mut held).unwrap();
     assert!(held == alice);
     assert_eq!(held.encode(), alice.encode());
-    assert_eq!(held.pk().as_bytes()[..], hex::decode(ALICE_PK).unwrap()[..]);
+    assert_eq!(held.pk().unwrap().as_bytes()[..], hex::decode(ALICE_PK).unwrap()[..]);
 
     X448PrivateKey::from_bytes_out(&[7u8; 56], &mut held).unwrap();
     assert!(held == X448PrivateKey::from_bytes(&[7u8; 56]).unwrap() && held != alice);
@@ -319,7 +332,7 @@ fn from_bytes_out_fills_a_held_key() {
             Err(KeyDecodingError("An X448 private key must be 56 bytes"))
         );
         assert_eq!(held.encode(), X448PrivateKey::zeroized().encode());
-        assert_eq!(held.pk().as_bytes(), &[0u8; POINT_LEN]);
+        assert_eq!(held.pk(), NO_PK);
     }
 }
 
@@ -331,7 +344,7 @@ fn clone_from_copies_into_a_held_key() {
     held.clone_from(&alice);
     assert!(held == alice);
     assert_eq!(held.encode(), alice.encode());
-    assert_eq!(held.pk(), alice.pk());
+    assert_eq!(held.pk().unwrap(), alice.pk().unwrap());
 
     // The copy of a filled key is filled: it makes the agreement the original makes.
     let (peer, _) = keygen_default().unwrap();
@@ -340,7 +353,7 @@ fn clone_from_copies_into_a_held_key() {
     // The copy of an unfilled key is unfilled, whatever the destination held.
     held.clone_from(&X448PrivateKey::zeroized());
     assert_eq!(held.encode(), X448PrivateKey::zeroized().encode());
-    assert_eq!(held.pk().as_bytes(), &[0u8; POINT_LEN]);
+    assert_eq!(held.pk(), NO_PK);
     assert!(matches!(
         held.agree(&peer, ()),
         Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey))
@@ -353,7 +366,7 @@ fn a_clone_is_the_same_key() {
     let (pk, sk) = keygen_default().unwrap();
     let copy = sk.clone();
     assert!(copy == sk);
-    assert_eq!(copy.pk(), pk);
+    assert_eq!(copy.pk().unwrap(), pk);
     let (peer, _) = keygen_default().unwrap();
     assert!(copy.agree(&peer, ()).unwrap().equals(&sk.agree(&peer, ()).unwrap()));
     assert!(matches!(
@@ -383,5 +396,81 @@ impl bouncycastle_core::traits::RNG for HalfWrittenRNG {
     }
     fn security_strength(&self) -> SecurityStrength {
         SecurityStrength::_256bit
+    }
+}
+
+/// `keypair_consistency_check` takes a private key with its own public key and no other, and
+/// refuses a private key that was never filled.
+#[test]
+fn keypair_consistency_check_takes_a_key_with_its_own_public_key() {
+    let (pk, sk) = keygen_default().unwrap();
+    assert_eq!(keypair_consistency_check(&pk, &sk), Ok(()));
+    assert_eq!(keypair_consistency_check(&sk.pk().unwrap(), &sk.clone()), Ok(()));
+
+    let (pk2, sk2) = keygen_default().unwrap();
+    assert_eq!(
+        keypair_consistency_check(&pk2, &sk),
+        Err(KeyAgreementError::ConsistencyCheckFailed)
+    );
+    assert_eq!(
+        keypair_consistency_check(&pk, &sk2),
+        Err(KeyAgreementError::ConsistencyCheckFailed)
+    );
+    // One bit of the public key is enough.
+    let mut bytes = pk.encode();
+    bytes[28] ^= 1;
+    assert_eq!(
+        keypair_consistency_check(&X448PublicKey::from_bytes(&bytes).unwrap(), &sk),
+        Err(KeyAgreementError::ConsistencyCheckFailed)
+    );
+
+    // RFC 7748 Section 6's key pair.
+    let alice = X448PrivateKey::from_bytes(&hex::decode(ALICE_SK).unwrap()).unwrap();
+    let alice_pk = X448PublicKey::from_bytes(&hex::decode(ALICE_PK).unwrap()).unwrap();
+    assert_eq!(keypair_consistency_check(&alice_pk, &alice), Ok(()));
+    assert_eq!(
+        keypair_consistency_check(&pk, &alice),
+        Err(KeyAgreementError::ConsistencyCheckFailed)
+    );
+
+    // A key that was never filled is refused whatever the public key, the all-zero one its
+    // field holds included.
+    let unfilled = X448PrivateKey::zeroized();
+    let zero_pk = X448PublicKey::from_bytes(&[0u8; 56]).unwrap();
+    assert_eq!(keypair_consistency_check(&pk, &unfilled), NO_PK.map(|_| ()));
+    assert_eq!(keypair_consistency_check(&zero_pk, &unfilled), NO_PK.map(|_| ()));
+    assert_eq!(
+        keypair_consistency_check(&zero_pk, &sk),
+        Err(KeyAgreementError::ConsistencyCheckFailed)
+    );
+
+    // The filled key `4 * order` has the all-zero public key: the filled state, not the public
+    // key's bytes, is what refuses `unfilled` above.
+    let four_times_order = X448PrivateKey::from_bytes(&decode_56(FOUR_TIMES_ORDER)).unwrap();
+    assert_eq!(keypair_consistency_check(&zero_pk, &four_times_order), Ok(()));
+}
+
+/// Four times the order of the base point (RFC 7748 Section 4.2), as in `ed_x448_tests.rs`: a
+/// clamped scalar whose public key is all zero.
+const FOUR_TIMES_ORDER: &str = concat!(
+    "cc1361ad4a0ae38d543d1637ca09b38540da58bb266d3b11a78f28f3",
+    "fdffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+);
+
+/// A key that was never filled equals only another such key: not the key decoded from 56 zero
+/// bytes, which holds the same scalar and is an ordinary key.
+#[test]
+fn the_unfilled_key_equals_only_an_unfilled_key() {
+    let unfilled = X448PrivateKey::zeroized();
+    assert!(unfilled == X448PrivateKey::zeroized());
+    assert!(unfilled == unfilled.clone());
+
+    let zeros = X448PrivateKey::from_bytes(&[0u8; 56]).unwrap();
+    assert_eq!(zeros.encode(), unfilled.encode());
+    assert!(zeros == zeros.clone());
+    // Both directions, on purpose.
+    #[allow(clippy::nonminimal_bool)]
+    {
+        assert!(zeros != unfilled && unfilled != zeros);
     }
 }

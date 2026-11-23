@@ -22,11 +22,13 @@
 #![allow(unused_imports)]
 
 use bouncycastle::core::agreement_key::AgreementKey;
+use bouncycastle::core::hazmat::FixedSeedRNG;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
-use bouncycastle::ec::ed::x448::{X448PrivateKey, X448PublicKey, keygen_from_seed};
+use bouncycastle::ec::ed::x448::{X448PrivateKey, X448PublicKey, keygen_from_seed, keygen_out};
 use bouncycastle::rng::HashDRBG_SHA512;
+use std::hint::black_box;
 
 /// RFC 7748 Section 6.2's Alice private key.
 const ALICE_SK: [u8; 56] = [
@@ -119,6 +121,18 @@ fn bench_x448_keygen() {
     });
 }
 
+/// Key generation into a key the caller holds. The RNG only copies its seed out, so the figure
+/// is the key generation's own and not a DRBG's.
+fn bench_x448_keygen_out() {
+    eprintln!("X448/KeyGenOut");
+
+    let mut sk = X448PrivateKey::zeroized();
+    measure(|| {
+        let pk = keygen_out(&mut FixedSeedRNG::new(black_box(ALICE_SK)), &mut sk).unwrap();
+        print!("{:x?}", pk.encode());
+    });
+}
+
 /// Decoding a private key, which computes its public key: one fixed-base scalar multiplication.
 fn bench_x448_from_bytes() {
     eprintln!("X448/FromBytes");
@@ -126,7 +140,19 @@ fn bench_x448_from_bytes() {
     let bytes = [0x2Au8; 56];
     measure(|| {
         let sk = X448PrivateKey::from_bytes(&bytes).unwrap();
-        print!("{:x?}", sk.pk().encode());
+        print!("{:x?}", sk.pk().unwrap().encode());
+    });
+}
+
+/// Decoding a private key into a key the caller holds.
+fn bench_x448_from_bytes_out() {
+    eprintln!("X448/FromBytesOut");
+
+    let bytes = [0x2Au8; 56];
+    let mut sk = X448PrivateKey::zeroized();
+    measure(|| {
+        X448PrivateKey::from_bytes_out(&bytes, &mut sk).unwrap();
+        print!("{:x?}", sk.pk().unwrap().encode());
     });
 }
 
@@ -182,7 +208,9 @@ fn main() {
     // print_struct_sizes()
     // bench_do_nothing()
     bench_x448_keygen()
+    // bench_x448_keygen_out()
     // bench_x448_from_bytes()
+    // bench_x448_from_bytes_out()
     // bench_x448_key_agreement()
     // bench_x448_encaps()
     // bench_x448_decaps()

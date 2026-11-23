@@ -430,3 +430,22 @@ fn keys_outside_the_prime_order_subgroup_are_refused() {
     let five_b = Ed448PublicKey::from_bytes(&octets(FIVE_B)).unwrap();
     assert_eq!(five_b.encode(), octets(FIVE_B));
 }
+
+/// A key that was never filled is refused as that whatever the context: the key is looked at
+/// before the context, by Ed448 and by Ed448ph alike.
+#[test]
+fn the_unfilled_key_is_refused_before_a_bad_context() {
+    // Both take a context of at most 255 octets.
+    let (bad, bad_ph) = (Some(&[0u8; 256][..]), Some(&[0u8; 256][..]));
+    let unfilled = Ed448PrivateKey::zeroized();
+    assert_eq!(unfilled.sign_deterministic(b"msg", bad), Err(ZEROIZED));
+    assert_eq!(unfilled.as_prehash().sign_deterministic(b"msg", bad_ph), Err(ZEROIZED));
+
+    // A filled key gets the context's error.
+    let (_, sk) = keygen(&mut rng()).unwrap();
+    assert!(matches!(sk.sign_deterministic(b"msg", bad), Err(SignatureError::LengthError(_))));
+    assert!(matches!(
+        sk.as_prehash().sign_deterministic(b"msg", bad_ph),
+        Err(SignatureError::LengthError(_))
+    ));
+}

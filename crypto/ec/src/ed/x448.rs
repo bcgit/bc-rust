@@ -20,7 +20,7 @@
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
-//! assert_eq!(sk.pk(), pk);
+//! assert_eq!(sk.pk()?, pk);
 //! # Ok::<(), bouncycastle_core::errors::KeyAgreementError>(())
 //! ```
 //!
@@ -111,21 +111,24 @@
 //!
 //! Per-call stack usage, measured as [`crate::ed::x25519`]'s is: the deepest frame chain from the
 //! `measure` wrapper of `mem_usage_benches`' x448 harness down, the wrapper's own frame
-//! included, in the release build (x86-64 Linux, rustc 1.97.0-nightly, return addresses
-//! included):
+//! included, in the release build of the harness with every bench called from one `main`
+//! (x86-64 Linux, rustc 1.97.0-nightly, return addresses included):
 //!
-//! | Entry point                    | Stack  |
-//! |--------------------------------|--------|
-//! | `keygen_from_seed`             | 2936 B |
-//! | `X448PrivateKey::from_bytes`   | 2888 B |
-//! | `agree` on the private key     | 2856 B |
-//! | `encaps` on the public key     | 4552 B |
-//! | `decaps` on the private key    | 4280 B |
+//! | Entry point                       | Stack  |
+//! |-----------------------------------|--------|
+//! | `keygen_from_seed`                | 2936 B |
+//! | `keygen_out`                      | 2728 B |
+//! | `X448PrivateKey::from_bytes`      | 2872 B |
+//! | `X448PrivateKey::from_bytes_out`  | 2728 B |
+//! | `agree` on the private key        | 2856 B |
+//! | `encaps` on the public key        | 4536 B |
+//! | `decaps` on the private key       | 4200 B |
 //!
-//! The first three each run one Montgomery ladder plus the field inversion, which use 1800 B
+//! The first five each run one Montgomery ladder plus the field inversion, which use 1800 B
 //! below the entry point's own frame; the peak is the 2584 B frame that then overwrites that
-//! stack (see "What is wiped" below). The KEM figures peak in HKDF-SHA512's HMAC and SHA-512
-//! compression, and the `encaps` figure includes the DRBG that draws the ephemeral key.
+//! stack (see "What is wiped" below). The `keygen_out` figure leaves out the RNG. The KEM
+//! figures peak in HKDF-SHA512's HMAC and SHA-512 compression, and the `encaps` figure includes
+//! the DRBG that draws the ephemeral key.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -203,7 +206,8 @@ use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorith
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, KEMDecapsulator, KEMEncapsulator, KeyAgreement, PrivateKey, PublicKey, RNG,
+    Algorithm, AlgorithmOID, KEMDecapsulator, KEMEncapsulator, KeyAgreement, PrivateKey, PublicKey,
+    RNG,
 };
 use bouncycastle_digest::hkdf::HkdfDescription;
 use bouncycastle_digest::sha2::SHA512;
@@ -252,6 +256,13 @@ impl Algorithm for X448 {
 }
 
 impl KeyAgreementAlgorithm for X448 {}
+
+/// `id-X448` (RFC 8410 Section 3), which identifies the public key and the private key alike.
+/// The HKDF-SHA512 pairing and the DHKEM have none there.
+impl AlgorithmOID for X448 {
+    const OID: &'static [u32] = &[1, 3, 101, 111];
+    const OID_DER: &'static [u8] = &[0x06, 0x03, 0x2B, 0x65, 0x6F];
+}
 
 /// Generates a key pair from `rng`, which must offer X448's 192 bits: the 56 bytes it draws are
 /// the private key (RFC 7748 Section 6.2: "Alice and Bob generate 56 random bytes").
@@ -342,6 +353,21 @@ pub fn keygen_from_seed_out(
     sk.k.copy_from_slice(seed.ref_to_bytes());
     sk.fill_pk();
     Ok(sk.pk)
+}
+
+/// Checks that `pk` is the public key of `sk`. The keys are compared as their 56 bytes, so
+/// another encoding of the same point is not the key of `sk`.
+///
+/// # Errors
+/// [`KeyAgreementError::ConsistencyCheckFailed`] if it is not;
+/// [`KeyMaterialError::ActingOnZeroizedKey`] for a private key that was never filled
+/// ([`X448PrivateKey::zeroized`]).
+pub fn keypair_consistency_check(
+    pk: &X448PublicKey,
+    sk: &X448PrivateKey,
+) -> Result<(), KeyAgreementError> {
+    // Both sides are public keys, so the comparison need not be constant time.
+    if sk.pk()? == *pk { Ok(()) } else { Err(KeyAgreementError::ConsistencyCheckFailed) }
 }
 
 /// `K = X448(k, u)` of RFC 7748 Section 6.2 into `out`, the u-coordinate of the peer's public
@@ -512,8 +538,9 @@ pub struct X448PrivateKey {
 impl X448PrivateKey {
     /// The all-zero key: the key [`keygen_out`] and [`keygen_from_seed_out`] write into, so
     /// that the scalar is drawn where it will live and never moved. It is not a generated key:
-    /// its public key is all zero until one of them fills it, and until then it makes no
-    /// agreement ([`KeyMaterialError::ActingOnZeroizedKey`]).
+    /// until one of them fills it, it has no public key and makes no agreement
+    /// ([`KeyMaterialError::ActingOnZeroizedKey`]), and it is equal to no key that was generated
+    /// or decoded.
     ///
     /// # 🚨 Security Considerations 🚨
     ///
@@ -575,9 +602,17 @@ impl X448PrivateKey {
         Ok(())
     }
 
-    /// The public key, `X448(k, 5)` (RFC 7748 Section 6.2).
-    pub fn pk(&self) -> X448PublicKey {
-        self.pk
+    /// The public key, `X448(k, 5)` (RFC 7748 Section 6.2), which was computed when this key
+    /// was made.
+    ///
+    /// # Errors
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] for a key that was never filled
+    /// ([`zeroized`](Self::zeroized)).
+    pub fn pk(&self) -> Result<X448PublicKey, KeyAgreementError> {
+        if !self.filled {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
+        Ok(self.pk)
     }
 
     /// The key bytes, [`clamp`]ed, into `out`.
@@ -642,13 +677,16 @@ impl Clone for X448PrivateKey {
     }
 }
 
-/// Constant-time comparison of the clamped scalars.
+/// Constant-time comparison of the clamped scalars. A key that was never filled equals only
+/// another such key.
 impl PartialEq for X448PrivateKey {
     fn eq(&self, other: &Self) -> bool {
         let (mut a, mut b) = (Secret::<[u8; SCALAR_LEN]>::new(), Secret::<[u8; SCALAR_LEN]>::new());
         self.clamped_into(&mut a);
         other.clamped_into(&mut b);
-        ct_eq_bytes(&*a, &*b)
+        // The filled state is part of the comparison (an unfilled key and the key decoded from
+        // 56 zero bytes hold the same scalar); it is not secret.
+        ct_eq_bytes(&*a, &*b) & (self.filled == other.filled)
     }
 }
 
@@ -996,8 +1034,10 @@ impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X448 {
         if key.is_zero_mod_order() { None } else { Some(key) }
     }
 
+    /// The stored public key. For a key that was never filled that is the all-zero key, not a
+    /// public key of `sk`; `dh_into` is what refuses such a key.
     fn pk(sk: &X448PrivateKey) -> X448PublicKey {
-        sk.pk()
+        sk.pk
     }
 
     fn dh_into(

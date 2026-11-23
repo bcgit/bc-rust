@@ -143,7 +143,7 @@ fn rfc9180_encaps() {
 fn rfc9180_decaps() {
     for (i, v) in VECTORS.iter().enumerate() {
         let sk_r = X25519PrivateKey::from_bytes(&decode_32(v.sk_rm)).unwrap();
-        assert_eq!(sk_r.pk().as_bytes(), &decode_32(v.pk_rm), "vector {i}: pk(skRm)");
+        assert_eq!(sk_r.pk().unwrap().as_bytes(), &decode_32(v.pk_rm), "vector {i}: pk(skRm)");
         let ss = sk_r.decaps(&decode_32(v.enc), ()).unwrap();
         assert_eq!(ss.ref_to_bytes(), decode_32(v.shared_secret), "vector {i}: shared_secret");
         assert_eq!(ss.key_type(), KeyType::CryptographicRandom, "vector {i}");
@@ -429,7 +429,7 @@ fn an_unfilled_key_makes_no_decapsulator() {
     let mut ss = KeyMaterial::<32>::from_bytes(&[7u8; 32]).unwrap();
     assert!(matches!(
         DHKEM::<X25519, 32, 32, 32, 32>::auth_encap_rng_out(
-            &filled.pk(),
+            &filled.pk().unwrap(),
             &unfilled,
             &mut FixedSeedRNG::new([0x5A; 64]),
             &mut enc,

@@ -11,7 +11,7 @@ use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::ec::ed::x25519::{
-    POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen_out,
+    POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen_out, keypair_consistency_check,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
@@ -51,13 +51,14 @@ pub(crate) fn x25519_cmd(
             write_private_key(&sk, output_hex);
         }
         X25519Action::PkFromSk => {
-            let pk = load_sk(skfile).pk();
+            // A decoded key is filled, so it has a public key.
+            let pk = load_sk(skfile).pk().unwrap();
             write_bytes_or_hex(&pk.encode(), output_hex);
         }
         X25519Action::CheckConsistency => {
             let pk = parse_pk(&read_pkfile(pkfile));
             // The private key is dropped, and so wiped, before either branch exits.
-            let matches = load_sk(skfile).pk() == pk;
+            let matches = keypair_consistency_check(&pk, &load_sk(skfile)).is_ok();
             if matches {
                 println_stdout("SUCCESS: pk and sk match.");
             } else {

@@ -162,8 +162,8 @@ fn rfc7748_section_6_1() {
         "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
     ));
 
-    let alice_pk = alice_sk.pk();
-    let bob_pk = bob_sk.pk();
+    let alice_pk = alice_sk.pk().unwrap();
+    let bob_pk = bob_sk.pk().unwrap();
     check_value(
         alice_pk.as_bytes(),
         "Section 6.1 Alice's public key",
