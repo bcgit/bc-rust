@@ -27,6 +27,9 @@
 use bouncycastle::core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::core::traits::{SignatureSigner, SignatureVerifier};
+use bouncycastle::ec::sm2::encryption::{
+    C1_LEN, C3_LEN, SM2EncryptionPrivateKey, SM2EncryptionPublicKey,
+};
 use bouncycastle::ec::sm2::keys::{PK_LEN, SK_LEN, SM2PrivateKey, SM2PublicKey, keygen};
 use bouncycastle::ec::sm2::sm2::SM2;
 use bouncycastle::rng::DefaultRNG;
@@ -47,6 +50,12 @@ fn print_struct_sizes() {
     println!("size_of<SM2PublicKey>: {}", size_of::<SM2PublicKey>());
     println!("PK_LEN (on disk): {}", PK_LEN);
     println!("size_of<SM2PrivateKey>: {}", size_of::<SM2PrivateKey>());
+    println!("SK_LEN (on disk): {}", SK_LEN);
+
+    println!("\nSM2 encryption");
+    println!("size_of<SM2EncryptionPublicKey>: {}", size_of::<SM2EncryptionPublicKey>());
+    println!("PK_LEN (on disk): {}", PK_LEN);
+    println!("size_of<SM2EncryptionPrivateKey>: {}", size_of::<SM2EncryptionPrivateKey>());
     println!("SK_LEN (on disk): {}", SK_LEN);
 }
 
@@ -93,10 +102,52 @@ fn bench_sm2_verify() {
     }
 }
 
+/// The message the encryption benches use: longer than one SM3 hash value, so the key stream
+/// runs to a second block.
+const PLAINTEXT: [u8; 48] = [0x4d; 48];
+
+/// dB = 42, as the signing benches use, so that key generation is not part of the measurement.
+fn encryption_key_pair() -> (SM2EncryptionPublicKey, SM2EncryptionPrivateKey) {
+    let mut bytes = [0u8; SK_LEN];
+    bytes[SK_LEN - 1] = 0x2A;
+    let sk = SM2EncryptionPrivateKey::from_bytes(&bytes).unwrap();
+    (sk.derive_pk(), sk)
+}
+
+fn bench_sm2_encryption_keygen() {
+    eprintln!("SM2 encryption/KeyGen");
+
+    let (pk, _sk) = bouncycastle::ec::sm2::encryption::keygen(&mut DefaultRNG::default()).unwrap();
+    println!("{:x?}", pk.encode());
+}
+
+fn bench_sm2_encrypt() {
+    eprintln!("SM2 encryption/Encrypt");
+
+    let (pk, _sk) = encryption_key_pair();
+    let mut buf = PLAINTEXT;
+    let (c1, c3) = pk.encrypt_detached_inplace(&mut DefaultRNG::default(), &mut buf).unwrap();
+    println!("{:x?}{:x?}{:x?}", c1, c3, buf);
+}
+
+fn bench_sm2_decrypt() {
+    eprintln!("SM2 encryption/Decrypt");
+
+    let (pk, sk) = encryption_key_pair();
+    let mut buf = PLAINTEXT;
+    let (c1, c3) = pk.encrypt_detached_inplace(&mut DefaultRNG::default(), &mut buf).unwrap();
+
+    sk.decrypt_detached_inplace(&c1, &c3, &mut buf).unwrap();
+    println!("{:x?}", buf);
+}
+
 fn main() {
     print_struct_sizes()
     // bench_do_nothing()
     // bench_sm2_keygen()
     // bench_sm2_sign()
     // bench_sm2_verify()
+    // bench_sm2_encryption_keygen()
+    // bench_sm2_encrypt()
+    // bench_sm2_decrypt()
 }

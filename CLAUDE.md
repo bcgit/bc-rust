@@ -498,7 +498,7 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 ## CI
 
-Eight workflows under `.github/workflows/`, all triggered by pull requests:
+Nine workflows under `.github/workflows/`, all triggered by pull requests:
 
 - `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then, since
   `--all-features` never builds a crate with a default feature off: `cargo check -p <crate>
@@ -532,6 +532,14 @@ Eight workflows under `.github/workflows/`, all triggered by pull requests:
   each private-key operation and searches what it used for the key and what was derived from it. The second is
   sized by measurement for an x86-64 release build, so a new compiler that lays frames out deeper fails it: that
   is the check working, and the fix is to re-measure the wipe sizes, not to drop the step.
+- `sm2-stack.yml`: `dev_scripts/check_sm2_stack.sh` on stable, as a matrix over an x86-64 and an arm64 runner
+  (`ubuntu-latest`, `ubuntu-24.04-arm`), since the two lay their frames out differently, over
+  `dev_scripts/sm2_stack_harness`, which paints the stack, runs each form of SM2 encryption and decryption and each
+  handling of the private key, and checks what it used two ways: a search for the key, `k`, the shared point, the
+  key stream and the message, and a comparison of two runs over different secrets, which must leave the same bytes.
+  Sized by measurement like the RSA one, and failing for the same reason: re-measure `WIPED_STACK_WORDS` and
+  `KEY_WIPED_STACK_WORDS` in `crypto/ec/src/sm2/encryption_core.rs` (the harness reports the depth with the wipe's
+  body taken out).
 - `publish_doc_benches_to_ghpages.yaml`: builds rustdoc and runs `quality_stats.sh`; on `main` it also
   publishes docs and code stats to GitHub Pages (`https://bcgit.github.io/bc-rust/`). Its bench step is
   commented out because the benches are too slow on the hosted runner, so benchmark figures come from a
@@ -541,7 +549,7 @@ Eight workflows under `.github/workflows/`, all triggered by pull requests:
 `cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.
 
 The gitea origin has its own copies of five of the pull-request checks under `.gitea/workflows/`
-(there is no Pages job, and `oaep-ct.yml` and `rsa-ct-stack.yml` have no gitea copy). They differ from the GitHub ones in two ways: the toolchain is installed
+(there is no Pages job, and `oaep-ct.yml`, `rsa-ct-stack.yml` and `sm2-stack.yml` have no gitea copy). They differ from the GitHub ones in two ways: the toolchain is installed
 with `rustup` in a shell step, and the test job takes its vectors from the runner's read-only
 `/bc-test-data` and `/wycheproof` mounts, failing if either is missing. Wycheproof's are read out
 of the mounted clone at the pinned commit (`git archive`), wherever the clone's `HEAD` is, so the

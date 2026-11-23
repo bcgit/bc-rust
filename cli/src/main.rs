@@ -38,6 +38,7 @@ mod sha1_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
 mod sm2_cmd;
+mod sm2_encryption_cmd;
 mod sm3_cmd;
 mod tdes2_cbc_cmd;
 mod tdes2_cfb8_cmd;
@@ -75,6 +76,7 @@ use crate::rsasve_cmd::RSASVEAction;
 use crate::sha2_cmd::SHA2Variant;
 use crate::sha3_cmd::{SHA3Variant, Strength};
 use crate::sm2_cmd::SM2Action;
+use crate::sm2_encryption_cmd::SM2EncryptionAction;
 use bouncycastle::digest::concatkdf::{
     ConcatKDF_SHA3_256, ConcatKDF_SHA3_384, ConcatKDF_SHA3_512, ConcatKDF_SHA256, ConcatKDF_SHA384,
     ConcatKDF_SHA512,
@@ -5053,6 +5055,33 @@ enum Subcommands {
         x: bool,
     },
 
+    /// SM2 public key encryption with SM3 (GB/T 32918.4-2016), on key files in sm2's formats;
+    /// use a key pair other than the signing one. The whole input is read before anything is
+    /// written. The ciphertext is `C1 || C3 || C2`, the standard's order, unless `--c1c2c3`.
+    /// Stdin is raw bytes for both encrypt and decrypt, whatever --hex-input says; a ciphertext
+    /// that does not decrypt is one error, whatever is wrong with it.
+    SM2_ENCRYPTION {
+        action: SM2EncryptionAction,
+
+        #[arg(long)]
+        /// The private key file for decrypt and pk-from-sk (raw bytes; hex with --hex-input)
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file for encrypt (raw bytes; hex with --hex-input)
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// Write and read the ciphertext as `C1 || C2 || C3`, the order of
+        /// draft-shen-sm2-ecdsa-02 and the default of Bouncy Castle Java's SM2Engine. A
+        /// ciphertext does not say which order it is in.
+        c1c2c3: bool,
+
+        #[arg(short)]
+        /// Output in hex format, followed by a newline for encrypt and decrypt.
+        x: bool,
+    },
+
     /// Perform RIPEMD-128 of the content provided on stdin. Legacy: 64-bit collision resistance.
     /// Supports streaming update for low memory footprint.
     RIPEMD128 {
@@ -9104,6 +9133,9 @@ fn run() {
         }
         Some(Subcommands::SM2 { action, idfile, skfile, pkfile, sigfile, x }) => {
             sm2_cmd::sm2_cmd(action, idfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::SM2_ENCRYPTION { action, skfile, pkfile, c1c2c3, x }) => {
+            sm2_encryption_cmd::sm2_encryption_cmd(action, skfile, pkfile, *c1c2c3, *x);
         }
         Some(Subcommands::RIPEMD128 { x }) => {
             ripemd_cmd::ripemd_cmd(RIPEMDVariant::RIPEMD128, *x);

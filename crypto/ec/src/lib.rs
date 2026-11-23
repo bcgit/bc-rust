@@ -22,7 +22,7 @@
 //! |-----------|---------------------------------------------------------------------------|
 //! | [`ecdsa`] | ECDSA (FIPS 186-5), randomized and deterministic (RFC 6979)               |
 //! | [`eccdh`] | ECC CDH key agreement (SP 800-56A Rev. 3 Section 5.7.1.2)                 |
-//! | [`sm2`]   | The SM2 digital signature algorithm (GB/T 32918.2-2016)                   |
+//! | [`sm2`]   | SM2 signatures (GB/T 32918.2-2016) and encryption (GB/T 32918.4-2016)     |
 //! | [`ed`]    | Ed25519 and Ed448 (RFC 8032), X25519 and X448 (RFC 7748)                  |
 //! | [`dhkem`] | The DHKEM of RFC 9180, generic over the Diffie-Hellman group              |
 //!

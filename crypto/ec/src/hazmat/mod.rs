@@ -100,6 +100,7 @@ pub mod sm2;
 pub mod sm2_comb;
 pub(crate) mod sm2_comb_table;
 pub mod sm2_domain;
+pub mod sm2_mul;
 pub mod sm2_point;
 pub mod sm2_scalar;
 pub mod sm2_sec1;

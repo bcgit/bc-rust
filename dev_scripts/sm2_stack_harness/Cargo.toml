@@ -1,0 +1,21 @@
+# SM2 public key encryption and decryption of bouncycastle_ec::sm2::encryption, and the handling
+# of its private key, each run over a painted stack that is then searched for what the
+# operation handled, for `../check_sm2_stack.sh`. Its own workspace, so the root
+# `cargo build --workspace` never builds it.
+[package]
+name = "sm2_stack_harness"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bouncycastle-core = { path = "../../crypto/core" }
+bouncycastle-digest = { path = "../../crypto/digest" }
+bouncycastle-ec = { path = "../../crypto/ec" }
+
+# The root workspace's release profile: the wipes are sized for the frames it lays out.
+[profile.release]
+lto = "thin"
+strip = "debuginfo"
+
+[workspace]
