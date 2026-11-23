@@ -27,16 +27,6 @@ use bouncycastle_core::traits::{HashAlgParams, HashOneShot};
 pub(crate) const SALT_LEN_ERROR: SignatureError =
     SignatureError::LengthError("the salt must be the parameters' salt length");
 
-/// EMSA-PSS-ENCODE (RFC 8017 §9.1.1) from step 3 onward, with `emBits` fixed to `8 * K_LEN - 1`
-/// (see the module docs), steps 1-2's `mHash = Hash(M)` supplied by the caller (either
-/// [`crate::rsassa_pss`] hashing a whole message in one call, or a streaming `Signer` that hashed
-/// it incrementally -- this function itself never sees the message), and the salt supplied
-/// rather than generated here -- [`crate::rsassa_pss`] draws it from an RNG; this function stays
-/// deterministic so it can be tested directly against a known salt. Step 3's error ("encoding
-/// error", `emLen < hLen + sLen + 2`) is [`SignatureError::EncodingError`]: a pairing can be
-/// named whose modulus is too short for its hash and salt (RSA-1024 with SHA-512 and a
-/// 64-byte salt needs 130 bytes of 128), and although no such pairing signs, the encoding is
-/// reachable through the algorithm traits.
 /// EMSA-PSS-ENCODE (RFC 8017 §9.1.1) from the message hash `m_hash` (step 2's `mHash`,
 /// `H::OUTPUT_LEN` bytes) and the salt (`sLen = P::SALT_LEN` bytes), with `P`'s mask, into the
 /// `K_LEN`-byte `EM`. The lengths every other width derives from are `K_LEN` and the hash's:
@@ -44,6 +34,9 @@ pub(crate) const SALT_LEN_ERROR: SignatureError =
 ///
 /// An `m_hash` that is not `H::OUTPUT_LEN` bytes is [`HASH_LEN_ERROR`] and a `salt` that is not
 /// `P::SALT_LEN` bytes is [`SALT_LEN_ERROR`]: the caller's slices, checked in every build.
+/// Step 3's error ("encoding error", `emLen < hLen + sLen + 2`) is
+/// [`SignatureError::EncodingError`]: a pairing can be named whose modulus is too short for its
+/// hash and salt (RSA-1024 with SHA-512 and a 64-byte salt needs 130 bytes of 128).
 pub fn emsa_pss_encode_from_hash<H, P, const K_LEN: usize>(
     m_hash: &[u8],
     salt: &[u8],

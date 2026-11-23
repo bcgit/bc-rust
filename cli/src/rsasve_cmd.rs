@@ -114,15 +114,24 @@ fn rsasve_cmd<
             }
         }
         RSASVEAction::Decaps => {
-            let sk = SK::from_bytes(require_secret(skfile, "skfile").ref_to_bytes()).unwrap_or_else(|e| {
+            let ct = crate::mlkem_cmd::read_ciphertext::<CT_LEN>(ctfile, alg_name);
+            // `exit` runs no destructors, so the key file's bytes and the key are dropped
+            // before either result is looked at.
+            let ss = {
+                let parsed = {
+                    let bytes = require_secret(skfile, "skfile");
+                    SK::from_bytes(bytes.ref_to_bytes())
+                };
+                parsed.map(|sk| sk.decaps(&ct, ()))
+            };
+            let ss = ss.unwrap_or_else(|e| {
                 eprintln!(
                     "Error: couldn't parse the input as a valid {alg_name} private key (must be \
                      exactly {SK_LEN} bytes): {e:?}"
                 );
                 exit(-1);
             });
-            let ct = crate::mlkem_cmd::read_ciphertext::<CT_LEN>(ctfile, alg_name);
-            let ss = sk.decaps(&ct, ()).unwrap_or_else(|e| {
+            let ss = ss.unwrap_or_else(|e| {
                 eprintln!("Error: {alg_name} decapsulation failed: {e:?}");
                 exit(-1);
             });

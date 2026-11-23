@@ -4534,7 +4534,7 @@ enum Subcommands {
         x: bool,
     },
 
-    /// RSASVE over RSA-2048: the RSA KEM of SP 800-56B Rev. 2 SS7.2.1 (BC FIPS Java's KTS_SVE /
+    /// RSASVE over RSA-2048: the RSA KEM of SP 800-56B Rev. 2 Section 7.2.1 (BC FIPS Java's KTS_SVE /
     /// RSA-KAS-KEM, OpenSSL's "RSASVE" kem op). `keygen` (FIPS 186-5 A.1.3, e = 65537) writes the
     /// private key to stdout and the public key to `--pkfile`; key files use the same raw encoding
     /// as rsa-2048's. The shared secret is the raw 256-byte secret value Z, to be passed through a
@@ -4630,7 +4630,7 @@ enum Subcommands {
         x: bool,
     },
 
-    /// RSAES-OAEP key transport over RSA-2048 (RFC 8017 SS7.1, SP 800-56B Rev. 2 SS7.2.2), on
+    /// RSAES-OAEP key transport over RSA-2048 (RFC 8017 Section 7.1, SP 800-56B Rev. 2 Section 7.2.2), on
     /// rsasve-2048's keys and key files. `encaps` / `decaps` draw and recover a 32-byte key
     /// (KTS-OAEP-basic); `transport` / `recover` carry a key supplied on stdin. The label hash
     /// is `--hash`, MGF1's is `--mgf-hash` (the same unless given), and both sides give the same
@@ -4774,7 +4774,7 @@ enum Subcommands {
         x: bool,
     },
 
-    /// RSA-1024 signature verification (RFC 8017 SS8.2), PKCS#1 v1.5 only. Verification-only: this
+    /// RSA-1024 signature verification (RFC 8017 Section 8.2), PKCS#1 v1.5 only. Verification-only: this
     /// crate has no RSA-1024 private key type at all. See rsa-2048 for --scheme/--hash.
     RSA_1024 {
         #[arg(long, value_enum)]
@@ -4794,7 +4794,7 @@ enum Subcommands {
         sigfile: Option<String>,
     },
 
-    /// RSA-1536 signature verification (RFC 8017 SS8.2), PKCS#1 v1.5 only. Verification-only: this
+    /// RSA-1536 signature verification (RFC 8017 Section 8.2), PKCS#1 v1.5 only. Verification-only: this
     /// crate has no RSA-1536 private key type at all. See rsa-2048 for --scheme/--hash.
     RSA_1536 {
         #[arg(long, value_enum)]
@@ -4814,8 +4814,8 @@ enum Subcommands {
         sigfile: Option<String>,
     },
 
-    /// RSA-2048 key generation, signing and verification: RSASSA-PKCS1-v1_5 (RFC 8017 SS8.2) or
-    /// RSASSA-PSS (RFC 8017 SS8.1, or RFC 8702 SS3.2.1 with `--hash shake128`), selected by
+    /// RSA-2048 key generation, signing and verification: RSASSA-PKCS1-v1_5 (RFC 8017 Section 8.2) or
+    /// RSASSA-PSS (RFC 8017 Section 8.1, or RFC 8702 Section 3.2.1 with `--hash shake128`), selected by
     /// `--scheme`/`--hash`. PSS draws a fresh salt from the OS RNG each time it signs. `keygen`
     /// (FIPS 186-5 A.1.3, e = 65537) writes the private key to stdout and the public key to
     /// `--pkfile`. Private/public key files use this crate's own raw fixed-width encoding (see
@@ -4880,7 +4880,7 @@ enum Subcommands {
     },
 
     /// RSA-4096 signing/verification. See rsa-2048; note `--hash shake256` (not shake128) is the
-    /// SHAKE choice wired up at this modulus size (RFC 8702 SS5).
+    /// SHAKE choice wired up at this modulus size (RFC 8702 Section 5).
     RSA_4096 {
         action: RSAAction,
 
@@ -4911,7 +4911,7 @@ enum Subcommands {
     },
 
     /// RSA-8192 signing/verification. See rsa-2048; no PSS-SHAKE variant is wired up at this
-    /// modulus size (no Wycheproof vectors exist for it, and RFC 8702 SS5's "4096-bit or larger"
+    /// modulus size (no Wycheproof vectors exist for it, and RFC 8702 Section 5's "4096-bit or larger"
     /// SHAKE256 recommendation is already covered by rsa-4096).
     RSA_8192 {
         action: RSAAction,

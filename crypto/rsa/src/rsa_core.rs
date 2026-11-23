@@ -58,7 +58,7 @@ pub(crate) fn public_exp<const L: usize, const L2: usize, const L21: usize>(
 ///
 /// Step 1's range check is `Err(`[`SignatureError::DecodingError`]`)`. A result that fails its
 /// check is `Err(`[`SignatureError::ComputationFault`]`)`, with nothing of it returned: the
-/// computation went wrong.
+/// computation went wrong, or a factor of the key's modulus is not prime.
 pub(crate) fn rsasp1<K: RsaSigningSize>(
     sk: &RsaPrivateComponents<K>,
     m: &K::Limbs,
@@ -187,8 +187,8 @@ const CRT_STACK_FIXED: usize = 240;
 
 /// The CRT exponentiation of RSASP1 and RSADP, [`crt_exp`], with its result checked before any
 /// of it leaves: `y = x^d mod n` goes into `out` only if `y^e mod n` is `x` again, which it is
-/// whenever both half-exponentiations were computed correctly (that the key's components
-/// belong together is its constructor's check). Otherwise `out` is zero and the return is
+/// whenever both half-exponentiations were computed correctly and the key's primes are prime
+/// (that its components belong together is its constructor's check). Otherwise `out` is zero and the return is
 /// FALSE. A CRT result that is right modulo one prime and wrong modulo the other must not be
 /// seen, by a verifier or anyone else.
 ///
@@ -294,8 +294,8 @@ pub(crate) fn crt_exp<
     let mut m_mod_q = reduce_wide::<L, HALF>(m, q);
     let mut s1 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_p, d_p, &ctx_p);
     let mut s2 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_q, d_q, &ctx_q);
-    // Step 2.b.3: h = (s_1 - s_2) * qInv mod p, with s_2 reduced mod p first (the primes need
-    // not be the same length; see RsaPrivateComponents' docs).
+    // Step 2.b.3: h = (s_1 - s_2) * qInv mod p, with s_2 reduced mod p first (q can be the
+    // larger prime).
     let mut s2_mod_p = reduce_wide::<HALF, HALF>(&s2, p);
     let mut diff = sub_mod::<HALF>(&s1, &s2_mod_p, p);
     let mut h = mul_mod::<HALF, HALF2, HALF21>(&diff, q_inv, &ctx_p);
@@ -460,12 +460,13 @@ mod tests {
     mod damaged_keys {
         //! The result of a private-key operation is checked before it is released (the crate's
         //! `# Security Considerations`). A key's constructor refuses components that do not belong
-        //! together, so what the check is for, a fault in the computation, cannot be provoked from
-        //! `tests/`: these build the damaged key past the constructor
-        //! (`RsaPrivateComponents::unvalidated`, which exists in test builds only) and stand for the
-        //! fault. Each private-key operation then returns its error and leaves the caller's buffer
-        //! zeroized, under RSASSA-PKCS1-v1_5, RSASSA-PSS, RSASVE (raw and through HKDF) and
-        //! RSAES-OAEP (as a KEM and as key transport); the sound key does all of them.
+        //! together, so a result wrong modulo one prime alone, as a fault in one
+        //! half-exponentiation leaves it, cannot be provoked from `tests/`: these build a key with
+        //! one damaged component past the constructor (`RsaPrivateComponents::unvalidated`, which
+        //! exists in test builds only) and stand for the fault. Each private-key operation then
+        //! returns its error and leaves the caller's buffer zeroized, under RSASSA-PKCS1-v1_5,
+        //! RSASSA-PSS, RSASVE (raw and through HKDF) and RSAES-OAEP (as a KEM and as key
+        //! transport); the sound key does all of them.
 
         use crate::keys::{RsaPrivateComponents, RsaPublicComponents};
         use crate::rsa_2048::{

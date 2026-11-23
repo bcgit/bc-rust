@@ -6,14 +6,6 @@
 use bouncycastle_core::traits::{HashAlgParams, HashOneShot};
 use bouncycastle_utils::secret::Secret;
 
-/// MGF1 (RFC 8017 Appendix B.2.1), with `mgfSeed` fixed at `H_LEN` bytes and `maskLen` fixed at
-/// `MASK_LEN` (a compile-time constant here, since every call site in this crate knows its output
-/// width in advance -- `emLen - hLen - 1` for a concrete modulus/hash pairing). Step 1's error
-/// ("mask too long", `maskLen > 2^32 hLen`) cannot occur for any `MASK_LEN` this crate reaches
-/// (at most a few KiB, for an 8192-bit modulus), so it is not checked. `SEED_LEN` is `H_LEN + 4`
-/// (the seed plus the 4-octet counter `C`), a separate const parameter for the same reason
-/// [`bouncycastle_ec::montgomery`]'s `L2 = 2 * L` is: stable Rust cannot compute one const
-/// generic from another.
 /// The largest hash output MGF1 is used with here, SHA-512's.
 pub(crate) const MAX_HASH_LEN: usize = 64;
 

@@ -22,9 +22,8 @@ use core::marker::PhantomData;
 /// (`RSASSA-PKCS1-v1_5-SHA256`), at the lesser of the size's and the hash's strength.
 /// [`RsaPrivateKey`](crate::keys::RsaPrivateKey) signs through [`DeterministicSigningKey`](bouncycastle_core::signature_key::DeterministicSigningKey) at a signing size: PKCS#1 v1.5
 /// draws nothing, so the same key and message always give the same signature.
-/// [`RsaPublicKey`](crate::keys::RsaPublicKey) verifies through [`VerifyingKey`](bouncycastle_core::signature_key::VerifyingKey) at any size. One key type serves every
-/// scheme and hash, so a call names the marker:
-/// a key over it signs through `DeterministicSigningKey`, `sk.sign_deterministic(msg, None)`.
+/// [`RsaPublicKey`](crate::keys::RsaPublicKey) verifies through [`VerifyingKey`](bouncycastle_core::signature_key::VerifyingKey) at any size. The key names
+/// the marker, so a call names nothing: `sk.sign_deterministic(msg, None)`.
 /// `ctx` must be `None` or empty, since RSA has no context: a non-empty one is a
 /// [`SignatureError::LengthError`] from signing and from verification.
 ///

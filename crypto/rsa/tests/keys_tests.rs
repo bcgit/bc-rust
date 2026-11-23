@@ -4,13 +4,16 @@
 //! imported). The generic boundary conditions every size shares are covered by
 //! `core-test-framework`'s `test_keys` in each size's own test file; these pin the layout itself.
 
-use bouncycastle_core::errors::{KEMError, KeyDecodingError, SignatureError};
-use bouncycastle_core::traits::{PrivateKey, PublicKey};
+use bouncycastle_core::errors::{KEMError, KeyDecodingError, RNGError, SignatureError};
+use bouncycastle_core::key_material::KeyMaterialTrait;
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::signature_key::DeterministicOneShotSigningKey;
+use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,
 };
-use bouncycastle_rsa::rsa_2048::RSA2048KEMPrivateKey;
+use bouncycastle_rsa::rsa_2048::{RSA2048KEMPrivateKey, RSASSA_PKCS1_v1_5_SHA256};
 use bouncycastle_rsa::rsassa_pss::RSASSA_PSS;
 use bouncycastle_rsa::size::{RsaSigningSize, RsaSize};
 use bouncycastle_rsa::{RSA2048, RSA3072, RSA4096, RSA8192};
@@ -1043,4 +1046,66 @@ fn validate_refuses_a_key_pair_that_fails_a_criterion() {
         ),
         "the private exponent is not above 2^(nBits/2)",
     );
+}
+
+/// A key with a composite factor is one the constructor takes, its components being the
+/// inverses they should be. The result check of the private-key operation is what stops it:
+/// nothing is signed, and the caller's buffer is left zeroized.
+#[test]
+fn a_key_with_a_composite_factor_signs_nothing() {
+    let sk = components(
+        &COMPOSITE_MR_P, &COMPOSITE_Q, &COMPOSITE_MR_D_P, &COMPOSITE_D_Q, &COMPOSITE_MR_Q_INV,
+        0x10001,
+    )
+    .into_key::<RSASSA_PKCS1_v1_5_SHA256>();
+    assert_eq!(sk.sign_deterministic(b"a message", None), Err(SignatureError::ComputationFault));
+    let mut out = [0xFFu8; 256];
+    assert_eq!(
+        sk.sign_deterministic_out(b"a message", None, &mut out),
+        Err(SignatureError::ComputationFault)
+    );
+    assert_eq!(out, [0u8; 256]);
+}
+
+/// The workspace RNG, counting the bytes it hands out.
+struct CountingRng {
+    inner: DefaultRNG,
+    bytes: usize,
+}
+
+impl RNG for CountingRng {
+    fn add_seed_keymaterial(&mut self, seed: &dyn KeyMaterialTrait) -> Result<(), RNGError> {
+        self.inner.add_seed_keymaterial(seed)
+    }
+    fn next_int(&mut self) -> Result<u32, RNGError> {
+        self.inner.next_int()
+    }
+    fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
+        self.bytes += out.len();
+        self.inner.next_bytes_out(out)
+    }
+    fn fill_keymaterial_out(&mut self, out: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError> {
+        self.inner.fill_keymaterial_out(out)
+    }
+    fn security_strength(&self) -> SecurityStrength {
+        self.inner.security_strength()
+    }
+}
+
+/// SP 800-56B Rev. 2 Section 6.4.1.2.1 step 5: a composite passes with probability at most
+/// 2^-ES(nBits), which at RSA-2048 is 56 Miller-Rabin rounds on each prime. A round draws one
+/// base of 128 bytes, and again if the base is out of range, which is less than once in four:
+/// a sound key draws at least 2 * 56 bases and nowhere near twice that.
+#[test]
+fn validate_runs_the_rounds_the_size_asks_for() {
+    assert_eq!(RSA2048::VALIDATION_MR_ROUNDS.get(), 56);
+    assert_eq!(RSA3072::VALIDATION_MR_ROUNDS.get(), 64);
+    assert_eq!(RSA4096::VALIDATION_MR_ROUNDS.get(), 76);
+    assert_eq!(RSA8192::VALIDATION_MR_ROUNDS.get(), 100);
+
+    let mut rng = CountingRng { inner: DefaultRNG::default(), bytes: 0 };
+    assert_eq!(components(&P, &Q, &D_P, &D_Q, &Q_INV, 0x10001).validate(&mut rng), Ok(()));
+    let bases = 2 * 56;
+    assert!(rng.bytes >= bases * 128, "{} bytes drawn", rng.bytes);
+    assert!(rng.bytes < 2 * bases * 128, "{} bytes drawn", rng.bytes);
 }

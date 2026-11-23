@@ -120,7 +120,8 @@
   input. Private-key operations wipe the stack they used, sized for an optimised x86-64 build; a key the caller
   moves out of the `Result` it was returned in is the caller's to wipe. The `rsa-<size>` and `rsasve-<size>` CLI
   commands. Two checks, run by CI and by hand: `dev_scripts/check_rsa_ct.sh` puts the CRT and the constructor's
-  congruences under memcheck with the key undefined, and `dev_scripts/check_rsa_stack.sh` searches the stack each private-key operation used for the key.
+  congruences under memcheck with the key undefined, and `dev_scripts/check_rsa_stack.sh` searches the stack each
+  private-key operation used for the key.
 * RSAES-OAEP -- RFC 8017 Section 7.1 key transport on the RSA key-establishment keys, under `OaepParams<H, M, LEN>`
   (label hash, MGF1 hash, label): as a KEM that draws the key (KTS-OAEP-basic, SP 800-56B Rev. 2) and, through
   the new `core::key_transport_key` roles, for a key the caller holds; the `rsa-oaep-<size>` CLI commands. The hashes

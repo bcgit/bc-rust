@@ -91,7 +91,7 @@ fn kem_decoding_error(e: KEMError) -> KeyDecodingError {
     }
 }
 
-/// Whether `1 < x < n - 1` (§7.2.1.2 step 2's range, §7.2.1.3 step 1's check).
+/// Whether `1 < x < n - 1` (§7.2.1.2 step 2's range, §7.1.2.3 step 1's check).
 pub(crate) fn in_open_range<K: RsaSize>(x: &K::Limbs, n: &K::Limbs) -> bool {
     // `n` is odd (every key type here checks it), so `n - 1` is `n` with its low bit cleared and
     // needs no borrow propagation.
@@ -340,7 +340,8 @@ where
     K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
 {
     /// RSASVE.RECOVER (§7.2.1.3): `C` in `(1, n - 1)` or [`KEMError::DecapsulationFailed`]
-    /// (step 1), `z = C^d mod n` by the CRT (step 2) and `Z = I2BS(z, nLen)` into `ss` (step 3),
+    /// (step 3.c, RSADP's range check), `z = C^d mod n` by the CRT (step 3.b) and
+    /// `Z = I2BS(z, nLen)` into `ss` (step 3.d),
     /// zeroized first and left so on error. A `z` that fails the CRT result check
     /// (`z^e mod n` is not `C`) is [`KEMError::DecapsulationFailed`] too, and none of it is
     /// released.

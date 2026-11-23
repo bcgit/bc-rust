@@ -13,6 +13,10 @@ use bouncycastle_core::traits::{AlgorithmOID, HashAlgParams};
 pub(crate) const HASH_LEN_ERROR: SignatureError =
     SignatureError::LengthError("the message hash must be the hash's output length");
 
+/// The largest `T` this crate builds: two SEQUENCE headers, an OID of at most 16 bytes with
+/// its NULL, and a 64-byte digest behind its OCTET STRING header.
+const MAX_T_LEN: usize = 2 + 2 + 16 + 2 + 2 + 64;
+
 /// `T`, the DER encoding of `DigestInfo { digestAlgorithm, digest }` (RFC 8017 §9.2 step 2):
 ///
 /// ```text
@@ -30,10 +34,6 @@ pub(crate) const HASH_LEN_ERROR: SignatureError =
 /// support (SHA-3's largest output is 64 bytes), so each is a single length byte, not the
 /// multi-byte long form; `debug_assert`'d, since it can only fail on a hash this crate does not
 /// support, never on real input.
-/// The largest `T` this crate builds: two SEQUENCE headers, an OID of at most 16 bytes with
-/// its NULL, and a 64-byte digest behind its OCTET STRING header.
-const MAX_T_LEN: usize = 2 + 2 + 16 + 2 + 2 + 64;
-
 fn digest_info<H: AlgorithmOID + HashAlgParams>(digest: &[u8], t: &mut [u8; MAX_T_LEN]) -> usize {
     let h_len = digest.len();
     debug_assert_eq!(h_len, H::OUTPUT_LEN, "digest_info: the caller checked the digest's length");
@@ -190,7 +190,7 @@ pub fn emsa_pkcs1_v1_5_verify_from_hash<H: HashAlgParams + AlgorithmOID, const K
     // Mutating this `- 2` to `+ 2` or `/ 2` is an accepted equivalent, not a gap, for every
     // concrete `(H, K_LEN)` this crate actually instantiates: `decode_digest_info` requires `T`
     // to exactly fill whatever remains of `em` after the separator (no trailing garbage, RFC 8017
-    // SS9.2 note 1's structure enforced at line 109 above), which pins `i` to one specific value
+    // §9.2 note 1's structure, which `decode_digest_info` enforces), which pins `i` to one specific value
     // for a genuine, hash-matching `DigestInfo` -- the same value regardless of how `ps_len` is
     // computed from it, since `ps_len` is used only for the `< 8` comparison immediately below,
     // and that real value of `i` is always thousands of bits' worth of padding away from the
@@ -408,7 +408,7 @@ mod tests {
 
     /// A crafted `EM` whose `DigestInfo` claims an `AlgorithmIdentifier` length long enough to run
     /// past the end of the (very short, in this construction) remaining buffer. `decode_digest_info`
-    /// must reject this cleanly via its `inner_end > t.len()` check (line 119) rather than let a
+    /// must reject this cleanly via its `inner_end > t.len()` check rather than let a
     /// later, unguarded slice (`t[pos..pos + oid.len()]`) index past the real buffer and panic:
     /// `pos + oid.len()` is fixed (4 + 11 = 15 for SHA-256) and does not itself depend on the
     /// claimed length, so nothing downstream catches an inflated `inner_end` before that slice
@@ -443,7 +443,7 @@ mod tests {
         assert!(verify::<62>(b"hello", &em));
     }
 
-    /// RFC 8017 §9.2 step 2: `EM`'s block type byte (`em[1]`) must be exactly `0x01`. `em[0]`
+    /// RFC 8017 §9.2 step 5: `EM`'s block type byte (`em[1]`) must be exactly `0x01`. `em[0]`
     /// stays correct (`0x00`) so this exercises only the block-type half of the check.
     #[test]
     fn verify_rejects_wrong_block_type() {
@@ -452,7 +452,7 @@ mod tests {
         assert!(!verify::<256>(b"hello", &em));
     }
 
-    /// RFC 8017 §9.2 step 2: `EM`'s leading byte (`em[0]`) must be exactly `0x00`. `em[1]` stays
+    /// RFC 8017 §9.2 step 5: `EM`'s leading byte (`em[0]`) must be exactly `0x00`. `em[1]` stays
     /// correct (`0x01`) so this exercises only the leading-byte half of the check.
     #[test]
     fn verify_rejects_wrong_leading_byte() {

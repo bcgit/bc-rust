@@ -6,8 +6,8 @@
 //! (its candidate loop, small-factor sieve and `d` lower-bound check are what this follows), with
 //! FIPS 186-5 as the reference for every step and cited inline.
 //!
-//! The concrete sizes wire this up as `keygen(rng)` in their own modules
-//! (`RsaSigningSize::keygen`, which the size markers' generators wrap): `nlen` is fixed by the width, `e` by
+//! The sizes wire this up as `RsaSigningSize::keygen`, which the size markers' generators wrap:
+//! `nlen` is fixed by the width, `e` by
 //! [`PUBLIC_EXPONENT`], the Miller-Rabin round count by `RsaSigningSize::MR_ROUNDS` and the required
 //! RNG strength by each size's row of SP 800-57 Part 1 Table 2.
 //!
@@ -353,9 +353,11 @@ fn has_small_factor<const N: usize>(w: &[u64; N]) -> bool {
 /// Preceded by trial division against the primes below [`SMALL_PRIME_LIMIT`] (Appendix B.7),
 /// which is conclusive on its own for `w < 2^20` and otherwise only ever rejects.
 ///
-/// `rounds` must be at least the value FIPS 186-5 Table B.1 gives for the candidate's length and
-/// the caller's target error probability (see each size module's `keygen` for the value it uses);
-/// its type rules out zero rounds at compile time. Bases that fall outside `[2, w - 2]` are
+/// For a candidate drawn at random, `rounds` must be at least the value FIPS 186-5 Table B.1
+/// gives for its length and the caller's target error probability. For a number from
+/// elsewhere only the bound that holds of every composite applies, `4^-rounds`; a key's primes
+/// are tested at that bound by `RsaPrivateComponents::validate`. The type rules out zero
+/// rounds at compile time. Bases that fall outside `[2, w - 2]` are
 /// redrawn (step 4.2); an RNG that cannot produce one in 128 draws is reported as
 /// `Err(GenericError)`, so a broken RNG cannot hang the test.
 ///
@@ -385,9 +387,8 @@ pub fn is_probable_prime<const N: usize, const N2: usize, const N21: usize>(
 ) -> Result<bool, SignatureError> {
     const { check_widths::<N, N2, N21>() };
     let verdict = is_probable_prime_in_own_frame::<N, N2, N21>(w, rounds, rng);
-    // `w` may be a prime of a private key (the crate docs suggest this test for an imported
-    // key's): the context over it and the powers of the bases pass through frames that no
-    // `Secret` names, as in the CRT.
+    // `w` may be a prime of a private key: the context over it and the powers of the bases
+    // pass through frames that no `Secret` names, as in the CRT.
     wipe_stack_below::<[u64; N], PRIMALITY_STACK_PER_LIMB, PRIMALITY_STACK_FIXED>();
     verdict
 }
@@ -637,7 +638,7 @@ where
     // Step 1.a, 1.b: the targeted strength is the size's, which is at least 112 bits.
     // Step 1.c: "If epub is not an odd integer such that 65,537 <= epub < 2^256". Odd by the
     // key's constructor, and below 2^64 by its type.
-    if sk.e() < PUBLIC_EXPONENT {
+    if sk.e() < 65_537 {
         return Err(SignatureError::DecodingError("the public exponent is below 65537"));
     }
     // Step 3: n = p * q of exactly nBits bits, by the key's constructor.
@@ -658,9 +659,8 @@ where
     // Step 5.f, 5.g: "The probability that p or q may be incorrectly classified as prime by
     // the test used in step 5 shall be less than or equal to 2^-ES(nBits)". The key is someone
     // else's, so the bound is the one that holds of every composite: at most 1/4 of the bases
-    // pass one, and ES / 2 rounds give 4^-(ES/2).
-    let rounds = NonZeroUsize::new((K::STRENGTH.as_int() as usize).div_ceil(2))
-        .expect("a signing size has a strength of at least 112 bits");
+    // pass one, and ES(nBits) / 2 rounds give 4^-(ES/2).
+    let rounds = K::VALIDATION_MR_ROUNDS;
     if !is_probable_prime_in_own_frame::<HALF, HALF2, HALF21>(p, rounds, rng)?
         || !is_probable_prime_in_own_frame::<HALF, HALF2, HALF21>(q, rounds, rng)?
     {
@@ -682,7 +682,7 @@ where
 
 /// FIPS 186-5 Appendix A.1.3, the whole process, for a modulus of `HALF2` limbs (`nlen = 64 *
 /// HALF2` bits) built from two `HALF`-limb primes. `rounds` is the Miller-Rabin iteration count
-/// (Table B.1) and `required_strength` the security strength SP 800-57 Part 1 associates with
+/// (at least Table B.1's) and `required_strength` the security strength SP 800-57 Part 1 associates with
 /// `nlen`, which the RNG must meet (step 3 and the paragraph above the process). The size modules
 /// fix all three; see `RSA2048`'s `RsaSigningSize` impl for the RSA-2048 values.
 ///

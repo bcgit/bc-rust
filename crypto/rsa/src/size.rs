@@ -101,6 +101,12 @@ pub trait RsaSigningSize: RsaSize {
     /// 140-3 Implementation Guidance (IG C.F, option 2) strongly recommends in place of FIPS 186-5
     /// Table B.1's minimum, which is 5 for a 1024-bit prime and 4 for larger ones.
     const MR_ROUNDS: NonZeroUsize;
+    /// The Miller-Rabin rounds [`RsaPrivateComponents::validate`] runs on each prime of a key
+    /// from elsewhere: half of `ES(nBits)`, the strength SP 800-56B Rev. 2 Appendix D Table 4
+    /// estimates for the modulus length (112, 128, 152 and 200 bits at 2048, 3072, 4096 and
+    /// 8192), so that a composite passes with probability at most `2^-ES(nBits)` (§6.4.1.2.1
+    /// step 5).
+    const VALIDATION_MR_ROUNDS: NonZeroUsize;
     /// FIPS 186-5 Appendix A.1.3 key generation from `rng`, which must offer the size's
     /// [`STRENGTH`](RsaSize::STRENGTH).
     ///
@@ -156,8 +162,8 @@ pub trait RsaSigningSize: RsaSize {
 /// that algorithm and no other (SP 800-57 Part 1 Rev. 5's one scheme per key pair). The hash
 /// is spelled, never defaulted, as on the ECDSA markers: the customary pairing is a convention
 /// that moves. All of them run [`RsaSigningSize::keygen`], FIPS 186-5 Appendix A.1.3; the RNG is
-/// an argument, not a default. The KEM pair is [`KemKeyPair`], a different type, as the crate's
-/// `# Key separation` asks.
+/// an argument, not a default. The KEM pair is [`KemKeyPair`], a different type, as
+/// [`rsasve`](crate::rsasve)'s `# Key separation` asks.
 pub trait SignatureKeyPair: RsaSigningSize {
     /// A key pair for RSASSA-PKCS1-v1_5 with `H`.
     ///
@@ -420,6 +426,7 @@ const _: () = check_lengths::<RSA2048>();
 
 impl RsaSigningSize for RSA2048 {
     const MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(25).unwrap();
+    const VALIDATION_MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(56).unwrap();
 
     fn keygen(
         rng: &mut dyn RNG,
@@ -523,6 +530,7 @@ const _: () = check_lengths::<RSA3072>();
 
 impl RsaSigningSize for RSA3072 {
     const MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(25).unwrap();
+    const VALIDATION_MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(64).unwrap();
 
     fn keygen(
         rng: &mut dyn RNG,
@@ -626,6 +634,7 @@ const _: () = check_lengths::<RSA4096>();
 
 impl RsaSigningSize for RSA4096 {
     const MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(25).unwrap();
+    const VALIDATION_MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(76).unwrap();
 
     fn keygen(
         rng: &mut dyn RNG,
@@ -729,6 +738,7 @@ const _: () = check_lengths::<RSA8192>();
 
 impl RsaSigningSize for RSA8192 {
     const MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(25).unwrap();
+    const VALIDATION_MR_ROUNDS: NonZeroUsize = NonZeroUsize::new(100).unwrap();
 
     fn keygen(
         rng: &mut dyn RNG,

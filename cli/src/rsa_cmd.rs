@@ -23,8 +23,7 @@
 //! `RSA2048::generate_pss_signature_key_pair::<SHA256>` and siblings) writes the private key
 //! to stdout like the other key-generating commands, and -- unlike them -- also needs `--pkfile`
 //! to receive the public key: there is no `PkFromSk`/`CheckConsistency` here, so the public key
-//! has to be kept from generation time. (The private key file is RFC 8017's CRT quintuple and
-//! `e`, so a `PkFromSk` could be written; it has not been.) Private and public key files use the raw fixed-width layout
+//! has to be kept from generation time. Private and public key files use the raw fixed-width layout
 //! `RsaPrivateKey`/`RsaPublicKey`'s `PrivateKey`/`PublicKey` impls encode
 //! (documented under `# Encoding` on `RsaPrivateComponents`/`RsaPublicComponents`): not PEM,
 //! not ASN.1 DER -- this crate has no encoder for either -- so a key produced by another RSA
@@ -118,10 +117,20 @@ fn unsupported(scheme: &RSAScheme, hash: &RSAHash, alg_name: &str) -> ! {
     exit(-1);
 }
 
-/// See `RsaPrivateComponents`'s `# Encoding` docs for the expected layout; a wrong-length file
-/// is one of the `DecodingError`s `PrivateKey::from_bytes` reports.
-fn parse_sk<SK: PrivateKey<SK_LEN>, const SK_LEN: usize>(bytes: &[u8], alg_name: &str) -> SK {
-    match SK::from_bytes(bytes) {
+/// The private key in `--skfile`. See `RsaPrivateComponents`'s `# Encoding` docs for the
+/// expected layout; a wrong-length file is one of the `DecodingError`s `PrivateKey::from_bytes`
+/// reports.
+fn load_sk<SK: PrivateKey<SK_LEN>, const SK_LEN: usize>(
+    skfile: &Option<String>,
+    alg_name: &str,
+) -> SK {
+    // `exit` runs no destructors: the key file's bytes go out of scope, and so are wiped,
+    // before a failure exits.
+    let parsed = {
+        let bytes = require_secret(skfile, "skfile");
+        SK::from_bytes(bytes.ref_to_bytes())
+    };
+    match parsed {
         Ok(sk) => sk,
         Err(_) => {
             eprintln!(
@@ -163,8 +172,7 @@ fn do_verify<A: RsaSignatureAlgorithm, const PK_LEN: usize, const SIG_LEN: usize
     let pk = parse_pk::<RsaPublicKey<A>, PK_LEN>(&require_file(pkfile, "pkfile"), alg_name);
     let sig = require_file(sigfile, "sigfile");
 
-    // `do_verify_init` is infallible for every `bouncycastle_rsa` verifier (it only stores the key
-    // and a fresh hash state), so this unwrap cannot fire.
+    // `create_verifier` refuses a non-empty context and nothing else, so this unwrap cannot fire.
     let mut verifier = VerifyingKey::<A, SIG_LEN>::create_verifier(&pk, None).unwrap();
     stream_stdin(|chunk| verifier.do_update(chunk));
 
@@ -179,9 +187,8 @@ fn do_verify<A: RsaSignatureAlgorithm, const PK_LEN: usize, const SIG_LEN: usize
 /// The generator a command runs for its pairing: the size marker's, for the command's algorithm.
 type Keygen<A> = fn(&mut dyn RNG) -> Result<(RsaPublicKey<A>, RsaPrivateKey<A>), SignatureError>;
 
-/// One (size, scheme, hash) pairing `S`, generating a key pair, or signing or verifying stdin,
-/// per `action`. PSS pairings draw their salt from the library's default OS-backed RNG inside
-/// `S::do_sign_final`; `keygen` is the size's FIPS 186-5 generator, independent of scheme and hash.
+/// Generates a key pair for one (size, scheme, hash) pairing: the private key to stdout and
+/// the public key to `--pkfile`. `keygen` is the size's FIPS 186-5 generator.
 fn rsa_keygen_cmd<A: RsaSignatureAlgorithm, const PK_LEN: usize, const SK_LEN: usize>(
     keygen: Keygen<A>,
     pkfile: &Option<String>,
@@ -233,10 +240,9 @@ fn rsa_pss_cmd<
         RSAAction::Sign => {
             // `exit` runs no destructors, so the key is dropped before the result is looked at.
             let sig = {
-                let sk = parse_sk::<RsaPrivateKey<A>, SK_LEN>(
-                    require_secret(skfile, "skfile").ref_to_bytes(),
-                    alg_name,
-                );
+                let sk = load_sk::<RsaPrivateKey<A>, SK_LEN>(skfile, alg_name);
+                // No context, and an RNG that delivers: neither refusal of `create_signer`
+                // applies, so this unwrap cannot fire.
                 let mut signer = SigningKey::<A, SIG_LEN>::create_signer(
                     &sk,
                     &mut HashDRBG_SHA512::new_from_os(),
@@ -283,10 +289,8 @@ fn rsa_pkcs1_cmd<
         RSAAction::Sign => {
             // `exit` runs no destructors, so the key is dropped before the result is looked at.
             let sig = {
-                let sk = parse_sk::<RsaPrivateKey<A>, SK_LEN>(
-                    require_secret(skfile, "skfile").ref_to_bytes(),
-                    alg_name,
-                );
+                let sk = load_sk::<RsaPrivateKey<A>, SK_LEN>(skfile, alg_name);
+                // No context, which is all `create_signer_deterministic` refuses.
                 let mut signer =
                     DeterministicSigningKey::<A, SIG_LEN>::create_signer_deterministic(&sk, None)
                         .unwrap();

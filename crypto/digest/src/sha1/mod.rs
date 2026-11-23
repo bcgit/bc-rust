@@ -97,7 +97,7 @@ use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{Hash, Suspendable};
 
-/// Algorithm name string for SHA-1, as used by the factories and CLI.
+/// Algorithm name string for SHA-1, as used by the CLI.
 pub const SHA1_NAME: &str = "SHA1";
 
 /// SHA-1 is credited with no security strength: see the module's Security Considerations.

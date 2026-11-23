@@ -30,8 +30,8 @@
 //! secret). It is not blinded against the message/base: an attacker who can also mount a
 //! chosen-message physical side-channel attack (power/cache analysis, not just timing) may still
 //! learn about `d` from repeated calls with related bases, per Kocher (1996) and Boneh & Brumley
-//! (2003). Neither this module nor `crate::rsa_core`'s CRT-based `rsasp1` (the only caller that
-//! exponentiates with a secret exponent) applies message blinding on top of it -- see the crate's
+//! (2003). Neither this module nor `crate::rsa_core`'s CRT, which every private-key operation
+//! runs, applies message blinding on top of it -- see the crate's
 //! own `# Security Considerations` for what that means for this crate's signing operation.
 
 use bouncycastle_ec::montgomery;
@@ -180,7 +180,7 @@ fn from_montgomery<const L: usize, const L2: usize, const L21: usize>(
 /// Montgomery form: `REDC(a * (b*R)) = a*b*R*R^-1 mod n = a*b mod n`, the same one-sided-conversion
 /// trick [`mod_pow`] itself doesn't need (it stays in Montgomery form throughout its ladder).
 /// `a` need only fit in `L` limbs, not be `< ctx.modulus()`, by the same `T < n*R` argument
-/// `to_montgomery` relies on -- see the module docs' note on [`montgomery::redc`]'s precondition.
+/// `to_montgomery` relies on.
 ///
 /// `L2` is `2 * L` and `L21` is `2 * L + 1`, checked when the function is instantiated:
 ///
@@ -250,10 +250,7 @@ fn ct_shift_in_bit_mod<const N: usize>(acc: &[u64; N], bit: u64, modulus: &[u64;
 /// on the exponent would leak `d`. Used two ways in RSA's CRT recombination (RFC 8017 §5.2.1 step
 /// 2.b): with `WIDE > NARROW`, to reduce the `n`-width message `m` down to `m mod p` before
 /// exponentiating (step 2.b.1); and with `WIDE == NARROW`, to reduce `s2` (a residue mod `q`) down
-/// to `s2 mod p` before the CRT subtraction (step 2.b.3) -- `s2 < q` gives no useful bound
-/// relative to `p` in general (RFC 8017 does not require `p` and `q` to be close in magnitude),
-/// so this does not special-case a single conditional subtraction the way
-/// `double_mod_n_vartime` does for the doubling case. Bit-serial schoolbook long division:
+/// to `s2 mod p` before the CRT subtraction (step 2.b.3). Bit-serial schoolbook long division:
 /// every one of `value`'s `64 * WIDE` bits contributes one constant-time doubling-and-conditional-
 /// subtract step.
 pub fn reduce_wide<const WIDE: usize, const NARROW: usize>(

@@ -130,16 +130,6 @@ impl<K: RsaSize> RsaPublicComponents<K> {
 /// (the crate's `# Security Considerations`).
 /// Not a key: the keys over it are [`RsaPrivateKey`] and [`crate::rsasve::RsaKEMPrivateKey`].
 ///
-/// `p` and `q` need not be the same bit length: RFC 8017 §3.2 requires only that both are prime
-/// and `p * q = n`, nothing about their relative magnitude. An earlier version of this type
-/// required equal bit length anyway, so its CRT recombination could reduce one residue mod the
-/// other prime with a single conditional subtraction (valid only when the smaller prime's residue
-/// is `< 2 *` the larger prime, which equal bit length guarantees but does not itself require).
-/// [`crate::modexp::reduce_wide`]'s general bit-serial reduction handles any magnitude
-/// relationship instead, at the same asymptotic cost this crate already pays to reduce the
-/// `n`-width message down to each prime's width, so the extra restriction bought nothing and is
-/// not reimposed here.
-///
 /// # Encoding
 ///
 /// The keys' `PrivateKey::encode`/`from_bytes`, at a signing size, use the raw layout
@@ -333,10 +323,10 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     /// `d = e^-1 mod LCM(p - 1, q - 1)` is above `2^(nBits/2)`. A key from this crate's key
     /// generation passes; this is for a key from elsewhere.
     ///
-    /// Primality is the Miller-Rabin test with bases from `rng`, at half as many rounds as the
-    /// size's security strength has bits, so that a composite passes with probability at most
-    /// `2^-strength` however it was chosen. That is about a hundred private-key operations at
-    /// RSA-2048.
+    /// Primality is the Miller-Rabin test with bases from `rng`, at
+    /// [`VALIDATION_MR_ROUNDS`](RsaSigningSize::VALIDATION_MR_ROUNDS) rounds, so that a composite
+    /// passes with probability at most `2^-ES(nBits)` however it was chosen. That is the work
+    /// of about that many private-key operations: 56 at RSA-2048.
     ///
     /// # Errors
     /// [`SignatureError::DecodingError`], naming the criterion, if the key pair is not valid;
@@ -706,10 +696,11 @@ pub(crate) fn decoding_error(e: SignatureError) -> KeyDecodingError {
     }
 }
 
-// A private-key operation checks its result (`rsa_core::crt_exp_checked`), and the constructor
-// above refuses every key that would fail that check, so the tests of the check need a key
-// built past the constructor: the QUALITY_AND_STYLE.md exception for behaviour that cannot be
-// reached through the public API.
+// A private-key operation checks its result (`rsa_core::crt_exp_checked`). The constructor
+// above refuses a key whose `dP`, `dQ`, `qInv` or `e` is not its own, so a test of the check on
+// one damaged component needs a key built past the constructor: the QUALITY_AND_STYLE.md
+// exception for behaviour that cannot be reached through the public API. (A key with a
+// composite prime does pass the constructor: `tests/keys_tests.rs` runs the check on one.)
 #[cfg(test)]
 mod tests {
     use super::*;

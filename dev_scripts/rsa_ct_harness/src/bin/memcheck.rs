@@ -1,7 +1,7 @@
 //! Runs the RSA private-key arithmetic over a key memcheck regards as undefined, so that
 //! memcheck reports any conditional jump or address computed from it. A secret is made
 //! undefined without changing its value by XOR with fresh heap memory, which memcheck tracks
-//! as undefined and `--malloc-fill=0x00` makes zero. The two controls must be reported, or a
+//! as undefined and `--malloc-fill=0x00` makes zero. The controls must be reported, or a
 //! clean run proves nothing.
 //!
 //!   valgrind -q --malloc-fill=0x00 --error-exitcode=9 target/release/memcheck <mode>

@@ -244,11 +244,11 @@
 //! [`modexp`] (constant-time modular exponentiation over a runtime-supplied modulus), [`keys`]
 //! (the CRT key types), the CRT-based RSASP1/RSAVP1 primitives (crate-private, in `rsa_core`),
 //! RSASSA-PKCS1-v1_5 ([`rsassa_pkcs1_v1_5`]), and RSASSA-PSS ([`rsassa_pss`]) are implemented,
-//! with SHA-256, SHA-384, and SHA-512 wired up for every modulus size this crate offers -- 1024
-//! and 1536 (verification only, per `# Scope` above) and 2048/3072/4096/8192 (both directions) --
-//! and validated against genuine vectors: Wycheproof for every size except 8192, which it has no
-//! key material for at all (cross-checked against BC Java instead); see each `rsa_*.rs` module's
-//! own tests for the specifics at each size. Every pairing is an instantiation of the generic
+//! with SHA-256, SHA-384, and SHA-512 wired up at 2048/3072/4096/8192 (both directions), and
+//! RSASSA-PKCS1-v1_5 alone at 1024 (SHA-256, SHA-384) and 1536 (verification only, per `# Scope`
+//! above), and validated against genuine vectors: Wycheproof for every size except 8192, which
+//! it has no key material for at all (cross-checked against BC Java instead); see
+//! `tests/rsa_<size>_tests.rs` for the specifics at each size. Every pairing is an instantiation of the generic
 //! schemes the key types' `SigningKey` / `DeterministicSigningKey` / `VerifyingKey` roles name
 //! (see `# Scope`), exercised through `bouncycastle_core_test_framework`'s shared signature
 //! conformance suite at each size.
@@ -323,8 +323,8 @@
 //! - **The result of every private-key operation is checked before it is released.** A
 //!   signature, a decapsulated secret value or a decrypted OAEP message is computed by the CRT
 //!   from two half-size exponentiations; were one of them wrong, through a fault in the
-//!   computation, the result would be right modulo one prime only, and such a
-//!   value must not leave the library. So the private key carries `e`, and the result `y` of
+//!   computation or an imported key with a composite factor, the result would be right modulo
+//!   one prime at most, and such a value must not leave the library. So the private key carries `e`, and the result `y` of
 //!   `x^d mod n` is returned only if `y^e mod n` is `x` again; otherwise signing fails with
 //!   `SignatureError::ComputationFault` and decapsulation or decryption with its one failure
 //!   error, and the result is wiped. The check costs one public exponentiation per operation.
@@ -352,8 +352,8 @@
 //!   components and `e` belong together (RFC 8017 §3.2's three congruences, in constant time).
 //!   They do not test `p` and `q` for primality, and a composite `p` or `q` can pass the result
 //!   check above on some inputs. [`keys::RsaPrivateComponents::validate`] is SP 800-56B Rev. 2
-//!   §6.4.1.4.3's validation of a key pair, primality included, for a key from elsewhere; it
-//!   costs about a hundred private-key operations, so it is the caller's to ask for. Keys
+//!   §6.4.1.4.3's validation of a key pair, primality included, for a key from elsewhere; its
+//!   cost is that of some tens of private-key operations, so it is the caller's to ask for. Keys
 //!   from this crate's own `keygen` meet FIPS 186-5 Appendix A.1.1's criteria by construction.
 //! - **Key generation is not constant-time.** Rejection sampling of prime candidates is
 //!   inherently data-dependent in how many candidates it draws and where each is rejected, and the

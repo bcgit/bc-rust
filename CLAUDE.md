@@ -503,8 +503,8 @@ Eight workflows under `.github/workflows/`, all triggered by pull requests:
 `cargo test --all` is the workspace run, so a failing test does block a PR; what CI does not run is
 `cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.
 
-The gitea origin has its own copies of the five pull-request checks under `.gitea/workflows/`
-(there is no Pages job). They differ from the GitHub ones in two ways: the toolchain is installed
+The gitea origin has its own copies of five of the pull-request checks under `.gitea/workflows/`
+(there is no Pages job, and `oaep-ct.yml` and `rsa-ct-stack.yml` have no gitea copy). They differ from the GitHub ones in two ways: the toolchain is installed
 with `rustup` in a shell step, and the test job takes its vectors from the runner's read-only
 `/bc-test-data` and `/wycheproof` mounts, failing if either is missing. Wycheproof's are read out
 of the mounted clone at the pinned commit (`git archive`), wherever the clone's `HEAD` is, so the
