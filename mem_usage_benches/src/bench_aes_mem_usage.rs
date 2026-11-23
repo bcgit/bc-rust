@@ -44,10 +44,31 @@
 //!
 //! The point of comparison is that a table-driven AES adds 256 B (`AESLightEngine`) to 8 KiB
 //! (T-tables) of static data on top of these numbers; this implementation adds zero.
+//!
+//! # XTS
+//!
+//! The `xts_*` benches measure `XTS_AES_128` and `XTS_AES_256`, whose figures are in their docs.
+//! Those are the deepest frame chain below each `measure` instance, counted as for
+//! `bench_gcm_siv_mem_usage`: a return address per hop over the `bouncycastle_*` symbols, the
+//! root's own not, and no leaf's red zone. They were read from the release build's assembly for
+//! `x86_64-unknown-linux-gnu`, with `main` calling `xts_all` so that none is dead-stripped:
+//!
+//! ```text
+//! RUSTFLAGS="-C symbol-mangling-version=v0" cargo rustc --release -p mem_usage_benches \
+//!     --bin bench_aes_mem_usage --target x86_64-unknown-linux-gnu -- --emit asm
+//! ```
+//!
+//! A function's frame is its largest `.cfi_def_cfa_offset`, and the v0 names tell the generic
+//! instances apart. Off Linux the link step fails for want of a Linux linker, after the `.s` files
+//! are written to `target/x86_64-unknown-linux-gnu/release/deps/`.
 
 #![allow(dead_code)]
 
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::{XTS_AES_128, XTS_AES_256};
+use bouncycastle::cipher::modes::XTSKey;
+use bouncycastle::core::hazmat::BlockPermutation;
+use bouncycastle::core::symmetric_key::FromKeyMaterial;
 
 use mem_usage_benches::block_cipher_mem_usage as bench;
 
@@ -63,10 +84,93 @@ const KEY_256: [u8; 32] = [
     0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7, 0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4,
 ];
 
+/// `Key_1 | Key_2` for XTS-AES-128: the key of NIST's ACVP-AES-XTS-2.0 tcId 125.
+const XTS_KEY_128: [u8; 32] = [
+    0xc3, 0xd3, 0xdc, 0x0b, 0x7a, 0x34, 0x5c, 0xcf, 0xe4, 0x8b, 0x23, 0x20, 0x75, 0xe4, 0x72, 0x99,
+    0xeb, 0xf1, 0x1e, 0x5c, 0x40, 0xe1, 0xbf, 0xe4, 0x2a, 0xcf, 0x96, 0xe1, 0x84, 0x0b, 0x73, 0x53,
+];
+/// `Key_1 | Key_2` for XTS-AES-256: counting bytes, whose halves differ.
+const XTS_KEY_256: [u8; 64] = [
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+    0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+    0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30,
+    0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40,
+];
+const XTS_TWEAK: [u8; 16] = [0x5a; 16];
+
+/// The data unit the XTS benches process: seven whole blocks and seven bytes. Encryption takes the
+/// four-, two- and one-block paths and then steals; decryption takes the four- and two-block paths
+/// and then undoes the stealing a block at a time. The data unit is the caller's buffer, so
+/// beyond which of those paths run, the call's stack does not depend on its length.
+const XTS_DATA_UNIT_LEN: usize = 119;
+
 fn print_struct_sizes() {
     bench::print_struct_size::<AES128Internal>("AES128Internal");
     bench::print_struct_size::<AES192Internal>("AES192Internal");
     bench::print_struct_size::<AES256Internal>("AES256Internal");
+    bench::print_struct_size::<XTS_AES_128>("XTS_AES_128");
+    bench::print_struct_size::<XTS_AES_256>("XTS_AES_256");
+}
+
+/// The XTS key, built out of line so that its frame is a sibling of the operation's.
+#[inline(never)]
+fn xts_load<K: FromKeyMaterial<N>, const N: usize>(bytes: &[u8; N]) -> K {
+    K::from_key_material(&bench::key(bytes)).unwrap()
+}
+
+// The XTS benches keep their output out of `measure`: `black_box` holds the result inside, and the
+// data unit, which is the caller's buffer, is printed after, so that the closure's frame is the
+// call's and nothing else. Key construction keeps its `Result` whole, the one slot a caller of
+// `from_key_material` needs, rather than unwrapping it into a second copy of the key.
+
+/// XTS key construction: the checks on `Key_1 | Key_2`, the split, and the two key expansions.
+fn xts_key_construction<K: FromKeyMaterial<N>, const N: usize>(name: &str, bytes: &[u8; N]) {
+    eprintln!("{name}::from_key_material");
+    let material = bench::key(bytes);
+    bench::measure(|| {
+        let key = K::from_key_material(&material);
+        assert!(core::hint::black_box(&key).is_ok());
+    });
+    print!("{}", core::mem::size_of::<K>());
+}
+
+/// XTS `encrypt_inplace` of one [`XTS_DATA_UNIT_LEN`]-byte data unit.
+fn xts_encrypt<P: BlockPermutation<16>, const N: usize>(name: &str, bytes: &[u8; N])
+where
+    XTSKey<P>: FromKeyMaterial<N>,
+{
+    eprintln!("{name}::encrypt_inplace, {XTS_DATA_UNIT_LEN} B");
+    let key: XTSKey<P> = xts_load(bytes);
+    let mut data_unit = [0x11u8; XTS_DATA_UNIT_LEN];
+    bench::measure(|| {
+        core::hint::black_box(key.encrypt_inplace(&XTS_TWEAK, &mut data_unit).unwrap());
+    });
+    print!("{data_unit:x?}");
+}
+
+/// XTS `decrypt_inplace` of one [`XTS_DATA_UNIT_LEN`]-byte data unit.
+fn xts_decrypt<P: BlockPermutation<16>, const N: usize>(name: &str, bytes: &[u8; N])
+where
+    XTSKey<P>: FromKeyMaterial<N>,
+{
+    eprintln!("{name}::decrypt_inplace, {XTS_DATA_UNIT_LEN} B");
+    let key: XTSKey<P> = xts_load(bytes);
+    let mut data_unit = [0x11u8; XTS_DATA_UNIT_LEN];
+    bench::measure(|| {
+        core::hint::black_box(key.decrypt_inplace(&XTS_TWEAK, &mut data_unit).unwrap());
+    });
+    print!("{data_unit:x?}");
+}
+
+/// Every XTS bench, so that a build with `main` calling this keeps all of them for the
+/// frame-layout remarks.
+fn xts_all() {
+    xts_key_construction::<XTS_AES_128, 32>("XTS_AES_128", &XTS_KEY_128);
+    xts_encrypt::<AES128Internal, 32>("XTS_AES_128", &XTS_KEY_128);
+    xts_decrypt::<AES128Internal, 32>("XTS_AES_128", &XTS_KEY_128);
+    xts_key_construction::<XTS_AES_256, 64>("XTS_AES_256", &XTS_KEY_256);
+    xts_encrypt::<AES256Internal, 64>("XTS_AES_256", &XTS_KEY_256);
+    xts_decrypt::<AES256Internal, 64>("XTS_AES_256", &XTS_KEY_256);
 }
 
 fn main() {
@@ -96,4 +200,11 @@ fn main() {
     // bench::decrypt_2blocks::<AES256Internal, 32>("AES256Internal", &KEY_256)
     // bench::encrypt_4blocks::<AES256Internal, 32>("AES256Internal", &KEY_256)
     // bench::decrypt_4blocks::<AES256Internal, 32>("AES256Internal", &KEY_256)
+    // xts_all()
+    // xts_key_construction::<XTS_AES_128, 32>("XTS_AES_128", &XTS_KEY_128)
+    // xts_encrypt::<AES128Internal, 32>("XTS_AES_128", &XTS_KEY_128)
+    // xts_decrypt::<AES128Internal, 32>("XTS_AES_128", &XTS_KEY_128)
+    // xts_key_construction::<XTS_AES_256, 64>("XTS_AES_256", &XTS_KEY_256)
+    // xts_encrypt::<AES256Internal, 64>("XTS_AES_256", &XTS_KEY_256)
+    // xts_decrypt::<AES256Internal, 64>("XTS_AES_256", &XTS_KEY_256)
 }

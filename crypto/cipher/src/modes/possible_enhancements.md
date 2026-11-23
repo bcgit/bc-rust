@@ -3,7 +3,6 @@ Possible additional modes or features to be added to this crate:
 * **CFB1**, the `s = 1` segment size (SP 800-38A Appendix F.3.1-F.3.6). Its segment is a single *bit*, so unlike [`Cfb`]
   and [`Cfb8`] it does not fit a byte-oriented API at all: a message is
   a bit string whose length need not be a multiple of 8, which this crate has no type for.
-* **AES-XTS**: https://csrc.nist.gov/pubs/sp/800/38/e/final used primarily in full-disk-encryption systems.
 * **GCM with a nonce other than 96 bits** (SP 800-38D Algorithm 4 step 2's `len(IV) != 96`
   branch, which derives `J0` by GHASHing the IV). Sec 5.2.1.1 recommends restricting support to
   96 bits, and [`Gcm`] does.
