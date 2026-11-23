@@ -10,8 +10,8 @@ use crate::rsassa_pss::RSASSA_PSS;
 use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
 pub use crate::size::RSA3072;
 use crate::size::RsaSize;
-use bouncycastle_sha2::{SHA256, SHA384, SHA512};
-use bouncycastle_sha3::SHAKE128;
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_digest::sha3::SHAKE128;
 
 /// Encoded length of an RSA-3072 public key: `n || e`.
 pub const PK_LEN: usize = RSA3072::PK_LEN;

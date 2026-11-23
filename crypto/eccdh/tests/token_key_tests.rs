@@ -13,14 +13,14 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrai
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, KDF, KeyAgreement};
 use bouncycastle_core_test_framework::DUMMY_SEED;
+use bouncycastle_digest::hkdf::HkdfDescription;
+use bouncycastle_digest::sha2::SHA256;
+use bouncycastle_digest::sha2::hkdf::HKDF_SHA256;
 use bouncycastle_ec::P256;
 use bouncycastle_eccdh::eccdh::ECCDH_HKDF_SHA256;
 use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
 use bouncycastle_eccdh::keys_common::AgreementKeyPair;
-use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_sha2::SHA256;
-use bouncycastle_sha2::hkdf::HKDF_SHA256;
 
 /// The device's side of the key: it holds the private key and never hands it out. A real token
 /// would hold a handle; this one holds the library's key so the test can run.

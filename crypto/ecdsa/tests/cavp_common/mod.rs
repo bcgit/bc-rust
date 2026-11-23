@@ -194,12 +194,12 @@ pub fn result_is_pass(fields: &BTreeMap<String, String>) -> bool {
 
 use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_core::traits::{CollisionResistantHash, PrivateKey, PublicKey};
+use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
 use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_sha2::SHA256;
 
 /// SEC 1 Section 2.3.3 case 3 (`04 || X || Y`), built dynamically rather than into a fixed-size
 /// array: `ECDSA_PKV.rsp`'s "out of range" vectors deliberately supply a coordinate wider than

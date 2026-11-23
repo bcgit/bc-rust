@@ -9,6 +9,7 @@ use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{HashOneShot, RNG};
+use bouncycastle_digest::sha2::{SHA256, SHA512};
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keys::{RsaPrivateComponents, RsaPublicComponents};
 use bouncycastle_rsa::modexp::{MontgomeryContext, mod_pow_public_exponent};
@@ -19,7 +20,6 @@ use bouncycastle_rsa::rsassa::{
 use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use bouncycastle_rsa::rsassa_pss::{Mgf1, NoSalt, RSASSA_PSS};
 use bouncycastle_rsa::size::RsaSize;
-use bouncycastle_sha2::{SHA256, SHA512};
 
 // A genuine RSA-2048 key: the first SHA-256 group of Wycheproof's
 // `rsa_pkcs1_2048_sig_gen_test.json` (`tests/rsa_2048_pkcs1_v1_5_tests.rs` has the provenance).

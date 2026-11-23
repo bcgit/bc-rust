@@ -27,8 +27,8 @@
 //! sampling of the NIST curves.
 //!
 //! The KDF is HKDF over the hash named by [`DHKEMParams::KDFHash`], computed on
-//! [`HMAC`](bouncycastle_hmac::HMAC) as RFC 5869 defines it, so any hash that
-//! [`HMAC`](bouncycastle_hmac::HMAC) supports can be used.
+//! [`HMAC`](bouncycastle_digest::hmac::HMAC) as RFC 5869 defines it, so any hash that
+//! [`HMAC`](bouncycastle_digest::hmac::HMAC) supports can be used.
 //!
 //! # Usage Examples
 //!

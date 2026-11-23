@@ -11,6 +11,8 @@ mod hash_mldsa_tests {
     };
     use bouncycastle_core::traits::{HashOneShot, SignatureSigner, SignatureVerifier};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
+    use bouncycastle_digest::sha2::{SHA256, SHA512};
+    use bouncycastle_digest::sha3::{SHAKE128, SHAKE256};
     use bouncycastle_pqc::mldsa::{
         HashMLDSA44_with_SHA256, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512,
         HashMLDSA87_with_SHA512, MLDSA44, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65,
@@ -21,8 +23,6 @@ mod hash_mldsa_tests {
     use bouncycastle_pqc::mldsa::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
     use bouncycastle_rng::DefaultRNG;
     use bouncycastle_rng::HashDRBG_SHA512;
-    use bouncycastle_sha2::{SHA256, SHA512};
-    use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
     /// The HashML-DSA views of one key pair under the hash `H`, for the framework, whose runners
     /// take a function that returns the keys by value: a view borrows its key, so the pair lives in

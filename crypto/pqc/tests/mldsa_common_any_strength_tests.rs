@@ -5,9 +5,9 @@ use bouncycastle_core::signature_key::PreHash;
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, AlgorithmOID, Hash, HashAlgParams, HashOneShot,
 };
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use bouncycastle_digest::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
 use bouncycastle_pqc::mldsa_common::hazmat::AnyStrength;
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
-use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
 
 /// Everything the wrapper reports and computes is `H`'s, the strength included; the rule is the
 /// one difference.

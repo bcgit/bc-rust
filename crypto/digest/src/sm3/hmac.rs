@@ -1,12 +1,12 @@
 //! HMAC over SM3, as specified in RFC 2104, taking into account NIST Implementation Guidance in
 //! FIPS 140-3 IG C.L.
 //!
-//! Uses [`bouncycastle_hmac`] to provide the HMAC-SM3 instantiation: [`HMAC_SM3`].
+//! Uses [`crate::hmac`] to provide the HMAC-SM3 instantiation: [`HMAC_SM3`].
 //!
-//! HMAC itself is implemented generically in [`bouncycastle_hmac`]; this module supplies the
+//! HMAC itself is implemented generically in [`crate::hmac`]; this module supplies the
 //! SM3-specific parameters via [`HMACParams`] and publishes the resulting type alias, so that HMAC
-//! over SM3 is found in this module, and [`bouncycastle_hmac`] serves as a utility crate rather than
-//! as part of the library's public API. See [`bouncycastle_hmac`] for the full description of the
+//! over SM3 is found in this module, and [`crate::hmac`] serves as a utility module rather than
+//! as part of the library's public API. See [`crate::hmac`] for the full description of the
 //! key and the [`MACGenerator`] / [`MACVerifier`] workers it hands out.
 //!
 //! A key of any length is accepted: per RFC 2104, a key longer than the hash's block -- the 512-bit
@@ -18,7 +18,7 @@
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-//! use bouncycastle_hmac::HmacKey;
+//! use bouncycastle_digest::hmac::HmacKey;
 //! use bouncycastle_digest::sm3::SM3;
 //!
 //! let key_material = KeyMaterial256::from_bytes_as_type(&[0x0b; 32], KeyType::MACKey).unwrap();
@@ -39,22 +39,22 @@
 //! * SM3 is a Merkle-Damgard construction and so is subject to length extension; `SM3(k || m)` is
 //!   not a secure MAC and HMAC-SM3 is the right construction for keyed hashing over SM3.
 
+use crate::hmac::{HMAC, HMACParams};
 use crate::sm3::SM3;
 use crate::sm3::hkdf::HKDF_SM3_NAME;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::HashAlgParams;
-use bouncycastle_hmac::{HMAC, HMACParams};
 
 /*** Imports needed for docs ***/
+#[allow(unused_imports)]
+use crate::hmac::HmacKey;
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyType;
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::MacVerificationKey;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{MACGenerator, MACVerifier};
-#[allow(unused_imports)]
-use bouncycastle_hmac::HmacKey;
 /*** end of doc-only imports ***/
 
 /*** String constants ***/

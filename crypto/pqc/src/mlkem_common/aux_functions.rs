@@ -6,7 +6,7 @@ use crate::mlkem_common::polynomial::{Polynomial, barrett_reduce, cond_sub_q};
 use crate::mlkem_common::{N, q};
 use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
-use bouncycastle_sha3::{SHAKE128, SHAKE256};
+use bouncycastle_digest::sha3::{SHAKE128, SHAKE256};
 
 /// Algorithm 5 ByteEncode_d(𝐹)
 /// Encodes an array of 𝑑-bit integers into a byte array for 1 ≤ 𝑑 ≤ 12.

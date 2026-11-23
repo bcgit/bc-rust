@@ -77,13 +77,13 @@
 //!   the function takes octets.
 
 use crate::pbkdf2::{PBKDF2_HMAC_SHA256, hazmat::pbkdf2_into};
+use crate::sha2::SHA256;
 use bouncycastle_core::errors::KDFError;
 #[cfg(feature = "std")]
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KDF};
-use bouncycastle_sha2::SHA256;
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::num::NonZeroU32;
 

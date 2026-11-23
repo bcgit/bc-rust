@@ -12,7 +12,7 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Hash, HashAlgParams, HashOneShot, RNG};
-use bouncycastle_sha2::{SHA256, SHA512};
+use bouncycastle_digest::sha2::{SHA256, SHA512};
 use bouncycastle_utils::{min, secret::Secret};
 
 use core::fmt::{Display, Formatter};

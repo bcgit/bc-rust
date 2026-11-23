@@ -5,7 +5,7 @@
 use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 pub use crate::size::RSA1024;
 use crate::size::RsaSize;
-use bouncycastle_sha2::{SHA256, SHA384};
+use bouncycastle_digest::sha2::{SHA256, SHA384};
 
 /// Encoded length of an RSA-1024 public key: `n || e`.
 pub const PK_LEN: usize = RSA1024::PK_LEN;

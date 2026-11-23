@@ -5,7 +5,7 @@
 use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 pub use crate::size::RSA1536;
 use crate::size::RsaSize;
-use bouncycastle_sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 
 /// Encoded length of an RSA-1536 public key: `n || e`.
 pub const PK_LEN: usize = RSA1536::PK_LEN;

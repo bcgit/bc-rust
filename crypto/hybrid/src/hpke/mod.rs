@@ -31,7 +31,7 @@
 //! use bouncycastle_ed::x25519::keygen;
 //! use bouncycastle_hybrid::hpke::{HpkeParams, HpkeRecipient, HpkeSender, NT};
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_sha2::SHA256;
+//! use bouncycastle_digest::sha2::SHA256;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let (pk_r, sk_r) = keygen(&mut rng).unwrap();

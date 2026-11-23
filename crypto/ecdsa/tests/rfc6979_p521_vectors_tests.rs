@@ -7,12 +7,12 @@
 use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_core::traits::{Algorithm, CollisionResistantHash, PrivateKey, PublicKey};
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA384, SHA512};
 use bouncycastle_ec::P521;
 use bouncycastle_ecdsa::ecdsa::ECDSA;
 use bouncycastle_ecdsa::ecdsa::EcdsaHash;
 use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 use bouncycastle_ecdsa::keys_common::DerivePublicKey;
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
 
 const SCALAR_LEN: usize = 66;
 const SIG_LEN: usize = 132;

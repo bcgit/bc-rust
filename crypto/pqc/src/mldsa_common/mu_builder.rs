@@ -4,7 +4,7 @@ use crate::mldsa_common::{H, MLDSA_MU_LEN, MLDSA_TR_LEN};
 use bouncycastle_core::errors::{SignatureError, SuspendableError};
 use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::traits::{FinishToken, Hash, Suspendable};
-use bouncycastle_sha3::SUSPENDED_SHA3_STATE_LEN;
+use bouncycastle_digest::sha3::SUSPENDED_SHA3_STATE_LEN;
 
 /// Implements parts of Algorithm 2 and Line 6 of Algorithm 7 of FIPS 204: the message
 /// representative mu, built as the message streams in. A key makes one with its

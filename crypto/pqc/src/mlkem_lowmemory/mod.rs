@@ -221,7 +221,7 @@
 //! ([`MLKEM512_HKDF_SHA256`], [`MLKEM768_HKDF_SHA512`], [`MLKEM1024_HKDF_SHA512`]), whose shared
 //! secret is HKDF-Hash(salt, 𝐾, info) over the ML-KEM secret 𝐾, of the length the parameters name. The
 //! parameters are a [`KdfParams`]: a borrowed description of the HKDF, its hash and RFC 5869's
-//! salt (`bouncycastle_hkdf::HkdfDescription`; key material of any length but
+//! salt (`bouncycastle_digest::hkdf::HkdfDescription`; key material of any length but
 //! [`KeyType::Unknown`](bouncycastle_core::key_material::KeyType::Unknown), a zero-length one
 //! being the absent salt), and the info. The description is readable, so a key that cannot run
 //! the derivation itself, one held in a token, can hand it on; a software key builds the HKDF
@@ -233,8 +233,8 @@
 //! use bouncycastle_pqc::mlkem_lowmemory::{KdfParams, KeyLen, MLKEM512, MLKEMTrait};
 //! use bouncycastle_core::kem_key::{EncapsulatingKey, DecapsulatingKey};
 //! use bouncycastle_core::key_material::KeyMaterial;
-//! use bouncycastle_hkdf::HkdfDescription;
-//! use bouncycastle_sha2::SHA256;
+//! use bouncycastle_digest::hkdf::HkdfDescription;
+//! use bouncycastle_digest::sha2::SHA256;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let (pk, sk) = MLKEM512::keygen(&mut rng).unwrap();

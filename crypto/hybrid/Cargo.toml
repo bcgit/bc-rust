@@ -9,8 +9,7 @@ bouncycastle-symmetric.workspace = true
 bouncycastle-cipher.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-dhkem.workspace = true
-bouncycastle-hmac.workspace = true
-bouncycastle-sha2.workspace = true
+bouncycastle-digest.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]

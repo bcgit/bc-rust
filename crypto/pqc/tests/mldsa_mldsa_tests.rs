@@ -1215,7 +1215,7 @@ mod mldsa_tests {
 
     #[test]
     fn serializable_state_mubuilder_rejects_wrong_variant() {
-        use bouncycastle_sha3::SHAKE128;
+        use bouncycastle_digest::sha3::SHAKE128;
 
         // A MuBuilder is always backed by SHAKE256. A serialized SHAKE128 state has the same length
         // (both are SHA3-family states), so this would deserialize into the wrong sponge if the

@@ -9,6 +9,7 @@ use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::DeterministicOneShotSigningKey;
 use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
+use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,
@@ -17,7 +18,6 @@ use bouncycastle_rsa::rsa_2048::{RSA2048KEMPrivateKey, RSASSA_PKCS1_v1_5_SHA256}
 use bouncycastle_rsa::rsassa_pss::RSASSA_PSS;
 use bouncycastle_rsa::size::{RsaSigningSize, RsaSize};
 use bouncycastle_rsa::{RSA2048, RSA3072, RSA4096, RSA8192};
-use bouncycastle_sha2::SHA256;
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 
 /// The scheme the encoding tests type their keys with; the bytes are the same under any.

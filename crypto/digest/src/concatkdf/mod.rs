@@ -68,14 +68,14 @@
 //!   library is given in practice comes near, though a 64-bit slice could in principle reach
 //!   the former; SHA-3 has no such limit.
 
+use crate::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use crate::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token, label_kdf_output};
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashAlgParams, HashOneShot, KDF};
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
-use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_utils::min;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;

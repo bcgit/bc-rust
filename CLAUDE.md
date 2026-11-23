@@ -58,7 +58,7 @@ bare `cargo build` builds only that package (no `cli`, no benches) and a bare `c
 
 ```
 cargo build --workspace         # whole workspace incl. `bc-rust` CLI binary
-cargo build -p bouncycastle-sha3   # one sub-crate
+cargo build -p bouncycastle-digest # one sub-crate
 cargo test --workspace          # all tests
 cargo test -p bouncycastle-pqc     # tests for one crate
 cargo test -p bouncycastle-pqc --test mlkem_mlkem_tests   # one integration test file
@@ -72,7 +72,7 @@ Quality / mutation testing:
 
 ```
 ./dev_scripts/quality_stats.sh ./crypto    # lines-of-code, docstring & fallibility metrics; CI publishes this
-cargo mutants -p bouncycastle-sha3         # config in .cargo/mutants.toml (output: custom_mutants_output/)
+cargo mutants -p bouncycastle-digest       # config in .cargo/mutants.toml (output: custom_mutants_output/)
 ```
 
 `-p` is as non-optional here as `--workspace` is for build and test, and for the same reason: a bare
@@ -127,7 +127,8 @@ crypto/<name>/
 
 A family crate holds its primitives as modules, each with the layout it had as a crate:
 `bouncycastle-hybrid` (`crypto/hybrid`: `hpke`), `bouncycastle-digest` (`crypto/digest`: `blake2`,
-`blake3`, `concatkdf`, `pbkdf2`, `ripemd`, `scrypt`, `sha1`, `sm3`, `x963kdf`), `bouncycastle-symmetric`
+`blake3`, `concatkdf`, `hkdf`, `hmac`, `pbkdf2`, `ripemd`, `scrypt`, `sha1`, `sha2`, `sha3`, `sm3`,
+`x963kdf`), `bouncycastle-symmetric`
 (`crypto/symmetric`: `aria`, `ascon`, `camellia`, `chacha20`, `chacha20_poly1305_aead`, `kbkdf`,
 `poly1305`, `sm4`, `tdes`) and `bouncycastle-pqc` (`crypto/pqc`: `mldsa`,
 `mldsa_lowmemory`, `mlkem`, `mlkem_lowmemory`, and the `mldsa_common` / `mlkem_common` modules the
@@ -456,8 +457,8 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 - `cargo mutants` is expected to be run on each crate; surviving mutants must be investigated but not all need to die (e.g. XOR/OR equivalences in crypto code are acceptable). Config lives in `.cargo/mutants.toml` (output dir `custom_mutants_output/`). Things to know about running it here:
   - **Always pass `-p <crate>`.** Without it only the root package is examined, which has no mutants, and the run "passes" vacuously — see [Common commands](#common-commands).
-  - **`-f`/`--file` does nothing while the checked-in config is in play**, because its `examine_globs` wins over the CLI filter: `cargo mutants -p bouncycastle-sha3 -f '**/kmac.rs'` still examines all ~874 mutants in the crate. To scope a run to the files you changed, copy `.cargo/mutants.toml` somewhere outside the repo, delete its `examine_globs` block, and pass `--config <copy>`; `-f` then filters as documented. (`--config /dev/null` also works but throws away `skip_calls`, `error_values`, `cap_lints` and the timeout multipliers with it.)
-  - **Add `--test-workspace true` when a crate's mutants are killed by another crate's tests.** The `core` traits are the case that matters: their default method bodies are exercised from the primitive crates (`sha2`, `sha3`, `hmac`, `hkdf`, `rng` and others), so a `-p bouncycastle-core` run alone reports them all as missed.
+  - **`-f`/`--file` does nothing while the checked-in config is in play**, because its `examine_globs` wins over the CLI filter: `cargo mutants -p bouncycastle-digest -f '**/kmac.rs'` still examines every mutant in the crate. To scope a run to the files you changed, copy `.cargo/mutants.toml` somewhere outside the repo, delete its `examine_globs` block, and pass `--config <copy>`; `-f` then filters as documented. (`--config /dev/null` also works but throws away `skip_calls`, `error_values`, `cap_lints` and the timeout multipliers with it.)
+  - **Add `--test-workspace true` when a crate's mutants are killed by another crate's tests.** The `core` traits are the case that matters: their default method bodies are exercised from the primitive crates (`digest`, `rng` and others), so a `-p bouncycastle-core` run alone reports them all as missed.
   - **Symlink the test data into `/tmp`.** `cargo mutants` copies the tree to `/tmp/cargo-mutants-<dir>-XXXX.tmp/`, so the `../../../bc-test-data/...` paths the vector suites use resolve to `/tmp/bc-test-data`. Without `ln -s <path-to>/bc-test-data /tmp/bc-test-data` those tests print their "not found" warning, pass vacuously, and every mutant they would have killed is reported as missed. Use `--jobs 3` and an explicit `--timeout`; note that a mutant which makes a squeeze return no bytes hangs a fill loop for real, so some timeouts are kills rather than false alarms.
   - **A family crate is one package.** `-p bouncycastle-pqc` examines every primitive module in it, so a change to one primitive is scoped by file, with the `--config` copy and `-f` described above.
   - **Builds use the `mutants` cargo profile** (`profile = "mutants"` in the config, defined in the root `Cargo.toml`): release optimisation without LTO, with incremental codegen. Measured on the low-memory ML-DSA code when it was a crate of its own (now `pqc::mldsa_lowmemory`), a mutant rebuilds in under a second and the suite runs in about 4 s, against 160 s per run unoptimised and an 80 s thin-LTO rebuild per mutant under `release`. Do not pass `--profile dev` or `--profile release` to "speed things up"; both are slower here.

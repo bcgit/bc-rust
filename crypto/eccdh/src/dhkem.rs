@@ -48,10 +48,10 @@ use bouncycastle_core::traits::{Algorithm, KEMDecapsulator, KEMEncapsulator, RNG
 use bouncycastle_dhkem::{
     AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEM, DHKEMParams, DeriveKeyPairForm, HpkeKem,
 };
+use bouncycastle_digest::hmac::HMACParams;
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_ec::curve::{Curve, JacobianPoint, private_scalar_from_be_bytes};
 use bouncycastle_ec::{P256, P384, P521};
-use bouncycastle_hmac::HMACParams;
-use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 

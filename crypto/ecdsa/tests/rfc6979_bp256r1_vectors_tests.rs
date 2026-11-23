@@ -17,11 +17,11 @@
 use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
+use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_ec::Bp256r1;
 use bouncycastle_ec::hazmat::bp256r1_comb::comb_multiply_base_point;
 use bouncycastle_ec::hazmat::bp256r1_scalar::Bp256r1Scalar;
 use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
-use bouncycastle_sha2::SHA256;
 
 struct Vector {
     d: &'static str,

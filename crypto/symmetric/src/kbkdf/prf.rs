@@ -16,7 +16,9 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, FromKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{Algorithm, MACGenerator};
-use bouncycastle_hmac::{HMACParams, HmacKey, LARGEST_HASHER_BLOCK_LEN, hazmat as hmac_hazmat};
+use bouncycastle_digest::hmac::{
+    HMACParams, HmacKey, LARGEST_HASHER_BLOCK_LEN, hazmat as hmac_hazmat,
+};
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 

@@ -17,7 +17,7 @@
 //! use bouncycastle_core::traits::{HashOneShot, SignatureSigner};
 //! use bouncycastle_pqc::mldsa_lowmemory::{MLDSA65, MLDSATrait};
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_sha2::SHA512;
+//! use bouncycastle_digest::sha2::SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let msg = b"The quick brown fox jumped over the lazy dog";
@@ -82,7 +82,7 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, CollisionResistantHash, FinishToken, RNG, SignatureSigner,
     SignatureVerifier,
 };
-use bouncycastle_sha2::{SHA256, SHA512};
+use bouncycastle_digest::sha2::{SHA256, SHA512};
 use bouncycastle_utils::const_str::ConstStr;
 use core::marker::PhantomData;
 
@@ -388,7 +388,7 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG
 /// use bouncycastle_core::signature_key::DeterministicSigningKey;
 /// use bouncycastle_core::traits::SignatureSigner;
 /// use bouncycastle_pqc::mldsa_lowmemory::MLDSA44PrivateKey;
-/// use bouncycastle_sha2::SHA512;
+/// use bouncycastle_digest::sha2::SHA512;
 ///
 /// fn signer(sk: &MLDSA44PrivateKey) -> impl SignatureSigner<2420> + '_ {
 ///     sk.as_prehash::<SHA512>().create_signer_deterministic(None).unwrap()
@@ -401,7 +401,7 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG
 /// use bouncycastle_core::signature_key::DeterministicSigningKey;
 /// use bouncycastle_pqc::mldsa_lowmemory::{MLDSA44, MLDSATrait};
 /// use bouncycastle_rng::HashDRBG_SHA512;
-/// use bouncycastle_sha2::SHA512;
+/// use bouncycastle_digest::sha2::SHA512;
 ///
 /// let signer = {
 ///     let (_pk, sk) = MLDSA44::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
@@ -462,7 +462,7 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG
 /// ```compile_fail,E0277
 /// use bouncycastle_core::signature_key::DeterministicOneShotSigningKey;
 /// use bouncycastle_pqc::mldsa_lowmemory::{MLDSA44, MLDSA44PrivateKey};
-/// use bouncycastle_sha2::SHA512;
+/// use bouncycastle_digest::sha2::SHA512;
 ///
 /// fn sign(sk: &MLDSA44PrivateKey) {
 ///     let _ = DeterministicOneShotSigningKey::<MLDSA44, 2420>::sign_deterministic(
@@ -487,7 +487,7 @@ pub struct HashMLDSAPrivateKey<'k, P: MLDSAParams, H, SK = MLDSASeedPrivateKey<P
 /// ```compile_fail,E0277
 /// use bouncycastle_core::signature_key::OneShotVerifyingKey;
 /// use bouncycastle_pqc::mldsa_lowmemory::{HashMLDSA44_with_SHA256, MLDSA44PublicKey};
-/// use bouncycastle_sha2::SHA512;
+/// use bouncycastle_digest::sha2::SHA512;
 ///
 /// fn verify(pk: &MLDSA44PublicKey, sig: &[u8]) {
 ///     let pk = pk.as_prehash::<SHA512>();
@@ -499,7 +499,7 @@ pub struct HashMLDSAPrivateKey<'k, P: MLDSAParams, H, SK = MLDSASeedPrivateKey<P
 /// ```compile_fail,E0277
 /// use bouncycastle_core::signature_key::OneShotVerifyingKey;
 /// use bouncycastle_pqc::mldsa_lowmemory::{MLDSA44, MLDSA44PublicKey};
-/// use bouncycastle_sha2::SHA512;
+/// use bouncycastle_digest::sha2::SHA512;
 ///
 /// fn verify(pk: &MLDSA44PublicKey, sig: &[u8]) {
 ///     let pk = pk.as_prehash::<SHA512>();

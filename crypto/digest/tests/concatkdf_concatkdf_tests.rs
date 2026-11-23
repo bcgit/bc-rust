@@ -13,8 +13,8 @@ use bouncycastle_digest::concatkdf::{
     CONCAT_KDF_SHA3_256_NAME, CONCAT_KDF_SHA256_NAME, CONCAT_KDF_SHA512_256_NAME, ConcatKDF,
     ConcatKDF_SHA3_256, ConcatKDF_SHA256, ConcatKDF_SHA512, ConcatKDF_SHA512_256, ConcatKDFParams,
 };
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
-use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use bouncycastle_digest::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 
 /// ACVP KDA OneStep SP800-56Cr2 sample set, SHA2-512, tcId 126 (the file `concatkdf_acvp.rs`
 /// reads from bc-test-data): FixedInfo is t || uPartyId || vPartyId || l, l = 1024 bits.

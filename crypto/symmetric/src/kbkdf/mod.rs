@@ -126,8 +126,8 @@ use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::{do_hazardous_operations, label_kdf_output};
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::traits::Algorithm;
-use bouncycastle_sha2::{SHA256, SHA384, SHA512};
-use bouncycastle_sha3::{SHA3_256, SHA3_512};
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_digest::sha3::{SHA3_256, SHA3_512};
 use bouncycastle_utils::min;
 use bouncycastle_utils::secret::Secret;
 

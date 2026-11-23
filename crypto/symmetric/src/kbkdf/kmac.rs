@@ -10,8 +10,8 @@ use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, KDF, XOFSqueezer};
-use bouncycastle_sha3::kmac::KMACXOFInternal;
-use bouncycastle_sha3::{SHAKE128Params, SHAKE256Params, SHAKEParams};
+use bouncycastle_digest::sha3::kmac::KMACXOFInternal;
+use bouncycastle_digest::sha3::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 

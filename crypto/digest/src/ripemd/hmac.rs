@@ -1,8 +1,8 @@
 //! HMAC over RIPEMD-160, as specified in RFC 2104; RFC 2286 gives the test cases.
 //!
-//! Uses [`bouncycastle_hmac`] to provide the instantiation [`HMAC_RIPEMD160`]. HMAC itself is
-//! implemented generically in [`bouncycastle_hmac`]; this module supplies the parameters via
-//! [`HMACParams`] and publishes the type alias. See [`bouncycastle_hmac`] for the full
+//! Uses [`crate::hmac`] to provide the instantiation [`HMAC_RIPEMD160`]. HMAC itself is
+//! implemented generically in [`crate::hmac`]; this module supplies the parameters via
+//! [`HMACParams`] and publishes the type alias. See [`crate::hmac`] for the full
 //! description of the key and the [`MACGenerator`] / [`MACVerifier`] workers it hands out.
 //!
 //! # Usage Examples
@@ -10,7 +10,7 @@
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-//! use bouncycastle_hmac::HmacKey;
+//! use bouncycastle_digest::hmac::HmacKey;
 //! use bouncycastle_digest::ripemd::RIPEMD160;
 //!
 //! let key_material = KeyMaterial256::from_bytes_as_type(&[0x0b; 20], KeyType::MACKey).unwrap();
@@ -31,11 +31,11 @@
 //!   HMAC-RIPEMD-160-96) does so on the array it gets back, and the verifier takes only the full
 //!   length.
 
+use crate::hmac::{HMAC, HMACParams};
 use crate::ripemd::RIPEMD160;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::HashAlgParams;
-use bouncycastle_hmac::{HMAC, HMACParams};
 
 /*** Imports needed for docs ***/
 #[allow(unused_imports)]

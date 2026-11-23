@@ -15,6 +15,8 @@ use bouncycastle_core::traits::{
     SignatureVerifier,
 };
 use bouncycastle_digest::ripemd::RIPEMD160;
+use bouncycastle_digest::sha2::{SHA256, SHA512};
+use bouncycastle_digest::sha3::{SHA3_256, SHA3_512, SHAKE128, SHAKE256};
 use bouncycastle_pqc::mldsa::hazmat::AnyStrength;
 use bouncycastle_pqc::mldsa::{
     HASH_ML_DSA_44_with_SHA256_NAME, HASH_ML_DSA_44_with_SHA512_NAME,
@@ -25,8 +27,6 @@ use bouncycastle_pqc::mldsa::{
     MLDSA87Params, MLDSATrait,
 };
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_sha2::{SHA256, SHA512};
-use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE128, SHAKE256};
 
 const MSG: &[u8] = b"The quick brown fox jumped over the lazy dog";
 const CTX: Option<&[u8]> = Some(b"a view");

@@ -36,7 +36,7 @@
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_ecdsa::keys_common::SignatureKeyPair;
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_sha2::SHA256;
+//! use bouncycastle_digest::sha2::SHA256;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let (pk, sk) = P256::generate_signature_key_pair::<SHA256>(&mut rng)?;
@@ -67,7 +67,7 @@
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_ecdsa::keys_common::SignatureKeyPair;
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_sha2::SHA256;
+//! use bouncycastle_digest::sha2::SHA256;
 //!
 //! let (pk, sk) = P256::generate_signature_key_pair::<SHA256>(&mut HashDRBG_SHA512::new_from_os())?;
 //!
@@ -102,8 +102,8 @@
 //! use bouncycastle_ecdsa::keys::ECDSAPublicKey;
 //! use bouncycastle_ecdsa::keys_common::SignatureKeyPair;
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_sha2::{SHA256, SHA384};
-//! use bouncycastle_sha3::SHA3_256;
+//! use bouncycastle_digest::sha2::{SHA256, SHA384};
+//! use bouncycastle_digest::sha3::SHA3_256;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let (pk, sk) = P256::generate_signature_key_pair::<SHA256>(&mut rng)?;
@@ -123,7 +123,7 @@
 //!
 //! ```
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_sha2::SHA256;
+//! use bouncycastle_digest::sha2::SHA256;
 //! use bouncycastle_core::traits::{PrivateKey, PublicKey};
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
@@ -153,7 +153,7 @@
 //! use bouncycastle_ecdsa::der;
 //! use bouncycastle_ecdsa::keys_common::SignatureKeyPair;
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_sha2::SHA256;
+//! use bouncycastle_digest::sha2::SHA256;
 //!
 //! let (pk, sk) = P256::generate_signature_key_pair::<SHA256>(&mut HashDRBG_SHA512::new_from_os())?;
 //! let raw = sk.sign(&mut HashDRBG_SHA512::new_from_os(), b"message", None)?;

@@ -14,6 +14,8 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, AlgorithmOID, CollisionResistantHash, HashAlgParams, HashOneShot,
     SignatureSigner, SignatureVerifier,
 };
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use bouncycastle_digest::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
 use bouncycastle_pqc::mldsa::hazmat::AnyStrength;
 use bouncycastle_pqc::mldsa::{
     MLDSA44, MLDSA44_SIG_LEN, MLDSA44PrivateKeyExpanded, MLDSA44PublicKeyExpanded, MLDSA65,
@@ -22,8 +24,6 @@ use bouncycastle_pqc::mldsa::{
     MLDSATrait,
 };
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
-use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
 
 const MSG: &[u8] = b"The quick brown fox jumped over the lazy dog";
 const CTX: Option<&[u8]> = Some(b"any strength");

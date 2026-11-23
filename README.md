@@ -141,7 +141,7 @@ subcommand in use.
 Or you can build a single sub-crate by name, for example:
 
 ```
-cargo build -p sha3
+cargo build -p bouncycastle-digest
 ```
 
 ... or any other cargo magic that you wish :)

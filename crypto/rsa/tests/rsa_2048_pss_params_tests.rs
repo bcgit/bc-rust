@@ -14,6 +14,8 @@ use bouncycastle_core::signature_key::{
 };
 use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, SignatureSigner, XOF};
 use bouncycastle_digest::sha1::SHA1;
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA512};
+use bouncycastle_digest::sha3::{SHA3_256, SHAKE128, SHAKE256};
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keys::{RsaPrivateComponents, RsaPublicComponents};
@@ -23,8 +25,6 @@ use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use bouncycastle_rsa::rsassa_pss::{Conventional, Mgf1, NoSalt, PssHash, RSASSA_PSS};
 use bouncycastle_rsa::size::{RsaSize, SignatureKeyPair};
 use bouncycastle_rsa::{RSA3072, RSA8192};
-use bouncycastle_sha2::{SHA224, SHA256, SHA512};
-use bouncycastle_sha3::{SHA3_256, SHAKE128, SHAKE256};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;

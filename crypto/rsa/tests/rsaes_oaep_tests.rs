@@ -24,12 +24,12 @@ use bouncycastle_core_test_framework::kem::TestFrameworkKEM;
 use bouncycastle_core_test_framework::key_transport::TestFrameworkKeyTransport;
 use bouncycastle_core_test_framework::test_data_loaders::wycheproof_json;
 use bouncycastle_digest::sha1::SHA1;
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_rsa::rsaes_oaep::{OaepHash, OaepParams, RSAES_OAEP};
 use bouncycastle_rsa::rsasve::{RSASVE, RsaKEMPrivateKey, RsaKEMPublicKey};
 use bouncycastle_rsa::size::{RsaSigningSize, RsaSize};
 use bouncycastle_rsa::{RSA2048, RSA3072, RSA4096, RSA8192};
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use serde_json::Value;
 use std::sync::OnceLock;
 

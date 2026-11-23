@@ -9,12 +9,12 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{Algorithm, HashOneShot, KDF};
+use bouncycastle_digest::hmac::HmacKey;
 use bouncycastle_digest::pbkdf2::{
     PBKDF2, PBKDF2_HMAC_SHA3_256, PBKDF2_HMAC_SHA224, PBKDF2_HMAC_SHA256, PBKDF2_HMAC_SHA384,
     PBKDF2_HMAC_SHA512,
 };
-use bouncycastle_hmac::HmacKey;
-use bouncycastle_sha2::SHA256;
+use bouncycastle_digest::sha2::SHA256;
 use core::num::NonZeroU32;
 
 /// RFC 7914 Section 11: (P, S, c, DK), with dkLen = 64.

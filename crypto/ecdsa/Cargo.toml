@@ -6,15 +6,12 @@ edition.workspace = true
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-ec.workspace = true
-bouncycastle-hmac.workspace = true
-bouncycastle-sha2.workspace = true
+bouncycastle-digest.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
-bouncycastle-digest.workspace = true
 criterion.workspace = true
-bouncycastle-sha3.workspace = true
 serde_json = "1.0"
 bouncycastle-rng.workspace = true
 

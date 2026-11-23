@@ -69,13 +69,13 @@
 //!   `Zeroized` one, is derived from (the output is then `Hash(Counter || SharedInfo)`) and
 //!   yields `Unknown` output with no strength, the trait's rule for material it cannot credit.
 
+use crate::sha2::{SHA224, SHA256, SHA384, SHA512};
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token, label_kdf_output};
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashAlgParams, HashOneShot, KDF};
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
 use bouncycastle_utils::min;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;

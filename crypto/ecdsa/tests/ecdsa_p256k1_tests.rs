@@ -4,8 +4,8 @@
 mod ecdsa_common;
 
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_ec::Secp256K1;
-use bouncycastle_sha2::SHA256;
 
 #[test]
 fn framework_and_metadata() {

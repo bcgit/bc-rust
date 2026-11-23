@@ -17,8 +17,8 @@ mod common;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::KDF;
 use bouncycastle_core_test_framework::test_data_loaders::Value;
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
-use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+use bouncycastle_digest::sha2::{SHA224, SHA256, SHA384, SHA512};
+use bouncycastle_digest::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_symmetric::kbkdf::{
     CounterPosition, CounterSize, IterationCounterPosition, KDF_Counter, KDF_DoublePipeline,
     KDF_Feedback, PRF_CMAC_AES128, PRF_CMAC_AES192, PRF_CMAC_AES256, PRF_HMAC, Prf,

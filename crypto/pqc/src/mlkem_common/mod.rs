@@ -26,7 +26,7 @@ pub mod params;
 #[doc(hidden)]
 pub mod polynomial;
 
-use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE256};
+use bouncycastle_digest::sha3::{SHA3_256, SHA3_512, SHAKE256};
 
 /* FIPS 203, Section 8: the constants that are the same for all parameter sets. */
 

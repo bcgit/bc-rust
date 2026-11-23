@@ -38,12 +38,12 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, CollisionResistantHash, FinishToken, HashAlgParams, RNG,
     SignatureSigner, SignatureVerifier,
 };
+use bouncycastle_digest::hmac::HMACParams;
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_ec::curve::{
     Curve, FieldElement, JacobianPoint, PublicScalar, ScalarFieldElement,
 };
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
-use bouncycastle_hmac::HMACParams;
-use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_utils::const_str::ConstStr;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::marker::PhantomData;

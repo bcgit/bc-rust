@@ -10,6 +10,7 @@ use bouncycastle_core::key_transport_key::KeyTransportEncryptingKey;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{OneShotSigningKey, SigningKey};
 use bouncycastle_core::traits::RNG;
+use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keygen::is_probable_prime;
 use bouncycastle_rsa::keys::RsaPrivateComponents;
@@ -17,7 +18,6 @@ use bouncycastle_rsa::rsa_2048::{RSA2048KEMPublicKey, RSASSA_PSS_SHA256};
 use bouncycastle_rsa::rsaes_oaep::OaepParams;
 use bouncycastle_rsa::rsassa::sign_from_hash;
 use bouncycastle_rsa::size::{KemKeyPair, RsaSigningSize, SignatureKeyPair};
-use bouncycastle_sha2::SHA256;
 use core::num::NonZeroUsize;
 
 // A genuine RSA-2048 key: the first SHA-256 group of Wycheproof's

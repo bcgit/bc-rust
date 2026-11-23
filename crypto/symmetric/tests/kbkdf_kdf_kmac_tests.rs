@@ -16,7 +16,7 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::MacGenerationKey;
 use bouncycastle_core::traits::{Algorithm, KDF};
-use bouncycastle_sha3::kmac::{KMAC128Key, KMAC256Key};
+use bouncycastle_digest::sha3::kmac::{KMAC128Key, KMAC256Key};
 use bouncycastle_symmetric::kbkdf::{KDF_KMAC128, KDF_KMAC256, MAX_KMAC_KDK_LEN};
 use common::{hex_value, random};
 use std::collections::HashMap;

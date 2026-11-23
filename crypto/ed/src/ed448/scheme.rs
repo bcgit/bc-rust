@@ -15,7 +15,7 @@ use super::scalar::{self, SCALAR_LEN};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::traits::{Hash, XOFSqueezer};
-use bouncycastle_sha3::SHAKE256;
+use bouncycastle_digest::sha3::SHAKE256;
 use bouncycastle_utils::secret::Secret;
 
 /// Octets in an Ed448 private key (RFC 8032 Section 5.2.5).

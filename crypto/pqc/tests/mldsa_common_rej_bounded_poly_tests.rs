@@ -5,11 +5,11 @@
 //! here.
 
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
+use bouncycastle_digest::sha3::SHAKE256;
 use bouncycastle_pqc::mldsa_common::aux_functions::rej_bounded_poly;
 use bouncycastle_pqc::mldsa_common::params::{
     MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParamsBase,
 };
-use bouncycastle_sha3::SHAKE256;
 
 /// The bytes the function squeezes at a time.
 const BUFFER_LEN: usize = 272;

@@ -8,12 +8,12 @@ use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::traits::KeyAgreement;
+use bouncycastle_digest::hkdf::HkdfDescription;
+use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_digest::x963kdf::X963KDF_SHA256;
 use bouncycastle_ec::P256;
 use bouncycastle_eccdh::keys_common::AgreementKeyPair;
-use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_rng::HashDRBG_SHA512;
-use bouncycastle_sha2::SHA256;
 
 fn main() {
     let mut rng = HashDRBG_SHA512::new_from_os();

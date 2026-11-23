@@ -7,8 +7,8 @@
 //!
 //! A key is made from raw bytes by [`hazmat::key_from_bytes`], for a construction that derives a
 //! fresh key for every message, as ChaCha20-Poly1305 does. For a key that authenticates any
-//! number of messages, use a reusable MAC such as HMAC (`bouncycastle-hmac`) or KMAC
-//! (`bouncycastle-sha3`), or, to encrypt as well, a ChaCha20-Poly1305 key
+//! number of messages, use a reusable MAC such as HMAC (`bouncycastle_digest::hmac`) or KMAC
+//! (`bouncycastle_digest::sha3`), or, to encrypt as well, a ChaCha20-Poly1305 key
 //! ([`chacha20_poly1305_aead`](crate::chacha20_poly1305_aead)), which derives the Poly1305 key from each nonce.
 //!
 //! # Usage Examples

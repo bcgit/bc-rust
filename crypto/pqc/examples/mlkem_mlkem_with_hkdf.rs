@@ -11,10 +11,10 @@ use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::traits::KEMDecapsulator;
-use bouncycastle_hkdf::HkdfDescription;
+use bouncycastle_digest::hkdf::HkdfDescription;
+use bouncycastle_digest::sha2::SHA512;
 use bouncycastle_pqc::mlkem::{MLKEM768, MLKEM768_CT_LEN, MLKEMTrait};
 use bouncycastle_rng::HashDRBG_SHA512;
-use bouncycastle_sha2::SHA512;
 
 fn main() {
     let mut rng = HashDRBG_SHA512::new_from_os();
