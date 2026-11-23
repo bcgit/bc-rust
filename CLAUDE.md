@@ -489,9 +489,10 @@ Eight workflows under `.github/workflows/`, all triggered by pull requests:
   message undefined, with a variable-time control, and greps its thumbv6m and riscv32i assembly for a
   multiply, divide or unexpected call.
 - `rsa-ct-stack.yml`: two checks of `crypto/rsa`, on the runner's stable toolchain. `dev_scripts/check_rsa_ct.sh`
-  with valgrind runs `dev_scripts/rsa_ct_harness` (the Montgomery setup over a secret modulus and the checked
-  CRT, through the crate's public API) under memcheck with the key undefined, with two controls that must be
-  reported. `dev_scripts/check_rsa_stack.sh` runs `dev_scripts/rsa_stack_harness`, which paints the stack, runs
+  with valgrind runs `dev_scripts/rsa_ct_harness` (the Montgomery setup over a secret modulus, the checked
+  CRT and a key constructor's congruences; the last two through the crate's `ct_harness` module, which exists
+  only under `--cfg bouncycastle_rsa_ct_harness`) under memcheck with the key undefined, with controls that must
+  be reported. `dev_scripts/check_rsa_stack.sh` runs `dev_scripts/rsa_stack_harness`, which paints the stack, runs
   each private-key operation and searches what it used for the key and what was derived from it. The second is
   sized by measurement for an x86-64 release build, so a new compiler that lays frames out deeper fails it: that
   is the check working, and the fix is to re-measure the wipe sizes, not to drop the step.

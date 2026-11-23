@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # Checks that the RSA private-key arithmetic does nothing that depends on the key, on the host,
-# under valgrind memcheck, over dev_scripts/rsa_ct_harness, which reaches the arithmetic through
-# bouncycastle-rsa's public API with the secrets left undefined: memcheck then reports any
-# conditional jump or address computed from them.
+# under valgrind memcheck, over dev_scripts/rsa_ct_harness, which runs the arithmetic with the
+# secrets left undefined: memcheck then reports any conditional jump or address computed from
+# them. The checked exponentiation and the congruences are not public API (every public
+# operation over them branches on their verdict, which memcheck would report), so the library
+# is built here with `--cfg bouncycastle_rsa_ct_harness`, which adds a module that names them
+# and changes nothing else.
 #
 # - context: `MontgomeryContext::for_secret_modulus` over an undefined modulus, the setup the
 #   CRT makes over p and over q in every private-key operation.
-# - crt: `RsaSigningSize::crt_exp` at RSA-2048 with p, q, dP, dQ and qInv undefined: the two
+# - crt: the size's `crt_exp` at RSA-2048 with p, q, dP, dQ and qInv undefined: the two
 #   exponentiations, the recombination, the check of the result against e and the masked write
 #   of the output, which is all of RSASP1 and RSADP below the range check of their input.
-# - import: `RsaSigningSize::crt_congruences` at RSA-2048 with p, q, dP, dQ and qInv undefined:
+# - import: the size's `crt_congruences` at RSA-2048 with p, q, dP, dQ and qInv undefined:
 #   the three congruences a private key's constructor and decoder check of its components.
 #
 # All three must be clean. The three controls must be reported, so that a memcheck that reports
@@ -35,7 +38,7 @@ if ! command -v valgrind >/dev/null; then
     exit 2
 fi
 rm -rf target
-cargo build --release --bin memcheck
+RUSTFLAGS="--cfg bouncycastle_rsa_ct_harness" cargo build --release --bin memcheck
 for mode in context crt import control-context control-crt control-import; do
     rc=0
     valgrind -q --malloc-fill=0x00 --error-exitcode=9 target/release/memcheck "$mode" >"target/memcheck-$mode.log" 2>&1 || rc=$?

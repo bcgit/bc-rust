@@ -96,7 +96,28 @@ pub trait RsaSize:
 
 /// A size this crate signs, generates keys and establishes keys at: RSA-2048 and up (SP
 /// 800-131A's 112-bit floor).
-pub trait RsaSigningSize: RsaSize {
+///
+/// The private-key exponentiation is not among its methods: a private key is used through a
+/// scheme, by the roles its key types implement.
+///
+/// ```compile_fail,E0599
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::keys::RsaPrivateComponents;
+/// use bouncycastle_rsa::size::{RsaSigningSize, RsaSize};
+/// fn raw(sk: &RsaPrivateComponents<RSA2048>, m: &[u64; 32], out: &mut [u64; 32]) {
+///     let _ = RSA2048::crt_exp(sk, m, out);
+/// }
+/// ```
+///
+/// ```
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::keys::RsaPrivateComponents;
+/// use bouncycastle_rsa::size::{RsaSigningSize, RsaSize};
+/// fn modulus(sk: &RsaPrivateComponents<RSA2048>) -> [u8; 256] {
+///     RSA2048::be_bytes_from_limbs(sk.n())
+/// }
+/// ```
+pub trait RsaSigningSize: RsaSize + sealed::PrivateKeyEngine {
     /// The Miller-Rabin rounds run on a prime of this size: 25 at every size, the count the FIPS
     /// 140-3 Implementation Guidance (IG C.F, option 2) strongly recommends in place of FIPS 186-5
     /// Table B.1's minimum, which is 5 for a 1024-bit prime and 4 for larger ones.
@@ -128,32 +149,6 @@ pub trait RsaSigningSize: RsaSize {
     fn modulus_from_primes(p: &Self::HalfLimbs, q: &Self::HalfLimbs) -> Self::Limbs;
     /// Whether `x < y`, at prime width.
     fn half_is_less(x: &Self::HalfLimbs, y: &Self::HalfLimbs) -> bool;
-    /// Whether the CRT components and `e` belong together, RFC 8017 §3.2, for odd `p` and
-    /// `q`: `e * dP == 1 (mod (p - 1))`, `e * dQ == 1 (mod (q - 1))` and
-    /// `q * qInv == 1 (mod p)`, in that order. Constant time in the components.
-    fn crt_congruences(
-        p: &Self::HalfLimbs,
-        q: &Self::HalfLimbs,
-        d_p: &Self::HalfLimbs,
-        d_q: &Self::HalfLimbs,
-        q_inv: &Self::HalfLimbs,
-        e: u64,
-    ) -> [Condition<u64>; 3];
-    /// SP 800-56B Rev. 2 §6.4.1.4.3 validation of the key pair `sk` holds;
-    /// [`RsaPrivateComponents::validate`] is the way to it.
-    fn validate_key_pair(
-        sk: &RsaPrivateComponents<Self>,
-        rng: &mut dyn RNG,
-    ) -> Result<(), SignatureError>;
-    /// `m^d mod n` by the CRT (RSASP1 / RSADP's exponentiation), `m < n`, into `out`, constant
-    /// time in the key, with the result checked before it is released: TRUE if `out^e mod n` is
-    /// `m` again, as it is for a sound key and a sound computation. Otherwise FALSE, with
-    /// `out` zero, and the caller reports a failure.
-    fn crt_exp(
-        sk: &RsaPrivateComponents<Self>,
-        m: &Self::Limbs,
-        out: &mut Self::Limbs,
-    ) -> Condition<u64>;
 }
 
 /// Implemented on a signing size marker: a signature key pair for one scheme and hash, so a
@@ -449,7 +444,9 @@ impl RsaSigningSize for RSA2048 {
     fn half_is_less(x: &Self::HalfLimbs, y: &Self::HalfLimbs) -> bool {
         nat::sub(x, y).1 == 1
     }
+}
 
+impl sealed::PrivateKeyEngine for RSA2048 {
     fn crt_congruences(
         p: &Self::HalfLimbs,
         q: &Self::HalfLimbs,
@@ -553,7 +550,9 @@ impl RsaSigningSize for RSA3072 {
     fn half_is_less(x: &Self::HalfLimbs, y: &Self::HalfLimbs) -> bool {
         nat::sub(x, y).1 == 1
     }
+}
 
+impl sealed::PrivateKeyEngine for RSA3072 {
     fn crt_congruences(
         p: &Self::HalfLimbs,
         q: &Self::HalfLimbs,
@@ -657,7 +656,9 @@ impl RsaSigningSize for RSA4096 {
     fn half_is_less(x: &Self::HalfLimbs, y: &Self::HalfLimbs) -> bool {
         nat::sub(x, y).1 == 1
     }
+}
 
+impl sealed::PrivateKeyEngine for RSA4096 {
     fn crt_congruences(
         p: &Self::HalfLimbs,
         q: &Self::HalfLimbs,
@@ -761,7 +762,9 @@ impl RsaSigningSize for RSA8192 {
     fn half_is_less(x: &Self::HalfLimbs, y: &Self::HalfLimbs) -> bool {
         nat::sub(x, y).1 == 1
     }
+}
 
+impl sealed::PrivateKeyEngine for RSA8192 {
     fn crt_congruences(
         p: &Self::HalfLimbs,
         q: &Self::HalfLimbs,
@@ -799,6 +802,44 @@ impl RsaSigningSize for RSA8192 {
     }
 }
 
-mod sealed {
+pub(crate) mod sealed {
+    use super::{RsaSize, SignatureError};
+    use crate::keys::RsaPrivateComponents;
+    use bouncycastle_core::traits::RNG;
+    use bouncycastle_utils::ct::Condition;
+
     pub trait Sealed {}
+
+    /// What a signing size routes of the private key's arithmetic and is no part of the
+    /// public API: the checked exponentiation above all, which is RSADP on any key and a way
+    /// to sign nothing. A supertrait of `RsaSigningSize` in a module that is private to the
+    /// crate, so that code outside the crate can neither name it nor call its methods.
+    pub trait PrivateKeyEngine: RsaSize {
+        /// Whether the CRT components and `e` belong together, RFC 8017 §3.2, for odd `p` and
+        /// `q`: `e * dP == 1 (mod (p - 1))`, `e * dQ == 1 (mod (q - 1))` and
+        /// `q * qInv == 1 (mod p)`, in that order. Constant time in the components.
+        fn crt_congruences(
+            p: &Self::HalfLimbs,
+            q: &Self::HalfLimbs,
+            d_p: &Self::HalfLimbs,
+            d_q: &Self::HalfLimbs,
+            q_inv: &Self::HalfLimbs,
+            e: u64,
+        ) -> [Condition<u64>; 3];
+        /// SP 800-56B Rev. 2 §6.4.1.4.3 validation of the key pair `sk` holds;
+        /// [`RsaPrivateComponents::validate`] is the way to it.
+        fn validate_key_pair(
+            sk: &RsaPrivateComponents<Self>,
+            rng: &mut dyn RNG,
+        ) -> Result<(), SignatureError>;
+        /// `m^d mod n` by the CRT (RSASP1 / RSADP's exponentiation), `m < n`, into `out`, constant
+        /// time in the key, with the result checked before it is released: TRUE if `out^e mod n` is
+        /// `m` again, as it is for a sound key and a sound computation. Otherwise FALSE, with
+        /// `out` zero, and the caller reports a failure.
+        fn crt_exp(
+            sk: &RsaPrivateComponents<Self>,
+            m: &Self::Limbs,
+            out: &mut Self::Limbs,
+        ) -> Condition<u64>;
+    }
 }

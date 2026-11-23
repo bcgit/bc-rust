@@ -1,10 +1,10 @@
 //! RSASP1 and RSAVP1 (RFC 8017 §5.2.1, §5.2.2): the raw signature and verification primitives,
 //! and the checked CRT exponentiation RSASP1 and RSADP (§5.1.2) share.
 //! [`rsasp1`] and [`rsavp1`] are private to the crate and reached through a padding scheme
-//! only. The exponentiations beneath them are public, as
-//! [`RsaSize::public_exp`] and [`RsaSigningSize::crt_exp`]: they are methods of the sealed size
-//! traits, which is how code generic over a size reaches the arithmetic at one width, and a
-//! public trait's methods cannot be less public than it. They are the engine and not a way to
+//! only. Code generic over a size reaches the exponentiations beneath them at one width
+//! through the size: the public one is [`RsaSize::public_exp`], and the private one is
+//! `crt_exp` of `size::sealed::PrivateKeyEngine`, a supertrait of [`RsaSigningSize`] that
+//! code outside the crate cannot name. They are the engine and not a way to
 //! sign. RFC 8017's introduction to §5 says why: "\[primitives\] are not intended to provide
 //! security apart from a scheme" -- "textbook RSA" (signing a bare integer with no padding) is
 //! malleable and vulnerable to existential forgery.
@@ -475,7 +475,8 @@ mod tests {
         use crate::rsaes_oaep::OaepParams;
         use crate::rsassa;
         use crate::rsasve::RsaKEMPrivateKey;
-        use crate::size::{RSA2048, RsaSigningSize, RsaSize};
+        use crate::size::sealed::PrivateKeyEngine;
+        use crate::size::{RSA2048, RsaSize};
         use bouncycastle_core::errors::{KEMError, KeyTransportError, SignatureError};
         use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
         use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};

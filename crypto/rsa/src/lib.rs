@@ -436,4 +436,13 @@ pub mod rsasve;
 pub mod rsasve_kdf;
 pub mod size;
 
+/// The private-key arithmetic a signing size routes, for `dev_scripts/rsa_ct_harness` to run
+/// under memcheck with the key undefined. Compiled only under
+/// `--cfg bouncycastle_rsa_ct_harness`, which `dev_scripts/check_rsa_ct.sh` sets: no build of
+/// the library has it.
+#[cfg(bouncycastle_rsa_ct_harness)]
+pub mod ct_harness {
+    pub use crate::size::sealed::PrivateKeyEngine;
+}
+
 pub use size::{RSA1024, RSA1536, RSA2048, RSA3072, RSA4096, RSA8192};

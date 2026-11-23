@@ -5,6 +5,7 @@
 //! These tests are meant to be run with `--release` as well as without.
 
 use bouncycastle_core::errors::{RNGError, SignatureError};
+use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{HashOneShot, RNG};
@@ -16,7 +17,7 @@ use bouncycastle_rsa::rsassa::{
 };
 use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use bouncycastle_rsa::rsassa_pss::{Mgf1, NoSalt, RSASSA_PSS};
-use bouncycastle_rsa::size::{RsaSigningSize, RsaSize};
+use bouncycastle_rsa::size::RsaSize;
 use bouncycastle_sha2::{SHA256, SHA512};
 
 // A genuine RSA-2048 key: the first SHA-256 group of Wycheproof's
@@ -116,12 +117,13 @@ fn pkcs1_v1_5_from_hash_refuses_a_hash_of_the_wrong_length() {
 }
 
 /// What a release build used to sign for a 20-byte "SHA-256 hash": a `DigestInfo` naming
-/// SHA-256 over a 20-byte OCTET STRING. Made here by hand and signed with the raw private-key
-/// operation, it is a well-formed signature of that structure, and is not accepted for those
-/// 20 bytes: by `verify_from_hash`, which reports the length, or by the scheme's decoding.
+/// SHA-256 over a 20-byte OCTET STRING. Made here by hand, with its signature under the test
+/// key by Python 3.12 (`pow(em, d, n)`), which the public exponentiation takes back to the
+/// structure: a well-formed signature of it, and not accepted for those 20 bytes, by
+/// `verify_from_hash`, which reports the length, or by the scheme's decoding.
 #[test]
 fn pkcs1_v1_5_does_not_verify_a_digest_info_over_a_short_hash() {
-    let (pk, sk) = key_pair();
+    let (pk, _) = key_pair();
     let short = [0x11u8; 20];
     // RFC 8017 Section 9.2 note 1's SHA-256 prefix with its two lengths cut from 0x31 and 0x20
     // to 0x25 and 0x14, then the 20 bytes.
@@ -136,9 +138,22 @@ fn pkcs1_v1_5_does_not_verify_a_digest_info_over_a_short_hash() {
     em[256 - t.len() - 1] = 0x00;
     em[256 - t.len()..].copy_from_slice(&t);
 
-    let mut s = [0u64; 32];
-    assert!(RSA2048::crt_exp(&sk, &RSA2048::limbs_from_be_bytes(&em), &mut s).to_bool());
-    let signature = RSA2048::be_bytes_from_limbs(&s);
+    let signature: [u8; 256] = hex_decode(concat!(
+        "01060f84ad7e852a590229460ecedaf84de77c0f1d050a8d0b880db39aabf17e07ab11e726141b00",
+        "2e1c8f7efae8c57adfbfca4ba027a25706e61e407f0e623d87207f09e30f3c4eba05f2ce1fba2631",
+        "9b4f57072f8a7393092a9c1fe82f467dcd8f29ea2adc9209932847dbabf0faf43eb81ccedc75a194",
+        "6bf69f5986120ed0e080fce97b030aa874fd4be4755f035cb784f938d978b65779207b80eebf3bcb",
+        "05dbb114a0a57c3395f38de2f25d2a4e18ba34b9d841566b5ebcc77f7e4e0902e67c20374e6d188d",
+        "ccfc30c5a9b7349dbca0bc45363d9d5d55dcfdfd20b8b9c172b2068d8d2db6252d7e072d7e347417",
+        "a0e41df4927f2b8b65c9b414cfc38398",
+    ))
+    .unwrap()
+    .try_into()
+    .unwrap();
+    assert_eq!(
+        RSA2048::public_exp(pk.n(), pk.e(), &RSA2048::limbs_from_be_bytes(&signature)),
+        RSA2048::limbs_from_be_bytes(&em)
+    );
 
     assert_eq!(rsassa::verify_from_hash(&pk.key::<V15>(), &short, &signature), Err(HASH_LEN));
     assert!(!V15::emsa_verify::<256>(&short, &em));

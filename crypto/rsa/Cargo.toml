@@ -13,6 +13,11 @@ bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
 bouncycastle-utils.workspace = true
 
+# `bouncycastle_rsa_ct_harness` is set by dev_scripts/check_rsa_ct.sh alone; see `ct_harness`
+# in src/lib.rs.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(bouncycastle_rsa_ct_harness)'] }
+
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-rng.workspace = true
