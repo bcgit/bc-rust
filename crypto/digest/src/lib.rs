@@ -5,6 +5,7 @@
 //! | [`blake2`]    | BLAKE2b-512 and BLAKE2s-256 (RFC 7693), unkeyed and keyed             |
 //! | [`blake3`]    | BLAKE3: hash, keyed hash, key derivation and XOF                      |
 //! | [`ripemd`]    | RIPEMD-128, -160, -256 and -320, and HMAC over RIPEMD-160             |
+//! | [`sha1`]      | SHA-1 (FIPS 180-4), for existing protocols only                       |
 //! | [`sm3`]       | SM3 (GB/T 32905-2016), with HMAC and HKDF over it                     |
 //! | [`pbkdf2`]    | PBKDF2 (RFC 8018 Section 5.2) over HMAC                               |
 //! | [`scrypt`]    | scrypt (RFC 7914)                                                     |
@@ -47,5 +48,6 @@ pub mod concatkdf;
 pub mod pbkdf2;
 pub mod ripemd;
 pub mod scrypt;
+pub mod sha1;
 pub mod sm3;
 pub mod x963kdf;

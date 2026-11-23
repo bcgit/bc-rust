@@ -49,6 +49,10 @@ name = "bench_sm2_mem_usage"
 path = "src/bench_sm2_mem_usage.rs"
 
 [[bin]]
+name = "bench_rsa_mem_usage"
+path = "src/bench_rsa_mem_usage.rs"
+
+[[bin]]
 name = "bench_ascon_mem_usage"
 path = "src/bench_ascon_mem_usage.rs"
 
@@ -107,6 +111,10 @@ path = "src/bench_pbkdf2_mem_usage.rs"
 [[bin]]
 name = "bench_scrypt_mem_usage"
 path = "src/bench_scrypt_mem_usage.rs"
+
+[[bin]]
+name = "bench_sha1_mem_usage"
+path = "src/bench_sha1_mem_usage.rs"
 
 [[bin]]
 name = "bench_sm3_mem_usage"

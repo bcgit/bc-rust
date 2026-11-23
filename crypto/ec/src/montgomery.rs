@@ -46,6 +46,16 @@
 //! from the Python prototype used to check it.
 
 /// Schoolbook widening multiply of two `L`-limb operands into their `L2 = 2L`-limb product.
+/// `L2` is checked when the function is instantiated:
+///
+/// ```compile_fail,E0080
+/// let _ = bouncycastle_ec::montgomery::widening_mul::<2, 3>(&[1, 2], &[3, 4]);
+/// ```
+///
+/// ```
+/// let product = bouncycastle_ec::montgomery::widening_mul::<2, 4>(&[1, 2], &[3, 4]);
+/// assert_eq!(product, [3, 10, 8, 0]);
+/// ```
 // `inline(always)` on both entry points: with the modulus arriving as a runtime `&[u64; L]`
 // rather than a per-curve constant, inlining is what lets each call site's own `P_LIMBS`/
 // `N_LIMBS` reach the multiply. Worth a consistent ~2% and measured, not assumed -- the two
@@ -66,7 +76,7 @@ pub fn widening_mul_into<const L: usize, const L2: usize>(
     b: &[u64; L],
     result: &mut [u64; L2],
 ) {
-    debug_assert_eq!(L2, 2 * L, "widening_mul's L2 must be exactly 2 * L");
+    const { assert!(L2 == 2 * L, "widening_mul's L2 must be exactly 2 * L") };
     result.fill(0);
     for i in 0..L {
         let mut carry: u128 = 0;
@@ -112,9 +122,15 @@ pub fn widening_mul_into<const L: usize, const L2: usize>(
 ///
 /// Verified against Python's arbitrary-precision `**2` over 20,000 random values at each of `L =
 /// 4, 6, 8, 9` plus the all-ones worst case, before being written here.
+///
+/// `L2` is checked when the function is instantiated:
+///
+/// ```compile_fail,E0080
+/// let _ = bouncycastle_ec::montgomery::widening_square::<2, 5>(&[1, 2]);
+/// ```
 #[inline(always)]
 pub fn widening_square<const L: usize, const L2: usize>(a: &[u64; L]) -> [u64; L2] {
-    debug_assert_eq!(L2, 2 * L, "widening_square's L2 must be exactly 2 * L");
+    const { assert!(L2 == 2 * L, "widening_square's L2 must be exactly 2 * L") };
     let mut result = [0u64; L2];
 
     // Off-diagonal products, each formed once.
@@ -160,14 +176,22 @@ pub fn widening_square<const L: usize, const L2: usize>(a: &[u64; L]) -> [u64; L
 /// 2^64`, returns `T * R⁻¹`, `< 2n` (proven, see the module docs) -- callers still need their own
 /// final conditional subtraction of `n` to reach the canonical `< n` representative, exactly as
 /// every hand-written per-curve `redc` in this crate already does.
+///
+/// `L2` is `2L` and `L21` is `2L + 1`, checked when the function is instantiated:
+///
+/// ```compile_fail,E0080
+/// let _ = bouncycastle_ec::montgomery::redc::<2, 4, 4>(&[0; 4], &[7, 0], 0x6db6db6db6db6db7);
+/// ```
 #[inline(always)]
 pub fn redc<const L: usize, const L2: usize, const L21: usize>(
     t: &[u64; L2],
     modulus: &[u64; L],
     n_prime: u64,
 ) -> ([u64; L], u64) {
-    debug_assert_eq!(L2, 2 * L, "redc's L2 must be exactly 2 * L");
-    debug_assert_eq!(L21, 2 * L + 1, "redc's L21 must be exactly 2 * L + 1");
+    const {
+        assert!(L2 == 2 * L, "redc's L2 must be exactly 2 * L");
+        assert!(L21 == 2 * L + 1, "redc's L21 must be exactly 2 * L + 1");
+    }
     // The accumulator is `2L + 1` limbs (see the module docs for the bound) and is held flat, in
     // one array. Keeping the top limb in a separate `u64` instead -- which is what this did before
     // `L21` existed -- reintroduces exactly the split the module docs describe: measured, it cost
