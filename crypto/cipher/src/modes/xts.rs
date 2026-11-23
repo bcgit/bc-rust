@@ -159,7 +159,93 @@ pub struct XTSKey<P> {
 impl<P: BlockPermutation<BLOCK_LEN>> XTSKey<P> {
     /// Encrypts one data unit in place under its tweak, and returns the number of bytes written,
     /// `data_unit.len()`: the ciphertext is as long as the plaintext. Over a permutation that
-    /// decrypts only ([`BlockPermutation::DECRYPT_ONLY`]) it does not compile.
+    /// decrypts only ([`BlockPermutation::DECRYPT_ONLY`]) it does not compile:
+    ///
+    /// ```compile_fail,E0080
+    /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+    /// # use toy::ToyBlockCipher;
+    /// use bouncycastle_cipher::modes::XTSKey;
+    /// use bouncycastle_core::hazmat::BlockPermutation;
+    /// # use bouncycastle_core::errors::SymmetricCipherError;
+    /// # use bouncycastle_core::hazmat::KeyExpansion;
+    /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+    /// # use bouncycastle_core::security_strength::SecurityStrength;
+    /// use bouncycastle_core::symmetric_key::FromKeyMaterial;
+    /// # use bouncycastle_core::traits::Algorithm;
+    ///
+    /// struct DecryptOnly(ToyBlockCipher);
+    ///
+    /// impl BlockPermutation<16> for DecryptOnly {
+    ///     const DECRYPT_ONLY: bool = true;
+    /// #   fn encrypt_block(&self, block: &mut [u8; 16]) { self.0.encrypt_block(block) }
+    /// #   fn decrypt_block(&self, block: &mut [u8; 16]) { self.0.decrypt_block(block) }
+    /// #   fn encrypt_2blocks(&self, blocks: &mut [[u8; 16]; 2]) { self.0.encrypt_2blocks(blocks) }
+    /// #   fn decrypt_2blocks(&self, blocks: &mut [[u8; 16]; 2]) { self.0.decrypt_2blocks(blocks) }
+    /// #   fn encrypt_4blocks(&self, blocks: &mut [[u8; 16]; 4]) { self.0.encrypt_4blocks(blocks) }
+    /// #   fn decrypt_4blocks(&self, blocks: &mut [[u8; 16]; 4]) { self.0.decrypt_4blocks(blocks) }
+    /// }
+    /// # impl Algorithm for DecryptOnly {
+    /// #     const ALG_NAME: &'static str = "DecryptOnly";
+    /// #     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    /// # }
+    /// # impl KeyExpansion<16> for DecryptOnly {
+    /// #     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
+    /// #         ToyBlockCipher::new(key).map(Self)
+    /// #     }
+    /// # }
+    ///
+    /// let key_bytes: [u8; 32] = core::array::from_fn(|i| i as u8 + 1);
+    /// let material = KeyMaterial::<32>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
+    ///     .expect("a 32-byte symmetric cipher key");
+    /// let key = XTSKey::<DecryptOnly>::from_key_material(&material).expect("an XTS key");
+    /// let mut sector = [0x5Au8; 512];
+    /// // Refused when the program is built: the permutation decrypts only.
+    /// let _ = key.encrypt_inplace(&[0u8; 16], &mut sector);
+    /// ```
+    ///
+    /// The same key does decrypt:
+    ///
+    /// ```
+    /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+    /// # use toy::ToyBlockCipher;
+    /// use bouncycastle_cipher::modes::XTSKey;
+    /// use bouncycastle_core::hazmat::BlockPermutation;
+    /// # use bouncycastle_core::errors::SymmetricCipherError;
+    /// # use bouncycastle_core::hazmat::KeyExpansion;
+    /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+    /// # use bouncycastle_core::security_strength::SecurityStrength;
+    /// use bouncycastle_core::symmetric_key::FromKeyMaterial;
+    /// # use bouncycastle_core::traits::Algorithm;
+    ///
+    /// struct DecryptOnly(ToyBlockCipher);
+    ///
+    /// impl BlockPermutation<16> for DecryptOnly {
+    ///     const DECRYPT_ONLY: bool = true;
+    /// #   fn encrypt_block(&self, block: &mut [u8; 16]) { self.0.encrypt_block(block) }
+    /// #   fn decrypt_block(&self, block: &mut [u8; 16]) { self.0.decrypt_block(block) }
+    /// #   fn encrypt_2blocks(&self, blocks: &mut [[u8; 16]; 2]) { self.0.encrypt_2blocks(blocks) }
+    /// #   fn decrypt_2blocks(&self, blocks: &mut [[u8; 16]; 2]) { self.0.decrypt_2blocks(blocks) }
+    /// #   fn encrypt_4blocks(&self, blocks: &mut [[u8; 16]; 4]) { self.0.encrypt_4blocks(blocks) }
+    /// #   fn decrypt_4blocks(&self, blocks: &mut [[u8; 16]; 4]) { self.0.decrypt_4blocks(blocks) }
+    /// }
+    /// # impl Algorithm for DecryptOnly {
+    /// #     const ALG_NAME: &'static str = "DecryptOnly";
+    /// #     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    /// # }
+    /// # impl KeyExpansion<16> for DecryptOnly {
+    /// #     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
+    /// #         ToyBlockCipher::new(key).map(Self)
+    /// #     }
+    /// # }
+    ///
+    /// let key_bytes: [u8; 32] = core::array::from_fn(|i| i as u8 + 1);
+    /// let material = KeyMaterial::<32>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
+    ///     .expect("a 32-byte symmetric cipher key");
+    /// let key = XTSKey::<DecryptOnly>::from_key_material(&material).expect("an XTS key");
+    /// let mut sector = [0x5Au8; 512];
+    /// // Decryption is not gated.
+    /// assert_eq!(key.decrypt_inplace(&[0u8; 16], &mut sector), Ok(512));
+    /// ```
     ///
     /// # Errors
     ///
@@ -433,20 +519,23 @@ fn xex_blocks<P, D: CipherStep<P>>(key1: &P, t: &mut Block, blocks: &mut [Block]
     }
 }
 
-/// The mask of block 0 of a data unit under the tweak `i`: `T = AES-enc(Key_2, i) ⊗ α^0`, the
-/// tweak encrypted under `Key_2` in both directions (step 1 of Sec 5.3.1 and of Sec 5.4.1).
-fn first_mask<P: BlockPermutation<BLOCK_LEN>>(key2: &P, i: &Block) -> Secret<Block> {
-    let mut t: Secret<Block> = Secret::new();
+/// Sets `t` to the mask of block 0 of a data unit under the tweak `i`: `T = AES-enc(Key_2, i) ⊗
+/// α^0`, the tweak encrypted under `Key_2` in both directions (step 1 of Sec 5.3.1 and of Sec
+/// 5.4.1).
+///
+/// The mask is written into the caller's `Secret`, which wipes it on drop; returned by value, it
+/// would be moved out of a local here that nothing wipes.
+fn first_mask<P: BlockPermutation<BLOCK_LEN>>(key2: &P, i: &Block, t: &mut Block) {
     *t = *i;
-    key2.encrypt_block(&mut t);
-    t
+    key2.encrypt_block(t);
 }
 
 /// XTS-AES-Enc (IEEE 1619-2007 Sec 5.3.2) of the data unit `data`, in place, under the tweak
 /// `i`. `data` is from [`XTS_MIN_DATA_UNIT_LEN`] to [`XTS_MAX_DATA_UNIT_LEN`] bytes long, which
 /// the callers check.
 fn encrypt<P: BlockPermutation<BLOCK_LEN>>(key1: &P, key2: &P, i: &Block, data: &mut [u8]) {
-    let mut t = first_mask(key2, i);
+    let mut t: Secret<Block> = Secret::new();
+    first_mask(key2, i, &mut t);
 
     // `blocks` are P_0 .. P_{m-1}, the whole blocks, and `tail` is P_m, the b < 16 bytes after
     // them, which is empty when the data unit is a whole number of blocks.
@@ -472,7 +561,8 @@ fn encrypt<P: BlockPermutation<BLOCK_LEN>>(key1: &P, key2: &P, i: &Block, data: 
 /// XTS-AES-Dec (IEEE 1619-2007 Sec 5.4.2) of the data unit `data`, in place, under the tweak
 /// `i`. The length is as for [`encrypt`].
 fn decrypt<P: BlockPermutation<BLOCK_LEN>>(key1: &P, key2: &P, i: &Block, data: &mut [u8]) {
-    let mut t = first_mask(key2, i);
+    let mut t: Secret<Block> = Secret::new();
+    first_mask(key2, i, &mut t);
     let (blocks, tail) = data.as_chunks_mut::<BLOCK_LEN>();
 
     // With a partial block, ciphertext stealing undoes the encryption's last two block
