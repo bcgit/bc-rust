@@ -340,24 +340,26 @@ fn from_crt_components_rejects_equal_primes() {
 fn from_crt_components_rejects_even_prime() {
     let mut even_p = P;
     even_p[0] &= !1;
-    assert!(matches!(
+    assert_eq!(
         RsaPrivateComponents::<RSA2048>::from_crt_components(
             &even_p, &Q, &D_P, &D_Q, &Q_INV, 0x10001
-        ),
-        Err(SignatureError::DecodingError(_))
-    ));
+        )
+        .unwrap_err(),
+        SignatureError::DecodingError("p must be odd")
+    );
 }
 
 #[test]
 fn from_crt_components_rejects_even_q() {
     let mut even_q = Q;
     even_q[0] &= !1;
-    assert!(matches!(
+    assert_eq!(
         RsaPrivateComponents::<RSA2048>::from_crt_components(
             &P, &even_q, &D_P, &D_Q, &Q_INV, 0x10001
-        ),
-        Err(SignatureError::DecodingError(_))
-    ));
+        )
+        .unwrap_err(),
+        SignatureError::DecodingError("q must be odd")
+    );
 }
 
 #[test]

@@ -36,7 +36,7 @@ use bouncycastle_modexp::rsa::keygen::{PUBLIC_EXPONENT, is_probable_prime};
 use bouncycastle_modexp::rsa::keys::{RsaPrivateKey, RsaPublicKey};
 use bouncycastle_modexp::rsa::rsa_2048::{RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256, SIG_LEN};
 use bouncycastle_modexp::rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
-use bouncycastle_modexp::rsa::size::RsaSigningSize;
+use bouncycastle_modexp::rsa::size::{RsaSigningSize, RsaSize};
 use bouncycastle_modexp::rsa::{rsa_3072, rsa_4096, rsa_8192};
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_utils::montgomery::widening_mul;
@@ -129,6 +129,66 @@ fn miller_rabin_decides_small_values_by_trial_division() {
     for composite in [4u64, 9, 15, 561, 1023, 65535, 1_048_575] {
         assert!(!mr16(&small(composite), 1), "{composite} is composite");
     }
+}
+
+/// The same values with an RNG that yields no usable base (every draw is zero): below `2^20`
+/// the verdict is trial division's, so it comes back with no base drawn at all.
+#[test]
+fn miller_rabin_decides_small_values_without_the_rng() {
+    let mut zeros = ConstantRng { fill: 0, strength: SecurityStrength::_256bit };
+    for prime in [2u64, 3, 5, 7, 1021, 65537, 1_048_573] {
+        let verdict = is_probable_prime::<16, 32, 33>(&small(prime), rounds(1), &mut zeros);
+        assert_eq!(verdict, Ok(true), "{prime} is prime");
+    }
+    for composite in [4u64, 9, 15, 561, 1023, 65535, 1_048_575] {
+        let verdict = is_probable_prime::<16, 32, 33>(&small(composite), rounds(1), &mut zeros);
+        assert_eq!(verdict, Ok(false), "{composite} is composite");
+    }
+}
+
+/// A Carmichael number with no factor below `2^10`: `(6k + 1)(12k + 1)(18k + 1)` for
+/// `k = 2^62 * 14819`, the three factors prime (Chernick's form; Python 3.12 and sympy), 238
+/// bits. Every base coprime to it passes a Fermat test, `b^(w - 1) = 1`, so only the
+/// Miller-Rabin part of Appendix B.3.1 -- writing `w - 1 = 2^a * m` with `m` odd (steps 1-2)
+/// and squaring up from `b^m` -- refuses it; here `a = 64`, with the low limb of `w - 1` zero.
+#[test]
+fn miller_rabin_rejects_a_carmichael_number() {
+    let carmichael: [u64; 4] =
+        [0x0000000000000001, 0xc0000000000208fb, 0xc000000143f6164e, 0x00003bef68b0b64a];
+    let verdict = is_probable_prime::<4, 8, 9>(&carmichael, rounds(20), &mut DefaultRNG::default());
+    assert_eq!(verdict, Ok(false));
+}
+
+/// `2^64 * (2^100 + 77) + 1`, a 165-bit prime (Python 3.12 and sympy) whose `w - 1 = 2^a * m`
+/// has `a = 64` exactly: its low limb is 1, `w - 1` has a zero low limb, and `m` is `w - 1`
+/// shifted by a whole limb.
+#[test]
+fn miller_rabin_accepts_a_prime_one_more_than_a_multiple_of_2_to_the_64() {
+    let prime: [u64; 4] = [0x0000000000000001, 0x000000000000004d, 0x0000001000000000, 0];
+    let verdict = is_probable_prime::<4, 8, 9>(&prime, rounds(20), &mut DefaultRNG::default());
+    assert_eq!(verdict, Ok(true));
+}
+
+/// Appendix B.3.1 steps 3 and 4.1: a base is a string of `wlen` bits, `wlen` the length of `w`
+/// and not the width it is held in. With every bit drawn set, that base is `2^wlen - 1`,
+/// above `w - 1` for any `w` of `wlen` bits, so the test runs out of draws; a base cut to fewer
+/// bits would be below it and accepted. With `0x55` bytes the base is below `w - 1` and the
+/// test runs. `2^150 - 3` and `2^128 - 159` are the largest primes below `2^150` and `2^128`
+/// (Python 3.12 and sympy): one ends inside a limb, the other on a limb boundary.
+#[test]
+fn miller_rabin_draws_bases_of_exactly_the_length_of_w() {
+    let no_base =
+        Err(SignatureError::GenericError("RNG produced no usable Miller-Rabin base in 128 draws"));
+    let below_2_150: [u64; 3] = [0xfffffffffffffffd, 0xffffffffffffffff, 0x00000000003fffff];
+    let below_2_128: [u64; 2] = [0xffffffffffffff61, 0xffffffffffffffff];
+
+    let mut ones = ConstantRng { fill: 0xff, strength: SecurityStrength::_256bit };
+    assert_eq!(is_probable_prime::<3, 6, 7>(&below_2_150, rounds(5), &mut ones), no_base);
+    assert_eq!(is_probable_prime::<2, 4, 5>(&below_2_128, rounds(5), &mut ones), no_base);
+
+    let mut fives = ConstantRng { fill: 0x55, strength: SecurityStrength::_256bit };
+    assert_eq!(is_probable_prime::<3, 6, 7>(&below_2_150, rounds(5), &mut fives), Ok(true));
+    assert_eq!(is_probable_prime::<2, 4, 5>(&below_2_128, rounds(5), &mut fives), Ok(true));
 }
 
 /// The CRT components of an encoded private key (`p || q || dP || dQ || qInv`, each `8 * HALF`
@@ -332,11 +392,79 @@ fn a_generated_key_validates_and_validation_checks_its_rng() {
     );
 }
 
-/// Steps 4.7/5.8: an RNG that keeps producing the same candidate cannot make progress -- the one
-/// candidate is either composite, or equal to `p` and so rejected as too close (5.5) -- and the
-/// candidate limits (`5 * nlen`, then `10 * nlen`) turn that into an error instead of a hang.
+/// An RNG that hands out `prefix` and then `repeat` over and over, a limb (eight bytes,
+/// big-endian, the order in which `keygen` reads a candidate's limbs, least significant first)
+/// per draw, and counts the draws.
+struct LimbStreamRng {
+    prefix: Vec<u64>,
+    repeat: Vec<u64>,
+    strength: SecurityStrength,
+    draws: usize,
+}
+impl RNG for LimbStreamRng {
+    fn add_seed_keymaterial(
+        &mut self,
+        _additional_seed: &dyn bouncycastle_core::key_material::KeyMaterialTrait,
+    ) -> Result<(), RNGError> {
+        Ok(())
+    }
+    fn next_int(&mut self) -> Result<u32, RNGError> {
+        unimplemented!()
+    }
+    fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
+        assert_eq!(out.len(), 8, "keygen draws a limb at a time");
+        let limb = match self.prefix.get(self.draws) {
+            Some(&limb) => limb,
+            None => self.repeat[(self.draws - self.prefix.len()) % self.repeat.len()],
+        };
+        self.draws += 1;
+        out.copy_from_slice(&limb.to_be_bytes());
+        Ok(8)
+    }
+    fn fill_keymaterial_out(
+        &mut self,
+        _out: &mut dyn bouncycastle_core::key_material::KeyMaterialTrait,
+    ) -> Result<usize, RNGError> {
+        unimplemented!()
+    }
+    fn security_strength(&self) -> SecurityStrength {
+        self.strength
+    }
+}
+
+/// Step 4.7: an RNG that keeps producing the same candidate cannot make progress, and the
+/// candidate limit turns that into an error instead of a hang, after exactly `5 * nlen`
+/// candidates for `p`. Every candidate from a stream of `0x42` bytes (top two bits and low bit
+/// forced) is the same multiple of 3, refused before any Miller-Rabin base is drawn, so each
+/// costs 16 draws and nothing else.
 #[test]
-fn keygen_gives_up_on_a_stuck_rng() {
-    let mut stuck = ConstantRng { fill: 0x42, strength: SecurityStrength::_256bit };
+fn keygen_gives_up_on_p_after_5_nlen_candidates() {
+    let mut stuck = LimbStreamRng {
+        prefix: vec![],
+        repeat: vec![0x4242424242424242],
+        strength: SecurityStrength::_256bit,
+        draws: 0,
+    };
     assert!(matches!(RSA2048::keygen(&mut stuck), Err(SignatureError::GenericError(_))));
+    assert_eq!(stuck.draws, 16 * 5 * 2048);
+}
+
+/// Steps 5.5 and 5.8: `q` is given up on after exactly `10 * nlen` candidates. The stream is
+/// the prime `P` as the first candidate, which is taken as `p` unchanged (its top two bits and
+/// low bit are already set), then a base of 3 for each of its Miller-Rabin rounds, then `P`
+/// again for ever: every candidate for `q` equals `p` and is refused as too close, with no draw
+/// beyond its own 16. The RNG's strength is exactly the size's, which A.1.3's preamble accepts.
+#[test]
+fn keygen_gives_up_on_q_after_10_nlen_candidates() {
+    let mr_rounds = RSA2048::MR_ROUNDS.get();
+    let mut base_3 = [0u64; 16];
+    base_3[0] = 3;
+    let mut prefix = P.to_vec();
+    for _ in 0..mr_rounds {
+        prefix.extend_from_slice(&base_3);
+    }
+    let mut rng =
+        LimbStreamRng { prefix, repeat: P.to_vec(), strength: RSA2048::STRENGTH, draws: 0 };
+    assert!(matches!(RSA2048::keygen(&mut rng), Err(SignatureError::GenericError(_))));
+    assert_eq!(rng.draws, 16 * (1 + mr_rounds + 10 * 2048));
 }

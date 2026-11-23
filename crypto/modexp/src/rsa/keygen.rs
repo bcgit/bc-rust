@@ -860,6 +860,12 @@ where
 //
 // `fill_bytes`'s wipe of a buffer the RNG did not fill is likewise invisible from outside: every
 // caller's buffer is a local that an error discards.
+//
+// `gcd`, `div` and `private_exponent_exceeds_half` reach the outside only as criterion 3(a)'s
+// verdict, which hides most errors in them: a wrong LCM leaves `d` above `2^(nlen/2)` for nearly
+// every key, a shared power of two of 64 or more needs `p = q = 1 (mod 2^64)`, and
+// `d = 2^(nlen/2)` exactly cannot be constructed at a real size. Known answers at small widths
+// (Python 3.12, sympy for the factorisations) pin them.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -937,5 +943,57 @@ mod tests {
         assert!(primes_too_close(&p_plus(1), &P));
         assert!(primes_too_close(&p_plus(1 << 28), &P));
         assert!(!primes_too_close(&p_plus((1 << 28) + 1), &P));
+    }
+
+    /// The same boundary at RSA-2048's width (`threshold_bit = 924`, limb 14 bit 28), where the
+    /// shifts cross whole limbs; and a difference of `2^960`, which lies in the top limb alone.
+    #[test]
+    fn primes_too_close_boundary_cases_at_rsa_2048_width() {
+        let mut p = [0u64; 16];
+        p[0] = 0x1234_5678_9abc_def1;
+        p[15] = 0xc000_0000_0000_0001;
+        let p_plus = |limb: usize, bits: u64, low: u64| {
+            let mut d = [0u64; 16];
+            d[limb] = bits;
+            d[0] |= low;
+            nat::add(&p, &d).0
+        };
+        assert!(primes_too_close(&p, &p_plus(14, 1 << 28, 0)));
+        assert!(!primes_too_close(&p, &p_plus(14, 1 << 28, 1)));
+        assert!(!primes_too_close(&p, &p_plus(15, 1, 0)));
+        assert!(!primes_too_close(&p_plus(15, 1, 0), &p));
+    }
+
+    #[test]
+    fn div_known_answer() {
+        let a = [0x0123_4567_89ab_cdef, 0xfedc_ba98_7654_3210];
+        let d = [0x9e37_79b9_7f4a_7c15, 1];
+        assert_eq!(div(&a, &d), [0x9d83_75c5_3037_f300, 0]);
+        assert_eq!(div(&a, &a), [1, 0]);
+        assert_eq!(div(&d, &a), [0, 0]);
+    }
+
+    /// `GCD(2^64 * 3g, 2^64 * 5g) = 2^64 * g` for `g = 2^64 + 0x2b`: a common power of two that
+    /// is a whole limb.
+    #[test]
+    fn gcd_known_answer_with_a_whole_limb_of_common_twos() {
+        let a = [0, 0x81, 3];
+        let b = [0, 0xd7, 5];
+        assert_eq!(gcd(&a, &b), [0, 0x2b, 1]);
+        assert_eq!(gcd(&b, &a), [0, 0x2b, 1]);
+    }
+
+    /// Criterion 3(a) at `HALF = 1`, so the bound is `2^64`: `LCM(x, y)` divides `e * D - 1`,
+    /// which makes the private exponent `D` itself. `2^64` is not above the bound; one either
+    /// side of it decides as its side does.
+    #[test]
+    fn private_exponent_exceeds_half_boundary() {
+        let exceeds = |x: u64, y: u64, e: u64| private_exponent_exceeds_half::<1, 2>(&[x], &[y], e);
+        // d = 2^64 - 1, LCM = 0x10004fffffffffffefffa, GCD = 0x1fa.
+        assert!(!exceeds(0x1d90_d24a, 0x111d_a04b_c50e_b22a, 65541));
+        // d = 2^64, LCM = 0x10000ffffffffffffffff, GCD = 0xae2f3.
+        assert!(!exceeds(0x0241_6138_b67f, 0x04d3_b3f4_7847_de73, 65537));
+        // d = 2^64 + 1, LCM = 0x100070000000000010006, GCD = 0x186.
+        assert!(exceeds(0x18_c07c_2102, 0x000f_c20f_c1a0_1b92, 65543));
     }
 }

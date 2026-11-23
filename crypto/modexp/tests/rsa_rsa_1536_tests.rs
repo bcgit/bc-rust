@@ -192,3 +192,56 @@ fn trait_verify_reports_out_of_range_representative_as_invalid_signature() {
         )
     });
 }
+
+/// A genuine RSASSA-PKCS1-v1_5/SHA-256 signature under the SHA-256 group's key of
+/// `rsa_pkcs1_1536_sig_gen_test.json`, for [`SIG_PLUS_N_MSG`]: made offline (Python 3.12) with
+/// the file's `privateExponent`, the encoding checked against all eight of the group's own
+/// signatures first, and the message the first of a numbered series whose signature `s` has
+/// `s + n < 2^1536`, which none of the file's signatures has (its `n` begins `0xeb`).
+const SIG_PLUS_N_MSG: &[u8] = b"RSA-1536 signature representative plus n, 10";
+const SIG_PLUS_N_SIG: &str = "139164728040a5c4ec035bf031466bf0b20c81214c302da8f9e8efdd78058aa6\
+    2eb9ada000fbf7f2bfdc99ef5dd52509ae233c11db82e6eb4c89e502d52274de067e0f7ec5d863b9e3e598de96\
+    44ed35a23fa7d996710a67ddc7d8435e752276e191f8120c944171474d01ce4af0d82ab7094bd83dbf507b5fa0\
+    30fab629588ff9accfa7ccf41d7d7bc858abd7dbc6d71c78b10c2f3a6b169930920e9ee4c9af52a0d3422461fd\
+    d9d08549c148bce32bf2bf6206b2963693deacbc8d3b2e8fe5";
+
+/// RFC 8017 §8.2.2 step 1 on a representative that is out of range but congruent to a genuine
+/// signature: `s + n`. Without the range check, RSAVP1 would compute `(s + n)^e mod n =
+/// s^e mod n` and accept it, so it is the check alone that refuses it.
+#[test]
+fn trait_verify_refuses_a_genuine_signature_plus_the_modulus() {
+    let doc: Value =
+        serde_json::from_str(&get_test_data("rsa_pkcs1_1536_sig_gen_test.json")).unwrap();
+    let group = doc["testGroups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["sha"] == "SHA-256" && g["tests"].as_array().unwrap().len() == 8)
+        .unwrap();
+    let n: [u64; 24] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
+    let e =
+        u64::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
+    let pk =
+        RsaPublicComponents::<RSA1536>::new(&n, e).unwrap().into_key::<RSASSA_PKCS1_v1_5_SHA256>();
+
+    let sig: [u8; 192] = hex_decode(SIG_PLUS_N_SIG).unwrap().try_into().unwrap();
+    assert_eq!(pk.verify(SIG_PLUS_N_MSG, None, &sig), Ok(()));
+
+    // s + n, over big-endian bytes; it fits in 1536 bits by the choice of message.
+    let mut n_bytes = [0u8; 192];
+    for (i, limb) in n.iter().enumerate() {
+        n_bytes[192 - 8 * (i + 1)..192 - 8 * i].copy_from_slice(&limb.to_be_bytes());
+    }
+    let mut sig_plus_n = [0u8; 192];
+    let mut carry = 0u16;
+    for i in (0..192).rev() {
+        let t = u16::from(sig[i]) + u16::from(n_bytes[i]) + carry;
+        sig_plus_n[i] = t as u8;
+        carry = t >> 8;
+    }
+    assert_eq!(carry, 0);
+    assert_eq!(
+        pk.verify(SIG_PLUS_N_MSG, None, &sig_plus_n),
+        Err(SignatureError::SignatureVerificationFailed)
+    );
+}

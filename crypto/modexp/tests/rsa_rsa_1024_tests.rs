@@ -189,3 +189,57 @@ fn trait_verify_reports_out_of_range_representative_as_invalid_signature() {
         )
     });
 }
+
+/// `a + b` over `K`-byte big-endian integers, or `None` if the sum needs a `K + 1`th byte.
+fn add_be<const K: usize>(a: &[u8; K], b: &[u8; K]) -> Option<[u8; K]> {
+    let mut sum = [0u8; K];
+    let mut carry = 0u16;
+    for i in (0..K).rev() {
+        let t = u16::from(a[i]) + u16::from(b[i]) + carry;
+        sum[i] = t as u8;
+        carry = t >> 8;
+    }
+    (carry == 0).then_some(sum)
+}
+
+/// RFC 8017 §8.2.2 step 1 on a representative that is out of range but congruent to a genuine
+/// signature: `s + n`, for each of the group's signatures for which it still fits in 1024
+/// bits. Without the range check, RSAVP1 would compute `(s + n)^e mod n = s^e mod n` and
+/// accept it, so it is the check alone that refuses it.
+#[test]
+fn trait_verify_refuses_a_genuine_signature_plus_the_modulus() {
+    let doc: Value =
+        serde_json::from_str(&get_test_data("rsa_pkcs1_1024_sig_gen_test.json")).unwrap();
+    let group = doc["testGroups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["sha"] == "SHA-256" && g["tests"].as_array().unwrap().len() == 8)
+        .unwrap();
+    let n: [u64; 16] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
+    let e =
+        u64::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
+    let pk =
+        RsaPublicComponents::<RSA1024>::new(&n, e).unwrap().into_key::<RSASSA_PKCS1_v1_5_SHA256>();
+    let mut n_bytes = [0u8; 128];
+    for (i, limb) in n.iter().enumerate() {
+        n_bytes[128 - 8 * (i + 1)..128 - 8 * i].copy_from_slice(&limb.to_be_bytes());
+    }
+
+    let mut fitted = 0;
+    for test in group["tests"].as_array().unwrap() {
+        let msg = hex_decode(test["msg"].as_str().unwrap()).unwrap();
+        let sig: [u8; 128] = hex_decode(test["sig"].as_str().unwrap()).unwrap().try_into().unwrap();
+        let Some(sig_plus_n) = add_be(&sig, &n_bytes) else { continue };
+        fitted += 1;
+        assert_eq!(pk.verify(&msg, None, &sig), Ok(()), "tcId {}", test["tcId"]);
+        assert_eq!(
+            pk.verify(&msg, None, &sig_plus_n),
+            Err(SignatureError::SignatureVerificationFailed),
+            "tcId {}",
+            test["tcId"]
+        );
+    }
+    // tcId 18, 21, 22 and 23: the others' s + n needs 1025 bits.
+    assert_eq!(fitted, 4);
+}
