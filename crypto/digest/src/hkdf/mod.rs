@@ -54,6 +54,13 @@
 //! let okm = HKDF_SHA224::new().derive_key(&ikm, b"extra input", 28).unwrap();
 //! ```
 //!
+//! # Memory Usage
+//!
+//! The [`HKDF`] object uses no heap memory, and the `*_out` methods allocate nothing; the
+//! `Box<dyn KeyMaterialTrait>`-returning one-shots of the `KDF` trait allocate their output. The
+//! object's size depends on the hash and is tabulated with the instantiations: see the Memory
+//! Usage section of [`crate::sha2::hkdf`].
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! These apply to every instantiation; `bouncycastle_digest::sha2::hkdf` repeats the ones that matter most in

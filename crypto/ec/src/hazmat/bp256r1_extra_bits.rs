@@ -21,7 +21,7 @@
 //! The reduction itself is [`crate::barrett`]'s constant-time Barrett reduction with `m = n - 1`
 //! (see [`crate::hazmat::p256_extra_bits`]'s docs for the constant-time argument);
 //! `bp256r1_extra_bits_tests.rs` pins known answers computed in Python and cross-checks it against
-//! the bit-serial algorithm this module used to implement, kept there as an independent reference.
+//! a bit-serial implementation of the same reduction, kept there as an independent reference.
 
 use crate::barrett;
 use crate::hazmat::bp256r1_scalar::{Bp256r1Scalar, N_LIMBS};

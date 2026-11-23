@@ -22,8 +22,18 @@
 //! and the [`ed25519`] and [`ed448`] modules for the EdDSA signatures: Ed25519 and Ed25519ph, Ed448 and
 //! Ed448ph, with key generation, signing and verification.
 //!
-//! The crate's own source is `no_std`, but its dependencies are not yet (`bouncycastle-core`'s
-//! `Vec` returns and the `std` uses in `hmac` and `hkdf`), so a bare-metal build waits on them.
+//! The crate's own source is `no_std`, but `bouncycastle-core` is not yet (its `Vec` returns), so
+//! a bare-metal build waits on it.
+//!
+//! # Memory Usage
+//!
+//! Each scheme's module has its own table of key sizes and stack usage: [`x25519`], [`x448`],
+//! [`ed25519`] and [`ed448`].
+//!
+//! # 🚨 Security Considerations 🚨
+//!
+//! Each scheme's module carries the considerations for that scheme: [`x25519`], [`x448`],
+//! [`ed25519`] and [`ed448`].
 
 mod bits;
 mod curve25519;

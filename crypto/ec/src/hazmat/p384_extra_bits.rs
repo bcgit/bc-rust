@@ -10,14 +10,14 @@
 //! Not for bias. P-384's `n` is within `2^190` of `2^384`, so Appendix A.4.1 step 2's bound
 //! (`2ρ(1-ρ)(n-1) <= ε·N`, `ε = 2^-64`) already holds at `l = 384` with a bias near `2^-194`, and
 //! FIPS 186-5 Table A.2 accordingly gives `p384` a required and recommended DRBG output of 384
-//! bits for key generation. An earlier version of `crate::ecdsa` drew exactly 48 bytes for both key
-//! generation and the randomised per-message secret on that basis, and reduced with a single
-//! conditional subtraction of `n - 1`.
+//! bits for key generation. On that basis alone, a draw of exactly 48 bytes reduced with a single
+//! conditional subtraction of `n - 1` would do, for key generation and for the randomised
+//! per-message secret.
 //!
 //! Appendix A.3.1 is stricter than Table A.2, though. Its step 2 returns FAILURE if `t < 64` and
 //! its step 3 says: *"Obtain a bit string of N+t returned_bits from the established DRBG"*. That
 //! is a requirement on the per-message secret's draw independent of how close `n` is to a power
-//! of two, and 384 bits does not meet it. So `ECDSAP384` now draws `N + 64 = 448` bits (56
+//! of two, and 384 bits does not meet it. So ECDSA over P-384 draws `N + 64 = 448` bits (56
 //! bytes, `P384::EXTRA_BITS_DRAW_LEN`) and reduces them with this module.
 //! Key generation draws the same 56 bytes: Table A.2's 384 is a minimum ("not less than"), so
 //! the wider draw is permitted there too, and one reduction path per curve is simpler than two.
@@ -27,8 +27,8 @@
 //!
 //! The reduction itself is [`crate::barrett`]'s constant-time Barrett reduction with `m = n - 1`
 //! (see [`crate::hazmat::p256_extra_bits`]'s docs for the constant-time argument);
-//! `p384_extra_bits_tests.rs` pins known answers computed in Python and cross-checks it against the
-//! bit-serial algorithm this module used to implement, kept there as an independent reference.
+//! `p384_extra_bits_tests.rs` pins known answers computed in Python and cross-checks it against a
+//! bit-serial implementation of the same reduction, kept there as an independent reference.
 
 use crate::barrett;
 use crate::hazmat::p384_scalar::{N_LIMBS, P384Scalar};

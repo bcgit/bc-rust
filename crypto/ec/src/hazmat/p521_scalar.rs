@@ -380,16 +380,13 @@ fn redc(t: &[u64; 18]) -> [u64; 9] {
 /// array is always `< 2n`, making a single conditional subtraction sufficient), P-521's `n` is
 /// `2^521`-ish while this type's storage is a full `2^576`-wide `[u64; 9]` -- a 55-bit gap a caller
 /// can easily fill (e.g. [`P521Scalar::from_be_bytes`]'s 66-byte/528-bit SEC 1 input, or simply any
-/// `[u64; 9]` passed to `from_limbs`). An earlier version of this function assumed the gap couldn't
-/// be filled and used a single conditional subtraction unconditionally; that assumption was false
-/// (a raw `[u64; 9]` can represent values up to `2^576 - 1`), so it under-reduced any input `>=
-/// 2n` -- caught not by this crate's own property tests (whose pseudorandom `[u64; 9]` values
-/// happened to make the bug's output still self-consistent, see `p521_scalar_tests.rs`'s docs) but
-/// by real ECDSA verification math in the wycheproof P-521 suite, where a legitimately-bounded
-/// scalar's `redc` calls took a code path this crate's own tests never reached.
+/// `[u64; 9]` passed to `from_limbs`). A single conditional subtraction would under-reduce any
+/// input `>= 2n`, and such inputs are reached in practice: ECDSA verification in the wycheproof
+/// P-521 suite gets there through `redc`, on a path pseudorandom `[u64; 9]` property tests do not
+/// take (see `p521_scalar_tests.rs`'s docs).
 ///
-/// The fix: split `limbs` into `hi = limbs >> 521` (the excess, `< 2^55`) and `lo = limbs mod
-/// 2^521` (`< 2^521`), then fold via `value ≡ hi * (2^521 mod n) + lo (mod n)`
+/// So `limbs` is split into `hi = limbs >> 521` (the excess, `< 2^55`) and `lo = limbs mod
+/// 2^521` (`< 2^521`), then folded via `value ≡ hi * (2^521 mod n) + lo (mod n)`
 /// ([`TWO_POW_521_MOD_N_LIMBS`]). Verified (not checked in) against 300,000 random 9-limb trials
 /// plus boundary cases (`n`, `n-1`, `2n-1`, all-ones, max-`hi`-with-max-`lo`) that the folded sum
 /// is always `< 2n`, so the single conditional subtraction below remains valid -- the same

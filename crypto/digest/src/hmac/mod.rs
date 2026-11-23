@@ -84,6 +84,12 @@
 //! [`HMACParams`] is deliberately **not** sealed, so the same recipe works for a hash function
 //! defined in any other crate. Simply follow the recipe above!
 //!
+//! # Memory Usage
+//!
+//! HMAC allocates nothing. The sizes of a key and of a worker depend on the hash, and are tabulated
+//! with the instantiations: see the Memory Usage sections of [`crate::sha2::hmac`] and
+//! [`crate::sha3::hmac`].
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! These apply to every instantiation; the hash modules' `hmac` modules repeat the ones that matter

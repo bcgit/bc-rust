@@ -37,7 +37,7 @@
 //! The reduction itself is [`crate::barrett`]'s constant-time Barrett reduction (see
 //! [`crate::hazmat::p256_extra_bits`]'s docs for the constant-time argument);
 //! `sm2_extra_bits_tests.rs` pins known answers computed in Python for both moduli and
-//! cross-checks each against the bit-serial algorithm this module used to implement, kept there
+//! cross-checks each against a bit-serial implementation of the same reduction, kept there
 //! as an independent reference.
 
 use crate::barrett;

@@ -91,9 +91,9 @@ fn write_integer(v: &[u8], out: &mut [u8], pos: usize) -> usize {
 
 /// Encodes `r`/`s` (equal-length big-endian magnitudes) as a DER `SEQUENCE { r INTEGER, s INTEGER
 /// }` into `out`, returning the number of bytes written. `out` must be at least
-/// `max_len(r.len())` bytes and `r.len() == s.len()`; every call site in this crate sizes its own
-/// buffer via [`max_len`] and passes equal-width `r`/`s` (both encode the same curve's scalars), so
-/// this is an internal-crate contract, not a public API needing its own error path.
+/// `max_len(r.len())` bytes and `r.len() == s.len()` (both encode the same curve's scalars). That
+/// is the caller's contract and there is no error path: an `out` too short for the encoding
+/// panics on a slice index, and unequal widths are a debug assertion.
 pub fn encode(r: &[u8], s: &[u8], out: &mut [u8]) -> usize {
     debug_assert_eq!(r.len(), s.len(), "r and s must be the same width");
     let content_len = 2 + integer_content_len(r) + 2 + integer_content_len(s);

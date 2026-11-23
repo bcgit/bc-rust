@@ -28,13 +28,12 @@
 //! (see `bouncycastle_ec`'s crate docs) forbid branching on. [`reduce_wide_bits_mod_n_minus_1`]
 //! is [`crate::barrett`]'s constant-time Barrett reduction with `m = n - 1`: two
 //! fixed-width multiplications and three masked conditional subtractions, none of which branches
-//! or indexes on `X`. (An earlier version reduced `X` one bit at a time with a doubling and a
-//! masked subtraction per bit; correct, but 352 rounds of it cost more than a field inversion on
-//! every key generation and randomised signature.)
+//! or indexes on `X`.
 //!
-//! `extra_bits_tests.rs` pins known answers computed in Python and cross-checks the reduction
-//! against that bit-serial algorithm, kept there as an independent reference, over pseudorandom
-//! inputs of every width up to the maximum.
+//! `p256_extra_bits_tests.rs` pins known answers computed in Python and cross-checks the reduction
+//! against a bit-serial implementation of it (one doubling and one masked subtraction per bit),
+//! kept there as an independent reference, over pseudorandom inputs of every width up to the
+//! maximum.
 
 use crate::barrett;
 use crate::hazmat::p256_scalar::{N_LIMBS, P256Scalar};
