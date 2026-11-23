@@ -27,6 +27,10 @@ pub mod bitslice;
 pub mod const_str;
 #[allow(unsafe_code)]
 pub mod ct;
+#[forbid(unsafe_code)]
+pub mod montgomery;
+#[forbid(unsafe_code)]
+pub mod nat;
 #[allow(unsafe_code)]
 pub mod secret;
 #[forbid(unsafe_code)]

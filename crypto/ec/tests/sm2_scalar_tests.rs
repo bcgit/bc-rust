@@ -10,7 +10,7 @@
 //! ```
 
 use bouncycastle_ec::hazmat::sm2_scalar::{N_LIMBS, Sm2PublicScalar, Sm2Scalar, Sm2ScalarField};
-use bouncycastle_ec::nat;
+use bouncycastle_utils::nat;
 
 const VALS_0: [u64; 4] =
     [0x9faa8edecf05b151, 0x737180b1df95b1df, 0x5e15f338e5ade727, 0x99f78f956c6fcbdb];

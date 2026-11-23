@@ -22,9 +22,9 @@
 //! `n`. Verified (not checked in) against 30,000 random trials plus the `(n-1)*(n-1)` worst case:
 //! the reduction never touches beyond a 9-limb accumulator, which is what `redc` uses.
 
-use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::Secret;
 
 /// `n`, the order of the SM2 base point `G`, little-endian `u64` limbs (`draft-shen-sm2-ecdsa-02`

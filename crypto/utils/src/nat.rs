@@ -1,11 +1,11 @@
 //! Fixed-width, branch-free arithmetic on little-endian `[u64; L]` limb arrays.
 //!
-//! `L` is chosen per curve by its bit width (`L = 4` for a 256-bit field, as used by P-256). Every
-//! primitive here is total, branch-free, and returns a plain carry/borrow (0 or 1) rather than
-//! branching on it, so that callers doing modular arithmetic on secret values can chain these
-//! without leaking timing through the carry/borrow chain itself. Comparisons belong to the
-//! curve-specific field module (built from these primitives plus [`bouncycastle_utils::ct`]),
-//! not here.
+//! `L` is chosen by the caller for the bit width of its modulus (`L = 4` for a 256-bit field, as
+//! used by P-256). Every primitive here is total, branch-free, and returns a plain carry/borrow
+//! (0 or 1) rather than branching on it, so that callers doing modular arithmetic on secret
+//! values can chain these without leaking timing through the carry/borrow chain itself.
+//! Comparisons belong to the caller's own field module (built from these primitives plus
+//! [`crate::ct`]), not here.
 
 /// Adds two `L`-limb little-endian numbers. Returns the sum and the carry out of the top limb (0
 /// or 1); the true (unwrapped) sum is `result + carry * 2^(64*L)`.
@@ -63,10 +63,10 @@ pub fn sub_assign<const L: usize>(a: &mut [u64; L], b: &[u64; L]) -> u64 {
 }
 
 /// TRUE iff every limb of `a` is zero.
-pub fn is_zero<const L: usize>(a: &[u64; L]) -> bouncycastle_utils::ct::Condition<u64> {
+pub fn is_zero<const L: usize>(a: &[u64; L]) -> crate::ct::Condition<u64> {
     let mut acc = 0u64;
     for i in 0..L {
         acc |= a[i];
     }
-    bouncycastle_utils::ct::Condition::<u64>::is_zero(acc)
+    crate::ct::Condition::<u64>::is_zero(acc)
 }

@@ -21,7 +21,7 @@ use bouncycastle_digest::sm3::SM3;
 use bouncycastle_ec::hazmat::sm2::{P_LIMBS, Sm2FieldElement};
 use bouncycastle_ec::hazmat::sm2_domain::{B_LIMBS, G_X_LIMBS, G_Y_LIMBS};
 use bouncycastle_ec::hazmat::sm2_sec1::be_bytes_from_limbs;
-use bouncycastle_ec::nat;
+use bouncycastle_utils::nat;
 
 /// `a = p - 3` (`draft-shen-sm2-ecdsa-02` Appendix D), computed here rather than exposed by
 /// [`bouncycastle_ec::hazmat::sm2_domain`]: SM2's own curve arithmetic never needs the literal

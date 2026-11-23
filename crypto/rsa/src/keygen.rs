@@ -31,8 +31,8 @@ use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::RNG;
-use bouncycastle_ec::montgomery;
-use bouncycastle_ec::nat;
+use bouncycastle_utils::montgomery;
+use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::num::NonZeroUsize;
 

@@ -1,6 +1,7 @@
 //! Variable-time modular inversion for **public** values: the binary extended Euclidean algorithm
 //! (Hankerson, Menezes & Vanstone, *Guide to Elliptic Curve Cryptography*, Algorithm 2.22,
-//! "Binary algorithm for inversion in F_p"), generic over the limb count `L` like [`crate::nat`].
+//! "Binary algorithm for inversion in F_p"), generic over the limb count `L` like
+//! [`bouncycastle_utils::nat`].
 //!
 //! Every curve's `ScalarField::invert` is a fixed square-and-multiply over the public exponent
 //! `n - 2`: the same ~`1.5 * bits` field multiplications whatever the input, which is what a
@@ -35,7 +36,7 @@
 //! `0`, matching the constant-time `invert`'s convention, so callers can substitute one for the
 //! other without a special case.
 
-use crate::nat;
+use bouncycastle_utils::nat;
 
 /// `a^-1 mod n` for odd `n` and `a < n`, or `0` when `a == 0`, in variable time. See the module
 /// docs for what "public values only" means here and why.

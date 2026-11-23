@@ -1,5 +1,5 @@
 //! Constant-time modular exponentiation over a runtime-supplied odd modulus, built on
-//! [`bouncycastle_ec::nat`] and [`bouncycastle_ec::montgomery`].
+//! [`bouncycastle_utils::nat`] and [`bouncycastle_utils::montgomery`].
 //!
 //! Every curve in `bouncycastle-ec` treats its modulus as a per-curve compile-time constant, with
 //! the Montgomery constant `n'` computed once, offline, and hard-coded. RSA's modulus is key
@@ -15,7 +15,7 @@
 //! of the CRT or a candidate prime in key generation, so the context has one constructor for
 //! each: [`MontgomeryContext::for_secret_modulus`], constant time in the modulus, and
 //! [`MontgomeryContext::for_public_modulus`], whose doublings branch on it -- the same reasoning
-//! [`bouncycastle_ec::inverse_vartime`] documents for operating on public curve/scalar values.
+//! `bouncycastle_ec::inverse_vartime` documents for operating on public curve/scalar values.
 //! [`mod_pow`] operates on an exponent that can be secret (the private
 //! exponent `d`): it processes every one of the modulus's `64 * L` bits regardless of the
 //! exponent's actual value or bit length, using Joye & Yen's Montgomery powering ladder (CHES
@@ -34,9 +34,9 @@
 //! runs, applies message blinding on top of it -- see the crate's
 //! own `# Security Considerations` for what that means for this crate's signing operation.
 
-use bouncycastle_ec::montgomery;
-use bouncycastle_ec::nat;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::montgomery;
+use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::{ZeroizablePrimitive, zeroize_in_place};
 
 /// The relations between a width and its companions that every function here generic over

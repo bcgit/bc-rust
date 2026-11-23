@@ -16,8 +16,8 @@
 //! sufficient are derived in `reduce`'s own comment. This is the only reduction of its shape in the
 //! crate -- [`crate::hazmat::p256`], [`crate::hazmat::p384`] and [`crate::hazmat::sm2`] evaluate
 //! the term tables of their respective standards, and the Brainpool curves use
-//! [`crate::montgomery`] -- so the argument is written out here rather than by reference to another
-//! curve.
+//! [`bouncycastle_utils::montgomery`] -- so the argument is written out here rather than by
+//! reference to another curve.
 //!
 //! The masked third fold is not a formality. An earlier P-384 version of this same two-fold shape
 //! `debug_assert`ed that the bit was always `0`, which held for every random trial and was wrong:
@@ -25,9 +25,9 @@
 //! constructs and pins a product that sets it on this curve.
 
 use crate::curve::FieldElement;
-use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::nat;
 
 /// `p`, little-endian `u64` limbs (SEC 2 v2 §2.4.1).
 pub const P_LIMBS: [u64; 4] =
@@ -90,7 +90,7 @@ impl P256K1FieldElement {
     /// downstream; the range is checked in debug builds.
     pub(crate) fn from_internal_limbs(limbs: [u64; 4]) -> Self {
         debug_assert_eq!(
-            crate::nat::sub(&limbs, &P_LIMBS).1,
+            bouncycastle_utils::nat::sub(&limbs, &P_LIMBS).1,
             1,
             "from_internal_limbs given a value >= p"
         );

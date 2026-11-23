@@ -1,6 +1,6 @@
 //! Constant-time Barrett reduction of a wide value by a modulus that has no arithmetic shortcut
 //! (Menezes, van Oorschot & Vanstone, *Handbook of Applied Cryptography*, Algorithm 14.42, in the
-//! limb-aligned form below), generic over the limb count `L` like [`crate::nat`].
+//! limb-aligned form below), generic over the limb count `L` like [`bouncycastle_utils::nat`].
 //!
 //! The one user is FIPS 186-5 Appendix A.4.1's `x mod (n - 1)` in `bouncycastle-ecdsa` and
 //! `bouncycastle-sm2`: the DRBG output `x` is 64 to 96 bits wider than `n`, and `n - 1` is even, so
@@ -36,10 +36,10 @@
 //! maximum, plus the extremes `0`, `1`, `m - 1`, `m`, `m + 1`, `m * 2^k - 1` and the all-ones
 //! input of maximum width.
 
-use crate::montgomery::widening_mul;
-use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::montgomery::widening_mul;
+use bouncycastle_utils::nat;
 
 /// Packs up to `8 * L2` big-endian bytes into `L2` little-endian limbs, zero-extended at the top.
 /// Panics if `bytes` is longer than the limbs can hold: a caller passing the wrong width is a

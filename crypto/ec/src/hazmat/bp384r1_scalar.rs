@@ -1,14 +1,14 @@
 //! The brainpoolP384r1 scalar field, arithmetic mod the curve order `n` (RFC 5639 §3.4). Like
 //! [`crate::hazmat::bp384r1`], `n` here has no special algebraic structure, so this is built on
-//! [`crate::montgomery`]'s generic Montgomery multiplication rather than a per-curve fold --
-//! identical in shape to every other curve's own scalar field in this crate (e.g.
+//! [`bouncycastle_utils::montgomery`]'s generic Montgomery multiplication rather than a per-curve
+//! fold -- identical in shape to every other curve's own scalar field in this crate (e.g.
 //! [`crate::hazmat::p256_scalar`]), just delegating the widening-multiply/REDC work to the shared
 //! module instead of hand-writing it again.
 
 use crate::curve::{PublicScalar, ScalarFieldElement, SecretScalar};
-use crate::montgomery;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::montgomery;
 use bouncycastle_utils::secret::Secret;
 
 /// `n`, the order of the brainpoolP384r1 base point `G`, little-endian `u64` limbs (RFC 5639
@@ -56,7 +56,7 @@ impl Bp384r1ScalarField {
     /// value), reducing once if `limbs >= n` (valid since `limbs < 2^384 < 2n`), then converting
     /// to Montgomery form.
     pub fn from_limbs(limbs: [u64; 6]) -> Self {
-        let (diff, borrow) = crate::nat::sub(&limbs, &N_LIMBS);
+        let (diff, borrow) = bouncycastle_utils::nat::sub(&limbs, &N_LIMBS);
         let mut reduced = [0u64; 6];
         ct::conditional_select(Condition::<u64>::from_lsb(borrow), &limbs, &diff, &mut reduced);
         let t = montgomery::widening_mul::<6, 12>(&reduced, &R_SQUARED_LIMBS);
@@ -72,14 +72,14 @@ impl Bp384r1ScalarField {
 
     /// TRUE iff this element is the additive identity.
     pub fn is_zero(&self) -> Condition<u64> {
-        crate::nat::is_zero(&self.0)
+        bouncycastle_utils::nat::is_zero(&self.0)
     }
 
     /// `self + other mod n`. Operates directly on the Montgomery-form limbs: no REDC needed.
     pub fn add(&self, other: &Self) -> Self {
-        let (sum, carry) = crate::nat::add(&self.0, &other.0);
-        let (sum_plus_r, _) = crate::nat::add(&sum, &R_MOD_N_LIMBS);
-        let (diff, borrow) = crate::nat::sub(&sum, &N_LIMBS);
+        let (sum, carry) = bouncycastle_utils::nat::add(&self.0, &other.0);
+        let (sum_plus_r, _) = bouncycastle_utils::nat::add(&sum, &R_MOD_N_LIMBS);
+        let (diff, borrow) = bouncycastle_utils::nat::sub(&sum, &N_LIMBS);
         let mut when_no_carry = [0u64; 6];
         ct::conditional_select(Condition::<u64>::from_lsb(borrow), &sum, &diff, &mut when_no_carry);
         let mut result = [0u64; 6];
@@ -94,8 +94,8 @@ impl Bp384r1ScalarField {
 
     /// `self - other mod n`.
     pub fn sub(&self, other: &Self) -> Self {
-        let (diff, borrow) = crate::nat::sub(&self.0, &other.0);
-        let (corrected, _) = crate::nat::add(&diff, &N_LIMBS);
+        let (diff, borrow) = bouncycastle_utils::nat::sub(&self.0, &other.0);
+        let (corrected, _) = bouncycastle_utils::nat::add(&diff, &N_LIMBS);
         let mut result = [0u64; 6];
         ct::conditional_select(Condition::<u64>::from_lsb(borrow), &corrected, &diff, &mut result);
         Self(result)
@@ -103,7 +103,7 @@ impl Bp384r1ScalarField {
 
     /// `-self mod n`.
     pub fn negate(&self) -> Self {
-        let (diff, _) = crate::nat::sub(&N_LIMBS, &self.0);
+        let (diff, _) = bouncycastle_utils::nat::sub(&N_LIMBS, &self.0);
         let mut result = [0u64; 6];
         ct::conditional_select(self.is_zero(), &Self::ZERO.0, &diff, &mut result);
         Self(result)
@@ -182,8 +182,8 @@ impl Bp384r1ScalarField {
     /// this relies on and how it was verified for this specific `n`.
     fn finish_redc(t: &[u64; 12]) -> [u64; 6] {
         let (high, extra) = montgomery::redc::<6, 12, 13>(t, &N_LIMBS, N_PRIME);
-        let (sum, _) = crate::nat::add(&high, &R_MOD_N_LIMBS);
-        let (diff, borrow) = crate::nat::sub(&high, &N_LIMBS);
+        let (sum, _) = bouncycastle_utils::nat::add(&high, &R_MOD_N_LIMBS);
+        let (diff, borrow) = bouncycastle_utils::nat::sub(&high, &N_LIMBS);
         let mut when_no_extra = [0u64; 6];
         ct::conditional_select(
             Condition::<u64>::from_lsb(borrow),
@@ -229,7 +229,7 @@ fn reduce_once(limbs: [u64; 6]) -> [u64; 6] {
 /// `out` the new `Secret`'s array.
 fn reduce_once_into(limbs: &[u64; 6], out: &mut [u64; 6]) {
     out.copy_from_slice(limbs);
-    let borrow = crate::nat::sub_assign(out, &N_LIMBS);
+    let borrow = bouncycastle_utils::nat::sub_assign(out, &N_LIMBS);
     let keep = Condition::<u64>::from_lsb(borrow);
     for i in 0..6 {
         keep.mov(limbs[i], &mut out[i]);

@@ -11,7 +11,7 @@ use crate::hazmat::bp512r1::Bp512r1FieldElement;
 use crate::hazmat::bp512r1_point::Bp512r1JacobianPoint;
 use crate::hazmat::bp512r1_scalar::Bp512r1PublicScalar;
 use crate::hazmat::bp512r1_wnaf_table::{G_ODD_MULTIPLES_X, G_ODD_MULTIPLES_Y};
-use crate::nat;
+use bouncycastle_utils::nat;
 
 /// Window for `Q`, whose odd multiples are computed per call: 8 point additions to build the
 /// table, one addition per ~6 digits to use it.

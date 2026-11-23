@@ -1,15 +1,16 @@
 //! Generic branch-free Montgomery multiplication primitives (widening multiply and REDC),
-//! shared by curves whose modulus has no special (Solinas) structure to exploit for reduction --
-//! currently the brainpool curves (RFC 5639), whose primes are "random" with no algebraic
-//! shortcut, unlike every NIST curve or secp256k1 in this crate.
+//! shared by moduli with no special (Solinas) structure to exploit for reduction: in
+//! `bouncycastle-ec` the brainpool curves (RFC 5639), whose primes are "random" with no algebraic
+//! shortcut, unlike every NIST curve or secp256k1 there, and in `bouncycastle-rsa` a modulus
+//! supplied at run time.
 //!
-//! Every other curve here hand-writes its own `widening_mul`/`redc` (see e.g.
-//! [`crate::hazmat::p256_scalar`]'s docs on why that isn't expressed generically) because each
-//! one's reduction is tuned to that specific modulus. That tuning is exactly what a "random" prime
-//! doesn't offer, so there is nothing curve-specific left to hand-write per brainpool width -- this
-//! module is genuinely shared, parameterized over the limb count `L` via a const generic (matching
-//! [`crate::nat`]'s own `add`/`sub`), with the modulus and Montgomery constants passed in at each
-//! call rather than baked in as per-curve compile-time constants.
+//! Every other curve in `bouncycastle-ec` hand-writes its own `widening_mul`/`redc` (see e.g.
+//! `bouncycastle_ec::hazmat::p256_scalar`'s docs on why that isn't expressed generically) because
+//! each one's reduction is tuned to that specific modulus. That tuning is exactly what a "random"
+//! prime doesn't offer, so there is nothing curve-specific left to hand-write per brainpool width
+//! -- this module is genuinely shared, parameterized over the limb count `L` via a const generic
+//! (matching [`crate::nat`]'s own `add`/`sub`), with the modulus and Montgomery constants passed
+//! in at each call rather than baked in as per-curve compile-time constants.
 //!
 //! # Why a second const generic `L2`
 //!
@@ -18,7 +19,7 @@
 //! `generic_const_exprs`, which this workspace does not enable; `crypto/pqc/src/mldsa/mod.rs` has a
 //! commented-out attempt at a different const-generic feature for the same underlying reason).
 //! So the width is passed as a second parameter `L2`, with a debug assertion that it really is
-//! `2 * L`; every caller in this crate instantiates an `<L, 2L>` pair.
+//! `2 * L`; every caller instantiates an `<L, 2L>` pair.
 //!
 //! The obvious alternative -- and what this module did first -- is to dodge `L2` by returning the
 //! product as two separate `L`-sized halves, `(low, high)`, and indexing logical limb `idx` as
@@ -49,18 +50,18 @@
 /// `L2` is checked when the function is instantiated:
 ///
 /// ```compile_fail,E0080
-/// let _ = bouncycastle_ec::montgomery::widening_mul::<2, 3>(&[1, 2], &[3, 4]);
+/// let _ = bouncycastle_utils::montgomery::widening_mul::<2, 3>(&[1, 2], &[3, 4]);
 /// ```
 ///
 /// ```
-/// let product = bouncycastle_ec::montgomery::widening_mul::<2, 4>(&[1, 2], &[3, 4]);
+/// let product = bouncycastle_utils::montgomery::widening_mul::<2, 4>(&[1, 2], &[3, 4]);
 /// assert_eq!(product, [3, 10, 8, 0]);
 /// ```
 // `inline(always)` on both entry points: with the modulus arriving as a runtime `&[u64; L]`
 // rather than a per-curve constant, inlining is what lets each call site's own `P_LIMBS`/
 // `N_LIMBS` reach the multiply. Worth a consistent ~2% and measured, not assumed -- the two
-// functions are small numeric kernels, so the code-size cost is limited to the three widths
-// this crate instantiates.
+// functions are small numeric kernels, so the code-size cost is limited to the widths their
+// callers instantiate.
 #[inline(always)]
 pub fn widening_mul<const L: usize, const L2: usize>(a: &[u64; L], b: &[u64; L]) -> [u64; L2] {
     let mut result = [0u64; L2];
@@ -92,11 +93,11 @@ pub fn widening_mul_into<const L: usize, const L2: usize>(
         // contributes nothing to `get(..) as u128 + carry`'s low 64 bits at the next iteration, the
         // stored limb is written unchanged, and the "carry" that comes back out is again pure high
         // bits, propagating forever without ever affecting a stored limb (which is all this
-        // function returns) -- identical reasoning to [`crate::hazmat::p521`]'s own `widening_mul`,
-        // whose docs have the full argument. Verified (not merely argued) over 100,000+
-        // pseudorandom trials plus `(p-1)*(p-1)` for each of brainpoolP256r1/384r1/512r1's actual
-        // primes: the mutated function's output matches plain `u128`/bigint multiplication every
-        // time.
+        // function returns) -- identical reasoning to `bouncycastle_ec::hazmat::p521`'s own
+        // `widening_mul`, whose docs have the full argument. Verified (not merely argued) over
+        // 100,000+ pseudorandom trials plus `(p-1)*(p-1)` for each of brainpoolP256r1/384r1/512r1's
+        // actual primes: the mutated function's output matches plain `u128`/bigint multiplication
+        // every time.
         let mut k = i + L;
         while k < L2 {
             let s = (result[k] as u128) + carry;
@@ -126,7 +127,7 @@ pub fn widening_mul_into<const L: usize, const L2: usize>(
 /// `L2` is checked when the function is instantiated:
 ///
 /// ```compile_fail,E0080
-/// let _ = bouncycastle_ec::montgomery::widening_square::<2, 5>(&[1, 2]);
+/// let _ = bouncycastle_utils::montgomery::widening_square::<2, 5>(&[1, 2]);
 /// ```
 #[inline(always)]
 pub fn widening_square<const L: usize, const L2: usize>(a: &[u64; L]) -> [u64; L2] {
@@ -175,12 +176,12 @@ pub fn widening_square<const L: usize, const L2: usize>(a: &[u64; L]) -> [u64; L
 /// n*R`, the product of two values each `< n`), the `L`-limb modulus `n`, and `n' = -n⁻¹ mod
 /// 2^64`, returns `T * R⁻¹`, `< 2n` (proven, see the module docs) -- callers still need their own
 /// final conditional subtraction of `n` to reach the canonical `< n` representative, exactly as
-/// every hand-written per-curve `redc` in this crate already does.
+/// every hand-written per-curve `redc` in `bouncycastle-ec` already does.
 ///
 /// `L2` is `2L` and `L21` is `2L + 1`, checked when the function is instantiated:
 ///
 /// ```compile_fail,E0080
-/// let _ = bouncycastle_ec::montgomery::redc::<2, 4, 4>(&[0; 4], &[7, 0], 0x6db6db6db6db6db7);
+/// let _ = bouncycastle_utils::montgomery::redc::<2, 4, 4>(&[0; 4], &[7, 0], 0x6db6db6db6db6db7);
 /// ```
 #[inline(always)]
 pub fn redc<const L: usize, const L2: usize, const L21: usize>(

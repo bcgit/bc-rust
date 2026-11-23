@@ -19,9 +19,9 @@ use crate::modexp::{
 };
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_ec::montgomery;
-use bouncycastle_ec::nat;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::montgomery;
+use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive, zeroize_in_place};
 
 /// RSAVP1 (RFC 8017 §5.2.2): `m = s^e mod n`, recovering the message representative from a

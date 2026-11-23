@@ -48,9 +48,9 @@
 //! survives in two places: [`Sm2FieldElement::add`] uses it to correct a carry out of the top
 //! limb, and `reduce`'s final fold uses it on the accumulator's top limb.
 
-use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::nat;
 
 /// `p`, little-endian `u64` limbs (`draft-shen-sm2-ecdsa-02` Appendix D).
 pub const P_LIMBS: [u64; 4] =
@@ -117,7 +117,7 @@ impl Sm2FieldElement {
     /// downstream; the range is checked in debug builds.
     pub(crate) fn from_internal_limbs(limbs: [u64; 4]) -> Self {
         debug_assert_eq!(
-            crate::nat::sub(&limbs, &P_LIMBS).1,
+            bouncycastle_utils::nat::sub(&limbs, &P_LIMBS).1,
             1,
             "from_internal_limbs given a value >= p"
         );
