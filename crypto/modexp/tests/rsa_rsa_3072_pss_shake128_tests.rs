@@ -1,7 +1,7 @@
 //! RSA-3072 RSASSA-PSS-SHAKE128 (RFC 8702 §3.2.1) against Wycheproof's
-//! `rsa_pss_3072_shake128_test.json`, following `rsa_2048_pss_shake128_tests.rs`'s split: a
+//! `rsa_pss_3072_shake128_test.json`, following `rsa_rsa_2048_pss_shake128_tests.rs`'s split: a
 //! self-consistency round trip for signing (reusing the genuine RSA-3072 key
-//! `rsa_3072_tests.rs` recovered), and all of Wycheproof's real vectors for verification.
+//! `rsa_rsa_3072_tests.rs` recovered), and all of Wycheproof's real vectors for verification.
 
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::hex::decode as hex_decode;
@@ -61,7 +61,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
     limbs
 }
 
-/// The same genuine RSA-3072 keypair `rsa_3072_tests.rs` recovers (from
+/// The same genuine RSA-3072 keypair `rsa_rsa_3072_tests.rs` recovers (from
 /// `rsa_pkcs1_3072_sig_gen_test.json`'s SHA-256 group) -- reused here as a plain, valid RSA-3072
 /// key, not because it has anything to do with SHA-256/MGF1 specifically.
 fn genuine_key() -> RsaPrivateComponents<RSA3072> {

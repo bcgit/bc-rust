@@ -60,7 +60,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
     limbs
 }
 
-/// The same genuine RSA-2048 keypair `rsa_2048_pkcs1_v1_5_tests.rs` recovers from
+/// The same genuine RSA-2048 keypair `rsa_rsa_2048_pkcs1_v1_5_tests.rs` recovers from
 /// `rsa_pkcs1_2048_sig_gen_test.json` -- see that file for the full, sourced provenance (p/q
 /// recovered from Wycheproof's own `(n, e, d)` via the standard factoring-from-d method).
 

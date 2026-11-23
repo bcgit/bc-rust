@@ -42,7 +42,7 @@ use bouncycastle_rng::DefaultRNG;
 use bouncycastle_utils::montgomery::widening_mul;
 use core::num::NonZeroUsize;
 
-/// The documented Wycheproof RSA-2048 key's `p` and `q` (see `rsa_2048_pkcs1_v1_5_tests.rs` for
+/// The documented Wycheproof RSA-2048 key's `p` and `q` (see `rsa_rsa_2048_pkcs1_v1_5_tests.rs` for
 /// their provenance): two genuine 1024-bit primes.
 const P: [u64; 16] = [
     0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9,

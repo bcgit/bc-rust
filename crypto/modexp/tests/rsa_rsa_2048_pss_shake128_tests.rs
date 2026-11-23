@@ -1,7 +1,7 @@
 //! RSA-2048 RSASSA-PSS-SHAKE128 (`id-RSASSA-PSS-SHAKE128`, RFC 8702 §3.2.1) against Wycheproof's
-//! `rsa_pss_2048_shake128_test.json`, following the same split as `rsa_2048_pss_tests.rs`: no PSS
+//! `rsa_pss_2048_shake128_test.json`, following the same split as `rsa_rsa_2048_pss_tests.rs`: no PSS
 //! sig-gen vectors exist (PSS is randomized), so the sign side is a self-consistency round trip
-//! against the genuine RSA-2048 key `rsa_2048_pkcs1_v1_5_tests.rs` recovered (a valid RSA private
+//! against the genuine RSA-2048 key `rsa_rsa_2048_pkcs1_v1_5_tests.rs` recovered (a valid RSA private
 //! key signs under any hash/MGF choice; nothing ties it to SHA-256), and the verify side is
 //! checked against all of Wycheproof's real vectors.
 
@@ -68,7 +68,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
     limbs
 }
 
-/// The same genuine RSA-2048 keypair `rsa_2048_pkcs1_v1_5_tests.rs` recovers (from
+/// The same genuine RSA-2048 keypair `rsa_rsa_2048_pkcs1_v1_5_tests.rs` recovers (from
 /// `rsa_pkcs1_2048_sig_gen_test.json`'s SHA-256 group) -- reused here as a plain, valid RSA-2048
 /// key, not because it has anything to do with SHA-256/MGF1 specifically.
 fn genuine_key() -> RsaPrivateComponents<RSA2048> {

@@ -82,7 +82,7 @@
 //! use bouncycastle_modexp::rsa::keys::{RsaPrivateKey, RsaPublicKey};
 //! use bouncycastle_modexp::rsa::rsa_2048::{RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256};
 //! # // A genuine RSA-2048 keypair (Wycheproof rsa_pkcs1_2048_sig_gen_test.json's first SHA-256
-//! # // group; `tests/rsa_2048_pkcs1_v1_5_tests.rs` has the full, sourced provenance). A fresh
+//! # // group; `tests/rsa_rsa_2048_pkcs1_v1_5_tests.rs` has the full, sourced provenance). A fresh
 //! # // pair comes from `RSA2048::generate_pkcs1_v1_5_signature_key_pair::<SHA256>(&mut rng)?`
 //! # // instead -- a few seconds of Miller-Rabin in a debug build, so this example uses a fixed one.
 //! # const P: [u64; 16] = [0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9, 0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788, 0x978f6c35814f50ee, 0xe6a289ad4cfbf78f, 0x34d5681e5809d415, 0xbb028bda42eeb5d2, 0x41c56e4de086b0d5, 0x58b8d1e24f3b55d0, 0xfb5248247d98cb7d, 0xdc431050f782e894];
@@ -151,7 +151,7 @@
 //! exists for this size at all (see `# Scope` above), only `VerifyingKey` on a key typed with
 //! the scheme it checks, for signatures produced
 //! elsewhere -- here, one of Wycheproof's own genuine `rsa_pkcs1_1024_sig_gen_test.json`
-//! signatures (`tests/rsa_1024_tests.rs` has the full, sourced provenance):
+//! signatures (`tests/rsa_rsa_1024_tests.rs` has the full, sourced provenance):
 //!
 //! ```
 //! use bouncycastle_core::signature_key::{OneShotVerifyingKey, VerifyingKey};
@@ -248,7 +248,7 @@
 //! RSASSA-PKCS1-v1_5 alone at 1024 (SHA-256, SHA-384) and 1536 (verification only, per `# Scope`
 //! above), and validated against genuine vectors: Wycheproof for every size except 8192, which
 //! it has no key material for at all (cross-checked against BC Java instead); see
-//! `tests/rsa_<size>_tests.rs` for the specifics at each size. Every pairing is an instantiation of the generic
+//! `tests/rsa_rsa_<size>_tests.rs` for the specifics at each size. Every pairing is an instantiation of the generic
 //! schemes the key types' `SigningKey` / `DeterministicSigningKey` / `VerifyingKey` roles name
 //! (see `# Scope`), exercised through `bouncycastle_core_test_framework`'s shared signature
 //! conformance suite at each size.

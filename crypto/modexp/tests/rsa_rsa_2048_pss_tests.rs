@@ -1,11 +1,11 @@
 //! RSA-2048/SHA-256/MGF1-SHA-256/32-byte-salt RSASSA-PSS against Wycheproof
 //! (`rsa_pss_2048_sha256_mgf1_32_test.json`), following the same lookup convention as
-//! `rsa_2048_pkcs1_v1_5_tests.rs`.
+//! `rsa_rsa_2048_pkcs1_v1_5_tests.rs`.
 //!
 //! Wycheproof carries no PSS sig-gen vectors (PSS is randomized, so there is no single "the"
 //! correct signature per message the way PKCS#1 v1.5's deterministic encoding gives one): the
 //! sign side is exercised here by a self-consistency round trip (sign then verify) against the
-//! same genuine CRT key `rsa_2048_pkcs1_v1_5_tests.rs` recovered from
+//! same genuine CRT key `rsa_rsa_2048_pkcs1_v1_5_tests.rs` recovered from
 //! `rsa_pkcs1_2048_sig_gen_test.json`, and the verify side by all 108 real vectors in
 //! `rsa_pss_2048_sha256_mgf1_32_test.json` -- the same public key as that sig-gen key (confirmed
 //! by comparing moduli in Python before writing this file).
@@ -74,7 +74,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
     limbs
 }
 
-/// The same genuine RSA-2048 keypair `rsa_2048_pkcs1_v1_5_tests.rs` recovers from
+/// The same genuine RSA-2048 keypair `rsa_rsa_2048_pkcs1_v1_5_tests.rs` recovers from
 /// `rsa_pkcs1_2048_sig_gen_test.json` -- see that file for the full, sourced provenance (p/q
 /// recovered from Wycheproof's own `(n, e, d)` via the standard factoring-from-d method).
 fn wycheproof_key() -> RsaPrivateComponents<RSA2048> {

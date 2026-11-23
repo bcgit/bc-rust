@@ -328,7 +328,7 @@ mod tests {
     //! the "high-risk code that ... cannot be reached through the public API" exception
     //! `CLAUDE.md`'s testing notes describe. The key is a genuine RSA-2048 key pair, the first
     //! SHA-256 group of Wycheproof's `rsa_pkcs1_2048_sig_gen_test.json` (`e = 65537`; see
-    //! `tests/rsa_2048_pkcs1_v1_5_tests.rs` for its provenance), and every expected signature
+    //! `tests/rsa_rsa_2048_pkcs1_v1_5_tests.rs` for its provenance), and every expected signature
     //! was computed in Python and cross-checked two ways before being pasted here: CRT
     //! recombination against plain `pow(m, d, n)`, and `pow(pow(m, d, n), e, n) == m`.
 
@@ -498,7 +498,7 @@ mod tests {
         use bouncycastle_rng::DefaultRNG;
 
         // A genuine RSA-2048 key: the first SHA-256 group of Wycheproof's
-        // `rsa_pkcs1_2048_sig_gen_test.json` (`tests/rsa_2048_pkcs1_v1_5_tests.rs` has the provenance),
+        // `rsa_pkcs1_2048_sig_gen_test.json` (`tests/rsa_rsa_2048_pkcs1_v1_5_tests.rs` has the provenance),
         // with e = 65537.
         const P: [u64; 16] = [
             0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9,

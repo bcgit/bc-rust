@@ -1,6 +1,6 @@
 //! RSA-4096 RSASSA-PSS-SHAKE256 (RFC 8702 §3.2.1) against Wycheproof's
-//! `rsa_pss_4096_shake256_test.json`, following `rsa_2048_pss_shake128_tests.rs`'s split: a
-//! self-consistency round trip for signing (reusing the genuine RSA-4096 key `rsa_4096_tests.rs`
+//! `rsa_pss_4096_shake256_test.json`, following `rsa_rsa_2048_pss_shake128_tests.rs`'s split: a
+//! self-consistency round trip for signing (reusing the genuine RSA-4096 key `rsa_rsa_4096_tests.rs`
 //! recovered), and all of Wycheproof's real vectors for verification.
 
 use bouncycastle_core::hex::decode as hex_decode;
@@ -57,7 +57,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
     limbs
 }
 
-/// The same genuine RSA-4096 keypair `rsa_4096_tests.rs` recovers (from
+/// The same genuine RSA-4096 keypair `rsa_rsa_4096_tests.rs` recovers (from
 /// `rsa_pkcs1_4096_sig_gen_test.json`'s SHA-256 group) -- reused here as a plain, valid RSA-4096
 /// key, not because it has anything to do with SHA-256/MGF1 specifically.
 fn genuine_key() -> RsaPrivateComponents<RSA4096> {

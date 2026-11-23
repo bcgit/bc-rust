@@ -1,6 +1,7 @@
-//! Criterion benches for RSA-3072. See `rsa_2048_benches.rs`'s docs for the rationale; the genuine
-//! key is the same one `tests/rsa_3072_tests.rs` recovers from Wycheproof's
-//! `rsa_pkcs1_3072_sig_gen_test.json`.
+//! Criterion benches for RSA-4096. See `rsa_rsa_2048_benches.rs`'s docs for the rationale; the genuine
+//! key is the same one `tests/rsa_rsa_4096_tests.rs` recovers from Wycheproof's
+//! `rsa_pkcs1_4096_sig_gen_test.json`. `shake256` (not `shake128`) is the SHAKE choice wired up at
+//! this modulus size (RFC 8702 SS5).
 
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::signature_key::{
@@ -8,70 +9,79 @@ use bouncycastle_core::signature_key::{
 };
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_digest::sha2::SHA256;
-use bouncycastle_modexp::rsa::RSA3072;
-use bouncycastle_modexp::rsa::rsa_3072::{RSA3072KEMPrivateKey, RSA3072KEMPublicKey};
+use bouncycastle_modexp::rsa::RSA4096;
+use bouncycastle_modexp::rsa::rsa_4096::{RSA4096KEMPrivateKey, RSA4096KEMPublicKey};
 use bouncycastle_modexp::rsa::rsaes_oaep::OaepParams;
-use bouncycastle_modexp::rsa::size::RsaSigningSize;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use bouncycastle_modexp::rsa::keys::{RsaPrivateComponents, RsaPublicComponents};
-use bouncycastle_modexp::rsa::rsa_3072::{
+use bouncycastle_modexp::rsa::rsa_4096::{
     RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-    RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128,
+    RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE256,
 };
 use bouncycastle_rng::DefaultRNG;
 
-const MSG: &[u8] = b"a representative message for benchmarking RSA-3072";
+const MSG: &[u8] = b"a representative message for benchmarking RSA-4096";
 
-fn genuine_key() -> RsaPrivateComponents<RSA3072> {
-    let p: [u64; 24] = [
-        0xb26d973345bc4c5f, 0x23251a1d29962ca9, 0x554fc3f23d6c9046, 0x89ffe73b1401e9b8,
-        0xe0b448b454670aca, 0xa73ea5c2413d1da2, 0xe9539bc7a8d3b351, 0x357984fc116af9cb,
-        0xa93e40aac908e4e3, 0xae586c1e7f5c52cd, 0x80deaeaab651c7a9, 0xe261a4f7f4505580,
-        0xc5a703b2fc28bfcf, 0x14521a6893f3f3c5, 0x0f08d649107f449a, 0xd96ceabb7ee83ce5,
-        0x1b2e8a9b2bb69525, 0x383ead851fac07ad, 0x939deb88dff68550, 0xce9fa16a1cc92120,
-        0x43604a7f2be2860f, 0xba55f20a964c4e63, 0x0ed9ac8a812545da, 0xf5eca16e0e83696b,
+fn genuine_key() -> RsaPrivateComponents<RSA4096> {
+    let p: [u64; 32] = [
+        0x5141acd4afd4771f, 0x5857742b7e4032dc, 0xb7a9b97fe5371396, 0x4b1783c5bc91a6dc,
+        0xaf5d0c912d97b728, 0xeb265a7f28b88976, 0x5e993302aa72f11d, 0xc007ad09d76ae22a,
+        0x44cbb87b8bec8fd3, 0xf152f15c73b95ac5, 0x8dbdad655fbbad20, 0x59855d0de1c794ac,
+        0x4c6060926d878a20, 0xf38860474e44993d, 0x177a91caeef98b13, 0xd1676123544d3def,
+        0xc1673063d8487390, 0xfedd55ba2e233a6d, 0x016a5735b883c639, 0xbd813f9fb752805b,
+        0x923a7b775b5ffaff, 0xb174e55ca6a12c21, 0x0373077895a6934a, 0x6b725388f54ffea3,
+        0x953c09104e1fd2d3, 0x9114f39017871528, 0x33918eb72b786b3c, 0xf43b8626af13d14a,
+        0x886a0904eb486140, 0x0037409b81f3a5b3, 0x19e44e26140d2ede, 0xc3c677495c2bd566,
     ];
-    let q: [u64; 24] = [
-        0x7981610848c55cdd, 0x8bce03c5d339b975, 0xb8227d7b5d76ce8b, 0x6edee1e9d17781db,
-        0x1c127ac3c4d0bd59, 0xb8b28f38951d7bee, 0x496086fa1300249a, 0x790e5c34729a8efb,
-        0x9bdb81968f4a6d7c, 0x6018fd4ed9a3545f, 0x6ccb168d5b510dbe, 0xe1d845c6553c0a54,
-        0x73ec1d97f669e298, 0x8b898025ef470e43, 0x160deb327e8ace01, 0x640191099b355611,
-        0xe0ec501ccc94b2b0, 0x4f98c9ee4fdae41b, 0x0082a3bc42af1a14, 0x510a623c2b47a522,
-        0x32057f9da6dbefc4, 0x95ad92b6f295d610, 0x19ddbfcfa2d96704, 0xcf25446f59cf5129,
+    let q: [u64; 32] = [
+        0xee0745546a6a1c73, 0x8b1050436d882425, 0xdc2e7872ce6fb2b7, 0xf98671ee4899050b,
+        0x796a5dd847400804, 0x9ba1f51132355792, 0xc39066a9fc27985b, 0x81f4bca5d15e0962,
+        0x6a46cf6dbb6d2ad9, 0xdf3d085ae7693b7e, 0xf58e3c750b6d978a, 0xb52b9000d3a7aab1,
+        0xdbb07e23bce1960c, 0x4e291b5c8ddaa6a7, 0x0544a7a7cb3f0792, 0xc695e324fbb11beb,
+        0xbded418507f2f175, 0x49fe5f47737ff436, 0xeb37f85b7554d7ad, 0x724d042aef25cea2,
+        0xeadbd11dcd2fec7b, 0xb50812705b379f5d, 0xfc50fa98fb67b746, 0x16f2bdf5964b26c7,
+        0xcc1c817507859246, 0x6810c2136ad81b16, 0xd7bc78d637e17e0e, 0x6882825347455782,
+        0xcdb615d921f5e705, 0x0a982efbe6658e6b, 0x59e96686f7b8752f, 0xc357cf685f9b8d4e,
     ];
-    let d_p: [u64; 24] = [
-        0xeeb10a8531c470ed, 0xbcd9be04cdc9d65c, 0xb684b458e4ab3854, 0x6a2dafd0d3b23a21,
-        0xc812cbd3dccc8b35, 0x3e67363a947405c6, 0xa3ce9c7d391bdbb2, 0xf8bd10156b4bd580,
-        0x3c1ce3ae99eb37da, 0xcfa5f4771567cc23, 0x35e0be9a437021c1, 0x8a527b7b967be52e,
-        0xc649435b483585d6, 0x1dc154ddadf6bc20, 0x69105ecfc1144838, 0x3dad9bdd05d4f6d4,
-        0xf95601b3d122be79, 0x92f1eed27a0ada46, 0x152e93f904cfe6e6, 0x5a6e6d9c19e8bdb3,
-        0x6c0437d3cb7c843f, 0x370e84e9f5f0f931, 0x514c6940c20eb67b, 0x6357a59679d26801,
+    let d_p: [u64; 32] = [
+        0x3cd8e91fee6bcdd3, 0x074fdc015ab1c45f, 0x34135987a2288907, 0xf6961d44dfb7505c,
+        0x251be32315a85b75, 0xe8982e8493a2ae78, 0xc268493861002977, 0x140fb5806735814e,
+        0x35d426d719b12c41, 0xa5f194dbbf374226, 0xa0a6c5314c1a2375, 0x66899d59c04b60c4,
+        0x5158d7867dbfec94, 0xec1dde997c00125e, 0x62e5a19b2a71decf, 0x310291892c37e8a2,
+        0x223e06c9521f4a45, 0xe4f08e1d5543ed74, 0xcf4dc8de58b9e9ad, 0x9167ad4f122b3263,
+        0xf110dbac286712f6, 0x2db237d0f39cda5f, 0xa54b67367c857476, 0x138b37b7b1ed2219,
+        0x950d9f4e82aab9bc, 0x90943e671e928e23, 0x44791809c9fcf19f, 0xc70396da054ba478,
+        0x77248f6fe00e31bd, 0xf3731b1415d5f2ee, 0xf5242aa6657760cd, 0xa6bbb5460638d2b2,
     ];
-    let d_q: [u64; 24] = [
-        0x1a4dbeba87772d29, 0xe51861bbb4e73e73, 0x9e86b2483e9bf22c, 0xc9ebcf4d7c2d6c9f,
-        0xbe8fe9def6b7a62c, 0x4e8805a755ac2904, 0x734f44f3e4e88d18, 0x7626602fc90ae694,
-        0xde97c88d40fa1ac4, 0x4eeaf1aafe2e1ba5, 0x25cd66f5205b038b, 0x8fa6bb6ae73b182d,
-        0x0c85ab03068cbfee, 0x96f0ae48529b490f, 0xbb4cc906ba283d18, 0x4bf60c135a264919,
-        0x4c2cf95ce74fe42c, 0xf4a5e8eed2a70c7a, 0x14ecee22e846a7d3, 0xd2a4139a39cec9df,
-        0x4ba0e0801d31cbf5, 0x088a7986f6c2b8c0, 0x8bdc0f566f876191, 0x0004dadabfc15b1a,
+    let d_q: [u64; 32] = [
+        0xfa935bd36284ea6b, 0x9c255a57d6b3ac0f, 0x35b350881ec52e99, 0xf48d35dd11598957,
+        0x61fee5d3763b8cfb, 0xf86f5d1936a161ae, 0x3a8b852507264ae2, 0xe558f90950a572a2,
+        0x205aeb15029c95a6, 0x0fa8cf020e960c3b, 0x6a793c66abfb0963, 0xa9c7d7b391d0cbee,
+        0x6310f31421e85c6b, 0xc0de89d2edb32796, 0x1cf37af6eab4ed97, 0x1533eacf819c878e,
+        0xc700fc7e2a482abe, 0x4d1c62a63d917682, 0x89141558095c3228, 0x029bb05df0b8f121,
+        0xa239e00b24ba9b5b, 0x74c3c55d5051f35f, 0x2f45200123860c7d, 0x4fabf224d27abaf1,
+        0x0acb80fbf7ed2d86, 0x87db455a8bee03ce, 0x980bbbd1afa8fac6, 0x9d9ee6515ded4930,
+        0x4c62a05dae0f744b, 0x69ff90e2839348c9, 0xda141e6d351e42da, 0x178cd58f72bf5118,
     ];
-    let q_inv: [u64; 24] = [
-        0x45b268741fca195c, 0x94eacf955ae5dacd, 0x3ad1a334fd85aa87, 0xe8b01c83f2aec93e,
-        0xd05fdc78929fa0cf, 0x0745ab95edda215b, 0xe5c81a2189f11467, 0xeded3f90e0ba4a97,
-        0xfbf69baed9510be5, 0x6bee976c25dbaff8, 0x6ad65e9fe6c28038, 0xef6613dd6bf885c1,
-        0x594990da705ebdf7, 0x8ee8b716f19429fb, 0x2662db8c85318de4, 0x22481fc74a7a3d62,
-        0xfe6c3600d9b8e9a9, 0x744fac4daabf5488, 0xfbee6ec24b75fbf0, 0x8be552c8be44f139,
-        0xfb0da96bd423759d, 0xb3443d93e7e8ca62, 0x36fe01b950885ecd, 0x214a1f73130e48b3,
+    let q_inv: [u64; 32] = [
+        0x5792505b857d3e8d, 0x8a13922b1240c0d2, 0xb5fcb8bf3df1f936, 0x74483606c2cd7ed8,
+        0xd40f33bbfd9be093, 0xb5f40ed6632989f5, 0x7f2cc0cd8c8a0661, 0x87630c6b25dddeb5,
+        0x7032a5af6ef7c20f, 0x90331600142e6cb9, 0x67b92645b68c6d8f, 0xb63517c7c39843cf,
+        0xd50712bf8fc35882, 0x3c421e2447b1a989, 0x7a251afa7aaa6908, 0x43b4de11f99b2654,
+        0x1e02735920ef48a3, 0x218fc24da34ce8f0, 0x280446e49b3b9b15, 0x8d96f07411c882bf,
+        0x66e283f5d5fb0e6e, 0x0844efd28d853446, 0x5eb4def8dba57b99, 0x474111f92d19f3ab,
+        0x748d7b5d94cacd4d, 0xcf634f3a07cea4b7, 0x8dbcca51f4da4379, 0x80774236a54ec9dc,
+        0x6a1ef00ee582d3d1, 0xdecfb14ca1e80c8e, 0xc78af5f6c807cc99, 0x484ad86e79415ea3,
     ];
-    RsaPrivateComponents::<RSA3072>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv, 0x10001)
-        .expect("genuine RSA-3072 CRT components must be accepted")
+    RsaPrivateComponents::<RSA4096>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv, 0x10001)
+        .expect("genuine RSA-4096 CRT components must be accepted")
 }
 
-fn bench_rsa_3072(c: &mut Criterion) {
+fn bench_rsa_4096(c: &mut Criterion) {
     let sk = genuine_key();
-    let pk = RsaPublicComponents::<RSA3072>::new(sk.n(), 0x10001).unwrap();
+    let pk = RsaPublicComponents::<RSA4096>::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
 
     let sig_pkcs1_256 = sk.key::<RSASSA_PKCS1_v1_5_SHA256>().sign_deterministic(MSG, None).unwrap();
@@ -80,9 +90,9 @@ fn bench_rsa_3072(c: &mut Criterion) {
     let sig_pss_256 = sk.key::<RSASSA_PSS_SHA256>().sign(&mut rng, MSG, None).unwrap();
     let sig_pss_384 = sk.key::<RSASSA_PSS_SHA384>().sign(&mut rng, MSG, None).unwrap();
     let sig_pss_512 = sk.key::<RSASSA_PSS_SHA512>().sign(&mut rng, MSG, None).unwrap();
-    let sig_pss_shake128 = sk.key::<RSASSA_PSS_SHAKE128>().sign(&mut rng, MSG, None).unwrap();
+    let sig_pss_shake256 = sk.key::<RSASSA_PSS_SHAKE256>().sign(&mut rng, MSG, None).unwrap();
 
-    let mut group = c.benchmark_group("rsa_3072");
+    let mut group = c.benchmark_group("rsa_4096");
 
     group.bench_function("pkcs1v15_sign_sha256", |b| {
         b.iter(|| {
@@ -180,19 +190,19 @@ fn bench_rsa_3072(c: &mut Criterion) {
                 .unwrap()
         })
     });
-    group.bench_function("pss_sign_shake128", |b| {
+    group.bench_function("pss_sign_shake256", |b| {
         b.iter(|| {
             black_box(
-                sk.key::<RSASSA_PSS_SHAKE128>()
+                sk.key::<RSASSA_PSS_SHAKE256>()
                     .sign(&mut DefaultRNG::default(), black_box(MSG), None)
                     .unwrap(),
             )
         })
     });
-    group.bench_function("pss_verify_shake128", |b| {
+    group.bench_function("pss_verify_shake256", |b| {
         b.iter(|| {
-            pk.key::<RSASSA_PSS_SHAKE128>()
-                .verify(black_box(MSG), None, black_box(&sig_pss_shake128))
+            pk.key::<RSASSA_PSS_SHAKE256>()
+                .verify(black_box(MSG), None, black_box(&sig_pss_shake256))
                 .unwrap()
         })
     });
@@ -200,8 +210,8 @@ fn bench_rsa_3072(c: &mut Criterion) {
     // RSASVE (SP 800-56B Rev. 2 §7.2.1) under the same key material, re-read as KEM key types
     // through the shared raw encoding. Encapsulation is one public-exponent modexp plus the RNG
     // draw; decapsulation is the same CRT exponentiation signing does.
-    let kem_sk = RSA3072KEMPrivateKey::from_bytes(&sk.key::<RSASSA_PSS_SHA256>().encode()).unwrap();
-    let kem_pk = RSA3072KEMPublicKey::from_bytes(&pk.key::<RSASSA_PSS_SHA256>().encode()).unwrap();
+    let kem_sk = RSA4096KEMPrivateKey::from_bytes(&sk.key::<RSASSA_PSS_SHA256>().encode()).unwrap();
+    let kem_pk = RSA4096KEMPublicKey::from_bytes(&pk.key::<RSASSA_PSS_SHA256>().encode()).unwrap();
     let (_, kem_ct) = kem_pk.encaps(&mut rng, ()).unwrap();
     group.bench_function("rsasve_encaps", |b| {
         b.iter(|| black_box(black_box(&kem_pk).encaps(&mut rng, ()).unwrap()))
@@ -221,16 +231,7 @@ fn bench_rsa_3072(c: &mut Criterion) {
     });
 
     group.finish();
-
-    // FIPS 186-5 A.1.3 key generation: rejection sampling, so the run-to-run spread is large;
-    // ten samples is enough to see the order of magnitude without a multi-minute bench.
-    let mut keygen_group = c.benchmark_group("rsa_3072_keygen");
-    keygen_group.sample_size(10);
-    keygen_group.bench_function("keygen", |b| {
-        b.iter(|| black_box(RSA3072::keygen(&mut DefaultRNG::default()).unwrap()))
-    });
-    keygen_group.finish();
 }
 
-criterion_group!(benches, bench_rsa_3072);
+criterion_group!(benches, bench_rsa_4096);
 criterion_main!(benches);

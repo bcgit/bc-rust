@@ -1,5 +1,5 @@
-//! Criterion benches for RSA-8192. See `rsa_2048_benches.rs`'s docs for the rationale; the genuine
-//! key is the same fresh, self-generated one `tests/rsa_8192_tests.rs` uses for its BC Java
+//! Criterion benches for RSA-8192. See `rsa_rsa_2048_benches.rs`'s docs for the rationale; the genuine
+//! key is the same fresh, self-generated one `tests/rsa_rsa_8192_tests.rs` uses for its BC Java
 //! cross-check (see that file for the full provenance). No PSS-SHAKE variant is benched: none is
 //! wired up at this modulus size (see `bouncycastle_modexp::rsa::rsa_8192`'s docs for why).
 

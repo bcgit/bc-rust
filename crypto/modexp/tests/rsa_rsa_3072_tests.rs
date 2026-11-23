@@ -1,13 +1,13 @@
 //! RSA-3072 against Wycheproof: `rsa_pkcs1_3072_sig_gen_test.json` (sign), `rsa_signature_3072_
 //! sha{256,384,512}_test.json` (verify, all three hashes), and `rsa_pss_3072_sha256_mgf1_32_test.json`
 //! (PSS verify; no matching-hash-and-MGF PSS vector file exists for SHA-384/512 at this size, so
-//! those are self-consistency only, following `rsa_2048_pss_sha384_sha512_tests.rs`'s precedent --
+//! those are self-consistency only, following `rsa_rsa_2048_pss_sha384_sha512_tests.rs`'s precedent --
 //! including its fixed-salt-round-trip-plus-rejection and RNG-freshness test shape, so every
 //! PSS signing path (three hashes, RNG-drawn or fixed salt) is actually exercised at least once).
 //!
 //! `p`/`q`/`dP`/`dQ`/`qInv` were recovered from `rsa_pkcs1_3072_sig_gen_test.json`'s SHA-256
 //! group's `(n, e, d)` via the same factoring-from-d method as RSA-2048's key (see
-//! `rsa_2048_pkcs1_v1_5_tests.rs`), cross-checked against all 8 of that group's real signatures
+//! `rsa_rsa_2048_pkcs1_v1_5_tests.rs`), cross-checked against all 8 of that group's real signatures
 //! before being pasted here.
 
 use bouncycastle_core::errors::SignatureError;
@@ -165,7 +165,7 @@ fn pkcs1_v1_5_sha384_and_sha512_round_trip() {
 /// called, and no test asserted a wrong message is rejected for SHA-384/512): a
 /// whole-function-body mutant replacing any of them with a constant still passed the whole suite.
 /// Split into six tests, one per (hash, salt source) pairing, matching
-/// `rsa_2048_pss_sha384_sha512_tests.rs`'s own shape so every function is called and every
+/// `rsa_rsa_2048_pss_sha384_sha512_tests.rs`'s own shape so every function is called and every
 /// rejection path is checked.
 #[test]
 fn pss_sha256_fixed_salt_round_trips() {

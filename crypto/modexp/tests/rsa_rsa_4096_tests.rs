@@ -5,7 +5,7 @@
 //! sig-gen key material to check signing against a known-correct output, so every other sign
 //! pairing (PKCS#1 v1.5/SHA-384 and /SHA-512 signing, and PSS signing under all three hashes
 //! with both an RNG-drawn and a fixed salt) is exercised by a self-consistency round trip instead, following
-//! `rsa_3072_tests.rs`'s own precedent.
+//! `rsa_rsa_3072_tests.rs`'s own precedent.
 //!
 //! `p`/`q`/`dP`/`dQ`/`qInv` were recovered from `rsa_pkcs1_4096_sig_gen_test.json`'s SHA-256
 //! group's `(n, e, d)` via the same factoring-from-d method as RSA-2048's key, cross-checked
@@ -355,7 +355,7 @@ fn rsa_pss_4096_sha512_mgf1_64_wycheproof_vectors() {
 /// `verify` (against externally-sourced signatures), so a whole-function-body mutant replacing any
 /// sign function with a constant still passed the whole suite. One fixed-salt-round-trip-plus-
 /// rejection test and one RNG-freshness test per hash, matching
-/// `rsa_2048_pss_sha384_sha512_tests.rs`'s shape, calls each function at least once.
+/// `rsa_rsa_2048_pss_sha384_sha512_tests.rs`'s shape, calls each function at least once.
 #[test]
 fn pss_sha256_fixed_salt_round_trips() {
     let sk = genuine_key();

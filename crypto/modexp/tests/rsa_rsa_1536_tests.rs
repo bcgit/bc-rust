@@ -1,5 +1,5 @@
 //! RSA-1536 (verification only, see `rsa_1536.rs`'s docs) against Wycheproof's
-//! `rsa_pkcs1_1536_sig_gen_test.json`, the same way `rsa_1024_tests.rs` uses its own sig-gen file:
+//! `rsa_pkcs1_1536_sig_gen_test.json`, the same way `rsa_rsa_1024_tests.rs` uses its own sig-gen file:
 //! each group's `(n, e)` plus its own `(msg, sig)` pairs, used directly as real "valid" verify
 //! vectors, since a sig-gen file's private key fields are simultaneously valid public key
 //! material and this module never constructs an RSA-1536 private key at all.
@@ -142,7 +142,7 @@ fn pkcs1_v1_5_sha512_rejects_wrong_message() {
 
 // ---- bouncycastle_core trait conformance ------------------------------------------------------
 //
-// Verify-only at this size, as at RSA-1024 -- see `rsa_1024_tests.rs` for why the
+// Verify-only at this size, as at RSA-1024 -- see `rsa_rsa_1024_tests.rs` for why the
 // `core-test-framework` signature suite cannot run here.
 
 #[test]

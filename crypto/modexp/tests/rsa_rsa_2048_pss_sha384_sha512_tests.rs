@@ -3,7 +3,7 @@
 //! vector file exists in this Wycheproof checkout (only the SHA-512/224 and SHA-512/256 variants,
 //! and a mixed SHA-512-hash/MGF1-SHA-256 "params" file, neither of which this module's SHA-512
 //! wiring is), so SHA-512 is covered by self-consistency round trips only, the same as SHA-384's
-//! sign side -- see `rsa_2048_pkcs1_v1_5_sha384_sha512_tests.rs` for why reusing the SHA-256
+//! sign side -- see `rsa_rsa_2048_pkcs1_v1_5_sha384_sha512_tests.rs` for why reusing the SHA-256
 //! sig-gen key here (rather than factoring a fresh one) is the right tradeoff.
 
 use bouncycastle_core::errors::SignatureError;
@@ -65,7 +65,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
 }
 
 /// The same genuine RSA-2048 keypair used throughout this crate's other test files -- see
-/// `rsa_2048_pkcs1_v1_5_tests.rs` for the full, sourced provenance.
+/// `rsa_rsa_2048_pkcs1_v1_5_tests.rs` for the full, sourced provenance.
 fn genuine_key() -> RsaPrivateComponents<RSA2048> {
     let p: [u64; 16] = [
         0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9,
@@ -212,7 +212,7 @@ fn fixed_keypair()
 }
 
 /// `core-test-framework`'s conformance suite for the SHA-384/SHA-512 PSS pairings (randomized,
-/// `ctx` ignored); the bit-flip pass runs in `rsa_2048_pss_tests.rs`'s SHA-256 suite.
+/// `ctx` ignored); the bit-flip pass runs in `rsa_rsa_2048_pss_tests.rs`'s SHA-256 suite.
 #[test]
 fn pss_sha384_sha512_trait_conformance_suite() {
     let framework = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Refused);

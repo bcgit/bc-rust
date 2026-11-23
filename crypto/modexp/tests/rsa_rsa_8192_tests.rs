@@ -231,7 +231,7 @@ fn pss_verifies_bc_java_sha256_signature() {
 /// exercised at this modulus size (the old combined self-consistency test above only called one
 /// salt source per hash and never asserted rejection): a whole-function-body mutant replacing any
 /// of them with a constant still passed the whole suite. Split into six tests, one per (hash, salt
-/// source) pairing, matching `rsa_2048_pss_sha384_sha512_tests.rs`'s own shape.
+/// source) pairing, matching `rsa_rsa_2048_pss_sha384_sha512_tests.rs`'s own shape.
 #[test]
 fn pss_sha256_fixed_salt_round_trips() {
     let sk = genuine_key();
@@ -405,7 +405,7 @@ fn fixed_keypair()
 }
 
 /// `core-test-framework`'s full conformance suite for one pairing at this width; the rest get
-/// [`trait_round_trip`], for the reason `rsa_4096_tests.rs` gives (an RSA-8192 signature is
+/// [`trait_round_trip`], for the reason `rsa_rsa_4096_tests.rs` gives (an RSA-8192 signature is
 /// slower still in a debug build).
 #[test]
 fn pkcs1_v1_5_sha256_trait_conformance_suite() {

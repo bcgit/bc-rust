@@ -24,7 +24,7 @@ use bouncycastle_utils::secret::ZeroizablePrimitive;
 type Pss256 = RSASSA_PSS<RSA2048, SHA256>;
 
 // A genuine RSA-2048 key: the first SHA-256 group of Wycheproof's
-// `rsa_pkcs1_2048_sig_gen_test.json` (`tests/rsa_2048_pkcs1_v1_5_tests.rs` has the provenance),
+// `rsa_pkcs1_2048_sig_gen_test.json` (`tests/rsa_rsa_2048_pkcs1_v1_5_tests.rs` has the provenance),
 // with `N = P * Q` by Python's integers.
 const P: [u64; 16] = [
     0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9,

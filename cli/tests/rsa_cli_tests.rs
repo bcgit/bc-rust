@@ -28,7 +28,7 @@ use std::thread;
 const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
 
 /// The genuine RSA-2048 CRT key `bouncycastle_modexp::rsa`'s own module docs use (Wycheproof
-/// `rsa_pkcs1_2048_sig_gen_test.json`'s SHA-256 group, factored as `rsa_2048_pkcs1_v1_5_tests.rs`
+/// `rsa_pkcs1_2048_sig_gen_test.json`'s SHA-256 group, factored as `rsa_rsa_2048_pkcs1_v1_5_tests.rs`
 /// describes), in the CLI's `p || q || dP || dQ || qInv || e` key-file layout, hex.
 const SK_2048_HEX: &str = concat!(
     "dc431050f782e894fb5248247d98cb7d58b8d1e24f3b55d041c56e4de086b0d5",

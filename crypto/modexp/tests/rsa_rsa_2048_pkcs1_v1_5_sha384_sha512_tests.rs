@@ -3,12 +3,12 @@
 //!
 //! Each of Wycheproof's `rsa_pkcs1_2048_sig_gen_test.json` groups (including its SHA-384 and
 //! SHA-512 ones) uses a *distinct* key -- unlike the SHA-256 case
-//! (`rsa_2048_pkcs1_v1_5_tests.rs`), there is no shared key to recover once and reuse across
+//! (`rsa_rsa_2048_pkcs1_v1_5_tests.rs`), there is no shared key to recover once and reuse across
 //! hashes here, and factoring another key per hash is disproportionate to what this step needs:
 //! `EMSA-PKCS1-v1_5`'s DigestInfo construction is generic over the hash (see `digest_info`'s own
 //! docs) and already exercised end to end for SHA-256, and RSASP1/RSAVP1 do not depend on which
 //! hash produced the message representative they are given. So the sign side here is a
-//! self-consistency round trip against the SHA-256 key `rsa_2048_pkcs1_v1_5_tests.rs` already
+//! self-consistency round trip against the SHA-256 key `rsa_rsa_2048_pkcs1_v1_5_tests.rs` already
 //! recovered (a valid RSA private key signs under any hash choice; nothing about the key ties it
 //! to SHA-256), while the verify side -- where the real risk is a wrong OID or digest length for
 //! the hash in question -- is checked against all of Wycheproof's real vectors for both hashes.
@@ -59,7 +59,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
     limbs
 }
 
-/// The same genuine RSA-2048 keypair `rsa_2048_pkcs1_v1_5_tests.rs` recovers (from
+/// The same genuine RSA-2048 keypair `rsa_rsa_2048_pkcs1_v1_5_tests.rs` recovers (from
 /// `rsa_pkcs1_2048_sig_gen_test.json`'s SHA-256 group) -- reused here as a plain, valid RSA-2048
 /// key, not because it has anything to do with SHA-256 specifically.
 fn genuine_key() -> RsaPrivateComponents<RSA2048> {
@@ -222,7 +222,7 @@ fn fixed_keypair()
 }
 
 /// `core-test-framework`'s conformance suite for the SHA-384 and SHA-512 pairings (deterministic,
-/// `ctx` ignored). The exhaustive bit-flip pass runs in `rsa_2048_pkcs1_v1_5_tests.rs`'s SHA-256
+/// `ctx` ignored). The exhaustive bit-flip pass runs in `rsa_rsa_2048_pkcs1_v1_5_tests.rs`'s SHA-256
 /// suite, over the same generic code.
 #[test]
 fn pkcs1_v1_5_sha384_sha512_trait_conformance_suite() {

@@ -22,7 +22,7 @@
 //! Only one representative (scheme, hash) is benched per modulus size (PKCS#1 v1.5/SHA-256): peak
 //! stack usage here is dominated by the const-generic-width RSASP1/RSAVP1 modular exponentiation
 //! (`L`, this modulus size's own limb count), not by which hash fed into it -- the
-//! `crypto/modexp/benches/rsa_*_benches.rs` criterion benches are where per-hash/per-scheme
+//! `crypto/modexp/benches/rsa_rsa_*_benches.rs` criterion benches are where per-hash/per-scheme
 //! *time* differences are measured instead.
 //!
 //! Main is at the bottom, controls which this was actually run.
