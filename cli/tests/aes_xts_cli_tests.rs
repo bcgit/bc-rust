@@ -192,6 +192,34 @@ fn bad_arguments_are_refused() {
     }
 }
 
+/// The keys XTS refuses are refused by name, before anything is written: equal halves, of which
+/// the all-zero key is one -- without the other commands' warning that an all-zero key is being
+/// proceeded with -- and a half that is all zeros, whichever half it is.
+#[test]
+fn degenerate_keys_are_refused_by_name() {
+    let zero16 = "00".repeat(16);
+    let zero32 = "00".repeat(32);
+    let equal = "Key_1 and Key_2, are equal";
+    let zero_half = "Key_1 or Key_2, is all zeros";
+    let cases: [(&str, String, &str); 7] = [
+        ("aes128-xts", "00".repeat(32), equal),
+        ("aes256-xts", "00".repeat(64), equal),
+        ("aes128-xts", "00112233445566778899aabbccddeeff".repeat(2), equal),
+        ("aes128-xts", format!("{zero16}{}", &KEY32[32..]), zero_half),
+        ("aes128-xts", format!("{}{zero16}", &KEY32[32..]), zero_half),
+        ("aes256-xts", format!("{zero32}{}", &KEY64[64..]), zero_half),
+        ("aes256-xts", format!("{}{zero32}", &KEY64[64..]), zero_half),
+    ];
+    for (cmd, key, msg) in cases {
+        for direction in ["encrypt", "decrypt"] {
+            let err = run_err_silent(&args(&xts(cmd, direction, &key, TWEAK, 512)), &[0x42; 512]);
+            assert!(err.contains(msg), "{cmd} {direction} {key}: stderr was: {err}");
+            assert!(!err.contains("Proceeding"), "{cmd} {direction} {key}: stderr was: {err}");
+            assert!(!err.contains("InvalidKeyType"), "{cmd} {direction} {key}: stderr was: {err}");
+        }
+    }
+}
+
 #[test]
 fn the_commands_are_listed_in_help() {
     listed_in_help(&["aes128-xts", "aes256-xts"]);

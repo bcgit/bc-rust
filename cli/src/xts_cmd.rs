@@ -1,27 +1,19 @@
-//! XTS-AES encryption and decryption of stdin to stdout, one data unit at a time: the
-//! `aes128-xts` and `aes256-xts` commands, one generic function that `main` instantiates per key
-//! length.
-//!
-//! The input is a sequence of data units of `--data-unit-len` bytes, and must be a whole number of
-//! them: an XTS key protects data units of one fixed length (NIST SP 800-38E Sec 4), so one length
-//! serves the whole input. The first data unit is processed under `--tweak` and each later one
-//! under the tweak before it plus one, read as a 128-bit little-endian integer: the numbering and
-//! the encoding of IEEE 1619-2007 Sec 5.1. Nothing is prepended or appended: the output is exactly
-//! as long as the input.
-//!
-//! # Warning
-//!
-//! XTS provides confidentiality only, and only for data at rest; see the subcommand help.
+//! The `aes128-xts` and `aes256-xts` commands: one generic function that `main` instantiates per
+//! key length. What the commands do with their input, the tweak and the key is in the subcommand
+//! help in `main.rs`.
 
-use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
+use crate::helpers::block_mode_helpers::CipherDirection;
 use crate::helpers::{
-    decode_hex_arg, flush_stdout, read_stdin_chunk, write_bytes_or_hex, write_stdout,
+    decode_hex_arg, flush_stdout, load_secret, read_stdin_chunk, strip_trailing_newline,
+    write_bytes_or_hex, write_stdout,
 };
 use bouncycastle::cipher::modes::{
     XTS_MAX_DATA_UNIT_LEN, XTS_MIN_DATA_UNIT_LEN, XTS_TWEAK_LEN, XTSKey,
 };
 use bouncycastle::core::hazmat::BlockPermutation;
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::FromKeyMaterial;
+use bouncycastle_utils::ct::{ct_eq_bytes, ct_eq_zero_bytes};
 use std::process::exit;
 
 /// XTS over the permutation `P` with a `KEY_LEN`-byte key, `Key_1 | Key_2`, on `data_unit_len`-byte
@@ -48,7 +40,7 @@ pub(crate) fn xts_cmd<P, const KEY_LEN: usize>(
         );
         exit(-1);
     }
-    let key = load_key_object::<XTSKey<P>, KEY_LEN>(key, key_file, alg);
+    let key = load_xts_key::<P, KEY_LEN>(key, key_file, alg);
 
     // `None` once a data unit has taken the tweak 2^128 - 1: there is no next one, and wrapping
     // round to 0 could repeat a tweak an earlier data unit used.
@@ -91,6 +83,58 @@ pub(crate) fn xts_cmd<P, const KEY_LEN: usize>(
         write_stdout(b"\n");
     }
     flush_stdout();
+}
+
+/// The XTS key from `--key-file` or `--key`, exactly `KEY_LEN` bytes after one trailing newline
+/// in a raw file is set aside, as the other cipher commands load theirs.
+///
+/// The two keys XTS refuses are named here, before the key is built: the block cipher commands'
+/// loader would accept an all-zero key with a warning that it is proceeding, which XTS does not,
+/// and the library's refusal of an all-zero half does not say which key it is refusing or why.
+fn load_xts_key<P, const KEY_LEN: usize>(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    alg: &str,
+) -> XTSKey<P>
+where
+    XTSKey<P>: FromKeyMaterial<KEY_LEN>,
+{
+    let secret = load_secret(key, key_file, "key");
+    let trimmed = strip_trailing_newline(secret.ref_to_bytes());
+    let key_bytes = if trimmed.len() == KEY_LEN { trimmed } else { secret.ref_to_bytes() };
+    if key_bytes.len() != KEY_LEN {
+        eprintln!("Error: {alg} needs a {KEY_LEN}-byte key, got {} bytes.", key_bytes.len());
+        exit(-1);
+    }
+
+    // Key = Key_1 | Key_2. Compared in constant time, as the library does: only the refusal is
+    // public.
+    let (key1, key2) = key_bytes.split_at(KEY_LEN / 2);
+    if ct_eq_bytes(key1, key2) {
+        eprintln!(
+            "Error: the two halves of the {alg} key, Key_1 and Key_2, are equal (an all-zero key \
+             is the usual case). XTS requires Key_1 != Key_2 (FIPS 140-3 IG C.I)."
+        );
+        exit(-1);
+    }
+    if ct_eq_zero_bytes(key1) | ct_eq_zero_bytes(key2) {
+        eprintln!(
+            "Error: one half of the {alg} key, Key_1 or Key_2, is all zeros. Each half is an AES \
+             key, and an all-zero AES key is refused."
+        );
+        exit(-1);
+    }
+
+    let material =
+        KeyMaterial::<KEY_LEN>::from_bytes_as_type(key_bytes, KeyType::SymmetricCipherKey)
+            .unwrap_or_else(|e| {
+                eprintln!("Error: couldn't load the key: {e:?}");
+                exit(-1);
+            });
+    XTSKey::<P>::from_key_material(&material).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't load the key: {e:?}");
+        exit(-1);
+    })
 }
 
 /// `--tweak`: exactly 16 bytes of hex, the 128-bit tweak of the first data unit.
