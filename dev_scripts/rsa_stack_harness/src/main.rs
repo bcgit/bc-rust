@@ -24,7 +24,9 @@ use bouncycastle_hkdf::{HKDF, HkdfDescription};
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::keygen::is_probable_prime;
 use bouncycastle_rsa::keys::{RsaPrivateComponents, RsaPrivateKey};
-use bouncycastle_rsa::modexp::{MontgomeryContext, mod_pow, mul_mod, reduce_wide, sub_mod};
+use bouncycastle_rsa::modexp::{
+    MontgomeryContext, mod_pow, mod_pow_public_exponent, mul_mod, reduce_wide, sub_mod,
+};
 use bouncycastle_rsa::rsaes_oaep::OaepParams;
 use bouncycastle_rsa::rsassa;
 use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
@@ -295,6 +297,8 @@ macro_rules! scan_size {
             const H: usize = $HALF;
             const H2: usize = 2 * H;
             const H21: usize = 2 * H + 1;
+            const H4: usize = 4 * H;
+            const H41: usize = 4 * H + 1;
             const K_LEN: usize = 16 * H;
             const SK_LEN: usize = 40 * H + 8;
             type V15 = RSASSA_PKCS1_v1_5<$K, SHA256>;
@@ -378,7 +382,11 @@ macro_rules! scan_size {
             let signed = |sig: &[u8; K_LEN]| {
                 let s = limbs_of(sig);
                 let (values, y) =
-                    key.crt_values::<H2, H21>(&<$K>::public_exp(components.n(), e, &s));
+                    key.crt_values::<H2, H21>(&mod_pow_public_exponent::<H2, H4, H41>(
+                        &s,
+                        e,
+                        &MontgomeryContext::<H2>::for_public_modulus(components.n()).unwrap(),
+                    ));
                 assert_eq!(y, s, "the harness's CRT is not the library's");
                 values
             };

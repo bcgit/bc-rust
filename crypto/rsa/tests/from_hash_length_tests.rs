@@ -11,6 +11,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{HashOneShot, RNG};
 use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::keys::{RsaPrivateComponents, RsaPublicComponents};
+use bouncycastle_rsa::modexp::{MontgomeryContext, mod_pow_public_exponent};
 use bouncycastle_rsa::rsassa::{
     self, RsaDeterministicSignatureAlgorithm, RsaRandomizedSignatureAlgorithm,
     RsaSignatureAlgorithm,
@@ -118,7 +119,7 @@ fn pkcs1_v1_5_from_hash_refuses_a_hash_of_the_wrong_length() {
 
 /// What a release build used to sign for a 20-byte "SHA-256 hash": a `DigestInfo` naming
 /// SHA-256 over a 20-byte OCTET STRING. Made here by hand, with its signature under the test
-/// key by Python 3.12 (`pow(em, d, n)`), which the public exponentiation takes back to the
+/// key by Python 3.12 (`pow(em, d, n)`), which exponentiation by `e` takes back to the
 /// structure: a well-formed signature of it, and not accepted for those 20 bytes, by
 /// `verify_from_hash`, which reports the length, or by the scheme's decoding.
 #[test]
@@ -151,7 +152,11 @@ fn pkcs1_v1_5_does_not_verify_a_digest_info_over_a_short_hash() {
     .try_into()
     .unwrap();
     assert_eq!(
-        RSA2048::public_exp(pk.n(), pk.e(), &RSA2048::limbs_from_be_bytes(&signature)),
+        mod_pow_public_exponent::<32, 64, 65>(
+            &RSA2048::limbs_from_be_bytes(&signature),
+            pk.e(),
+            &MontgomeryContext::<32>::for_public_modulus(pk.n()).unwrap()
+        ),
         RSA2048::limbs_from_be_bytes(&em)
     );
 

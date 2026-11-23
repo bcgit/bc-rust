@@ -296,7 +296,8 @@ where
                 break;
             }
         }
-        let c = K::public_exp(self.pk.n(), self.pk.e(), &z);
+        let c =
+            K::public_exp(self.pk.n(), self.pk.e(), &z, crate::size::sealed::EngineToken::new());
         *ct = K::be_bytes_from_limbs(&c);
         if let Err(e) = secret_value_into::<K, N>(&Z, ss) {
             ct.fill(0);
@@ -381,7 +382,7 @@ impl<K: RsaSigningSize> RsasveDecapsulator<'_, K> {
             return Err(KEMError::DecapsulationFailed);
         }
         let mut z = Secret::<K::Limbs>::new();
-        if !K::crt_exp(&self.sk.0, &c, &mut z).to_bool() {
+        if !K::crt_exp(&self.sk.0, &c, &mut z, crate::size::sealed::EngineToken::new()).to_bool() {
             return Err(KEMError::DecapsulationFailed);
         }
         let mut Z = Secret::<[u8; N]>::new();

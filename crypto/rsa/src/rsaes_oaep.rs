@@ -242,7 +242,7 @@ where
     // and a key-establishment key's modulus has its top bit set, so m < n.
     let mut m = Secret::<K::Limbs>::new();
     *m = K::limbs_from_be_bytes(&em);
-    let c = K::public_exp(pk.n(), pk.e(), &m);
+    let c = K::public_exp(pk.n(), pk.e(), &m, crate::size::sealed::EngineToken::new());
     *ct = K::be_bytes_from_limbs(&c);
     Ok(())
 }
@@ -306,7 +306,7 @@ where
     // Step 2.b: m = RSADP(K, c), constant time in the key, and `m` zero if it failed its check
     // (m^e mod n is not c); step 2.c: EM = I2OSP(m, k).
     let mut m = Secret::<K::Limbs>::new();
-    let checked = K::crt_exp(&sk.0, &c, &mut m);
+    let checked = K::crt_exp(&sk.0, &c, &mut m, crate::size::sealed::EngineToken::new());
     let mut em = Secret::<[u8; N]>::new();
     *em = K::be_bytes_from_limbs(&m);
     // A failed check must end as the one decryption error, and no sooner or later than a bad

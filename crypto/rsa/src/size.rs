@@ -46,8 +46,43 @@ impl<T: ZeroizablePrimitive + NoPadding + PartialEq + Eq + Debug + 'static, cons
 /// A modulus size: the marker's view of the engine at one width. Sealed, since an impl is a
 /// routing table into this crate's arithmetic and every length below must agree with it
 /// ([`check_lengths`]).
+///
+/// The public-key exponentiation is not a method code outside the crate can call: a public
+/// key is used through a scheme, by the roles its key types implement.
+///
+/// ```compile_fail,E0599
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::size::RsaSize;
+/// let _ = RSA2048::public_exp(&[3u64; 32], 65537, &[1u64; 32]);
+/// ```
+///
+/// Nor through a bound, which reaches the method but cannot supply its last argument:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_rsa::size::RsaSize;
+/// fn raw<K: RsaSize>(n: &K::Limbs, x: &K::Limbs) -> K::Limbs {
+///     K::public_exp(n, 65537, x, Default::default())
+/// }
+/// ```
+///
+/// ```
+/// use bouncycastle_rsa::RSA2048;
+/// use bouncycastle_rsa::size::RsaSize;
+/// fn less<K: RsaSize>(x: &K::Limbs, y: &K::Limbs) -> bool {
+///     K::is_less(x, y)
+/// }
+/// assert!(less::<RSA2048>(&[1u64; 32], &[3u64; 32]));
+/// ```
 pub trait RsaSize:
-    sealed::Sealed + Copy + Clone + Debug + Default + PartialEq + Eq + 'static
+    sealed::Sealed
+    + sealed::PublicKeyEngine<<Self as RsaSize>::Limbs>
+    + Copy
+    + Clone
+    + Debug
+    + Default
+    + PartialEq
+    + Eq
+    + 'static
 {
     /// The size's name, `RSA-2048`.
     const NAME: &'static str;
@@ -85,20 +120,14 @@ pub trait RsaSize:
     fn be_bytes_from_limbs(limbs: &Self::Limbs) -> Self::Modulus;
     /// Whether `x < y`.
     fn is_less(x: &Self::Limbs, y: &Self::Limbs) -> bool;
-    /// `x^e mod n`, the public-key operation (RSAVP1 / RSAEP's exponentiation), `x < n`.
-    ///
-    /// # Panics
-    ///
-    /// If `n` is even. A key's `n` never is, its constructor having refused it; only a caller
-    /// that hands this limbs of its own can get here.
-    fn public_exp(n: &Self::Limbs, e: u64, x: &Self::Limbs) -> Self::Limbs;
 }
 
 /// A size this crate signs, generates keys and establishes keys at: RSA-2048 and up (SP
 /// 800-131A's 112-bit floor).
 ///
-/// The private-key exponentiation is not among its methods: a private key is used through a
-/// scheme, by the roles its key types implement.
+/// The private-key exponentiation is not a method code outside the crate can call, by name or
+/// through a bound: a private key is used through a scheme, by the roles its key types
+/// implement.
 ///
 /// ```compile_fail,E0599
 /// use bouncycastle_rsa::RSA2048;
@@ -115,6 +144,22 @@ pub trait RsaSize:
 /// use bouncycastle_rsa::size::{RsaSigningSize, RsaSize};
 /// fn modulus(sk: &RsaPrivateComponents<RSA2048>) -> [u8; 256] {
 ///     RSA2048::be_bytes_from_limbs(sk.n())
+/// }
+/// ```
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_rsa::keys::RsaPrivateComponents;
+/// use bouncycastle_rsa::size::{RsaSigningSize, RsaSize};
+/// fn raw<K: RsaSigningSize>(sk: &RsaPrivateComponents<K>, m: &K::Limbs, out: &mut K::Limbs) {
+///     let _ = K::crt_exp(sk, m, out, Default::default());
+/// }
+/// ```
+///
+/// ```
+/// use bouncycastle_rsa::keys::RsaPrivateComponents;
+/// use bouncycastle_rsa::size::{RsaSigningSize, RsaSize};
+/// fn modulus<K: RsaSigningSize>(sk: &RsaPrivateComponents<K>) -> K::Modulus {
+///     K::be_bytes_from_limbs(sk.n())
 /// }
 /// ```
 pub trait RsaSigningSize: RsaSize + sealed::PrivateKeyEngine {
@@ -329,8 +374,10 @@ impl RsaSize for RSA1024 {
     fn is_less(x: &Self::Limbs, y: &Self::Limbs) -> bool {
         nat::sub(x, y).1 == 1
     }
+}
 
-    fn public_exp(n: &Self::Limbs, e: u64, x: &Self::Limbs) -> Self::Limbs {
+impl sealed::PublicKeyEngine<[u64; 16]> for RSA1024 {
+    fn public_exp(n: &[u64; 16], e: u64, x: &[u64; 16], _: sealed::EngineToken) -> [u64; 16] {
         rsa_core::public_exp::<16, 32, 33>(n, e, x)
     }
 }
@@ -370,8 +417,10 @@ impl RsaSize for RSA1536 {
     fn is_less(x: &Self::Limbs, y: &Self::Limbs) -> bool {
         nat::sub(x, y).1 == 1
     }
+}
 
-    fn public_exp(n: &Self::Limbs, e: u64, x: &Self::Limbs) -> Self::Limbs {
+impl sealed::PublicKeyEngine<[u64; 24]> for RSA1536 {
+    fn public_exp(n: &[u64; 24], e: u64, x: &[u64; 24], _: sealed::EngineToken) -> [u64; 24] {
         rsa_core::public_exp::<24, 48, 49>(n, e, x)
     }
 }
@@ -411,8 +460,10 @@ impl RsaSize for RSA2048 {
     fn is_less(x: &Self::Limbs, y: &Self::Limbs) -> bool {
         nat::sub(x, y).1 == 1
     }
+}
 
-    fn public_exp(n: &Self::Limbs, e: u64, x: &Self::Limbs) -> Self::Limbs {
+impl sealed::PublicKeyEngine<[u64; 32]> for RSA2048 {
+    fn public_exp(n: &[u64; 32], e: u64, x: &[u64; 32], _: sealed::EngineToken) -> [u64; 32] {
         rsa_core::public_exp::<32, 64, 65>(n, e, x)
     }
 }
@@ -454,6 +505,7 @@ impl sealed::PrivateKeyEngine for RSA2048 {
         d_q: &Self::HalfLimbs,
         q_inv: &Self::HalfLimbs,
         e: u64,
+        _: sealed::EngineToken,
     ) -> [Condition<u64>; 3] {
         rsa_core::crt_congruences::<16, 32>(p, q, d_p, d_q, q_inv, e)
     }
@@ -461,6 +513,7 @@ impl sealed::PrivateKeyEngine for RSA2048 {
     fn validate_key_pair(
         sk: &RsaPrivateComponents<Self>,
         rng: &mut dyn RNG,
+        _: sealed::EngineToken,
     ) -> Result<(), SignatureError> {
         validate_key_pair::<Self, 16, 32, 33>(sk, rng)
     }
@@ -469,6 +522,7 @@ impl sealed::PrivateKeyEngine for RSA2048 {
         sk: &RsaPrivateComponents<Self>,
         m: &Self::Limbs,
         out: &mut Self::Limbs,
+        _: sealed::EngineToken,
     ) -> Condition<u64> {
         rsa_core::crt_exp_checked::<32, 64, 65, 16, 32, 33>(
             sk.p(),
@@ -517,8 +571,10 @@ impl RsaSize for RSA3072 {
     fn is_less(x: &Self::Limbs, y: &Self::Limbs) -> bool {
         nat::sub(x, y).1 == 1
     }
+}
 
-    fn public_exp(n: &Self::Limbs, e: u64, x: &Self::Limbs) -> Self::Limbs {
+impl sealed::PublicKeyEngine<[u64; 48]> for RSA3072 {
+    fn public_exp(n: &[u64; 48], e: u64, x: &[u64; 48], _: sealed::EngineToken) -> [u64; 48] {
         rsa_core::public_exp::<48, 96, 97>(n, e, x)
     }
 }
@@ -560,6 +616,7 @@ impl sealed::PrivateKeyEngine for RSA3072 {
         d_q: &Self::HalfLimbs,
         q_inv: &Self::HalfLimbs,
         e: u64,
+        _: sealed::EngineToken,
     ) -> [Condition<u64>; 3] {
         rsa_core::crt_congruences::<24, 48>(p, q, d_p, d_q, q_inv, e)
     }
@@ -567,6 +624,7 @@ impl sealed::PrivateKeyEngine for RSA3072 {
     fn validate_key_pair(
         sk: &RsaPrivateComponents<Self>,
         rng: &mut dyn RNG,
+        _: sealed::EngineToken,
     ) -> Result<(), SignatureError> {
         validate_key_pair::<Self, 24, 48, 49>(sk, rng)
     }
@@ -575,6 +633,7 @@ impl sealed::PrivateKeyEngine for RSA3072 {
         sk: &RsaPrivateComponents<Self>,
         m: &Self::Limbs,
         out: &mut Self::Limbs,
+        _: sealed::EngineToken,
     ) -> Condition<u64> {
         rsa_core::crt_exp_checked::<48, 96, 97, 24, 48, 49>(
             sk.p(),
@@ -623,8 +682,10 @@ impl RsaSize for RSA4096 {
     fn is_less(x: &Self::Limbs, y: &Self::Limbs) -> bool {
         nat::sub(x, y).1 == 1
     }
+}
 
-    fn public_exp(n: &Self::Limbs, e: u64, x: &Self::Limbs) -> Self::Limbs {
+impl sealed::PublicKeyEngine<[u64; 64]> for RSA4096 {
+    fn public_exp(n: &[u64; 64], e: u64, x: &[u64; 64], _: sealed::EngineToken) -> [u64; 64] {
         rsa_core::public_exp::<64, 128, 129>(n, e, x)
     }
 }
@@ -666,6 +727,7 @@ impl sealed::PrivateKeyEngine for RSA4096 {
         d_q: &Self::HalfLimbs,
         q_inv: &Self::HalfLimbs,
         e: u64,
+        _: sealed::EngineToken,
     ) -> [Condition<u64>; 3] {
         rsa_core::crt_congruences::<32, 64>(p, q, d_p, d_q, q_inv, e)
     }
@@ -673,6 +735,7 @@ impl sealed::PrivateKeyEngine for RSA4096 {
     fn validate_key_pair(
         sk: &RsaPrivateComponents<Self>,
         rng: &mut dyn RNG,
+        _: sealed::EngineToken,
     ) -> Result<(), SignatureError> {
         validate_key_pair::<Self, 32, 64, 65>(sk, rng)
     }
@@ -681,6 +744,7 @@ impl sealed::PrivateKeyEngine for RSA4096 {
         sk: &RsaPrivateComponents<Self>,
         m: &Self::Limbs,
         out: &mut Self::Limbs,
+        _: sealed::EngineToken,
     ) -> Condition<u64> {
         rsa_core::crt_exp_checked::<64, 128, 129, 32, 64, 65>(
             sk.p(),
@@ -729,8 +793,10 @@ impl RsaSize for RSA8192 {
     fn is_less(x: &Self::Limbs, y: &Self::Limbs) -> bool {
         nat::sub(x, y).1 == 1
     }
+}
 
-    fn public_exp(n: &Self::Limbs, e: u64, x: &Self::Limbs) -> Self::Limbs {
+impl sealed::PublicKeyEngine<[u64; 128]> for RSA8192 {
+    fn public_exp(n: &[u64; 128], e: u64, x: &[u64; 128], _: sealed::EngineToken) -> [u64; 128] {
         rsa_core::public_exp::<128, 256, 257>(n, e, x)
     }
 }
@@ -772,6 +838,7 @@ impl sealed::PrivateKeyEngine for RSA8192 {
         d_q: &Self::HalfLimbs,
         q_inv: &Self::HalfLimbs,
         e: u64,
+        _: sealed::EngineToken,
     ) -> [Condition<u64>; 3] {
         rsa_core::crt_congruences::<64, 128>(p, q, d_p, d_q, q_inv, e)
     }
@@ -779,6 +846,7 @@ impl sealed::PrivateKeyEngine for RSA8192 {
     fn validate_key_pair(
         sk: &RsaPrivateComponents<Self>,
         rng: &mut dyn RNG,
+        _: sealed::EngineToken,
     ) -> Result<(), SignatureError> {
         validate_key_pair::<Self, 64, 128, 129>(sk, rng)
     }
@@ -787,6 +855,7 @@ impl sealed::PrivateKeyEngine for RSA8192 {
         sk: &RsaPrivateComponents<Self>,
         m: &Self::Limbs,
         out: &mut Self::Limbs,
+        _: sealed::EngineToken,
     ) -> Condition<u64> {
         rsa_core::crt_exp_checked::<128, 256, 257, 64, 128, 129>(
             sk.p(),
@@ -810,10 +879,32 @@ pub(crate) mod sealed {
 
     pub trait Sealed {}
 
+    /// What every method of the two engine traits below takes, and only this crate can
+    /// make. A supertrait's methods are callable through a bound on the public trait
+    /// (`fn f<K: RsaSize>() { K::public_exp(..) }`) whether or not the supertrait can be
+    /// named, so it is this argument that keeps them to the crate.
+    pub struct EngineToken(());
+
+    impl EngineToken {
+        pub(crate) const fn new() -> Self {
+            Self(())
+        }
+    }
+
+    /// The public-key exponentiation at a size's width, `Limbs` being the size's
+    /// `RsaSize::Limbs`: what the schemes are built on and no part of the public API, RSAEP
+    /// and RSAVP1 being no way to encrypt or to verify. A supertrait of `RsaSize`, as
+    /// [`PrivateKeyEngine`] is of `RsaSigningSize`, whose method takes an [`EngineToken`].
+    pub trait PublicKeyEngine<Limbs> {
+        /// `x^e mod n`, the public-key operation (RSAVP1 / RSAEP's exponentiation), `x < n`,
+        /// for the odd `n` of a key.
+        fn public_exp(n: &Limbs, e: u64, x: &Limbs, token: EngineToken) -> Limbs;
+    }
+
     /// What a signing size routes of the private key's arithmetic and is no part of the
     /// public API: the checked exponentiation above all, which is RSADP on any key and a way
-    /// to sign nothing. A supertrait of `RsaSigningSize` in a module that is private to the
-    /// crate, so that code outside the crate can neither name it nor call its methods.
+    /// to sign nothing. A supertrait of `RsaSigningSize` whose methods each take an
+    /// [`EngineToken`], so that code outside the crate cannot call them.
     pub trait PrivateKeyEngine: RsaSize {
         /// Whether the CRT components and `e` belong together, RFC 8017 §3.2, for odd `p` and
         /// `q`: `e * dP == 1 (mod (p - 1))`, `e * dQ == 1 (mod (q - 1))` and
@@ -825,12 +916,14 @@ pub(crate) mod sealed {
             d_q: &Self::HalfLimbs,
             q_inv: &Self::HalfLimbs,
             e: u64,
+            token: EngineToken,
         ) -> [Condition<u64>; 3];
         /// SP 800-56B Rev. 2 §6.4.1.4.3 validation of the key pair `sk` holds;
         /// [`RsaPrivateComponents::validate`] is the way to it.
         fn validate_key_pair(
             sk: &RsaPrivateComponents<Self>,
             rng: &mut dyn RNG,
+            token: EngineToken,
         ) -> Result<(), SignatureError>;
         /// `m^d mod n` by the CRT (RSASP1 / RSADP's exponentiation), `m < n`, into `out`, constant
         /// time in the key, with the result checked before it is released: TRUE if `out^e mod n` is
@@ -840,6 +933,7 @@ pub(crate) mod sealed {
             sk: &RsaPrivateComponents<Self>,
             m: &Self::Limbs,
             out: &mut Self::Limbs,
+            token: EngineToken,
         ) -> Condition<u64>;
     }
 }

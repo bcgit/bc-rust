@@ -2,9 +2,9 @@
 //! and the checked CRT exponentiation RSASP1 and RSADP (§5.1.2) share.
 //! [`rsasp1`] and [`rsavp1`] are private to the crate and reached through a padding scheme
 //! only. Code generic over a size reaches the exponentiations beneath them at one width
-//! through the size: the public one is [`RsaSize::public_exp`], and the private one is
-//! `crt_exp` of `size::sealed::PrivateKeyEngine`, a supertrait of [`RsaSigningSize`] that
-//! code outside the crate cannot name. They are the engine and not a way to
+//! through the size: `public_exp` of `size::sealed::PublicKeyEngine` and `crt_exp` of
+//! `size::sealed::PrivateKeyEngine`, supertraits of [`RsaSize`] and [`RsaSigningSize`] whose
+//! methods take a token that code outside the crate cannot make. They are the engine and not a way to
 //! sign. RFC 8017's introduction to §5 says why: "\[primitives\] are not intended to provide
 //! security apart from a scheme" -- "textbook RSA" (signing a bare integer with no padding) is
 //! malleable and vulnerable to existential forgery.
@@ -37,7 +37,7 @@ pub(crate) fn rsavp1<K: RsaSize>(
     if !K::is_less(s, pk.n()) {
         return Err(SignatureError::DecodingError("signature representative out of range"));
     }
-    Ok(K::public_exp(pk.n(), pk.e(), s))
+    Ok(K::public_exp(pk.n(), pk.e(), s, crate::size::sealed::EngineToken::new()))
 }
 
 /// `x^e mod n` for a public exponent, the shared core of RSAVP1 and RSAEP: `x` must already be
@@ -68,7 +68,7 @@ pub(crate) fn rsasp1<K: RsaSigningSize>(
         return Err(SignatureError::DecodingError("message representative out of range"));
     }
     let mut s = K::Limbs::ZEROED;
-    if !K::crt_exp(sk, m, &mut s).to_bool() {
+    if !K::crt_exp(sk, m, &mut s, crate::size::sealed::EngineToken::new()).to_bool() {
         return Err(SignatureError::ComputationFault);
     }
     Ok(s)
@@ -475,8 +475,8 @@ mod tests {
         use crate::rsaes_oaep::OaepParams;
         use crate::rsassa;
         use crate::rsasve::RsaKEMPrivateKey;
-        use crate::size::sealed::PrivateKeyEngine;
-        use crate::size::{RSA2048, RsaSize};
+        use crate::size::RSA2048;
+        use crate::size::sealed::{EngineToken, PrivateKeyEngine, PublicKeyEngine};
         use bouncycastle_core::errors::{KEMError, KeyTransportError, SignatureError};
         use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
         use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
@@ -567,12 +567,12 @@ mod tests {
             x[17] = 0xfeed_face_cafe_f00d;
 
             let mut y = [0xFFFF_FFFF_FFFF_FFFFu64; 32];
-            assert!(RSA2048::crt_exp(&sound, &x, &mut y).to_bool());
-            assert_eq!(RSA2048::public_exp(sound.n(), E, &y), x);
+            assert!(RSA2048::crt_exp(&sound, &x, &mut y, EngineToken::new()).to_bool());
+            assert_eq!(RSA2048::public_exp(sound.n(), E, &y, EngineToken::new()), x);
 
             for (what, sk) in &damaged {
                 let mut y = [0xFFFF_FFFF_FFFF_FFFFu64; 32];
-                assert!(!RSA2048::crt_exp(sk, &x, &mut y).to_bool(), "{what}");
+                assert!(!RSA2048::crt_exp(sk, &x, &mut y, EngineToken::new()).to_bool(), "{what}");
                 assert_eq!(y, [0u64; 32], "{what}");
             }
         }

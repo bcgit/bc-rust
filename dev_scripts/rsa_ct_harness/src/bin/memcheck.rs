@@ -15,7 +15,7 @@
 //!   control-crt      `crt`, then a branch on its result, which is computed from the key
 //!   control-import   `import`, then a branch on its verdicts
 use bouncycastle_rsa::RSA2048;
-use bouncycastle_rsa::ct_harness::PrivateKeyEngine;
+use bouncycastle_rsa::ct_harness::{PrivateKeyEngine, token};
 use bouncycastle_rsa::keys::RsaPrivateComponents;
 use bouncycastle_rsa::modexp::MontgomeryContext;
 use bouncycastle_rsa::size::RsaSigningSize;
@@ -142,24 +142,25 @@ fn main() {
             let mut out = [0u64; 32];
             // The result is not turned into a `bool`: whether the check passed is computed
             // from the key, and a branch on it here would be this program's own.
-            let _ = black_box(RSA2048::crt_exp(black_box(&sk), black_box(&input()), &mut out));
+            let _ =
+                black_box(RSA2048::crt_exp(black_box(&sk), black_box(&input()), &mut out, token()));
             black_box(&out);
         }
         "control-crt" => {
             let sk = undefined_key();
             let mut out = [0u64; 32];
-            if RSA2048::crt_exp(black_box(&sk), black_box(&input()), &mut out).to_bool() {
+            if RSA2048::crt_exp(black_box(&sk), black_box(&input()), &mut out, token()).to_bool() {
                 black_box(&out);
             }
         }
         "import" => {
             let [p, q, d_p, d_q, q_inv] = black_box(undefined_components());
             // The verdicts are not turned into `bool`s, as `crt`'s result is not.
-            let _ = black_box(RSA2048::crt_congruences(&p, &q, &d_p, &d_q, &q_inv, 65537));
+            let _ = black_box(RSA2048::crt_congruences(&p, &q, &d_p, &d_q, &q_inv, 65537, token()));
         }
         "control-import" => {
             let [p, q, d_p, d_q, q_inv] = black_box(undefined_components());
-            let verdicts = RSA2048::crt_congruences(&p, &q, &d_p, &d_q, &q_inv, 65537);
+            let verdicts = RSA2048::crt_congruences(&p, &q, &d_p, &d_q, &q_inv, 65537, token());
             if verdicts.into_iter().all(|ok| ok.to_bool()) {
                 black_box(());
             }

@@ -286,7 +286,8 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
         }
         // RFC 8017 §3.2: the components and `e` are one key. All three verdicts are computed
         // before any is looked at.
-        let [d_p_ok, d_q_ok, q_inv_ok] = K::crt_congruences(p, q, d_p, d_q, q_inv, e);
+        let [d_p_ok, d_q_ok, q_inv_ok] =
+            K::crt_congruences(p, q, d_p, d_q, q_inv, e, crate::size::sealed::EngineToken::new());
         if !d_p_ok.to_bool() {
             return Err(SignatureError::DecodingError("dP is not the inverse of e modulo p - 1"));
         }
@@ -338,7 +339,7 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     ///
     /// Not constant time in the key, as key generation is not.
     pub fn validate(&self, rng: &mut dyn RNG) -> Result<(), SignatureError> {
-        K::validate_key_pair(self, rng)
+        K::validate_key_pair(self, rng, crate::size::sealed::EngineToken::new())
     }
 }
 

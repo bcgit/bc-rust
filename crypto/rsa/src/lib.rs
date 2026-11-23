@@ -442,7 +442,13 @@ pub mod size;
 /// the library has it.
 #[cfg(bouncycastle_rsa_ct_harness)]
 pub mod ct_harness {
-    pub use crate::size::sealed::PrivateKeyEngine;
+    pub use crate::size::sealed::{EngineToken, PrivateKeyEngine};
+
+    /// The argument the engine's methods take, which nothing outside the crate can make
+    /// otherwise.
+    pub fn token() -> EngineToken {
+        EngineToken::new()
+    }
 }
 
 pub use size::{RSA1024, RSA1536, RSA2048, RSA3072, RSA4096, RSA8192};

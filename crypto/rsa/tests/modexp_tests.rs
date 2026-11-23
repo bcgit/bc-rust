@@ -4,12 +4,10 @@
 //! (not from recall), so this file is the record of that cross-check rather than a duplicate of
 //! it: see each case's comment for how it was produced.
 
-use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::modexp::{
     MontgomeryContext, mod_pow, mod_pow_public_exponent, mont_n_prime, mul_mod, reduce_wide,
     sub_mod,
 };
-use bouncycastle_rsa::size::RsaSize;
 
 /// The context for `n` from each constructor, the constant-time one for a secret modulus and the
 /// variable-time one for a public modulus: every known answer below holds under both.
@@ -249,16 +247,6 @@ fn even_modulus_is_rejected() {
     let n: [u64; 1] = [4];
     assert!(MontgomeryContext::<1>::for_public_modulus(&n).is_none());
     assert!(MontgomeryContext::<1>::for_public_modulus(&[0]).is_none());
-}
-
-/// `RsaSize::public_exp` takes limbs and not a key, so no constructor stands in front of it:
-/// an even modulus is its documented panic.
-#[test]
-#[should_panic(expected = "the modulus is odd")]
-fn public_exp_panics_on_an_even_modulus() {
-    let mut n = [0u64; 32];
-    n[31] = 1 << 63;
-    let _ = RSA2048::public_exp(&n, 65537, &[1u64; 32]);
 }
 
 /// `reduce_wide` with `WIDE = 4 > NARROW = 2`, RSA's own use for reducing an `n`-width message
