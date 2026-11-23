@@ -1,6 +1,6 @@
-//! ML-KEM with its shared secret derived through a KDF: the algorithm markers, and the pairing
+//! ML-KEM with its shared secret derived through a KDF: the algorithm markers, the pairing
 //! of a parameter set with its KDF that the two ML-KEM modules implement the KEM roles over, with
-//! [`KdfParams`] as the parameters.
+//! [`KdfParams`] as the parameters, and the workers those roles hand out.
 //!
 //! The derived key is KDF(𝐾, info), of the length the parameters name: 𝐾 is the shared secret
 //! key of FIPS 203 Algorithm 17 (ML-KEM.Encaps_internal), the KDF's input key material, and the
@@ -35,10 +35,13 @@ use bouncycastle_core::kdf_params::{KdfDescription, KdfParams};
 use bouncycastle_core::kem_key::KEMAlgorithm;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, HashAlgParams, KDF};
+use bouncycastle_core::traits::{
+    Algorithm, HashAlgParams, KDF, KEMDecapsulator, KEMEncapsulator, RNG,
+};
 use bouncycastle_digest::hkdf::HkdfDescription;
 use bouncycastle_digest::sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
 use bouncycastle_digest::sha2::{SHA256, SHA512};
+use core::marker::PhantomData;
 
 /// Algorithm name of ML-KEM-512-HKDF-SHA256, as reported by `Algorithm::ALG_NAME`.
 pub const ML_KEM_512_HKDF_SHA256_NAME: &str = "ML-KEM-512-HKDF-SHA256";
@@ -196,4 +199,155 @@ impl<const SS_LEN: usize> MLKEMKdfPairing<HkdfDescription<'_, SHA512>, SS_LEN> f
 
 impl<const SS_LEN: usize> MLKEMKdfPairing<HkdfDescription<'_, SHA512>, SS_LEN> for MLKEM1024Params {
     type Algorithm = MLKEM1024_HKDF_SHA512;
+}
+
+/// The plain ML-KEM encapsulation of a public key, which is where the two ML-KEM modules
+/// differ: each implements it for its key types, and [`MLKEMKdfEncapsulator`] derives from the 𝐾
+/// it returns. Its impls are `#[inline(always)]` for the worker's peak stack, which the KDF rows
+/// of the stack harness measure.
+pub(crate) trait PlainEncaps<const CT_LEN: usize> {
+    /// Algorithm 20 ML-KEM.Encaps(ek): 𝐾 and the number of bytes written to `ct`, which is
+    /// zeroized first.
+    fn encaps_K(
+        &self,
+        rng: &mut dyn RNG,
+        ct: &mut [u8; CT_LEN],
+    ) -> Result<(KeyMaterial<MLKEM_SS_LEN>, usize), KEMError>;
+}
+
+/// The plain ML-KEM decapsulation of a private key; see [`PlainEncaps`].
+pub(crate) trait PlainDecaps<const CT_LEN: usize> {
+    /// Algorithm 21 ML-KEM.Decaps(dk, 𝑐): 𝐾.
+    fn decaps_K(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError>;
+}
+
+/// The encapsulator an ML-KEM public key hands out through
+/// [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) over
+/// [`KdfParams`]: it borrows the key, holds the parameters, and derives the pairing's key from
+/// each encapsulation's 𝐾.
+pub struct MLKEMKdfEncapsulator<
+    'k,
+    'p,
+    P: MLKEMParamsBase,
+    D: KdfDescription + PairedKdf + ?Sized,
+    EK,
+    const SS_LEN: usize,
+> {
+    ek: &'k EK,
+    params: KdfParams<'p, D, SS_LEN>,
+    _phantom: PhantomData<P>,
+}
+
+impl<
+    'k,
+    'p,
+    P: MLKEMKdfPairing<D, SS_LEN>,
+    D: KdfDescription + PairedKdf + ?Sized,
+    EK,
+    const SS_LEN: usize,
+> MLKEMKdfEncapsulator<'k, 'p, P, D, EK, SS_LEN>
+{
+    /// For the role impls of the two ML-KEM modules. The length is checked at compile time.
+    pub(crate) fn new(ek: &'k EK, params: KdfParams<'p, D, SS_LEN>) -> Self {
+        const { P::LEN_CHECK };
+        Self { ek, params, _phantom: PhantomData }
+    }
+}
+
+impl<P: MLKEMKdfPairing<D, SS_LEN>, D: KdfDescription + PairedKdf + ?Sized, EK, const SS_LEN: usize>
+    Algorithm for MLKEMKdfEncapsulator<'_, '_, P, D, EK, SS_LEN>
+{
+    const ALG_NAME: &'static str = <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength =
+        <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm::MAX_SECURITY_STRENGTH;
+}
+
+impl<
+    P: MLKEMKdfPairing<D, SS_LEN>,
+    D: KdfDescription + PairedKdf + ?Sized,
+    EK: PlainEncaps<CT_LEN>,
+    const CT_LEN: usize,
+    const SS_LEN: usize,
+> KEMEncapsulator<CT_LEN, SS_LEN> for MLKEMKdfEncapsulator<'_, '_, P, D, EK, SS_LEN>
+{
+    /// Algorithm 20 ML-KEM.Encaps(ek) for 𝐾 and the ciphertext, then the pairing's KDF over 𝐾.
+    fn encaps_out(
+        &self,
+        rng: &mut dyn RNG,
+        ct: &mut [u8; CT_LEN],
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
+        let (K, written) = self.ek.encaps_K(rng, ct)?;
+        // A ciphertext for a secret the caller never gets is not left in the buffer; `derive`
+        // leaves `ss` zeroized on its errors.
+        if let Err(e) = P::derive(self.params, &K, ss) {
+            ct.fill(0);
+            return Err(e);
+        }
+        Ok(written)
+    }
+}
+
+/// The decapsulator an ML-KEM private key hands out through
+/// [`DecapsulatingKey`](bouncycastle_core::kem_key::DecapsulatingKey) over
+/// [`KdfParams`]: it borrows the key, holds the parameters, and derives the pairing's key from
+/// the 𝐾 of each decapsulation.
+pub struct MLKEMKdfDecapsulator<
+    'k,
+    'p,
+    P: MLKEMParamsBase,
+    D: KdfDescription + PairedKdf + ?Sized,
+    DK,
+    const SS_LEN: usize,
+> {
+    dk: &'k DK,
+    params: KdfParams<'p, D, SS_LEN>,
+    _phantom: PhantomData<P>,
+}
+
+impl<
+    'k,
+    'p,
+    P: MLKEMKdfPairing<D, SS_LEN>,
+    D: KdfDescription + PairedKdf + ?Sized,
+    DK,
+    const SS_LEN: usize,
+> MLKEMKdfDecapsulator<'k, 'p, P, D, DK, SS_LEN>
+{
+    /// For the role impls of the two ML-KEM modules. The length is checked at compile time.
+    pub(crate) fn new(dk: &'k DK, params: KdfParams<'p, D, SS_LEN>) -> Self {
+        const { P::LEN_CHECK };
+        Self { dk, params, _phantom: PhantomData }
+    }
+}
+
+impl<P: MLKEMKdfPairing<D, SS_LEN>, D: KdfDescription + PairedKdf + ?Sized, DK, const SS_LEN: usize>
+    Algorithm for MLKEMKdfDecapsulator<'_, '_, P, D, DK, SS_LEN>
+{
+    const ALG_NAME: &'static str = <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength =
+        <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm::MAX_SECURITY_STRENGTH;
+}
+
+impl<
+    P: MLKEMKdfPairing<D, SS_LEN>,
+    D: KdfDescription + PairedKdf + ?Sized,
+    DK: PlainDecaps<CT_LEN>,
+    const CT_LEN: usize,
+    const SS_LEN: usize,
+> KEMDecapsulator<CT_LEN, SS_LEN> for MLKEMKdfDecapsulator<'_, '_, P, D, DK, SS_LEN>
+{
+    /// Algorithm 21 ML-KEM.Decaps(dk, 𝑐) for 𝐾, then the pairing's KDF over it. ML-KEM rejects
+    /// implicitly, so a damaged ciphertext yields a different key, not an error.
+    fn decaps_out(
+        &self,
+        ct: &[u8; CT_LEN],
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
+        let K = self.dk.decaps_K(ct)?;
+        P::derive(self.params, &K, ss)?;
+        Ok(SS_LEN)
+    }
 }

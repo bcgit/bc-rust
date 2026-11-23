@@ -4,8 +4,9 @@
 //! This is not an API for callers, and every item in it is `#[doc(hidden)]`. The two ML-KEM modules
 //! differ in how they hold a private key and in how they schedule FIPS 203's algorithms, but they
 //! agree on the ring arithmetic, the samplers, the byte encodings, the compression and the
-//! parameter tables; this module holds that one copy, and the markers of ML-KEM with its secret
-//! derived through HKDF ([`kdf`]), which both modules implement. Use one of those two modules.
+//! parameter tables; this module holds that one copy, and the markers and workers of ML-KEM with
+//! its secret derived through HKDF ([`kdf`]), which both modules implement the roles of. Use one
+//! of those two modules.
 //!
 //! # 🚨 Security Considerations 🚨
 //!

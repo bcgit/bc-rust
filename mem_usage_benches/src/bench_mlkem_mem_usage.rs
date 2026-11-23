@@ -30,12 +30,14 @@
 #![allow(unused_imports)]
 
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
-use bouncycastle::core::key_material::{KeyMaterial512, KeyType};
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::PublicKey;
+use bouncycastle::digest::hkdf::HkdfDescription;
+use bouncycastle::digest::sha2::{SHA256, SHA512};
 use bouncycastle::pqc::mlkem::mlkem::MLKEMTrait;
 use bouncycastle::pqc::mlkem::{
-    MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM1024_CT_LEN,
-    MLKEM1024_PK_LEN, MLKEMPrivateKeyTrait,
+    KdfParams, KeyLen, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM768_CT_LEN, MLKEM768_PK_LEN,
+    MLKEM1024_CT_LEN, MLKEM1024_PK_LEN, MLKEMPrivateKeyTrait,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
 
@@ -2108,8 +2110,8 @@ fn bench_mlkem512_keygen_out() {
     .unwrap();
 
     let mut sk = bouncycastle::pqc::mlkem::MLKEM512PrivateKey::zeroized();
-    MLKEM512::keygen_from_seed_out(&seed, &mut sk).unwrap();
-    println!("{:x?}", sk.pk().encode());
+    let pk = MLKEM512::keygen_from_seed_out(&seed, &mut sk).unwrap();
+    println!("{:x?}", pk.encode());
 }
 
 fn bench_mlkem768_keygen_out() {
@@ -2130,8 +2132,8 @@ fn bench_mlkem768_keygen_out() {
     .unwrap();
 
     let mut sk = bouncycastle::pqc::mlkem::MLKEM768PrivateKey::zeroized();
-    MLKEM768::keygen_from_seed_out(&seed, &mut sk).unwrap();
-    println!("{:x?}", sk.pk().encode());
+    let pk = MLKEM768::keygen_from_seed_out(&seed, &mut sk).unwrap();
+    println!("{:x?}", pk.encode());
 }
 
 fn bench_mlkem1024_keygen_out() {
@@ -2152,8 +2154,8 @@ fn bench_mlkem1024_keygen_out() {
     .unwrap();
 
     let mut sk = bouncycastle::pqc::mlkem::MLKEM1024PrivateKey::zeroized();
-    MLKEM1024::keygen_from_seed_out(&seed, &mut sk).unwrap();
-    println!("{:x?}", sk.pk().encode());
+    let pk = MLKEM1024::keygen_from_seed_out(&seed, &mut sk).unwrap();
+    println!("{:x?}", pk.encode());
 }
 
 /// Encapsulation with the expanded key, including building it from the key loaded beforehand.
@@ -2297,6 +2299,197 @@ fn bench_mlkem1024_decaps_expanded_sk() {
     });
 }
 
+/// The HKDF salt of the KDF benches.
+fn hkdf_salt() -> KeyMaterial<32> {
+    KeyMaterial::<32>::from_bytes_as_type(&[0x11u8; 32], KeyType::MACKey).unwrap()
+}
+
+/// Encapsulation through the HKDF pairing, on a key the caller already holds.
+fn bench_mlkem512_kdf_encaps() {
+    eprintln!("MLKEM512/KdfEncaps");
+
+    let salt = hkdf_salt();
+    let hkdf = HkdfDescription::<SHA256>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"info", KeyLen::<32>);
+    let pk = load_mlkem512_pk();
+
+    measure(|| {
+        let (ss, ct) = pk.encaps(&mut HashDRBG_SHA512::new_from_os(), params).unwrap();
+        print!("{:x?}", ss);
+        print!("{:x?}", ct);
+    });
+}
+
+/// Decapsulation through the HKDF pairing, on a key the caller already holds.
+fn bench_mlkem512_kdf_decaps() {
+    eprintln!("MLKEM512/KdfDecaps");
+
+    let salt = hkdf_salt();
+    let hkdf = HkdfDescription::<SHA256>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"info", KeyLen::<32>);
+    let sk = load_mlkem512_sk();
+
+    measure(|| {
+        let ss = sk.decaps(&MLKEM512_KAT_CT, params).unwrap();
+        print!("{:x?}", ss.ref_to_bytes());
+    });
+}
+
+/// Encapsulation through the HKDF pairing, on a key the caller already holds.
+fn bench_mlkem512_lowmemory_kdf_encaps() {
+    eprintln!("MLKEM512_lowmemory/KdfEncaps");
+
+    let salt = hkdf_salt();
+    let hkdf = HkdfDescription::<SHA256>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"info", KeyLen::<32>);
+    let pk = load_mlkem512_lowmemory_pk();
+
+    measure(|| {
+        let (ss, ct) = pk.encaps(&mut HashDRBG_SHA512::new_from_os(), params).unwrap();
+        print!("{:x?}", ss);
+        print!("{:x?}", ct);
+    });
+}
+
+/// Decapsulation through the HKDF pairing, on a key the caller already holds.
+fn bench_mlkem512_lowmemory_kdf_decaps() {
+    eprintln!("MLKEM512_lowmemory/KdfDecaps");
+
+    let salt = hkdf_salt();
+    let hkdf = HkdfDescription::<SHA256>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"info", KeyLen::<32>);
+    let sk = load_mlkem512_lowmemory_sk();
+
+    measure(|| {
+        let ss = sk.decaps(&MLKEM512_KAT_CT, params).unwrap();
+        print!("{:x?}", ss.ref_to_bytes());
+    });
+}
+
+/// Encapsulation through the HKDF pairing, on a key the caller already holds.
+fn bench_mlkem768_kdf_encaps() {
+    eprintln!("MLKEM768/KdfEncaps");
+
+    let salt = hkdf_salt();
+    let hkdf = HkdfDescription::<SHA512>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"info", KeyLen::<64>);
+    let pk = load_mlkem768_pk();
+
+    measure(|| {
+        let (ss, ct) = pk.encaps(&mut HashDRBG_SHA512::new_from_os(), params).unwrap();
+        print!("{:x?}", ss);
+        print!("{:x?}", ct);
+    });
+}
+
+/// Decapsulation through the HKDF pairing, on a key the caller already holds.
+fn bench_mlkem768_kdf_decaps() {
+    eprintln!("MLKEM768/KdfDecaps");
+
+    let salt = hkdf_salt();
+    let hkdf = HkdfDescription::<SHA512>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"info", KeyLen::<64>);
+    let sk = load_mlkem768_sk();
+
+    measure(|| {
+        let ss = sk.decaps(&MLKEM768_KAT_CT, params).unwrap();
+        print!("{:x?}", ss.ref_to_bytes());
+    });
+}
+
+/// Encapsulation through the HKDF pairing, on a key the caller already holds.
+fn bench_mlkem768_lowmemory_kdf_encaps() {
+    eprintln!("MLKEM768_lowmemory/KdfEncaps");
+
+    let salt = hkdf_salt();
+    let hkdf = HkdfDescription::<SHA512>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"info", KeyLen::<64>);
+    let pk = load_mlkem768_lowmemory_pk();
+
+    measure(|| {
+        let (ss, ct) = pk.encaps(&mut HashDRBG_SHA512::new_from_os(), params).unwrap();
+        print!("{:x?}", ss);
+        print!("{:x?}", ct);
+    });
+}
+
+/// Decapsulation through the HKDF pairing, on a key the caller already holds.
+fn bench_mlkem768_lowmemory_kdf_decaps() {
+    eprintln!("MLKEM768_lowmemory/KdfDecaps");
+
+    let salt = hkdf_salt();
+    let hkdf = HkdfDescription::<SHA512>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"info", KeyLen::<64>);
+    let sk = load_mlkem768_lowmemory_sk();
+
+    measure(|| {
+        let ss = sk.decaps(&MLKEM768_KAT_CT, params).unwrap();
+        print!("{:x?}", ss.ref_to_bytes());
+    });
+}
+
+/// Encapsulation through the HKDF pairing, on a key the caller already holds.
+fn bench_mlkem1024_kdf_encaps() {
+    eprintln!("MLKEM1024/KdfEncaps");
+
+    let salt = hkdf_salt();
+    let hkdf = HkdfDescription::<SHA512>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"info", KeyLen::<64>);
+    let pk = load_mlkem1024_pk();
+
+    measure(|| {
+        let (ss, ct) = pk.encaps(&mut HashDRBG_SHA512::new_from_os(), params).unwrap();
+        print!("{:x?}", ss);
+        print!("{:x?}", ct);
+    });
+}
+
+/// Decapsulation through the HKDF pairing, on a key the caller already holds.
+fn bench_mlkem1024_kdf_decaps() {
+    eprintln!("MLKEM1024/KdfDecaps");
+
+    let salt = hkdf_salt();
+    let hkdf = HkdfDescription::<SHA512>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"info", KeyLen::<64>);
+    let sk = load_mlkem1024_sk();
+
+    measure(|| {
+        let ss = sk.decaps(&MLKEM1024_KAT_CT, params).unwrap();
+        print!("{:x?}", ss.ref_to_bytes());
+    });
+}
+
+/// Encapsulation through the HKDF pairing, on a key the caller already holds.
+fn bench_mlkem1024_lowmemory_kdf_encaps() {
+    eprintln!("MLKEM1024_lowmemory/KdfEncaps");
+
+    let salt = hkdf_salt();
+    let hkdf = HkdfDescription::<SHA512>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"info", KeyLen::<64>);
+    let pk = load_mlkem1024_lowmemory_pk();
+
+    measure(|| {
+        let (ss, ct) = pk.encaps(&mut HashDRBG_SHA512::new_from_os(), params).unwrap();
+        print!("{:x?}", ss);
+        print!("{:x?}", ct);
+    });
+}
+
+/// Decapsulation through the HKDF pairing, on a key the caller already holds.
+fn bench_mlkem1024_lowmemory_kdf_decaps() {
+    eprintln!("MLKEM1024_lowmemory/KdfDecaps");
+
+    let salt = hkdf_salt();
+    let hkdf = HkdfDescription::<SHA512>::with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"info", KeyLen::<64>);
+    let sk = load_mlkem1024_lowmemory_sk();
+
+    measure(|| {
+        let ss = sk.decaps(&MLKEM1024_KAT_CT, params).unwrap();
+        print!("{:x?}", ss.ref_to_bytes());
+    });
+}
+
 fn main() {
     // print_struct_sizes()
     // bench_do_nothing()
@@ -2327,4 +2520,16 @@ fn main() {
     // bench_mlkem512_decaps_expanded_sk()
     // bench_mlkem768_decaps_expanded_sk()
     // bench_mlkem1024_decaps_expanded_sk()
+    // bench_mlkem512_kdf_encaps()
+    // bench_mlkem512_kdf_decaps()
+    // bench_mlkem512_lowmemory_kdf_encaps()
+    // bench_mlkem512_lowmemory_kdf_decaps()
+    // bench_mlkem768_kdf_encaps()
+    // bench_mlkem768_kdf_decaps()
+    // bench_mlkem768_lowmemory_kdf_encaps()
+    // bench_mlkem768_lowmemory_kdf_decaps()
+    // bench_mlkem1024_kdf_encaps()
+    // bench_mlkem1024_kdf_decaps()
+    // bench_mlkem1024_lowmemory_kdf_encaps()
+    // bench_mlkem1024_lowmemory_kdf_decaps()
 }

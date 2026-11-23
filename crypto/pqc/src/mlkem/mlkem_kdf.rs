@@ -1,134 +1,76 @@
 //! The KEM roles of this module's keys over [`KdfParams`]: ML-KEM with its shared secret derived
 //! through a KDF, the algorithms [`MLKEM512_HKDF_SHA256`], [`MLKEM768_HKDF_SHA512`] and
 //! [`MLKEM1024_HKDF_SHA512`] of `bouncycastle_pqc::mlkem_common::kdf`, which says what is derived
-//! and why the ciphertext is not part of the info. A worker borrows the key, plain or expanded,
-//! as the plain ML-KEM workers do, runs the plain ML-KEM operation and derives from its 𝐾
-//! through the parameter set's [`MLKEMKdfPairing`] with the KDF of the parameters; a key is
-//! paired with one KDF, so the parameter type selects the algorithm and names the derived key's
-//! length, and a KDF the key is not paired with is a compile error.
+//! and why the ciphertext is not part of the info. A worker, which that module defines for both
+//! ML-KEM modules, borrows the key, plain or expanded, as the plain ML-KEM workers do, runs the
+//! key's plain ML-KEM operation and derives from its 𝐾 through the parameter set's
+//! [`MLKEMKdfPairing`] with the KDF of the parameters; a key is paired with one KDF, so the
+//! parameter type selects the algorithm and names the derived key's length, and a KDF the key is
+//! not paired with is a compile error.
 
-use crate::mlkem::mlkem::MLKEM;
+use crate::mlkem::mlkem::{MLKEM, MLKEM_SS_LEN};
 use crate::mlkem::mlkem_keys::{
-    MLKEMPrivateKey, MLKEMPrivateKeyExpanded, MLKEMPrivateKeyInternalTrait, MLKEMPublicKey,
-    MLKEMPublicKeyExpanded, MLKEMPublicKeyInternalTrait,
+    MLKEMPrivateKey, MLKEMPrivateKeyExpanded, MLKEMPublicKey, MLKEMPublicKeyExpanded,
 };
 use crate::mlkem::params::{CiphertextLen, MLKEMParams};
-use crate::mlkem_common::kdf::{MLKEMKdfPairing, PairedKdf};
+use crate::mlkem_common::kdf::{
+    MLKEMKdfDecapsulator, MLKEMKdfEncapsulator, MLKEMKdfPairing, PairedKdf, PlainDecaps,
+    PlainEncaps,
+};
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::kdf_params::{KdfDescription, KdfParams};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
-use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, KEMDecapsulator, KEMEncapsulator, RNG};
-use core::marker::PhantomData;
+use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::traits::RNG;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use crate::mlkem_common::kdf::{MLKEM512_HKDF_SHA256, MLKEM768_HKDF_SHA512, MLKEM1024_HKDF_SHA512};
 // End imports needed for docs
 
-/// The encapsulator an ML-KEM public key hands out through [`EncapsulatingKey`] over
-/// [`KdfParams`]: it borrows the key, plain or expanded, holds the parameters, and derives the
-/// pairing's key from each encapsulation's 𝐾.
-pub struct MLKEMKdfEncapsulator<
-    'k,
-    'p,
-    P: MLKEMParams,
-    D: KdfDescription + PairedKdf + ?Sized,
-    EK: MLKEMPublicKeyInternalTrait<P>,
-    const SS_LEN: usize,
-> {
-    ek: &'k EK,
-    params: KdfParams<'p, D, SS_LEN>,
-    _phantom: PhantomData<P>,
-}
-
-impl<
-    P: MLKEMParams + MLKEMKdfPairing<D, SS_LEN>,
-    D: KdfDescription + PairedKdf + ?Sized,
-    EK: MLKEMPublicKeyInternalTrait<P>,
-    const SS_LEN: usize,
-> Algorithm for MLKEMKdfEncapsulator<'_, '_, P, D, EK, SS_LEN>
+impl<P: MLKEMParams + CiphertextLen<CT_LEN>, const CT_LEN: usize> PlainEncaps<CT_LEN>
+    for MLKEMPublicKey<P>
 {
-    const ALG_NAME: &'static str = <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength =
-        <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm::MAX_SECURITY_STRENGTH;
-}
-
-impl<
-    P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KdfDescription + PairedKdf + ?Sized,
-    EK: MLKEMPublicKeyInternalTrait<P>,
-    const CT_LEN: usize,
-    const SS_LEN: usize,
-> KEMEncapsulator<CT_LEN, SS_LEN> for MLKEMKdfEncapsulator<'_, '_, P, D, EK, SS_LEN>
-{
-    /// Algorithm 20 ML-KEM.Encaps(ek) for 𝐾 and the ciphertext, then the pairing's KDF over 𝐾.
-    fn encaps_out(
+    // Inlined so that the encapsulation's frames merge into the worker's one-shot instead of
+    // stacking under it; the KDF rows of the ML-KEM stack harness show the difference.
+    #[inline(always)]
+    fn encaps_K(
         &self,
         rng: &mut dyn RNG,
         ct: &mut [u8; CT_LEN],
-        ss: &mut KeyMaterial<SS_LEN>,
-    ) -> Result<usize, KEMError> {
-        ss.zeroize();
-        let (K, written) = MLKEM::<P>::encaps_with_rng(self.ek, rng, ct)?;
-        // A ciphertext for a secret the caller never gets is not left in the buffer; `derive`
-        // leaves `ss` zeroized on its errors.
-        if let Err(e) = P::derive(self.params, &K, ss) {
-            ct.fill(0);
-            return Err(e);
-        }
-        Ok(written)
+    ) -> Result<(KeyMaterial<MLKEM_SS_LEN>, usize), KEMError> {
+        MLKEM::<P>::encaps_with_rng(self, rng, ct)
     }
 }
 
-/// The decapsulator an ML-KEM private key hands out through [`DecapsulatingKey`] over
-/// [`KdfParams`]: it borrows the key, plain or expanded, holds the parameters, and derives the
-/// pairing's key from the 𝐾 of each decapsulation.
-pub struct MLKEMKdfDecapsulator<
-    'k,
-    'p,
-    P: MLKEMParams,
-    D: KdfDescription + PairedKdf + ?Sized,
-    DK: MLKEMPrivateKeyInternalTrait<P>,
-    const SS_LEN: usize,
-> {
-    dk: &'k DK,
-    params: KdfParams<'p, D, SS_LEN>,
-    _phantom: PhantomData<P>,
-}
-
-impl<
-    P: MLKEMParams + MLKEMKdfPairing<D, SS_LEN>,
-    D: KdfDescription + PairedKdf + ?Sized,
-    DK: MLKEMPrivateKeyInternalTrait<P>,
-    const SS_LEN: usize,
-> Algorithm for MLKEMKdfDecapsulator<'_, '_, P, D, DK, SS_LEN>
+impl<P: MLKEMParams + CiphertextLen<CT_LEN>, const CT_LEN: usize> PlainEncaps<CT_LEN>
+    for MLKEMPublicKeyExpanded<P>
 {
-    const ALG_NAME: &'static str = <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength =
-        <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm::MAX_SECURITY_STRENGTH;
-}
-
-impl<
-    P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KdfDescription + PairedKdf + ?Sized,
-    DK: MLKEMPrivateKeyInternalTrait<P>,
-    const CT_LEN: usize,
-    const SS_LEN: usize,
-> KEMDecapsulator<CT_LEN, SS_LEN> for MLKEMKdfDecapsulator<'_, '_, P, D, DK, SS_LEN>
-{
-    /// Algorithm 21 ML-KEM.Decaps(dk, 𝑐) for 𝐾, then the pairing's KDF over it. ML-KEM rejects
-    /// implicitly, so a damaged ciphertext yields a different key, not an error.
-    fn decaps_out(
+    // Inlined so that the encapsulation's frames merge into the worker's one-shot instead of
+    // stacking under it; the KDF rows of the ML-KEM stack harness show the difference.
+    #[inline(always)]
+    fn encaps_K(
         &self,
-        ct: &[u8; CT_LEN],
-        ss: &mut KeyMaterial<SS_LEN>,
-    ) -> Result<usize, KEMError> {
-        ss.zeroize();
-        let K = MLKEM::<P>::decaps_checked(self.dk, ct)?;
-        P::derive(self.params, &K, ss)?;
-        Ok(SS_LEN)
+        rng: &mut dyn RNG,
+        ct: &mut [u8; CT_LEN],
+    ) -> Result<(KeyMaterial<MLKEM_SS_LEN>, usize), KEMError> {
+        MLKEM::<P>::encaps_with_rng(self, rng, ct)
+    }
+}
+
+impl<P: MLKEMParams + CiphertextLen<CT_LEN>, const CT_LEN: usize> PlainDecaps<CT_LEN>
+    for MLKEMPrivateKey<P>
+{
+    fn decaps_K(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError> {
+        MLKEM::<P>::decaps_checked(self, ct)
+    }
+}
+
+impl<P: MLKEMParams + CiphertextLen<CT_LEN>, const CT_LEN: usize> PlainDecaps<CT_LEN>
+    for MLKEMPrivateKeyExpanded<P>
+{
+    fn decaps_K(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError> {
+        MLKEM::<P>::decaps_checked(self, ct)
     }
 }
 
@@ -150,8 +92,7 @@ where
         &'k self,
         params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Encapsulator<'k>, KEMError> {
-        const { P::LEN_CHECK };
-        Ok(MLKEMKdfEncapsulator { ek: self, params, _phantom: PhantomData })
+        Ok(MLKEMKdfEncapsulator::new(self, params))
     }
 }
 
@@ -173,8 +114,7 @@ where
         &'k self,
         params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Encapsulator<'k>, KEMError> {
-        const { P::LEN_CHECK };
-        Ok(MLKEMKdfEncapsulator { ek: self, params, _phantom: PhantomData })
+        Ok(MLKEMKdfEncapsulator::new(self, params))
     }
 }
 
@@ -196,8 +136,7 @@ where
         &'k self,
         params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Decapsulator<'k>, KEMError> {
-        const { P::LEN_CHECK };
-        Ok(MLKEMKdfDecapsulator { dk: self, params, _phantom: PhantomData })
+        Ok(MLKEMKdfDecapsulator::new(self, params))
     }
 }
 
@@ -219,7 +158,6 @@ where
         &'k self,
         params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Decapsulator<'k>, KEMError> {
-        const { P::LEN_CHECK };
-        Ok(MLKEMKdfDecapsulator { dk: self, params, _phantom: PhantomData })
+        Ok(MLKEMKdfDecapsulator::new(self, params))
     }
 }

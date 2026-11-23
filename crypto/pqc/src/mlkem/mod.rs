@@ -70,15 +70,15 @@
 //! ```
 //!
 //! Into a private key the caller holds, so that it is built where it will live and no copy of it
-//! is left behind by a move; the private key holds the public key:
+//! is left behind by a move; the private key holds the public key, and the call returns a
+//! reference to it:
 //!
 //! ```rust
-//! use bouncycastle_pqc::mlkem::{MLKEM768, MLKEM768PrivateKey, MLKEMPrivateKeyTrait, MLKEMTrait};
+//! use bouncycastle_pqc::mlkem::{MLKEM768, MLKEM768PrivateKey, MLKEMTrait};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut sk = MLKEM768PrivateKey::zeroized();
-//! MLKEM768::keygen_out(&mut HashDRBG_SHA512::new_from_os(), &mut sk).unwrap();
-//! let pk = sk.pk();
+//! let pk = MLKEM768::keygen_out(&mut HashDRBG_SHA512::new_from_os(), &mut sk).unwrap();
 //! ```
 //!
 //! See [`MLKEM`] and [`MLKEM::decaps_from_seed`] for an API that uses a merged
@@ -185,9 +185,13 @@
 //! | Decaps    | 14,712 | 20,920 | 30,952 |
 //! | Encaps, expanded key | 16,856 | 23,896 | 32,808 |
 //! | Decaps, expanded key | 16,904 | 26,696 | 37,624 |
+//! | Encaps, HKDF | 18,744 | 23,576 | 31,640 |
+//! | Decaps, HKDF | 15,448 | 23,656 | 29,752 |
 //!
 //! [`MLKEMTrait::keygen_out`] writes into a private key the caller holds, so no copy of it is left
-//! behind by a move. The expanded-key rows include building the expanded key.
+//! behind by a move. The expanded-key rows include building the expanded key. The HKDF rows
+//! derive a 32-byte key through [`MLKEM512_HKDF_SHA256`] and a 64-byte one through
+//! [`MLKEM768_HKDF_SHA512`] and [`MLKEM1024_HKDF_SHA512`] (measured 2026-11-24).
 //!
 //! Values are in bytes and include the harness's own frames. A do-nothing run of the same harness
 //! (`bench_do_nothing`) peaks at 7,680 bytes, reached in process start-up before `main` runs, so no
@@ -251,10 +255,11 @@ pub use crate::mlkem_common::kdf::{
 pub use crate::mlkem_common::kdf::{
     MLKEM512_HKDF_SHA256_SS_LEN, MLKEM768_HKDF_SHA512_SS_LEN, MLKEM1024_HKDF_SHA512_SS_LEN,
 };
+#[doc(inline)]
+pub use crate::mlkem_common::kdf::{MLKEMKdfDecapsulator, MLKEMKdfEncapsulator};
 pub use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 pub use mlkem::{MLKEM, MLKEM512, MLKEM768, MLKEM1024, MLKEMTrait};
 pub use mlkem::{MLKEMDecapsulator, MLKEMEncapsulator};
-pub use mlkem_kdf::{MLKEMKdfDecapsulator, MLKEMKdfEncapsulator};
 pub use mlkem_keys::{
     MLKEM512PrivateKey, MLKEM768PrivateKey, MLKEM1024PrivateKey, MLKEMPrivateKey,
 };

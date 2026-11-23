@@ -103,6 +103,16 @@
 //! | MLKEM512_lowmemory/Decaps  | 12.4 (14.7)            | 13.4 (31.6)       |
 //! | MLKEM768_lowmemory/Decaps  | 14.2 (20.9)            | 7.8 (21.0)        |
 //! | MLKEM1024_lowmemory/Decaps | 16.4 (31.0)            | 4.9 (13.6)        |
+//! | MLKEM512_lowmemory/KdfEncaps  | 10.9 (18.7)         |                   |
+//! | MLKEM768_lowmemory/KdfEncaps  | 14.7 (23.6)         |                   |
+//! | MLKEM1024_lowmemory/KdfEncaps | 17.4 (31.6)         |                   |
+//! | MLKEM512_lowmemory/KdfDecaps  | 12.5 (15.4)         |                   |
+//! | MLKEM768_lowmemory/KdfDecaps  | 15.4 (23.7)         |                   |
+//! | MLKEM1024_lowmemory/KdfDecaps | 17.1 (29.8)         |                   |
+//!
+//! The Kdf rows derive a 32-byte key through [`MLKEM512_HKDF_SHA256`] and a 64-byte one through
+//! [`MLKEM768_HKDF_SHA512`] and [`MLKEM1024_HKDF_SHA512`]; they were measured on 2026-11-24 and have
+//! no throughput figure.
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the [`pqc::mlkem`](crate::mlkem) module.
 //! Memory figures were measured with `mem_usage_benches/bench_mlkem_mem_usage` under massif on 2026-11-21;
@@ -300,6 +310,8 @@ mod params;
 
 /*** Exported types ***/
 #[doc(inline)]
+pub use crate::mlkem_common::kdf::MLKEMKdfDecapsulator;
+#[doc(inline)]
 pub use crate::mlkem_common::kdf::{
     ML_KEM_512_HKDF_SHA256_NAME, ML_KEM_768_HKDF_SHA512_NAME, ML_KEM_1024_HKDF_SHA512_NAME,
 };
@@ -314,7 +326,7 @@ pub use crate::mlkem_common::kdf::{
 pub use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 pub use mlkem::{MLKEM, MLKEM512, MLKEM768, MLKEM1024, MLKEMTrait};
 pub use mlkem::{MLKEMDecapsulator, MLKEMEncapsulator};
-pub use mlkem_kdf::{MLKEMKdfDecapsulator, MLKEMKdfEncapsulator};
+pub use mlkem_kdf::MLKEMKdfEncapsulator;
 pub use mlkem_keys::{
     MLKEM512PrivateKey, MLKEM768PrivateKey, MLKEM1024PrivateKey, MLKEMSeedPrivateKey,
 };

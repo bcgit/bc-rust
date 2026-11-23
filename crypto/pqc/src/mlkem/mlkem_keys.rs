@@ -1,7 +1,7 @@
 use crate::mlkem::aux_functions::expandA;
 use crate::mlkem::matrix::MatrixTrait;
 use crate::mlkem::matrix::VectorTrait;
-use crate::mlkem::mlkem::{H, POLY_BYTES, q};
+use crate::mlkem::mlkem::{H, MLKEM, POLY_BYTES, q};
 use crate::mlkem::params::{
     MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams, PrivateKeyLen, PublicKeyLen,
 };
@@ -364,11 +364,11 @@ impl<P: MLKEMParams> From<&MLKEMPublicKey<P>> for MLKEMPublicKeyExpanded<P> {
 /// `P` is its only type parameter, for the reason given on [`MLKEMPublicKey`].
 // Dev note: This will automatically inherit the [`Secret`] protections because [`Polynomial`] wraps the underlying data with [`Secret`].
 pub struct MLKEMPrivateKey<P: MLKEMParams> {
-    pub(in crate::mlkem) s_hat: Secret<P::VecK>,
-    pub(in crate::mlkem) ek: MLKEMPublicKey<P>,
-    pub(in crate::mlkem) pk_hash: [u8; 32],
-    pub(in crate::mlkem) z: Secret<[u8; 32]>,
-    pub(in crate::mlkem) seed_d: Option<Secret<[u8; 32]>>,
+    s_hat: Secret<P::VecK>,
+    ek: MLKEMPublicKey<P>,
+    pk_hash: [u8; 32],
+    z: Secret<[u8; 32]>,
+    seed_d: Option<Secret<[u8; 32]>>,
 }
 
 impl<P: MLKEMParams> MLKEMPrivateKey<P> {
@@ -410,6 +410,25 @@ impl<P: MLKEMParams> MLKEMPrivateKey<P> {
         self.pk_hash = [0u8; 32];
         self.z.zeroize();
         self.seed_d = None;
+    }
+
+    /// FIPS 203 Algorithm 16 (ML-KEM.KeyGen_internal) from `seed`, (𝑑 ‖ 𝑧), which the caller has
+    /// checked: every field of this key is computed where it lives.
+    pub(in crate::mlkem) fn fill(&mut self, seed: &KeyMaterial<64>) {
+        // 𝑑 and 𝑧 are read where the seed holds them.
+        let (d, z) = seed.ref_to_bytes().split_at(32);
+        let d: &[u8; 32] = d.try_into().expect("the seed is 64 bytes");
+
+        // 1: (ekPKE, dkPKE) ← K-PKE.KeyGen(𝑑)
+        // 2: ek ← ekPKE ▷ KEM encaps key is just the PKE encryption key
+        MLKEM::<P>::pke_keygen_out(d, &mut self.ek, &mut self.s_hat);
+
+        // 3: dk ← (dkPKE‖ek‖H(ek)‖𝑧) ▷ KEM decaps key includes PKE decryption key
+        self.pk_hash = self.ek.compute_hash();
+        self.z.copy_from_slice(z);
+        self.seed_d.insert(Secret::new()).copy_from_slice(d);
+
+        // 4: return (ek, dk) ▷ ek is the copy dk holds
     }
 }
 

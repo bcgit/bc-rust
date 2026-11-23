@@ -45,7 +45,8 @@ macro_rules! keygen_out_tests {
             fn from_seed_out_matches_from_seed() {
                 let (pk, sk) = $alg::keygen_from_seed(&seed(1)).unwrap();
                 let mut sk_out = $sk::zeroized();
-                $alg::keygen_from_seed_out(&seed(1), &mut sk_out).unwrap();
+                let pk_out = $alg::keygen_from_seed_out(&seed(1), &mut sk_out).unwrap();
+                assert_eq!(*pk_out, pk);
                 assert_eq!(*sk_out.pk(), pk);
                 assert!(sk_out == sk);
                 assert_eq!(sk_out.pk().encode(), pk.encode());
@@ -65,6 +66,19 @@ macro_rules! keygen_out_tests {
                 let (ss, ct) = sk_out.pk().encaps(&mut rng(), ()).unwrap();
                 assert!(sk_out.decaps(&ct, ()).unwrap() == ss);
                 assert!(sk.decaps(&ct, ()).unwrap() == ss);
+            }
+
+            /// The call returns the public key it made, used here before the private key.
+            #[test]
+            fn keygen_out_returns_the_public_key() {
+                let mut sk = $sk::zeroized();
+                let pk = $alg::keygen_out(&mut rng(), &mut sk).unwrap();
+                let pk_bytes = pk.encode();
+                let (ss, ct) = pk.encaps(&mut rng(), ()).unwrap();
+                assert!(sk.decaps(&ct, ()).unwrap() == ss);
+                assert_eq!(sk.pk().encode(), pk_bytes);
+                let (expected, _sk) = $alg::keygen(&mut rng()).unwrap();
+                assert_eq!(pk_bytes, expected.encode());
             }
 
             /// A key that already holds one key pair holds exactly the new one afterwards.
