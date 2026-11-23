@@ -13,8 +13,7 @@
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-use bouncycastle_digest::hkdf::HKDF;
-use bouncycastle_digest::hmac::HMACParams;
+use bouncycastle_digest::hkdf::{HKDF, HKDFParams};
 use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 
 /// The longest IKM or salt in any of the files is 80 bytes.
@@ -23,7 +22,7 @@ const MAX_INPUT_LEN: usize = 80;
 const MAX_OKM_LEN: usize = 255 * 64;
 
 /// Runs every case in one `hkdf_*_test.json` file through `HKDF<H>`.
-fn run<H: HMACParams>(filename: &str, algorithm: &str) {
+fn run<H: HKDFParams>(filename: &str, algorithm: &str) {
     let Some(doc) = wycheproof_json(filename) else { return };
 
     assert_eq!(doc.get("algorithm").and_then(Value::as_str), Some(algorithm), "{filename}");

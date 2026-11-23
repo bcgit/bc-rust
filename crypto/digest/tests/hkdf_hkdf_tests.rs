@@ -15,9 +15,9 @@ mod hkdf_tests {
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
-    use bouncycastle_digest::hkdf::{HKDF, HkdfDescription};
+    use bouncycastle_digest::hkdf::{HKDF, HKDFParams, HkdfDescription};
+    use bouncycastle_digest::hmac::HmacKey;
     use bouncycastle_digest::hmac::hazmat as hmac_hazmat;
-    use bouncycastle_digest::hmac::{HMACParams, HmacKey};
     use bouncycastle_digest::sha2::hkdf::{
         HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA512, HKDF_SHA512_NAME,
     };
@@ -34,6 +34,37 @@ mod hkdf_tests {
         assert_eq!(HKDF_SHA512::MAX_SECURITY_STRENGTH, SHA512::MAX_SECURITY_STRENGTH);
         assert_eq!(HKDF_SHA256::new().alg_name(), HKDF_SHA256_NAME);
         assert_eq!(HKDF_SHA512::new().max_security_strength(), SecurityStrength::_256bit);
+    }
+
+    /// `HKDFParams::HKDF_ALG_NAME` for every hash the library names an HKDF over, spelled out,
+    /// and reported by the instance, by its description and through the collision-resistance
+    /// wrapper.
+    #[test]
+    fn the_hkdf_names_are_spelled_as_published() {
+        use bouncycastle_core::hazmat::WithoutCollisionResistance;
+        use bouncycastle_digest::ripemd::RIPEMD160;
+        use bouncycastle_digest::sha2::{SHA224, SHA384, SHA512_224, SHA512_256};
+        use bouncycastle_digest::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+        use bouncycastle_digest::sm3::SM3;
+        fn check<H: HKDFParams>(name: &str) {
+            assert_eq!(H::HKDF_ALG_NAME, name);
+            assert_eq!(HKDF::<H>::ALG_NAME, name);
+            assert_eq!(HKDF::<H>::new().alg_name(), name);
+            assert_eq!(HkdfDescription::<H>::ALG_NAME, name);
+            assert_eq!(<WithoutCollisionResistance<H> as HKDFParams>::HKDF_ALG_NAME, name);
+        }
+        check::<SHA224>("HKDF-SHA224");
+        check::<SHA256>("HKDF-SHA256");
+        check::<SHA384>("HKDF-SHA384");
+        check::<SHA512>("HKDF-SHA512");
+        check::<SHA512_224>("HKDF-SHA512/224");
+        check::<SHA512_256>("HKDF-SHA512/256");
+        check::<SHA3_224>("HKDF-SHA3-224");
+        check::<SHA3_256>("HKDF-SHA3-256");
+        check::<SHA3_384>("HKDF-SHA3-384");
+        check::<SHA3_512>("HKDF-SHA3-512");
+        check::<SM3>("HKDF-SM3");
+        check::<RIPEMD160>("HKDF-RIPEMD160");
     }
 
     #[test]
@@ -120,6 +151,54 @@ mod hkdf_tests {
             HKDF_SHA256::new_with_salt(&unknown),
             Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
         ));
+    }
+
+    /// A derivation through the `KDF` trait reads the instance and leaves it as it was: the
+    /// salt key, the inner hash and the credit serve the next derivation and a streaming
+    /// extract after it, and an instance never keyed is still unkeyed.
+    #[test]
+    fn a_derivation_leaves_the_instance_as_it_was() {
+        let salt = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::MACKey).unwrap();
+        let ikm_a = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::Seed).unwrap();
+        let ikm_b = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[64..96], KeyType::Seed).unwrap();
+        let expected = |salt: &dyn KeyMaterialTrait, ikm: &dyn KeyMaterialTrait| {
+            let mut okm = KeyMaterial512::new();
+            HKDF_SHA256::extract_and_expand_out(salt, ikm, b"info", 48, &mut okm).unwrap();
+            okm
+        };
+
+        let mut hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+        assert_eq!(hkdf.get_entropy(), 32);
+        for ikm in [&ikm_a, &ikm_b, &ikm_a] {
+            let okm = hkdf.derive_key(ikm, b"info", 48).unwrap();
+            assert!(okm.equals(&expected(&salt, ikm)));
+            assert_eq!(okm.key_type(), expected(&salt, ikm).key_type());
+            assert_eq!(okm.security_strength(), expected(&salt, ikm).security_strength());
+            assert_eq!(hkdf.get_entropy(), 32, "the IKM is not credited to the instance");
+        }
+        let keys: [&dyn KeyMaterialTrait; 2] = [&ikm_a, &ikm_b];
+        let both = hkdf.derive_key_from_multiple(&keys, b"info", 48).unwrap();
+        let ikm_ab =
+            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[32..96], KeyType::Seed).unwrap();
+        assert!(both.equals(&expected(&salt, &ikm_ab)));
+        // The instance's own extract is where it was: nothing of the derivations is in it.
+        hkdf.do_extract_update_key(&ikm_b).unwrap();
+        let prk = hkdf.do_extract_final().unwrap();
+        let direct = HKDF_SHA256::extract(&salt, &ikm_b).unwrap();
+        assert_eq!(prk.ref_to_bytes(), direct.ref_to_bytes());
+        assert_eq!(prk.key_type(), direct.key_type());
+
+        // An instance from `new` derives with the absent salt each time, and can still be keyed.
+        let absent = KeyMaterial0::new();
+        let mut unkeyed = HKDF_SHA256::new();
+        for ikm in [&ikm_a, &ikm_b, &ikm_a] {
+            let okm = unkeyed.derive_key(ikm, b"info", 48).unwrap();
+            assert!(okm.equals(&expected(&absent, ikm)));
+        }
+        assert_eq!(unkeyed.get_entropy(), 0);
+        unkeyed.do_extract_init(&salt).unwrap();
+        let okm = unkeyed.derive_key(&ikm_a, b"info", 48).unwrap();
+        assert!(okm.equals(&expected(&salt, &ikm_a)));
     }
 
     #[test]
@@ -692,7 +771,7 @@ mod hkdf_tests {
     /// hashes such a key first): T(1) || T(2) computed with HMAC directly.
     fn check_expand_long_prk<H>(lens: &[usize])
     where
-        H: HMACParams,
+        H: HKDFParams,
     {
         let hash_len = H::OUTPUT_LEN;
         for &n in lens {

@@ -216,13 +216,13 @@ pub const HMAC_SHA3_384_NAME: &str = "HMAC-SHA3-384";
 /// The name of HMAC over SHA3-512.
 pub const HMAC_SHA3_512_NAME: &str = "HMAC-SHA3-512";
 
-/// The name of HKDF over SHA3-224, for `HMACParams::HKDF_ALG_NAME`.
+/// The name of HKDF over SHA3-224, for `HKDFParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA3_224_NAME: &str = "HKDF-SHA3-224";
-/// The name of HKDF over SHA3-256, for `HMACParams::HKDF_ALG_NAME`.
+/// The name of HKDF over SHA3-256, for `HKDFParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA3_256_NAME: &str = "HKDF-SHA3-256";
-/// The name of HKDF over SHA3-384, for `HMACParams::HKDF_ALG_NAME`.
+/// The name of HKDF over SHA3-384, for `HKDFParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA3_384_NAME: &str = "HKDF-SHA3-384";
-/// The name of HKDF over SHA3-512, for `HMACParams::HKDF_ALG_NAME`.
+/// The name of HKDF over SHA3-512, for `HKDFParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA3_512_NAME: &str = "HKDF-SHA3-512";
 
 /*** Type aliases ***/
@@ -232,7 +232,6 @@ pub type HMAC_SHA3_224<'k, Dir> = HMAC<'k, SHA3_224, Dir>;
 impl HMACParams for SHA3_224 {
     type MACKey = KeyMaterial<{ <SHA3_224 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_224_NAME;
-    const HKDF_ALG_NAME: &'static str = HKDF_SHA3_224_NAME;
     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
     /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-224 { hashAlgs 13 }
     const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 13];
@@ -246,7 +245,6 @@ pub type HMAC_SHA3_256<'k, Dir> = HMAC<'k, SHA3_256, Dir>;
 impl HMACParams for SHA3_256 {
     type MACKey = KeyMaterial<{ <SHA3_256 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_256_NAME;
-    const HKDF_ALG_NAME: &'static str = HKDF_SHA3_256_NAME;
     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
     /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-256 { hashAlgs 14 }
     const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 14];
@@ -260,7 +258,6 @@ pub type HMAC_SHA3_384<'k, Dir> = HMAC<'k, SHA3_384, Dir>;
 impl HMACParams for SHA3_384 {
     type MACKey = KeyMaterial<{ <SHA3_384 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_384_NAME;
-    const HKDF_ALG_NAME: &'static str = HKDF_SHA3_384_NAME;
     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
     /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-384 { hashAlgs 15 }
     const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 15];
@@ -274,7 +271,6 @@ pub type HMAC_SHA3_512<'k, Dir> = HMAC<'k, SHA3_512, Dir>;
 impl HMACParams for SHA3_512 {
     type MACKey = KeyMaterial<{ <SHA3_512 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_512_NAME;
-    const HKDF_ALG_NAME: &'static str = HKDF_SHA3_512_NAME;
     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
     /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-512 { hashAlgs 16 }
     const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 16];

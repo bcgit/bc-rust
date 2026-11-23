@@ -176,17 +176,17 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KDF, XOF};
 
 /*** String constants ***/
-/// The name of HKDF over SHA-224, for `HMACParams::HKDF_ALG_NAME`.
+/// The name of HKDF over SHA-224, for `HKDFParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA224_NAME: &str = "HKDF-SHA224";
-/// The name of HKDF over SHA-256, for `HMACParams::HKDF_ALG_NAME`.
+/// The name of HKDF over SHA-256, for `HKDFParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA256_NAME: &str = "HKDF-SHA256";
-/// The name of HKDF over SHA-384, for `HMACParams::HKDF_ALG_NAME`.
+/// The name of HKDF over SHA-384, for `HKDFParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA384_NAME: &str = "HKDF-SHA384";
-/// The name of HKDF over SHA-512, for `HMACParams::HKDF_ALG_NAME`.
+/// The name of HKDF over SHA-512, for `HKDFParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA512_NAME: &str = "HKDF-SHA512";
-/// The name of HKDF over SHA-512/224, for `HMACParams::HKDF_ALG_NAME`.
+/// The name of HKDF over SHA-512/224, for `HKDFParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA512_224_NAME: &str = "HKDF-SHA512/224";
-/// The name of HKDF over SHA-512/256, for `HMACParams::HKDF_ALG_NAME`.
+/// The name of HKDF over SHA-512/256, for `HKDFParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA512_256_NAME: &str = "HKDF-SHA512/256";
 
 /*** Type aliases ***/

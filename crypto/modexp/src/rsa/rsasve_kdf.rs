@@ -4,7 +4,7 @@
 //! is a key and not SP 800-56B Rev. 2's secret value `Z`, which the standard passes through a
 //! key-derivation method (its Section 5.5) before any use. The algorithm is
 //! [`RSASVE_HKDF<K, H>`], `RSASVE-2048-HKDF-SHA256` and so on, for any modulus size and any
-//! HMAC hash, at the lesser of the two strengths.
+//! hash with an HKDF ([`HKDFParams`]), at the lesser of the two strengths.
 //!
 //! The derived key is HKDF-Hash(salt, Z, info) over RSASVE's `Z`, the salt the description's
 //! ([`HkdfDescription`]), the info and the length the caller's [`KdfParams`], the length from
@@ -26,8 +26,8 @@ use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorith
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KDF, KEMDecapsulator, KEMEncapsulator, RNG};
+use bouncycastle_digest::hkdf::HKDFParams;
 use bouncycastle_digest::hkdf::HkdfDescription;
-use bouncycastle_digest::hmac::HMACParams;
 use bouncycastle_utils::const_str::ConstStr;
 use core::marker::PhantomData;
 
@@ -66,29 +66,29 @@ use core::marker::PhantomData;
 /// encapsulates::<RsaKEMPublicKey<RSA2048>, 256>();
 /// ```
 #[allow(non_camel_case_types)]
-pub struct RSASVE_HKDF<K: RsaSize, H: HMACParams> {
+pub struct RSASVE_HKDF<K: RsaSize, H: HKDFParams> {
     _params: PhantomData<(K, H)>,
 }
 
-impl<K: RsaSize, H: HMACParams> RSASVE_HKDF<K, H> {
+impl<K: RsaSize, H: HKDFParams> RSASVE_HKDF<K, H> {
     const NAME: ConstStr<32> = ConstStr::concat(&["RSASVE-", K::BITS_NAME, "-", H::HKDF_ALG_NAME]);
 
     /// The most bytes one derivation produces: 255 hash outputs (RFC 5869 Section 2.3).
     pub const MAX_LEN: usize = 255 * H::OUTPUT_LEN;
 }
 
-impl<K: RsaSize, H: HMACParams> Algorithm for RSASVE_HKDF<K, H> {
+impl<K: RsaSize, H: HKDFParams> Algorithm for RSASVE_HKDF<K, H> {
     const ALG_NAME: &'static str = Self::NAME.as_str();
     const MAX_SECURITY_STRENGTH: SecurityStrength =
         min_strength(K::STRENGTH, H::MAX_SECURITY_STRENGTH);
 }
 
-impl<K: RsaSize, H: HMACParams> KEMAlgorithm for RSASVE_HKDF<K, H> {}
+impl<K: RsaSize, H: HKDFParams> KEMAlgorithm for RSASVE_HKDF<K, H> {}
 
 /// The length check, a compile-time error where it is evaluated: `SS_LEN` is from one byte to
 /// [`RSASVE_HKDF::MAX_LEN`]. The role impls evaluate it when a worker is made, and `derive`
 /// does, so no worker exists at a length no derivation accepts.
-const fn len_check<H: HMACParams, const SS_LEN: usize>() {
+const fn len_check<H: HKDFParams, const SS_LEN: usize>() {
     assert!(
         SS_LEN > 0 && SS_LEN <= 255 * H::OUTPUT_LEN,
         "the derived key is from one byte to the KDF's MAX_LEN long"
@@ -103,7 +103,7 @@ const fn len_check<H: HMACParams, const SS_LEN: usize>() {
 /// [`KEMError::KDFError`] with what HKDF refused, building the engine or deriving;
 /// [`KEMError::GenericError`] if it writes anything but `SS_LEN` bytes. `out` is left zeroized.
 #[allow(non_snake_case)]
-fn derive<K: RsaSize, H: HMACParams, const N: usize, const SS_LEN: usize>(
+fn derive<K: RsaSize, H: HKDFParams, const N: usize, const SS_LEN: usize>(
     params: KdfParams<'_, HkdfDescription<'_, H>, SS_LEN>,
     Z: &KeyMaterial<N>,
     out: &mut KeyMaterial<SS_LEN>,
@@ -130,12 +130,12 @@ fn derive<K: RsaSize, H: HMACParams, const N: usize, const SS_LEN: usize>(
 
 /// The encapsulator [`EncapsulatingKey::create_encapsulator`] hands out over [`KdfParams`]: it
 /// borrows the key, holds the parameters, and derives the key from each encapsulation's `Z`.
-pub struct RsasveKdfEncapsulator<'k, 'p, 's, K: RsaSize, H: HMACParams, const SS_LEN: usize> {
+pub struct RsasveKdfEncapsulator<'k, 'p, 's, K: RsaSize, H: HKDFParams, const SS_LEN: usize> {
     pk: &'k RsaKEMPublicKey<K>,
     params: KdfParams<'p, HkdfDescription<'s, H>, SS_LEN>,
 }
 
-impl<K: RsaSize, H: HMACParams, const SS_LEN: usize> Algorithm
+impl<K: RsaSize, H: HKDFParams, const SS_LEN: usize> Algorithm
     for RsasveKdfEncapsulator<'_, '_, '_, K, H, SS_LEN>
 {
     const ALG_NAME: &'static str = RSASVE_HKDF::<K, H>::ALG_NAME;
@@ -146,7 +146,7 @@ impl<K, H, const N: usize, const SS_LEN: usize> KEMEncapsulator<N, SS_LEN>
     for RsasveKdfEncapsulator<'_, '_, '_, K, H, SS_LEN>
 where
     K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
-    H: HMACParams,
+    H: HKDFParams,
 {
     /// RSASVE.GENERATE for `Z` and the ciphertext, then HKDF over `Z`. `Z` lives in one local,
     /// zeroized when it drops; a ciphertext for a key the caller never gets is not left in the
@@ -173,7 +173,7 @@ where
 const KDF_ENCAPS_STACK_PER_LIMB: usize = 26;
 const KDF_ENCAPS_STACK_FIXED: usize = 208;
 
-impl<K: RsaSigningSize, H: HMACParams, const SS_LEN: usize>
+impl<K: RsaSigningSize, H: HKDFParams, const SS_LEN: usize>
     RsasveKdfEncapsulator<'_, '_, '_, K, H, SS_LEN>
 {
     /// The work of `encaps_out`. Never inlined, so that what it and the derivation leave lies
@@ -202,12 +202,12 @@ impl<K: RsaSigningSize, H: HMACParams, const SS_LEN: usize>
 
 /// The decapsulator [`DecapsulatingKey::create_decapsulator`] hands out over [`KdfParams`]: it
 /// borrows the key, holds the parameters, and derives the key from each ciphertext's `Z`.
-pub struct RsasveKdfDecapsulator<'k, 'p, 's, K: RsaSize, H: HMACParams, const SS_LEN: usize> {
+pub struct RsasveKdfDecapsulator<'k, 'p, 's, K: RsaSize, H: HKDFParams, const SS_LEN: usize> {
     sk: &'k RsaKEMPrivateKey<K>,
     params: KdfParams<'p, HkdfDescription<'s, H>, SS_LEN>,
 }
 
-impl<K: RsaSize, H: HMACParams, const SS_LEN: usize> Algorithm
+impl<K: RsaSize, H: HKDFParams, const SS_LEN: usize> Algorithm
     for RsasveKdfDecapsulator<'_, '_, '_, K, H, SS_LEN>
 {
     const ALG_NAME: &'static str = RSASVE_HKDF::<K, H>::ALG_NAME;
@@ -218,7 +218,7 @@ impl<K, H, const N: usize, const SS_LEN: usize> KEMDecapsulator<N, SS_LEN>
     for RsasveKdfDecapsulator<'_, '_, '_, K, H, SS_LEN>
 where
     K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
-    H: HMACParams,
+    H: HKDFParams,
 {
     /// RSASVE.RECOVER for `Z`, then HKDF over it; a ciphertext RSASVE refuses is refused here
     /// with the caller's buffer zeroized.
@@ -239,7 +239,7 @@ where
 const KDF_DECAPS_STACK_PER_LIMB: usize = 36;
 const KDF_DECAPS_STACK_FIXED: usize = 448;
 
-impl<K: RsaSigningSize, H: HMACParams, const SS_LEN: usize>
+impl<K: RsaSigningSize, H: HKDFParams, const SS_LEN: usize>
     RsasveKdfDecapsulator<'_, '_, '_, K, H, SS_LEN>
 {
     /// The work of `decaps_out`. Never inlined, so that what it and the derivation leave lies
@@ -267,7 +267,7 @@ impl<'p, 's, K, H, const N: usize, const SS_LEN: usize>
     for RsaKEMPublicKey<K>
 where
     K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
-    H: HMACParams,
+    H: HKDFParams,
 {
     type Algorithm = RSASVE_HKDF<K, H>;
     type Encapsulator<'k>
@@ -291,7 +291,7 @@ impl<'p, 's, K, H, const N: usize, const SS_LEN: usize>
     for RsaKEMPrivateKey<K>
 where
     K: RsaSigningSize + RsaSize<Modulus = [u8; N]>,
-    H: HMACParams,
+    H: HKDFParams,
 {
     type Algorithm = RSASVE_HKDF<K, H>;
     type Decapsulator<'k>

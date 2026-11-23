@@ -96,12 +96,14 @@ impl TestFrameworkKDF {
         assert_eq!(out_key.key_type(), KeyType::Unknown);
         assert_eq!(out_key.security_strength(), SecurityStrength::None);
 
-        // enough full entropy -> CryptographicRandom at some strength
+        // enough full entropy -> CryptographicRandom, at some strength when the function claims
+        // one and at none when it does not (one over a legacy hash)
+        let has_strength = kdf.max_security_strength() > SecurityStrength::None;
         let full_entropy_key =
             KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::CryptographicRandom).unwrap();
         let out_key = kdf.derive_key(&full_entropy_key, &[0u8; 10], len).unwrap();
         assert_eq!(out_key.key_type(), KeyType::CryptographicRandom);
-        assert!(out_key.security_strength() > SecurityStrength::None);
+        assert_eq!(out_key.security_strength() > SecurityStrength::None, has_strength);
 
         // the output is the KDF's, not the input's: a Seed, a MACKey or a SharedSecret with a
         // strength in gives CryptographicRandom out
@@ -115,7 +117,11 @@ impl TestFrameworkKDF {
             }
             let out_key = kdf.derive_key(&typed, &[0u8; 10], len).unwrap();
             assert_eq!(out_key.key_type(), KeyType::CryptographicRandom, "{key_type:?} in");
-            assert!(out_key.security_strength() > SecurityStrength::None, "{key_type:?} in");
+            assert_eq!(
+                out_key.security_strength() > SecurityStrength::None,
+                has_strength,
+                "{key_type:?} in"
+            );
         }
 
         // a full-entropy key with no strength credits nothing: a SharedSecret whose producer
@@ -218,7 +224,8 @@ impl TestFrameworkKDF {
         let keys: [&dyn KeyMaterialTrait; 2] = [&zeroized64_key, &full_entropy_key];
         let out_key = kdf.derive_key_from_multiple(&keys, &[0u8; 10], len).unwrap();
         assert_eq!(out_key.key_type(), KeyType::CryptographicRandom);
-        assert!(out_key.security_strength() > SecurityStrength::None);
+        let has_strength = kdf.max_security_strength() > SecurityStrength::None;
+        assert_eq!(out_key.security_strength() > SecurityStrength::None, has_strength);
 
         // two halves credit as their sum: 32 + 32 bytes seed what one 64-byte key does
         let half_a =

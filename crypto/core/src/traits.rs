@@ -712,14 +712,15 @@ pub const KDF_ONE_SHOT_MAX_LEN: usize = 1024;
 /// own strength bound, half a hash output for a hash-based KDF, and otherwise
 /// [`KeyType::Unknown`] with no strength; its strength is the least of the inputs' strongest,
 /// the function's and the length's, so a `CryptographicRandom` output carries a strength
-/// whenever its length can hold one, 14 bytes for the least; a shorter one carries none. A key
+/// whenever its length can hold one, 14 bytes for the least; a shorter one carries none, and
+/// neither does the output of a function that claims no strength (one over a legacy hash). A key
 /// with no strength (a [`KeyType::SharedSecret`] whose producer set none, a key
 /// too short to carry 112 bits) credits nothing. The count is of the keys as given: the same key
 /// passed twice in `ikms` counts twice, which is the caller's to avoid. `fixed_info` is context
 /// and credits nothing. A [`KeyType::Zeroized`] or [`KeyType::Unknown`] input is derived from
 /// and yields `Unknown` output rather than an error, since a KDF cannot tell such bytes from
 /// random ones. [`crate::hazmat::label_kdf_output`] is the rule as code, for an implementation
-/// to call.
+/// to call, and [`crate::hazmat::KdfCredit`] the same for one that takes its keys one at a time.
 ///
 /// An instance holds only what it was made from (an HKDF's salt): one that has also absorbed
 /// input through a streaming API is refused by the derivations. A zero-length derivation is

@@ -9,8 +9,7 @@ use crate::helpers::{
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::digest::hkdf;
-use bouncycastle::digest::hkdf::HKDF;
-use bouncycastle::digest::hmac::HMACParams;
+use bouncycastle::digest::hkdf::{HKDF, HKDFParams};
 use bouncycastle::digest::sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
 use bouncycastle::digest::sm3::hkdf::HKDF_SM3;
 
@@ -85,7 +84,7 @@ pub(crate) fn hkdf_cmd(
 }
 
 /// Extract then expand through `h`, into `out_key`.
-fn run<H: HMACParams>(
+fn run<H: HKDFParams>(
     mut h: HKDF<H>,
     salt: &impl KeyMaterialTrait,
     ikm: &impl KeyMaterialTrait,

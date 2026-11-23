@@ -55,7 +55,6 @@ pub type HMAC_RIPEMD160<'k, Dir> = HMAC<'k, RIPEMD160, Dir>;
 impl HMACParams for RIPEMD160 {
     type MACKey = KeyMaterial<{ <RIPEMD160 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_RIPEMD160_NAME;
-    const HKDF_ALG_NAME: &'static str = "HKDF-RIPEMD160";
     // Half the hash's output length in bits (160 / 2 = 80), which below 112 bits is `None`.
     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength =
         SecurityStrength::from_bits(<RIPEMD160 as HashAlgParams>::OUTPUT_LEN * 8 / 2);

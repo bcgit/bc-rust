@@ -20,8 +20,7 @@ use bouncycastle::core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG};
-use bouncycastle::digest::hkdf::HkdfDescription;
-use bouncycastle::digest::hmac::HMACParams;
+use bouncycastle::digest::hkdf::{HKDFParams, HkdfDescription};
 use bouncycastle::pqc::mlkem::{
     MLKEM512, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey,
     MLKEM512PublicKey, MLKEM768, MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN,
@@ -245,7 +244,7 @@ pub(crate) fn mlkem_hkdf_cmd<
         + for<'p> EncapsulatingKey<KdfParams<'p, HkdfDescription<'p, H>, SS_LEN>, CT_LEN, SS_LEN>,
     SK: PrivateKey<SK_LEN>
         + for<'p> DecapsulatingKey<KdfParams<'p, HkdfDescription<'p, H>, SS_LEN>, CT_LEN, SS_LEN>,
-    H: HMACParams,
+    H: HKDFParams,
 {
     // RFC 5869 Section 2.2: the salt is optional, "a non-secret random value"; absent, HKDF uses
     // a string of HashLen zeros, which a zero-length salt selects. It is typed as the random

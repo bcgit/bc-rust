@@ -27,7 +27,7 @@ pub use electronic_code_book::{BlockPermutation, ElectronicCodeBook, KeyExpansio
 pub use finish_token::finish_token;
 pub use fixed_seed_rng::FixedSeedRNG;
 pub use hazardous_operations::do_hazardous_operations;
-pub use kdf_output::label_kdf_output;
+pub use kdf_output::{KdfCredit, label_kdf_output};
 pub use key_stream::KeyStream;
 pub use mode::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,

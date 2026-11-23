@@ -171,9 +171,6 @@ pub trait HMACParams: HashOneShot + HashAlgParams + Clone {
 
     /// The name of the HMAC over this hash, as reported by [`Algorithm::ALG_NAME`].
     const HMAC_ALG_NAME: &'static str;
-    /// The name of HKDF (RFC 5869) over this hash, as reported by `bouncycastle_digest::hkdf::HKDF`'s
-    /// [`Algorithm::ALG_NAME`].
-    const HKDF_ALG_NAME: &'static str;
     /// The strength claimed by the HMAC over this hash, as reported by
     /// [`Algorithm::MAX_SECURITY_STRENGTH`].
     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength;
@@ -188,7 +185,6 @@ pub trait HMACParams: HashOneShot + HashAlgParams + Clone {
 impl<H: HMACParams> HMACParams for WithoutCollisionResistance<H> {
     type MACKey = H::MACKey;
     const HMAC_ALG_NAME: &'static str = H::HMAC_ALG_NAME;
-    const HKDF_ALG_NAME: &'static str = H::HKDF_ALG_NAME;
     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = H::HMAC_MAX_SECURITY_STRENGTH;
     const HMAC_OID: &'static [u32] = H::HMAC_OID;
     const HMAC_OID_DER: &'static [u8] = H::HMAC_OID_DER;
@@ -290,10 +286,13 @@ impl<HASH: HMACParams> HmacKey<HASH> {
                 "Key type must be a MAC key.",
             )));
         }
-        // A key of no security strength is refused whatever the HMAC claims: for an HMAC that
-        // itself claims none (a legacy hash), `<` alone would accept every key.
+        // The bar is the HMAC's own claim, as `keygen_from_rng`'s is, not the hash's collision
+        // strength: SP 800-107r1 Section 5.3.4 bounds an HMAC key's effective strength by 2C, twice
+        // the chaining value's length, so the two are separate claims. A key of no security strength is
+        // refused whatever the HMAC claims: for an HMAC that itself claims none (a legacy hash),
+        // `<` alone would accept every key.
         if !allow_weak_keys
-            && (key.security_strength() < HASH::MAX_SECURITY_STRENGTH
+            && (key.security_strength() < HASH::HMAC_MAX_SECURITY_STRENGTH
                 || key.security_strength() == SecurityStrength::None)
         {
             return Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(
@@ -323,8 +322,8 @@ impl<HASH: HMACParams> HmacKey<HASH> {
 
 impl<HASH: HMACParams> FromAnyKeyMaterial for HmacKey<HASH> {
     /// Builds the key from material tagged [`KeyType::MACKey`] (or [`KeyType::Zeroized`], for an
-    /// all-zero key) whose security strength is at least the HMAC's and is not
-    /// [`SecurityStrength::None`].
+    /// all-zero key) whose security strength is at least
+    /// [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`] and is not [`SecurityStrength::None`].
     ///
     /// # Errors
     /// [`MACError::KeyMaterialError`] with [`KeyMaterialError::InvalidKeyType`] or
