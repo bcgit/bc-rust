@@ -8,5 +8,3 @@ rust-version.workspace = true
 
 [dev-dependencies]
 bouncycastle-core.workspace = true
-# montgomery_tests.rs checks the generic Montgomery arithmetic against the P-256 scalar field.
-bouncycastle-ec.workspace = true
