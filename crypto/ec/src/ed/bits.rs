@@ -16,9 +16,9 @@ pub(in crate::ed) const fn bit_permute_step_64(x: u64, m: u64, s: usize) -> u64 
 mod tests {
     use super::*;
 
-    // Known answers from the prototype these helpers were ported from (bc-rust-nursery,
-    // crates/math, `bits::bit_permute_step_64`), over the four steps its Ed25519 comb recoding
-    // applies; printed by the scratch program described in `nat.rs` (`kat-gen nat`).
+    // Known answers from the prototype these helpers were ported from
+    // (`bits::bit_permute_step_64`), over the four steps its Ed25519 comb recoding applies;
+    // printed by the scratch program described in `nat.rs` (`kat-gen nat`).
     // (x, m, s, result)
     const PERMUTE_KATS: &[(u64, u64, usize, u64)] = &[
         (0xEBA7EA1BD263138F, 0x0000F0F00000F0F0, 12, 0xEEA1BA7BD168233F),

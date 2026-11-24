@@ -421,11 +421,10 @@ mod tests {
         ),
     )];
 
-    // Known answers from the prototype this was ported from (bc-rust-nursery,
-    // crates/ed25519): `generate_public_key` with `sign`, and with `sign_prehash` over the
-    // SHA-512 of the message, on keys, contexts and messages from splitmix64 with a fixed
-    // seed. Printed by the scratch program described in `nat.rs` (`kat-gen sign`, not in
-    // this repository).
+    // Known answers from the prototype this was ported from: `generate_public_key` with
+    // `sign`, and with `sign_prehash` over the SHA-512 of the message, on keys, contexts
+    // and messages from splitmix64 with a fixed seed. Printed by the scratch program
+    // described in `nat.rs` (`kat-gen sign`, not in this repository).
 
     // (private key, message, public key, signature)
     const ED25519_KATS: &[(&str, &str, &str, &str)] = &[

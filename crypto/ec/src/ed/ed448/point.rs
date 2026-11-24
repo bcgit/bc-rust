@@ -480,13 +480,12 @@ mod tests {
     use std::string::String;
     use std::vec::Vec;
 
-    // Known answers from the prototype this module was ported from (bc-rust-nursery,
-    // crates/ed448): its `scalar_mult_base`, point decoding (`check_point_var` then
-    // `decode_point_var`), `validate_public_key_full` and `scalar_mult_straus_225_var`, on
-    // edge values and on values from splitmix64 with a fixed seed. Printed by a scratch
-    // program (`kat-gen points`, not in this repository) and recomputed there with the Python
-    // library of RFC 8032 Appendix A. Scalars and points are 57 little-endian octets in
-    // hexadecimal.
+    // Known answers from the prototype this module was ported from: its `scalar_mult_base`,
+    // point decoding (`check_point_var` then `decode_point_var`), `validate_public_key_full`
+    // and `scalar_mult_straus_225_var`, on edge values and on values from splitmix64 with a
+    // fixed seed. Printed by a scratch program (`kat-gen points`, not in this repository) and
+    // recomputed there with the Python library of RFC 8032 Appendix A. Scalars and points are
+    // 57 little-endian octets in hexadecimal.
 
     // (k, the encoding of [k]B)
     const BASE_MULT_KATS: &[(&str, &str)] = &[

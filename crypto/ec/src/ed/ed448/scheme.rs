@@ -815,12 +815,11 @@ mod tests {
         ),
     ];
 
-    // Known answers from the prototype this was ported from (bc-rust-nursery, crates/ed448):
-    // `generate_public_key` with `sign_ctx`, and with `sign_prehash` over SHAKE256(message,
-    // 64), on keys, contexts and messages from splitmix64 with a fixed seed, and the verdicts
-    // of `verify_ctx` on altered signatures. Printed by a scratch program (`kat-gen sign`,
-    // not in this repository) and recomputed there with the Python library of RFC 8032
-    // Appendix A.
+    // Known answers from the prototype this was ported from: `generate_public_key` with
+    // `sign_ctx`, and with `sign_prehash` over SHAKE256(message, 64), on keys, contexts and
+    // messages from splitmix64 with a fixed seed, and the verdicts of `verify_ctx` on altered
+    // signatures. Printed by a scratch program (`kat-gen sign`, not in this repository) and
+    // recomputed there with the Python library of RFC 8032 Appendix A.
 
     // (private key, context, message, public key, signature)
     const ED448_KATS: &[(&str, &str, &str, &str, &str)] = &[

@@ -876,11 +876,10 @@ mod tests {
     }
 
     // Known answers for the operations Ed25519 needs, from the prototype this module's field was
-    // ported from (bc-rust-nursery, crates/curve25519): each operation run there on the values
-    // around p and on pseudo-random values (splitmix64, fixed seed), and the results encoded
-    // canonically, as 32 little-endian bytes in hexadecimal. Regenerate with the scratch program
-    // that printed the two tables (`kat-gen field`, not in this repository), which depends on
-    // the prototype's crates by path.
+    // ported from: each operation run there on the values around p and on pseudo-random values
+    // (splitmix64, fixed seed), and the results encoded canonically, as 32 little-endian bytes
+    // in hexadecimal. Regenerate with the scratch program that printed the two tables (`kat-gen
+    // field`, not in this repository), which depends on the prototype's crates by path.
 
     /// One row: `a` as given to `decode_255`, and the prototype's answers for it, with `b` the
     /// next row's `a`.

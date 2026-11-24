@@ -65,11 +65,11 @@ mod tests {
     use super::*;
     use std::{vec, vec::Vec};
 
-    // Known answers from the prototype this was ported from (bc-rust-nursery, crates/math,
-    // `wnaf::get_signed_var`), as the non-zero digits and their positions: the two group orders
-    // at the widths the prototype's order checks use, and positive, negative and extreme values
-    // at the widths its Ed25519 and Ed448 verification use. Printed by the scratch program
-    // described in `nat.rs` (`kat-gen nat`).
+    // Known answers from the prototype this was ported from (`wnaf::get_signed_var`), as the
+    // non-zero digits and their positions: the two group orders at the widths the prototype's
+    // order checks use, and positive, negative and extreme values at the widths its Ed25519 and
+    // Ed448 verification use. Printed by the scratch program described in `nat.rs` (`kat-gen
+    // nat`).
 
     /// One row: the limbs, the window width, and each non-zero digit as (position, digit).
     struct WnafKat {

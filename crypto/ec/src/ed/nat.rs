@@ -172,13 +172,13 @@ mod tests {
     use super::*;
     use std::{vec, vec::Vec};
 
-    // Known answers from the prototype these helpers were ported from (bc-rust-nursery,
-    // crates/math, module `nat`): its `mul`, `mul_slices`, `square`, `add_to`, `sub_from`,
-    // `cadd_to`, `mul_add_to`, `shift_down_bit` and `lt_var` run on four- and seven-limb
-    // operands (the Ed25519 and Ed448 scalar sizes), all-ones and the two group orders among
-    // them, the rest from splitmix64 with a fixed seed. Regenerate with the scratch program
-    // that printed them (`kat-gen nat`, not in this repository), which depends on the
-    // prototype's crates by path; it also prints the tables in `wnaf.rs` and `bits.rs`.
+    // Known answers from the prototype these helpers were ported from (module `nat`): its
+    // `mul`, `mul_slices`, `square`, `add_to`, `sub_from`, `cadd_to`, `mul_add_to`,
+    // `shift_down_bit` and `lt_var` run on four- and seven-limb operands (the Ed25519 and
+    // Ed448 scalar sizes), all-ones and the two group orders among them, the rest from
+    // splitmix64 with a fixed seed. Regenerate with the scratch program that printed them
+    // (`kat-gen nat`, not in this repository), which depends on the prototype's crates by
+    // path; it also prints the tables in `wnaf.rs` and `bits.rs`.
 
     /// One row. `mul_short` is `x` times the low two limbs of `y`; `sum` is `y + x` and `diff`
     /// is `y - x`, with the carry and borrow out; `acc` is `x * y` added to the number whose

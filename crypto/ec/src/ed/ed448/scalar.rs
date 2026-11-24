@@ -403,11 +403,11 @@ mod tests {
     use super::*;
     use std::vec::Vec;
 
-    // Known answers from the prototype this module was ported from (bc-rust-nursery,
-    // crates/ed448, module `scalar_448` and `calculate_S`): edge values around L and the digit
-    // boundaries, the rest from splitmix64 with a fixed seed. Printed by a scratch program
-    // (`kat-gen scalar`, not in this repository), and checked there against Python integers.
-    // Scalars are little-endian octets in hexadecimal.
+    // Known answers from the prototype this module was ported from (module `scalar_448` and
+    // `calculate_S`): edge values around L and the digit boundaries, the rest from splitmix64
+    // with a fixed seed. Printed by a scratch program (`kat-gen scalar`, not in this
+    // repository), and checked there against Python integers. Scalars are little-endian octets
+    // in hexadecimal.
 
     // (n, n mod L)
     const REDUCE_KATS: &[(&str, &str)] = &[
