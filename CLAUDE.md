@@ -503,7 +503,7 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 ## CI
 
-Nine workflows under `.github/workflows/`, all triggered by pull requests:
+Ten workflows under `.github/workflows/`, all triggered by pull requests:
 
 - `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then, since
   `--all-features` never builds a crate with a default feature off: `cargo check -p <crate>
@@ -522,10 +522,10 @@ Nine workflows under `.github/workflows/`, all triggered by pull requests:
 - `aes-ct-asm.yml`: `dev_scripts/check_aes_ct_asm.sh` on **nightly** with `rust-src`: builds
   `dev_scripts/aes_ct_harness` for thumbv6m and riscv32i and greps the assembly of the AES round-key
   widening for a multiply, call or branch (see the comment on `PlaneWord::splat` in `crypto/symmetric/src/aes/bitslice.rs`).
-  Its second step is the bare-metal build check: `cargo check -Zbuild-std=core --target thumbv6m-none-eabi
-  --no-default-features` on the nine library crates and the umbrella, which fails on a use of `std`
-  or of an allocator, since `-Zbuild-std=core` builds no `alloc`, and on a path to `getrandom`, which has no
-  backend for that target.
+- `no-std.yml`: the bare-metal build check on **nightly** with `rust-src`: `cargo check -Zbuild-std=core
+  --target thumbv6m-none-eabi --no-default-features` on the nine library crates and the umbrella, which
+  fails on a use of `std` or of an allocator, since `-Zbuild-std=core` builds no `alloc`, and on a path to
+  `getrandom`, which has no backend for that target.
 - `oaep-ct.yml`: `dev_scripts/check_oaep_ct.sh` with valgrind and **nightly** `rust-src`: runs
   `dev_scripts/oaep_ct_harness` (the EME-OAEP decode, included by path) under memcheck with the encoded
   message undefined, with a variable-time control, and greps its thumbv6m and riscv32i assembly for a
@@ -554,7 +554,7 @@ Nine workflows under `.github/workflows/`, all triggered by pull requests:
 `cargo test --all` is the workspace run, so a failing test does block a PR; what CI does not run is
 `cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.
 
-The gitea origin has its own copies of five of the pull-request checks under `.gitea/workflows/`
+The gitea origin has its own copies of six of the pull-request checks under `.gitea/workflows/`
 (there is no Pages job, and `oaep-ct.yml`, `rsa-ct-stack.yml` and `sm2-stack.yml` have no gitea copy). They differ from the GitHub ones in two ways: the toolchain is installed
 with `rustup` in a shell step, and the test job takes its vectors from the runner's read-only
 `/bc-test-data` and `/wycheproof` mounts, failing if either is missing. Wycheproof's are read out

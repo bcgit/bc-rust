@@ -1,0 +1,32 @@
+name: Bare-metal no_std build
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: no-std-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  no-std:
+    if: github.repository == 'bcgit/bc-rust'
+    name: no-std
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install nightly with rust-src
+        run: rustup toolchain install nightly --profile minimal --component rust-src
+
+      # `-Zbuild-std=core` builds no `alloc`, so this fails on a use of `std` or of an allocator in
+      # a build without default features, on a target that has neither.
+      - name: Check the library crates and the umbrella without std or alloc on Cortex-M0
+        run: |
+          for crate in utils core digest symmetric ec pqc modexp hybrid rng; do
+            cargo +nightly check -Zbuild-std=core --target thumbv6m-none-eabi --no-default-features -p "bouncycastle-$crate"
+          done
+          cargo +nightly check -Zbuild-std=core --target thumbv6m-none-eabi --no-default-features -p bouncycastle
