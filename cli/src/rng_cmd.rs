@@ -4,7 +4,7 @@
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
-use bouncycastle::core::traits::RNG;
+use bouncycastle::core::traits::{RNG, RNGExt};
 use bouncycastle::rng::hazmat::NewUninitialized;
 use bouncycastle::rng::{HashDRBG_SHA256, HashDRBG_SHA512, Sp80090ADrbg};
 use clap::ValueEnum;
@@ -72,7 +72,7 @@ fn generate(mut rng: impl RNG, len: Option<u32>, output_hex: bool) {
     let mut bytes_left_to_write = len.unwrap_or(u32::MAX) as usize;
     let mut written = Ok(());
     while written.is_ok() && (loop_forever || bytes_left_to_write > 0) {
-        rng.next_bytes_out(&mut *buf).unwrap_or_else(|e| {
+        rng.next_bytes_exact_out(&mut *buf).unwrap_or_else(|e| {
             eprintln!("Error: the DRBG refused to generate: {e:?}");
             exit(-1);
         });

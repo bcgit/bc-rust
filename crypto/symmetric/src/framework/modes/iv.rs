@@ -1,7 +1,7 @@
 //! Initialization-vector generation, shared by the modes that need one.
 
 use bouncycastle_core::errors::RNGError;
-use bouncycastle_core::traits::RNG;
+use bouncycastle_core::traits::{RNG, RNGExt};
 
 /// Generates a random initialization vector.
 ///
@@ -18,7 +18,5 @@ use bouncycastle_core::traits::RNG;
 pub(in crate::framework::modes) fn random_iv<const N: usize>(
     rng: &mut dyn RNG,
 ) -> Result<[u8; N], RNGError> {
-    let mut iv = [0u8; N];
-    rng.next_bytes_out(&mut iv)?;
-    Ok(iv)
+    rng.next_array::<N>()
 }

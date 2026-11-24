@@ -6,7 +6,7 @@ use crate::errors::*;
 use crate::key_material::KeyMaterialTrait;
 use crate::security_strength::SecurityStrength;
 use crate::signature_key::PreHashStrengthRule;
-use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::fmt::{Debug, Display};
 use core::marker::Sized;
 
@@ -1266,7 +1266,8 @@ pub trait RNG {
     fn security_strength(&self) -> SecurityStrength;
 }
 
-/// Fixed-length draws from any [`RNG`], returned by value.
+/// Draws from any [`RNG`] that refuse a short one: a fixed-length array returned by value, or
+/// the whole of a caller's buffer.
 ///
 /// Implemented for every `RNG`, a `dyn RNG` included, so `rng.next_array::<12>()` works on a
 /// `&mut dyn RNG`.
@@ -1275,7 +1276,7 @@ pub trait RNG {
 /// The array is returned by value: it is moved, may be copied on the way, and is never wiped.
 /// Use it for public values such as nonces, salts, IVs and test data, never for a secret. A secret
 /// is drawn into a [`KeyMaterial`] with [`RNG::fill_keymaterial_out`], or into a [`Secret`] with
-/// [`RNG::next_bytes_out`].
+/// [`next_bytes_exact_out`](Self::next_bytes_exact_out).
 // A trait of its own because a generic method on `RNG` would make that trait not dyn-compatible.
 pub trait RNGExt: RNG {
     /// Returns `N` bytes from one call to [`RNG::next_bytes_out`]. The array is built on the
@@ -1286,10 +1287,26 @@ pub trait RNGExt: RNG {
     /// written. A short draw never returns a partly filled array.
     fn next_array<const N: usize>(&mut self) -> Result<[u8; N], RNGError> {
         let mut out = [0u8; N];
-        if self.next_bytes_out(&mut out)? != N {
-            return Err(RNGError::GenericError("RNG delivered fewer bytes than requested"));
-        }
+        self.next_bytes_exact_out(&mut out)?;
         Ok(out)
+    }
+
+    /// Fills the whole of `out` from one call to [`RNG::next_bytes_out`]. Returns `out.len()`.
+    ///
+    /// # Errors
+    /// The RNG's own error; [`RNGError::GenericError`] if it reports fewer bytes written than
+    /// `out` holds. `out` is zeroized on either, so a short draw never leaves a partial one.
+    fn next_bytes_exact_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
+        out.fill(0);
+        let result = match self.next_bytes_out(out) {
+            Ok(written) if written == out.len() => return Ok(written),
+            Ok(_) => Err(RNGError::GenericError("the RNG wrote fewer bytes than it was asked for")),
+            Err(e) => Err(e),
+        };
+        for byte in out.iter_mut() {
+            zeroize_in_place(byte);
+        }
+        result
     }
 }
 

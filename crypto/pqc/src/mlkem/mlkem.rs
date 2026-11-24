@@ -143,7 +143,7 @@ use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorith
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, XOFSqueezer,
+    Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, RNGExt, XOFSqueezer,
 };
 use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes_condition};
 use bouncycastle_utils::secret::Secret;
@@ -642,7 +642,7 @@ impl<P: MLKEMParams> MLKEM<P> {
             Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
         }
         let mut m = Secret::<[u8; 32]>::new();
-        rng.next_bytes_out(&mut *m)?;
+        rng.next_bytes_exact_out(&mut *m)?;
 
         // 5: (𝐾, 𝑐) ← ML-KEM.Encaps_internal(ek, 𝑚)
         let mut K = Secret::<[u8; MLKEM_SS_LEN]>::new();

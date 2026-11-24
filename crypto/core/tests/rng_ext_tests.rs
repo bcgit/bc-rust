@@ -1,5 +1,6 @@
 //! `RNGExt::next_array`: `N` bytes off any `RNG`, a trait object included, as the caller-buffer
-//! draw would give them, and an error rather than a partly filled array.
+//! draw would give them, and an error rather than a partly filled array. `RNGExt::next_bytes_exact_out`:
+//! the caller-buffer draw, with a short one an error and the buffer wiped.
 
 use bouncycastle_core::errors::RNGError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
@@ -155,4 +156,43 @@ fn a_short_draw_is_an_error() {
     assert!(matches!(rng.next_array::<32>(), Err(RNGError::GenericError(_))));
     // No bytes were asked for, so none are missing.
     assert_eq!(rng.next_array::<0>(), Ok([]));
+}
+
+/// A full draw into the caller's buffer is what `next_bytes_out` gives an identically seeded RNG.
+#[test]
+fn an_exact_draw_is_the_caller_buffer_draw() {
+    let (mut exact, mut plain) = (drbg(), drbg());
+    let (mut drawn, mut expected) = ([0xA5u8; 100], [0u8; 100]);
+    assert_eq!(exact.next_bytes_exact_out(&mut drawn), Ok(100));
+    assert_eq!(plain.next_bytes_out(&mut expected).unwrap(), 100);
+    assert_eq!(drawn, expected);
+    let rng: &mut dyn RNG = &mut FixedSeedRNG::new(SEED);
+    let mut drawn = [0u8; 16];
+    assert_eq!(rng.next_bytes_exact_out(&mut drawn), Ok(16));
+    assert_eq!(drawn, SEED[..16]);
+    assert_eq!(rng.next_bytes_exact_out(&mut []), Ok(0));
+}
+
+/// A short draw is an error and a failed one the RNG's own; either way the buffer is wiped of
+/// what the RNG left in it.
+#[test]
+fn a_short_or_failed_exact_draw_is_an_error_and_wiped() {
+    let mut out = [0xA5u8; 32];
+    assert_eq!(
+        FaultyRNG(Delivers::OneByteShort).next_bytes_exact_out(&mut out),
+        Err(RNGError::GenericError("the RNG wrote fewer bytes than it was asked for"))
+    );
+    assert_eq!(out, [0u8; 32]);
+    let mut out = [0xA5u8; 32];
+    assert!(matches!(
+        FaultyRNG(Delivers::Nothing).next_bytes_exact_out(&mut out),
+        Err(RNGError::GenericError(_))
+    ));
+    assert_eq!(out, [0u8; 32]);
+    let mut out = [0xA5u8; 32];
+    assert_eq!(
+        FaultyRNG(Delivers::Error).next_bytes_exact_out(&mut out),
+        Err(RNGError::ReseedRequired)
+    );
+    assert_eq!(out, [0u8; 32]);
 }

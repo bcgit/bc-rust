@@ -115,7 +115,7 @@ use bouncycastle_core::symmetric_key::{
 };
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, MACGenerator, MACVerifier,
-    RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    RNG, RNGExt, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
@@ -554,8 +554,7 @@ impl AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20Poly130
         &'k self,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
-        let mut nonce = [0u8; NONCE_LEN];
-        rng.next_bytes_out(&mut nonce)?;
+        let nonce = rng.next_array::<NONCE_LEN>()?;
         Ok((ChaCha20_Poly1305::new(keystream_at(&self.key, &nonce, 0)), nonce))
     }
 

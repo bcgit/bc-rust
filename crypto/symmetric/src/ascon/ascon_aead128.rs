@@ -28,7 +28,7 @@ use bouncycastle_core::symmetric_key::{
     FromKeyMaterial,
 };
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, RNG,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, RNG, RNGExt,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::ct::ct_eq_bytes;
@@ -724,8 +724,7 @@ impl
         &'k self,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; ASCON_AEAD128_NONCE_LEN]), SymmetricCipherError> {
-        let mut nonce = [0u8; ASCON_AEAD128_NONCE_LEN];
-        rng.next_bytes_out(&mut nonce)?;
+        let nonce = rng.next_array::<ASCON_AEAD128_NONCE_LEN>()?;
         Ok((Ascon_AEAD128::from_key_words(&self.key, &nonce), nonce))
     }
 

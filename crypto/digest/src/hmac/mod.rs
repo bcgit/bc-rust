@@ -357,13 +357,17 @@ impl<HASH: HMACParams> HmacKey<HASH> {
     ///
     /// # Errors
     /// [`RNGError::SecurityStrengthInsufficientForAlgorithm`] if `rng` is instantiated below
-    /// [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`], or whatever the RNG returns.
+    /// [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`]; [`RNGError::GenericError`] if it fills less
+    /// than the whole key; or whatever the RNG returns.
     pub fn keygen_from_rng(rng: &mut dyn RNG) -> Result<HASH::MACKey, RNGError> {
         if rng.security_strength() < HASH::HMAC_MAX_SECURITY_STRENGTH {
             return Err(RNGError::SecurityStrengthInsufficientForAlgorithm);
         }
         let mut key = HASH::MACKey::default();
-        rng.fill_keymaterial_out(&mut key)?;
+        // The count is the key's length, so a short one is a short key, which HMAC would take.
+        if rng.fill_keymaterial_out(&mut key)? != key.capacity() {
+            return Err(RNGError::GenericError("the RNG wrote fewer bytes than it was asked for"));
+        }
         // An RNG types its draw as it likes (`FixedSeedRNG`'s is a `Seed`), and turning one key
         // type into another is a hazardous operation; drawn for this purpose, it is a MAC key.
         do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey))?;

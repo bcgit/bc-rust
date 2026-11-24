@@ -2,7 +2,7 @@
 //! [`SymmetricCipherDecryptor`] and their stream-cipher refinement. The block-cipher and AEAD
 //! refinements have their own runners in [`crate::block_cipher`] and [`crate::aead`].
 
-use crate::{DUMMY_SEED, FailingRNG};
+use crate::{DUMMY_SEED, FailingRNG, ShortRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
@@ -116,6 +116,16 @@ impl TestFrameworkSymmetricCipher {
                 ),
                 Err(e) => panic!("a failing RNG must surface as RNGError, not {e:?}"),
                 Ok(_) => assert_eq!(INIT_DATA_LEN, 0, "only a key with no init data draws nothing"),
+            }
+            // ... and so is a short draw, which is not init data
+            let mut stale = vec![0xA5u8; encrypt_out_len(len)];
+            match key.encrypt_out(&mut ShortRNG, msg, &mut stale) {
+                Err(SymmetricCipherError::RNGError(_)) => assert!(
+                    stale.iter().all(|&b| b == 0),
+                    "encrypt_out must zeroize the buffer before an RNG error"
+                ),
+                Err(e) => panic!("a short draw must surface as RNGError, not {e:?}"),
+                Ok(_) => assert_eq!(INIT_DATA_LEN, 0, "a short draw of init data must be refused"),
             }
 
             let mut pt = vec![0u8; decrypt_out_len(ct_len)];
@@ -480,6 +490,17 @@ impl TestFrameworkStreamCipher {
         K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
         K::Decryptor<'k>: StreamCipherDecryptor<INIT_DATA_LEN>,
     {
+        // a short draw of the init data is refused, and nothing is encrypted
+        if INIT_DATA_LEN > 0 {
+            let mut buf = *DUMMY_SEED;
+            assert!(matches!(
+                key.encrypt_inplace(&mut ShortRNG, &mut buf),
+                Err(SymmetricCipherError::RNGError(_))
+            ));
+            assert_eq!(&buf[..], &DUMMY_SEED[..], "a short draw must leave the buffer untouched");
+            assert!(key.create_encryptor(&mut ShortRNG).is_err(), "a short draw must be refused");
+        }
+
         // one-shot, in place: must round-trip, and report every byte as written.
         let mut buf = *DUMMY_SEED;
         let (n, iv) = key.encrypt_inplace(rng, &mut buf).unwrap();

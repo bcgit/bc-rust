@@ -1,7 +1,7 @@
 //! Generic behaviour tests for the signature role traits of `bouncycastle_core::signature_key`
 //! and the workers they produce.
 
-use crate::{DUMMY_SEED, FailingRNG};
+use crate::{DUMMY_SEED, FailingRNG, ShortRNG};
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::signature_key::{
@@ -253,6 +253,13 @@ impl TestFrameworkSignature {
         ));
         assert_eq!(out, [0u8; SIG_LEN]);
         assert!(matches!(sk.sign(&mut FailingRNG, MSG, None), Err(SignatureError::RNGError(_))));
+        // ... and when it writes fewer bytes than it was asked for
+        let mut out = [0xA5u8; SIG_LEN];
+        assert!(matches!(
+            sk.sign_out(&mut ShortRNG, MSG, None, &mut out),
+            Err(SignatureError::RNGError(_))
+        ));
+        assert_eq!(out, [0u8; SIG_LEN]);
 
         // no context and the empty context are the same
         let sig_empty = sk.sign(rng, MSG, Some(&[])).unwrap();

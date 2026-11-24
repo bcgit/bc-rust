@@ -473,7 +473,7 @@ use bouncycastle_core::signature_key::{
     OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, verify_with_verifier,
 };
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, FinishToken, Hash, RNG, SignatureSigner, SignatureVerifier,
+    Algorithm, AlgorithmOID, FinishToken, Hash, RNG, RNGExt, SignatureSigner, SignatureVerifier,
     XOFSqueezer,
 };
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
@@ -1049,7 +1049,7 @@ pub(in crate::mldsa) fn check_filled_tr(tr: &[u8; MLDSA_TR_LEN]) -> Result<(), S
 /// cryptographic module that generates the signature (i.e., that runs ML-DSA.Sign_internal)").
 /// Into `rnd`, so that the bytes go from the RNG to a wiped slot and not through a return value.
 pub(in crate::mldsa) fn draw_rnd(rng: &mut dyn RNG, rnd: &mut Rnd) -> Result<(), SignatureError> {
-    rng.next_bytes_out(&mut rnd[..])?;
+    rng.next_bytes_exact_out(&mut rnd[..])?;
     Ok(())
 }
 

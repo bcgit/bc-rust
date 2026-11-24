@@ -1,6 +1,7 @@
 //! Generic behaviour tests for the KEM role traits of `bouncycastle_core::kem_key` and the
 //! workers they produce.
 
+use crate::ShortRNG;
 use bouncycastle_core::errors::{KEMError, KeyDecodingError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
@@ -175,6 +176,15 @@ impl TestFrameworkKEM {
             Err(KEMError::RNGError(_)) => { /* good */ }
             _ => panic!("This should have thrown an error but it didn't."),
         }
+
+        // so is one that writes fewer bytes than it was asked for, and the outputs are cleared
+        let (mut ct, mut ss) = ([0xA5u8; CT_LEN], KeyMaterial::<SS_LEN>::new());
+        match pk.encaps_out(&mut ShortRNG, params, &mut ct, &mut ss) {
+            Err(KEMError::RNGError(_)) => assert_eq!(ct, [0u8; CT_LEN]),
+            other => panic!("a short draw must be refused as RNGError: {other:?}"),
+        }
+        assert_eq!(ss.key_len(), 0);
+        assert!(matches!(encapsulator.encaps(&mut ShortRNG), Err(KEMError::RNGError(_))));
     }
 
     /// A damaged ciphertext decapsulates to a different secret (implicit rejection) or to
@@ -281,6 +291,7 @@ mod tests {
     use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::kem_key::KEMAlgorithm;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+    use bouncycastle_core::traits::RNGExt;
     use core::marker::PhantomData;
 
     const KEY_LEN: usize = 32;
@@ -364,7 +375,7 @@ mod tests {
                 return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
             }
             let mut r = [0u8; KEY_LEN];
-            rng.next_bytes_out(&mut r)?;
+            rng.next_bytes_exact_out(&mut r)?;
             for i in 0..KEY_LEN {
                 ct[i] = r[i] ^ self.key[i];
             }

@@ -392,7 +392,7 @@ use bouncycastle_core::signature_key::{
     OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, verify_with_verifier,
 };
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, FinishToken, Hash, RNG, SignatureSigner, SignatureVerifier,
+    Algorithm, AlgorithmOID, FinishToken, Hash, RNG, RNGExt, SignatureSigner, SignatureVerifier,
     XOFSqueezer,
 };
 use core::marker::PhantomData;
@@ -899,7 +899,7 @@ pub(in crate::mldsa_lowmemory) fn draw_rnd(
     rng: &mut dyn RNG,
     rnd: &mut Rnd,
 ) -> Result<(), SignatureError> {
-    rng.next_bytes_out(&mut rnd[..])?;
+    rng.next_bytes_exact_out(&mut rnd[..])?;
     Ok(())
 }
 
