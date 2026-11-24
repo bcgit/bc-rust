@@ -5,9 +5,13 @@
 //! ECDSA-P256-SHA256 key, spelled in full since the customary pairing is a convention that
 //! moves, and [`ECDSAPrivateKey::with_hash`] re-pairs the same key bytes with another hash.
 
-use crate::curve::{Curve, SecretScalar, private_scalar_from_be_bytes};
+use crate::curve::{
+    Curve, DECODE_STACK_FIXED, DECODE_STACK_PER_LIMB, KEYGEN_STACK_FIXED, KEYGEN_STACK_PER_LIMB,
+    SecretScalar, private_scalar_from_be_bytes,
+};
 use crate::ecdsa::ecdsa::EcdsaHash;
 use crate::ecdsa::keys_common::{DerivePublicKey, SignatureKeyPair};
+use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::traits::{CollisionResistantHash, PrivateKey, PublicKey, RNG};
 use core::fmt;
@@ -29,9 +33,12 @@ impl<C: Curve, H: EcdsaHash> ECDSAPrivateKey<C, H> {
         &self.d
     }
 
-    /// The same key under another hash: ECDSA-P256-SHA384 from an ECDSA-P256-SHA256 key, say.
-    pub fn with_hash<H2: EcdsaHash>(self) -> ECDSAPrivateKey<C, H2> {
-        ECDSAPrivateKey { d: self.d, _hash: PhantomData }
+    /// A copy of this key under another hash: ECDSA-P256-SHA384 from an ECDSA-P256-SHA256 key,
+    /// say. Both keys hold `d` and wipe it when dropped.
+    // By reference: taking `self` by value would move `d` out of the caller's slot, which
+    // nothing wipes.
+    pub fn with_hash<H2: EcdsaHash>(&self) -> ECDSAPrivateKey<C, H2> {
+        ECDSAPrivateKey { d: self.d.clone(), _hash: PhantomData }
     }
 }
 
@@ -69,9 +76,13 @@ where
         let bytes: &[u8; SK_LEN] = bytes
             .try_into()
             .map_err(|_| KeyDecodingError("an ECDSA private key is the curve's scalar length"))?;
-        private_scalar_from_be_bytes::<C>(bytes)
-            .map(|d| Self { d, _hash: PhantomData })
-            .ok_or(KeyDecodingError("ECDSA private key must be in [1, n-1]"))
+        // The key is built in the wiped frame, `Result` and all: the temporaries of the
+        // conversion would otherwise hold a copy of `d` in this frame.
+        in_wiped_frame::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
+            private_scalar_from_be_bytes::<C>(bytes)
+                .map(|d| Self { d, _hash: PhantomData })
+                .ok_or(KeyDecodingError("ECDSA private key must be in [1, n-1]"))
+        })
     }
 }
 
@@ -152,8 +163,10 @@ impl<C: Curve, H: EcdsaHash> Display for ECDSAPublicKey<C, H> {
 pub fn keygen<C: Curve, H: EcdsaHash + CollisionResistantHash>(
     rng: &mut dyn RNG,
 ) -> Result<(ECDSAPublicKey<C, H>, ECDSAPrivateKey<C, H>), SignatureError> {
-    let (d, (x, y)) = C::keygen_extra_bits(rng)?;
-    Ok((ECDSAPublicKey { x, y, _hash: PhantomData }, ECDSAPrivateKey { d, _hash: PhantomData }))
+    in_wiped_frame::<C::Limbs, KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED, _>(|| {
+        let (d, (x, y)) = C::keygen_extra_bits(rng)?;
+        Ok((ECDSAPublicKey { x, y, _hash: PhantomData }, ECDSAPrivateKey { d, _hash: PhantomData }))
+    })
 }
 
 /// Every curve's [`generate_signature_key_pair`](SignatureKeyPair::generate_signature_key_pair)

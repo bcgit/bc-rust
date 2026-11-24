@@ -326,6 +326,19 @@ pub fn private_scalar_from_be_bytes<C: Curve>(bytes: &C::ScalarBytes) -> Option<
     Some(C::Scalar::from_borrowed_limbs(&limbs))
 }
 
+/// What the stack wipe overwrites after an ECDSA or ECC CDH private key is decoded: this many of
+/// the curve's limb arrays and this many words, 1536 bytes. Unwiped, `from_bytes` writes to at
+/// most 808 bytes below the call (P-521; 376 on the other curves; x86-64, rustc 1.97 and 1.88,
+/// `dev_scripts/ecdsa_stack_harness`).
+pub(crate) const DECODE_STACK_PER_LIMB: usize = 0;
+pub(crate) const DECODE_STACK_FIXED: usize = 192;
+
+/// The same after a key pair is generated: 5120 bytes on a 256-bit curve, 6656 on a 384-bit one,
+/// 8192 on brainpoolP512r1 and 8960 on P-521. Unwiped, `keygen` writes to at most 3048, 4432,
+/// 5632 and 6104 bytes below the call, measured the same way.
+pub(crate) const KEYGEN_STACK_PER_LIMB: usize = 96;
+pub(crate) const KEYGEN_STACK_FIXED: usize = 256;
+
 /// The lengths a [`Curve`] impl states, checked against the array types it names and each
 /// other; evaluated as a `const` beside every impl, so a curve whose table disagrees with its
 /// arithmetic does not compile.

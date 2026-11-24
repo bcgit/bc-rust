@@ -162,6 +162,8 @@ fn the_wrapper_changes_no_signature() {
     let wrapped = bare.with_hash::<Unsafe<SHA256>>();
     let sig = wrapped.sign_deterministic(b"sample", None).unwrap();
     assert_eq!(sig[..], expected[..]);
+    // `with_hash` copies: the key it was called on still signs.
+    assert_eq!(bare.sign_deterministic(b"sample", None).unwrap()[..], expected[..]);
     pk.verify(b"sample", None, &sig).unwrap();
     assert_eq!(ECDSA::<P256, Unsafe<SHA256>>::ALG_NAME, "ECDSA-P256-SHA256");
     assert_eq!(ECDSA::<P256, Unsafe<SHA256>>::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);

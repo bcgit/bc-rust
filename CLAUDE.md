@@ -503,7 +503,7 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 ## CI
 
-Ten workflows under `.github/workflows/`, all triggered by pull requests:
+Eleven workflows under `.github/workflows/`, all triggered by pull requests:
 
 - `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then, since
   `--all-features` never builds a crate with a default feature off: `cargo check -p <crate>
@@ -546,6 +546,12 @@ Ten workflows under `.github/workflows/`, all triggered by pull requests:
   Sized by measurement like the RSA one, and failing for the same reason: re-measure `WIPED_STACK_WORDS` and
   `KEY_WIPED_STACK_WORDS` in `crypto/ec/src/sm2/encryption_core.rs`, or `WIPED_STACK_WORDS` in `keys.rs` and
   `sm2.rs` for the signing key and signing (the harness reports the depth with the wipe's body taken out).
+- `ecdsa-stack.yml`: `dev_scripts/check_ecdsa_stack.sh`, the same shape and matrix over
+  `dev_scripts/ecdsa_stack_harness`, which runs ECDSA's key decoding and generation, the drawing of `k`, the
+  one-shots and the signers' finals, and ECC CDH's key decoding and generation, on all seven curves, searching for
+  `d`, `k` and the RNG's output and comparing two runs over different keys. Its wipes scale with the curve's limb
+  count: re-measure `DECODE_STACK_*` and `KEYGEN_STACK_*` in `crypto/ec/src/curve.rs` and `SIGN_STACK_*` in
+  `crypto/ec/src/ecdsa/ecdsa.rs`.
 - `publish_doc_benches_to_ghpages.yaml`: builds rustdoc and runs `quality_stats.sh`; on `main` it also
   publishes docs and code stats to GitHub Pages (`https://bcgit.github.io/bc-rust/`). Its bench step is
   commented out because the benches are too slow on the hosted runner, so benchmark figures come from a
@@ -555,7 +561,7 @@ Ten workflows under `.github/workflows/`, all triggered by pull requests:
 `cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.
 
 The gitea origin has its own copies of six of the pull-request checks under `.gitea/workflows/`
-(there is no Pages job, and `oaep-ct.yml`, `rsa-ct-stack.yml` and `sm2-stack.yml` have no gitea copy). They differ from the GitHub ones in two ways: the toolchain is installed
+(there is no Pages job, and `oaep-ct.yml`, `rsa-ct-stack.yml`, `sm2-stack.yml` and `ecdsa-stack.yml` have no gitea copy). They differ from the GitHub ones in two ways: the toolchain is installed
 with `rustup` in a shell step, and the test job takes its vectors from the runner's read-only
 `/bc-test-data` and `/wycheproof` mounts, failing if either is missing. Wycheproof's are read out
 of the mounted clone at the pinned commit (`git archive`), wherever the clone's `HEAD` is, so the

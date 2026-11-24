@@ -1,0 +1,21 @@
+# ECDSA signing and the handling of its private keys (bouncycastle_ec::ecdsa), and the decoding and
+# generation of ECC CDH private keys (bouncycastle_ec::eccdh), each run over a painted stack that is
+# then searched for what the operation handled, for `../check_ecdsa_stack.sh`. Its own workspace,
+# so the root `cargo build --workspace` never builds it.
+[package]
+name = "ecdsa_stack_harness"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bouncycastle-core = { path = "../../crypto/core" }
+bouncycastle-digest = { path = "../../crypto/digest" }
+bouncycastle-ec = { path = "../../crypto/ec" }
+
+# The root workspace's release profile: the wipes are sized for the frames it lays out.
+[profile.release]
+lto = "thin"
+strip = "debuginfo"
+
+[workspace]

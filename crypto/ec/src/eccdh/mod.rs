@@ -144,17 +144,18 @@
 //! release binary's call graph; rustc 1.97.0-nightly, x86-64). `agree` and the two DHKEM
 //! operations (RFC 9180 Section 4.1, [`dhkem`]) are dominated by the variable-base multiplier's
 //! per-call table of sixteen Jacobian points; the figures for `keygen` and `encaps` exclude the
-//! caller's RNG, which they reach through `dyn RNG`:
+//! caller's RNG, which they reach through `dyn RNG`, and include the stack wipe after key
+//! generation (see the Security Considerations):
 //!
 //! | Curve           | keygen | agree | encaps | decaps |
 //! |-----------------|--------|-------|--------|--------|
-//! | P-256           | 3,024  | 4,368 | 5,216  | 4,864  |
-//! | P-384           | 2,784  | 5,936 | 7,008  | 6,720  |
-//! | P-521           | 6,032  | 8,784 | 10,464 | 10,016 |
-//! | secp256k1       | 2,848  | 4,208 |        |        |
-//! | brainpoolP256r1 | 3,152  | 4,416 |        |        |
-//! | brainpoolP384r1 | 3,096  | 5,880 |        |        |
-//! | brainpoolP512r1 | 4,824  | 7,784 |        |        |
+//! | P-256           | 5,576  | 4,368 | 6,216  | 4,864  |
+//! | P-384           | 7,160  | 5,936 | 8,024  | 6,720  |
+//! | P-521           | 9,528  | 8,784 | 10,840 | 10,016 |
+//! | secp256k1       | 5,576  | 4,208 |        |        |
+//! | brainpoolP256r1 | 5,576  | 4,416 |        |        |
+//! | brainpoolP384r1 | 7,160  | 5,880 |        |        |
+//! | brainpoolP512r1 | 8,744  | 7,784 |        |        |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -185,11 +186,14 @@
 //!   `d`. Of Section 5.7.1.2 step 4's destruction of intermediates, this module does its own
 //!   part: `P`, `z`, the inverse of `P`'s `Z` coordinate and its square, and the byte string are
 //!   zeroized on every path, and `Z` is written into the caller's buffer. What is not reached:
-//!   a value a one-shot returns (`agree`'s `Z` or derived key, `keygen`'s private key, the key
-//!   `from_bytes` decodes) is moved out of the frame that built it, and a move does not wipe its
-//!   source, so use the `_out` forms into a buffer you own where that matters -- agreement and
-//!   the paired derivations have one, a private key has none, so key generation and decoding
-//!   leave `d` where the move staged it; the KDF's hash finalises by value
+//!   a value a one-shot returns (`agree`'s `Z` or derived key) is moved out of the frame that
+//!   built it, and a move does not wipe its source, so use the `_out` forms into a buffer you own
+//!   where that matters -- agreement and the paired derivations have one; key generation and
+//!   `from_bytes` build the private key in a frame of their own and overwrite the stack it used
+//!   afterwards (1,536 bytes after decoding and 5,120 to 8,960 after generation, by curve, as
+//!   [`ecdsa`](crate::ecdsa)'s keys do and checked by the same `dev_scripts/check_ecdsa_stack.sh`),
+//!   so `d` is not left above the wiped region, and moving the key out of the `Result` the caller
+//!   is returned is the caller's; the KDF's hash finalises by value
 //!   ([`Hash::do_final_out`](bouncycastle_core::traits::Hash::do_final_out) takes `self`), so
 //!   the hasher's block buffer, which held `Z`, is moved and its source is not wiped, on the
 //!   `_out` path too; and the arithmetic's intermediates in [`crate::hazmat`] (the

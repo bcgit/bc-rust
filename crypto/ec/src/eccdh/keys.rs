@@ -1,8 +1,12 @@
 //! ECC CDH key types over any [`Curve`], and key-pair generation (SP 800-56A Rev. 3 Sections
 //! 5.6.1.2.1, 5.6.2.1.2 and 5.6.2.3.3).
 
-use crate::curve::{Curve, SecretScalar, private_scalar_from_be_bytes};
+use crate::curve::{
+    Curve, DECODE_STACK_FIXED, DECODE_STACK_PER_LIMB, KEYGEN_STACK_FIXED, KEYGEN_STACK_PER_LIMB,
+    SecretScalar, private_scalar_from_be_bytes,
+};
 use crate::eccdh::keys_common::{AgreementKeyPair, DerivePublicKey};
+use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError};
 use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use core::fmt;
@@ -60,9 +64,13 @@ where
         let bytes: &[u8; SK_LEN] = bytes
             .try_into()
             .map_err(|_| KeyDecodingError("an ECC CDH private key is the curve's scalar length"))?;
-        private_scalar_from_be_bytes::<C>(bytes)
-            .map(Self)
-            .ok_or(KeyDecodingError("ECC CDH private key must be in [1, n-1]"))
+        // The key is built in the wiped frame, `Result` and all: the temporaries of the
+        // conversion would otherwise hold a copy of `d` in this frame.
+        in_wiped_frame::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
+            private_scalar_from_be_bytes::<C>(bytes)
+                .map(Self)
+                .ok_or(KeyDecodingError("ECC CDH private key must be in [1, n-1]"))
+        })
     }
 }
 
@@ -125,8 +133,10 @@ impl<C: Curve> Display for ECCDHPublicKey<C> {
 pub fn keygen<C: Curve>(
     rng: &mut dyn RNG,
 ) -> Result<(ECCDHPublicKey<C>, ECCDHPrivateKey<C>), KeyAgreementError> {
-    let (d, (x, y)) = C::keygen_extra_bits(rng)?;
-    Ok((ECCDHPublicKey { x, y }, ECCDHPrivateKey(d)))
+    in_wiped_frame::<C::Limbs, KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED, _>(|| {
+        let (d, (x, y)) = C::keygen_extra_bits(rng)?;
+        Ok((ECCDHPublicKey { x, y }, ECCDHPrivateKey(d)))
+    })
 }
 
 /// Every curve's [`generate_agreement_key_pair`](AgreementKeyPair::generate_agreement_key_pair)

@@ -28,6 +28,7 @@
 use crate::curve::{Curve, FieldElement, JacobianPoint, PublicScalar, ScalarFieldElement};
 use crate::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 use crate::ecdsa::rfc6979;
+use crate::stack_wipe::in_wiped_frame;
 use crate::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -45,6 +46,13 @@ use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_utils::const_str::ConstStr;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::marker::PhantomData;
+
+/// What the stack wipe overwrites after `k` is drawn and after signing: this many of the curve's
+/// limb arrays and this many words, 5632 bytes on a 256-bit curve, 7168 on a 384-bit one, 8704 on
+/// brainpoolP512r1 and 9472 on P-521. Unwiped, signing writes to at most 4200, 5280, 6496 and 7288
+/// bytes below the call (x86-64, rustc 1.97 and 1.88, `dev_scripts/ecdsa_stack_harness`).
+const SIGN_STACK_PER_LIMB: usize = 96;
+const SIGN_STACK_FIXED: usize = 320;
 
 /// The largest hash output the signers size their buffers for: SHA-512 and SHA3-512.
 pub(in crate::ecdsa) const MAX_HASH_LEN: usize = 64;
@@ -374,7 +382,9 @@ where
         const { check_hash_fits::<C, H>() };
         // Before `k` is drawn, so that a refused call takes nothing from the RNG.
         refuse_context(ctx)?;
-        Ok(ECDSASigner { sk: self, hash: H::default(), k: random_k::<C>(rng)? })
+        in_wiped_frame::<C::Limbs, SIGN_STACK_PER_LIMB, SIGN_STACK_FIXED, _>(|| {
+            Ok(ECDSASigner { sk: self, hash: H::default(), k: random_k::<C>(rng)? })
+        })
     }
 }
 
@@ -390,8 +400,11 @@ where
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        let signer = SigningKey::<ECDSA<C, H>, SIG_LEN>::create_signer(self, rng, ctx);
-        sign_out_with_signer(signer, msg, output)
+        // The signer, and `k` in it, is moved on its way to the final: in the wiped frame.
+        in_wiped_frame::<C::Limbs, SIGN_STACK_PER_LIMB, SIGN_STACK_FIXED, _>(|| {
+            let signer = SigningKey::<ECDSA<C, H>, SIG_LEN>::create_signer(self, rng, ctx);
+            sign_out_with_signer(signer, msg, output)
+        })
     }
 }
 
@@ -426,6 +439,8 @@ where
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        // No wipe of its own: the signer holds no secret but the borrowed key, and `k` lives only
+        // in the final's wiped frame.
         let signer =
             DeterministicSigningKey::<ECDSA<C, H>, SIG_LEN>::create_signer_deterministic(self, ctx);
         sign_out_with_signer(signer, msg, output)
@@ -488,13 +503,16 @@ where
     ) -> Result<usize, SignatureError> {
         output.fill(0);
         let h = finish_hash(&mut self.hash, token);
+        let e = e_from_hash::<C, H>(&h[..H::OUTPUT_LEN]);
+        let sig = in_wiped_frame::<C::Limbs, SIGN_STACK_PER_LIMB, SIGN_STACK_FIXED, _>(|| {
+            sign_with_k::<C, H>(self.sk, &e, &self.k)
+        });
         // FIPS 186-5 Section 6.4.1 step 11: with a random `k`, `r = 0` or `s = 0` goes back to
         // step 3. `k` was drawn when this signer was created and there is no RNG here to draw
         // another from, so the failure is reported instead; it has probability about 2^-(len(n)-1).
-        *output = sign_with_k::<C, H>(self.sk, &e_from_hash::<C, H>(&h[..H::OUTPUT_LEN]), &self.k)
-            .ok_or(SignatureError::GenericError(
-                "ECDSA produced r = 0 or s = 0; create a fresh signer and sign again",
-            ))?;
+        *output = sig.ok_or(SignatureError::GenericError(
+            "ECDSA produced r = 0 or s = 0; create a fresh signer and sign again",
+        ))?;
         Ok(SIG_LEN)
     }
 }
@@ -525,10 +543,13 @@ where
         output.fill(0);
         let h = finish_hash(&mut self.hash, token);
         let h = &h[..H::OUTPUT_LEN];
-        let k = rfc6979::generate_k::<C, H>(self.sk.scalar(), h); // step 3, Appendix A.3.3
+        let sig = in_wiped_frame::<C::Limbs, SIGN_STACK_PER_LIMB, SIGN_STACK_FIXED, _>(|| {
+            let k = rfc6979::generate_k::<C, H>(self.sk.scalar(), h); // step 3, Appendix A.3.3
+            sign_with_k::<C, H>(self.sk, &e_from_hash::<C, H>(h), &k)
+        });
         // FIPS 186-5 Section 6.4.1 step 11: with a deterministic `k`, `r = 0` or `s = 0` outputs
         // failure.
-        *output = sign_with_k::<C, H>(self.sk, &e_from_hash::<C, H>(h), &k).ok_or(SignatureError::GenericError(
+        *output = sig.ok_or(SignatureError::GenericError(
             "deterministic ECDSA produced r = 0 or s = 0; FIPS 186-5 Section 6.4.1 step 11: output failure",
         ))?;
         Ok(SIG_LEN)
