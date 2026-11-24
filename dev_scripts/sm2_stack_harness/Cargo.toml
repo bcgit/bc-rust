@@ -1,5 +1,5 @@
-# SM2 public key encryption and decryption of bouncycastle_ec::sm2::encryption, and the handling
-# of its private key, each run over a painted stack that is then searched for what the
+# SM2 public key encryption and decryption of bouncycastle_ec::sm2::encryption, SM2 signing, and the
+# handling of their private keys, each run over a painted stack that is then searched for what the
 # operation handled, for `../check_sm2_stack.sh`. Its own workspace, so the root
 # `cargo build --workspace` never builds it.
 [package]

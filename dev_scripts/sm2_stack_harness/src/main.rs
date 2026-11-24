@@ -1,13 +1,14 @@
-//! What SM2 public key encryption and decryption (bouncycastle_ec::sm2::encryption), and the
-//! handling of their private key, leave on the dead stack, for `../check_sm2_stack.sh`. For
-//! each operation the stack below the call is painted, the operation run with its results going
-//! to the heap or to a live frame above, the dead stack copied out, and the copy searched for
-//! the 8-byte words of every secret the operation handled: the private key `dB` and the RNG's
-//! output and `k`, as bytes and as limbs; the shared point's `x2` and `y2`, as bytes, as limbs
-//! and as SM3 reads them; the first hash values of the key stream; the message; and the hash a
-//! refused decryption computed. The RNG is a fixed one, so the values are computed here, with
-//! the crate's public arithmetic, and checked against the operation's own output before they
-//! are searched for.
+//! What SM2 public key encryption and decryption (bouncycastle_ec::sm2::encryption), SM2 signing
+//! (bouncycastle_ec::sm2::sm2), and the handling of their private keys, leave on the dead stack,
+//! for `../check_sm2_stack.sh`. For each operation the stack below the call is painted, the
+//! operation run with its results going to the heap or to a live frame above, the dead stack copied
+//! out, and the copy searched for the 8-byte words of every secret the operation handled: the
+//! private key `dB` and the RNG's output and `k`, as bytes and as limbs; the shared point's `x2`
+//! and `y2`, as bytes, as limbs and as SM3 reads them; the first hash values of the key stream; the
+//! message; and the hash a refused decryption computed; for signing, the key's `dA` and
+//! `(1 + dA)^-1`, the RNG's output and `k`. The RNG is a fixed one, so the values are computed
+//! here, with the crate's public arithmetic, and checked against the operation's own output before
+//! they are searched for.
 //!
 //! Each operation is also run twice, at the same addresses, over different secrets, and the two
 //! copies compared: but for the ciphertext and the registers the call's first frames saved,
@@ -21,11 +22,12 @@
 //! One line per operation, `ok` or `FAIL`; the exit status is 1 if anything failed.
 use bouncycastle_core::errors::PublicKeyEncryptionError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
-use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey};
+use bouncycastle_core::signature_key::{OneShotSigningKey, OneShotVerifyingKey, SigningKey};
+use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey, SignatureSigner};
 use bouncycastle_digest::sm3::SM3;
 use bouncycastle_ec::hazmat::sm2_comb::comb_multiply_base_point;
 use bouncycastle_ec::hazmat::sm2_mul::multiply_point;
-use bouncycastle_ec::hazmat::sm2_scalar::Sm2Scalar;
+use bouncycastle_ec::hazmat::sm2_scalar::{Sm2Scalar, Sm2ScalarField};
 use bouncycastle_ec::hazmat::sm2_sec1;
 use bouncycastle_ec::sm2::encryption::{
     C1_LEN, C3_LEN, OVERHEAD_LEN, SM2EncryptionPrivateKey, SM2EncryptionPublicKey, keygen,
@@ -33,6 +35,8 @@ use bouncycastle_ec::sm2::encryption::{
 use bouncycastle_ec::sm2::extra_bits::{
     reduce_wide_bits_mod_n_minus_1, reduce_wide_bits_mod_n_minus_2,
 };
+use bouncycastle_ec::sm2::keys::{self, SM2PrivateKey, SM2PublicKey};
+use bouncycastle_ec::sm2::sm2::SIG_LEN;
 use std::collections::HashSet;
 use std::hint::black_box;
 
@@ -653,5 +657,170 @@ fn main() {
     assert_eq!(scan.run(|| sk.decrypt_detached_inplace(&not_a_point, &c3, &mut *buf)), FAILED);
     scan.clean("decrypt_detached_inplace, C1 not a point", &key_values(&DB));
 
+    signing(&mut scan);
+
     std::process::exit(if scan.failures == 0 { 0 } else { 1 });
+}
+
+/// The signer's identity `IDA` that `ZA` binds in.
+const IDA: &[u8] = b"ALICE123@YAHOO.COM";
+
+/// A public key as what [`Scan::same`] lets differ: its encoding and the limbs of its
+/// coordinates.
+fn public_image(encoded: &[u8; 65]) -> Vec<u8> {
+    [&encoded[..], &limb_image(&encoded[1..33]), &limb_image(&encoded[33..])].concat()
+}
+
+/// A signature as what [`Scan::same`] lets differ: its bytes and the limbs of `r` and `s`.
+fn signature_image(sig: &[u8; SIG_LEN]) -> Vec<u8> {
+    [&sig[..], &limb_image(&sig[..32]), &limb_image(&sig[32..])].concat()
+}
+
+fn scalar_field(be: &[u8]) -> Sm2ScalarField {
+    Sm2ScalarField::from_limbs(sm2_sec1::limbs_from_be_bytes(be.try_into().unwrap()))
+}
+
+/// `dA` and the `(1 + dA)^-1 mod n` a signing key carries, as what is searched for.
+fn signing_key_values(d: &[u8; 32]) -> Values {
+    let mut values = Values::new();
+    push_integer(&mut values, "dA", d);
+    let inverse = Sm2ScalarField::ONE.add(&scalar_field(d)).invert();
+    push_integer(&mut values, "(1 + dA)^-1", &sm2_sec1::be_bytes_from_limbs(&inverse.to_limbs()));
+    values
+}
+
+/// What a signature under `d` drawn from `wide` is searched for: the key's values, the draw and
+/// `k`. `sig` is checked to be the one that `k` gives: `s (1 + dA) + r dA = k` (GB/T
+/// 32918.2-2016 Section 6.1 step A6).
+fn signing_values(d: &[u8; 32], wide: &[u8; 40], sig: &[u8; SIG_LEN]) -> Values {
+    let k = reduce_wide_bits_mod_n_minus_1(wide).to_be_bytes();
+    let (r, s, d_field) = (scalar_field(&sig[..32]), scalar_field(&sig[32..]), scalar_field(d));
+    let k_of_sig = s.mul(&Sm2ScalarField::ONE.add(&d_field)).add(&r.mul(&d_field));
+    assert_eq!(sm2_sec1::be_bytes_from_limbs(&k_of_sig.to_limbs()), k, "not its k");
+    let mut values = signing_key_values(d);
+    push_integer(&mut values, "RNG output", wide);
+    push_integer(&mut values, "k", &k);
+    values
+}
+
+/// The signing key of `bouncycastle_ec::sm2::keys` and signing with it, as the encryption key
+/// and encryption are run in `main`.
+fn signing(scan: &mut Scan) {
+    let mut rng = Box::new(FixedSeedRNG::new([0u8; 80]));
+    let mut sk = Box::new(SM2PrivateKey::from_bytes(&DB).unwrap());
+    let mut encoded = Box::new([0u8; 32]);
+
+    let mut publics = Vec::new();
+    for d in [&DB, &DB_2] {
+        scan.keep();
+        *encoded = *d;
+        let loaded = scan.run(|| SM2PrivateKey::from_bytes(&encoded[..])).unwrap();
+        assert_eq!(loaded.encode(), *d);
+        scan.clean("signing from_bytes", &signing_key_values(d));
+        publics.push(public_image(&loaded.derive_pk().encode()));
+    }
+    scan.same("signing from_bytes", &publics[0], &publics[1]);
+    for d in [&DB, &DB_2] {
+        scan.keep();
+        *sk = SM2PrivateKey::from_bytes(d).unwrap();
+        let bytes = scan.run(|| sk.encode());
+        // Read after the run, so that no word of the key waits in a register that the run's
+        // first frame saves.
+        assert_eq!(bytes, *black_box(d));
+        scan.clean("signing encode", &signing_key_values(d));
+    }
+    scan.same("signing encode", &[], &[]);
+    for d in [&DB, &DB_2] {
+        scan.keep();
+        *sk = SM2PrivateKey::from_bytes(d).unwrap();
+        assert_eq!(scan.run(|| sk.encode_out(&mut encoded)), 32);
+        assert_eq!(*encoded, *d);
+        scan.clean("signing encode_out", &signing_key_values(d));
+    }
+    scan.same("signing encode_out", &[], &[]);
+    for d in [&DB, &DB_2] {
+        scan.keep();
+        *sk = SM2PrivateKey::from_bytes(d).unwrap();
+        let copy = scan.run(|| (*sk).clone());
+        assert_eq!(copy, *sk);
+        scan.clean("signing clone", &signing_key_values(d));
+    }
+    scan.same("signing clone", &[], &[]);
+    let mut publics = Vec::new();
+    for d in [&DB, &DB_2] {
+        scan.keep();
+        *sk = SM2PrivateKey::from_bytes(d).unwrap();
+        let derived: SM2PublicKey = scan.run(|| sk.derive_pk());
+        scan.clean("signing derive_pk", &signing_key_values(d));
+        publics.push(public_image(&derived.encode()));
+    }
+    scan.same("signing derive_pk", &publics[0], &publics[1]);
+    let mut publics = Vec::new();
+    for wide in [WIDE_1, WIDE_2] {
+        scan.keep();
+        *rng = FixedSeedRNG::new([wide, wide].concat().try_into().unwrap());
+        let (generated_pk, generated_sk) = scan.run(|| keys::keygen(&mut *rng)).unwrap();
+        let d = reduce_wide_bits_mod_n_minus_2(&wide).to_be_bytes();
+        assert_eq!(generated_sk.encode(), d, "not its reduction");
+        let mut values = signing_key_values(&d);
+        push_integer(&mut values, "RNG output", &wide);
+        scan.clean("signing keygen", &values);
+        publics.push(public_image(&generated_pk.encode()));
+    }
+    scan.same("signing keygen", &publics[0], &publics[1]);
+
+    // Signing, under one key, twice, from two draws of the RNG.
+    *sk = SM2PrivateKey::from_bytes(&DB).unwrap();
+    let pk = Box::new(sk.derive_pk());
+    let msg = message(100);
+    let mut sig = Box::new([0u8; SIG_LEN]);
+    let check = |sig: &[u8; SIG_LEN], wide: &[u8; 40]| {
+        pk.verify(&msg, Some(IDA), sig).unwrap();
+        signing_values(&DB, wide, sig)
+    };
+
+    for wide in [WIDE_1, WIDE_2] {
+        scan.keep();
+        *rng = FixedSeedRNG::new([wide, wide].concat().try_into().unwrap());
+        let signer = scan.run(|| sk.create_signer(&mut *rng, Some(IDA))).unwrap();
+        let mut boxed: Box<dyn SignatureSigner<SIG_LEN> + '_> = Box::new(signer);
+        boxed.do_update(&msg);
+        boxed.do_final_out_boxed(&mut sig).unwrap();
+        scan.clean("create_signer", &check(&sig, &wide));
+    }
+    scan.same("create_signer", &[], &[]);
+
+    let mut images = Vec::new();
+    for wide in [WIDE_1, WIDE_2] {
+        scan.keep();
+        *rng = FixedSeedRNG::new([wide, wide].concat().try_into().unwrap());
+        assert_eq!(scan.run(|| sk.sign_out(&mut *rng, &msg, Some(IDA), &mut sig)), Ok(SIG_LEN));
+        scan.clean("sign_out", &check(&sig, &wide));
+        images.push(signature_image(&sig));
+    }
+    scan.same("sign_out", &images[0], &images[1]);
+
+    let mut images = Vec::new();
+    for wide in [WIDE_1, WIDE_2] {
+        scan.keep();
+        *rng = FixedSeedRNG::new([wide, wide].concat().try_into().unwrap());
+        *sig = scan.run(|| sk.sign(&mut *rng, &msg, Some(IDA))).unwrap();
+        scan.clean("sign", &check(&sig, &wide));
+        images.push(signature_image(&sig));
+    }
+    scan.same("sign", &images[0], &images[1]);
+
+    // The streaming final, on a signer that sits in a box: nothing is moved out of it.
+    let mut images = Vec::new();
+    for wide in [WIDE_1, WIDE_2] {
+        *rng = FixedSeedRNG::new([wide, wide].concat().try_into().unwrap());
+        let mut signer: Box<dyn SignatureSigner<SIG_LEN> + '_> =
+            Box::new(sk.create_signer(&mut *rng, Some(IDA)).unwrap());
+        signer.do_update(&msg);
+        scan.keep();
+        assert_eq!(scan.run(|| signer.do_final_out_boxed(&mut sig)), Ok(SIG_LEN));
+        scan.clean("do_final_out_boxed", &check(&sig, &wide));
+        images.push(signature_image(&sig));
+    }
+    scan.same("do_final_out_boxed", &images[0], &images[1]);
 }

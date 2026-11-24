@@ -11,12 +11,13 @@ use crate::hazmat::sm2::Sm2FieldElement;
 use crate::hazmat::sm2_comb::comb_multiply_base_point;
 use crate::hazmat::sm2_scalar::{Sm2Scalar, Sm2ScalarField};
 use crate::hazmat::sm2_sec1;
+use crate::sm2::encryption_core::{WipeStackBelowOnDrop, fill_bytes};
 use crate::sm2::extra_bits::{N_MINUS_1_LIMBS, reduce_wide_bits_mod_n_minus_2};
 use bouncycastle_core::errors::{KeyDecodingError, RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_utils::nat;
-use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 
@@ -32,6 +33,15 @@ pub const PK_LEN: usize = 65;
 /// from FIPS 186-5 Appendix A.4.1's own bias-bound check for SM2's `n` (see [`crate::sm2::extra_bits`]'s
 /// docs), not copied from any other curve's table entry.
 pub(in crate::sm2) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
+
+/// What the stack wipe overwrites after a signing key is loaded or generated, in 64-bit words:
+/// 5120 bytes. In x86-64 builds under the workspace's release profile with the body of the wipe
+/// taken out, `dev_scripts/sm2_stack_harness` reports the stack written to 2664 bytes below a
+/// call of `from_bytes` and 2968 below one of [`keygen`] with rustc 1.97 (nightly), and 2704 and
+/// 3008 with rustc 1.88; with 2816 bytes wiped `dev_scripts/check_sm2_stack.sh` fails with rustc
+/// 1.88, and with 2560 with either. The rest is room for a compiler that lays the frames out
+/// less tightly; it has not been measured on arm64.
+const WIPED_STACK_WORDS: usize = 640;
 
 /// An SM2 private key: `dA` in `[1, n-2]` (GB/T 32918.1-2016 §6.1 a); the draft states no range),
 /// held in [`bouncycastle_utils::secret::Secret`] via [`Sm2Scalar`].
@@ -97,6 +107,15 @@ impl SM2PrivateKey {
         Self { d, pk: SM2PublicKey { x, y }, one_plus_d_inv }
     }
 
+    /// [`Self::from_validated_scalar`] over `dA`'s limbs, never inlined, so that what it and its
+    /// callees leave lies below its caller's frame, where the stack wipe reaches it. It returns
+    /// what `from_bytes` does, for `from_bytes` to end in the call: the key is then written to
+    /// where `from_bytes`'s caller wants it, and to no frame above the wiped ones.
+    #[inline(never)]
+    fn from_validated_limbs_in_own_frame(limbs: &[u64; 4]) -> Result<Self, KeyDecodingError> {
+        Ok(Self::from_validated_scalar(Sm2Scalar::from_limbs(*limbs)))
+    }
+
     /// The wrapped scalar, for this module's own sign implementation to compute with.
     pub(in crate::sm2) fn scalar(&self) -> &Sm2Scalar {
         &self.d
@@ -132,23 +151,24 @@ impl PrivateKey<SK_LEN> for SM2PrivateKey {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
-        let array: [u8; SK_LEN] =
+        let array: &[u8; SK_LEN] =
             bytes.try_into().map_err(|_| KeyDecodingError("SM2 private key must be 32 bytes"))?;
-        // GB/T 32918.1-2016 S6.1 a): dA is in [1, n-2], checked on the raw big-endian value
-        // *before* any reduction. `Sm2Scalar::from_be_bytes` reduces mod n, so checking afterwards
-        // would accept an out-of-range encoding as a different, perfectly valid key: `dA = n + 1`
-        // would load as `dA = 1`, giving one key two encodings and silently treating malformed
-        // input as well-formed. Comparing against the fixed public values 0 and n - 1 is a
-        // one-time validation of caller-supplied bytes at load time, not a computation performed
-        // repeatedly on a secret intermediate value, so branching on it leaks nothing beyond what
-        // the caller already knows from having supplied these exact bytes.
-        let limbs = sm2_sec1::limbs_from_be_bytes(&array);
+        // Dropped last, after the key is where the caller wants it.
+        let _wipe = WipeStackBelowOnDrop::<WIPED_STACK_WORDS>;
+        // GB/T 32918.1-2016 S6.1 a): dA is in [1, n-2], checked on the value as encoded and not
+        // after a reduction, so that a key has one encoding: `Sm2Scalar::from_be_bytes` reduces
+        // mod n, and would load `dA = n + 1` as `dA = 1`. Whether it is in range is all that the
+        // branch below shows of it.
+        let mut limbs = Secret::<[u64; 4]>::new();
+        *limbs = sm2_sec1::limbs_from_be_bytes(array);
         // borrow == 1 iff limbs < n - 1, i.e. limbs <= n - 2.
-        let (_, borrow) = nat::sub(&limbs, &N_MINUS_1_LIMBS);
-        if limbs == [0; 4] || borrow != 1 {
+        let (mut difference, borrow) = nat::sub(&limbs, &N_MINUS_1_LIMBS);
+        zeroize_in_place(&mut difference);
+        let any_bit = limbs.iter().fold(0, |bits, limb| bits | limb);
+        if any_bit == 0 || borrow != 1 {
             return Err(KeyDecodingError("SM2 private key must be in [1, n-2]"));
         }
-        Ok(Self::from_validated_scalar(Sm2Scalar::from_limbs(limbs)))
+        Self::from_validated_limbs_in_own_frame(&limbs)
     }
 }
 
@@ -201,6 +221,10 @@ impl SM2PublicKey {
 /// method's own Appendix A.2.1 step 3, requiring a DRBG strength "not less than" the one SP
 /// 800-57 Part 1 Rev. 5's Table 2 associates with SM2's 256-bit curve order (`f = 256-383` in
 /// that table's ECC column, giving 128-bit security).
+///
+/// # Errors
+/// [`SignatureError::RNGError`] if `rng` offers less than 128 bits of security strength, fails,
+/// or writes fewer bytes than it was asked for.
 pub fn keygen(rng: &mut dyn RNG) -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
     // FIPS 186-5 Appendix A.2.1 step 3: the DRBG must offer at least the security strength
     // SM2's 256-bit curve order calls for (SP 800-57 Part 1 Rev. 5, Table 2: 128 bits).
@@ -208,15 +232,25 @@ pub fn keygen(rng: &mut dyn RNG) -> Result<(SM2PublicKey, SM2PrivateKey), Signat
         return Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm));
     }
 
-    // Raw DRBG output, reduced below into the private key / per-message secret: held in
-    // `Secret` so it is scrubbed when this function returns rather than left on the stack.
+    // Dropped last, after the result is where the caller wants it.
+    let _wipe = WipeStackBelowOnDrop::<WIPED_STACK_WORDS>;
+    // Raw DRBG output, reduced into the private key: held in `Secret` so it is scrubbed when
+    // this function returns rather than left on the stack.
     let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
-    rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
-    let d = reduce_wide_bits_mod_n_minus_2(&*extra_bits);
+    fill_bytes(rng, &mut *extra_bits).map_err(SignatureError::RNGError)?;
+    key_pair_in_own_frame(&extra_bits)
+}
 
+/// The key pair that 320 bits of an RNG's output give, never inlined, so that what it and its
+/// callees leave lies below [`keygen`]'s frame, where the stack wipe reaches it. It returns what
+/// `keygen` does, for `keygen` to end in the call: the private key is then written to where
+/// `keygen`'s caller wants it, and to no frame above the wiped ones.
+#[inline(never)]
+fn key_pair_in_own_frame(
+    extra_bits: &[u8; EXTRA_BITS_DRBG_OUTPUT_LEN],
+) -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
     // d is in [1, n-2] by construction (see reduce_wide_bits_mod_n_minus_2), which is what
     // `from_validated_scalar` assumes; it computes PA = [d]G once, and the pair shares that value.
-    let sk = SM2PrivateKey::from_validated_scalar(d);
-
+    let sk = SM2PrivateKey::from_validated_scalar(reduce_wide_bits_mod_n_minus_2(extra_bits));
     Ok((sk.derive_pk(), sk))
 }

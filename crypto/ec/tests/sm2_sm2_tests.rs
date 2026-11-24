@@ -6,7 +6,9 @@
 //! framework covers treats `ctx` as optional. This file instead covers the same ground by hand,
 //! always passing `ctx = Some(id)`, plus a dedicated test that `ctx = None` is rejected.
 
-use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
+use bouncycastle_core::errors::{KeyDecodingError, RNGError, SignatureError};
+use bouncycastle_core::key_material::KeyMaterialTrait;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     OneShotSigningKey, OneShotVerifyingKey, SigningKey, VerifyingKey,
 };
@@ -319,7 +321,7 @@ fn keygen_is_deterministic_given_a_deterministic_rng() {
     impl RNG for FixedRng {
         fn add_seed_keymaterial(
             &mut self,
-            _additional_seed: &dyn bouncycastle_core::key_material::KeyMaterialTrait,
+            _additional_seed: &dyn KeyMaterialTrait,
         ) -> Result<(), bouncycastle_core::errors::RNGError> {
             Ok(())
         }
@@ -335,12 +337,12 @@ fn keygen_is_deterministic_given_a_deterministic_rng() {
         }
         fn fill_keymaterial_out(
             &mut self,
-            _out: &mut dyn bouncycastle_core::key_material::KeyMaterialTrait,
+            _out: &mut dyn KeyMaterialTrait,
         ) -> Result<usize, bouncycastle_core::errors::RNGError> {
             unimplemented!()
         }
-        fn security_strength(&self) -> bouncycastle_core::security_strength::SecurityStrength {
-            bouncycastle_core::security_strength::SecurityStrength::_256bit
+        fn security_strength(&self) -> SecurityStrength {
+            SecurityStrength::_256bit
         }
     }
 
@@ -359,7 +361,7 @@ fn keygen_rejects_an_rng_below_the_required_strength() {
     impl RNG for WeakRng {
         fn add_seed_keymaterial(
             &mut self,
-            _additional_seed: &dyn bouncycastle_core::key_material::KeyMaterialTrait,
+            _additional_seed: &dyn KeyMaterialTrait,
         ) -> Result<(), bouncycastle_core::errors::RNGError> {
             Ok(())
         }
@@ -375,12 +377,12 @@ fn keygen_rejects_an_rng_below_the_required_strength() {
         }
         fn fill_keymaterial_out(
             &mut self,
-            _out: &mut dyn bouncycastle_core::key_material::KeyMaterialTrait,
+            _out: &mut dyn KeyMaterialTrait,
         ) -> Result<usize, bouncycastle_core::errors::RNGError> {
             unimplemented!()
         }
-        fn security_strength(&self) -> bouncycastle_core::security_strength::SecurityStrength {
-            bouncycastle_core::security_strength::SecurityStrength::None
+        fn security_strength(&self) -> SecurityStrength {
+            SecurityStrength::None
         }
     }
 
@@ -461,4 +463,50 @@ fn identity_longer_than_entla_can_encode_is_rejected() {
         Err(SignatureError::GenericError(_)) => {}
         other => panic!("expected GenericError on verify, got {other:?}"),
     }
+}
+
+/// An RNG that writes one byte fewer than it is asked for, at 256-bit strength.
+struct ShortRng;
+
+impl RNG for ShortRng {
+    fn add_seed_keymaterial(
+        &mut self,
+        _additional_seed: &dyn KeyMaterialTrait,
+    ) -> Result<(), RNGError> {
+        Ok(())
+    }
+    fn next_int(&mut self) -> Result<u32, RNGError> {
+        Ok(0x5a5a5a5a)
+    }
+    fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
+        out.fill(0);
+        let len = out.len() - 1;
+        out[..len].fill(0x5a);
+        Ok(len)
+    }
+    fn fill_keymaterial_out(&mut self, _out: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError> {
+        unimplemented!()
+    }
+    fn security_strength(&self) -> SecurityStrength {
+        SecurityStrength::_256bit
+    }
+}
+
+fn is_short_draw<T>(result: Result<T, SignatureError>) -> bool {
+    matches!(result, Err(SignatureError::RNGError(RNGError::GenericError(_))))
+}
+
+/// A draw that comes back short is the RNG failing: key generation and every way of drawing `k`
+/// refuse it rather than reduce what was written.
+#[test]
+fn a_short_draw_is_an_error() {
+    assert!(is_short_draw(keygen(&mut ShortRng)));
+
+    let (_, sk) = keygen(&mut DefaultRNG::default()).unwrap();
+    let msg = b"message";
+    assert!(is_short_draw(sk.create_signer(&mut ShortRng, Some(ID)).map(|_| ())));
+    assert!(is_short_draw(sk.sign(&mut ShortRng, msg, Some(ID))));
+    let mut out = [0xaa; 64];
+    assert!(is_short_draw(sk.sign_out(&mut ShortRng, msg, Some(ID), &mut out)));
+    assert_eq!(out, [0; 64], "the output is zeroized");
 }

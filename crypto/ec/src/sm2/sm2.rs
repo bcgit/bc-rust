@@ -52,9 +52,11 @@ use crate::hazmat::sm2_point::Sm2JacobianPoint;
 use crate::hazmat::sm2_scalar::{N_LIMBS, Sm2PublicScalar, Sm2Scalar, Sm2ScalarField};
 use crate::hazmat::sm2_sec1;
 use crate::hazmat::sm2_wnaf::shamir_multiply;
+use crate::sm2::encryption_core::{WipeStackBelowOnDrop, fill_bytes};
 use crate::sm2::extra_bits::reduce_wide_bits_mod_n_minus_1;
 use crate::sm2::keys::{EXTRA_BITS_DRBG_OUTPUT_LEN, SM2PrivateKey, SM2PublicKey};
 use crate::sm2::za;
+use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::security_strength::SecurityStrength;
 #[allow(unused_imports)] // for the docs
@@ -69,6 +71,16 @@ use bouncycastle_core::traits::{
 use bouncycastle_digest::sm3::SM3;
 use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::Secret;
+
+/// What the stack wipe overwrites after `k` is drawn and after signing, in 64-bit words: 4096
+/// bytes. In x86-64 builds under the workspace's release profile with the body of the wipe taken
+/// out, `dev_scripts/sm2_stack_harness` reports the stack written to 1432 bytes below a call of
+/// `create_signer`, 3320 below one of `sign_out` and 2840 below the streaming final with rustc
+/// 1.97 (nightly), and 1384, 3472 and 2960 with rustc 1.88; with 2560 bytes wiped
+/// `dev_scripts/check_sm2_stack.sh` fails with rustc 1.88, and with 2816 it passes with either.
+/// The rest is room for a compiler that lays the frames out less tightly; it has not been
+/// measured on arm64.
+const WIPED_STACK_WORDS: usize = 512;
 
 /// Raw `r || s` signature length: two 32-byte field-width integers. See the module docs on why
 /// there is no DER alternative here.
@@ -175,14 +187,44 @@ fn sign_with_k(sk: &SM2PrivateKey, e: &Sm2ScalarField, k: &Sm2Scalar) -> Option<
     Some(sig) // step A7
 }
 
-/// Step A3: `k` from the caller's RNG, by the extra-random-bits reduction of
-/// [`reduce_wide_bits_mod_n_minus_1`].
-fn random_k(rng: &mut dyn RNG) -> Result<Sm2Scalar, SignatureError> {
-    // Raw DRBG output, reduced below into the per-message secret: held in `Secret` so it is
-    // scrubbed rather than left on the stack.
-    let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
-    rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
-    Ok(reduce_wide_bits_mod_n_minus_1(&*extra_bits))
+/// [`sign_with_k`], never inlined, so that what it and its callees leave lies below its
+/// caller's frame, where the stack wipe reaches it.
+#[inline(never)]
+fn sign_with_k_in_own_frame(
+    sk: &SM2PrivateKey,
+    e: &Sm2ScalarField,
+    k: &Sm2Scalar,
+) -> Option<[u8; SIG_LEN]> {
+    sign_with_k(sk, e, k)
+}
+
+/// The signer, with step A3's `k` from 320 bits of the caller's RNG's output by the
+/// extra-random-bits reduction of [`reduce_wide_bits_mod_n_minus_1`]. Never inlined, for the
+/// same reason as [`sign_with_k_in_own_frame`]; it returns what
+/// [`SigningKey::create_signer`] does, for that to end in the call, so that the signer is
+/// written to where its caller wants it and to no frame above the wiped ones.
+#[inline(never)]
+fn signer_in_own_frame<'k>(
+    sk: &'k SM2PrivateKey,
+    hash: SM3,
+    extra_bits: &[u8; EXTRA_BITS_DRBG_OUTPUT_LEN],
+) -> Result<SM2Signer<'k>, SignatureError> {
+    Ok(SM2Signer { sk, hash, k: reduce_wide_bits_mod_n_minus_1(extra_bits) })
+}
+
+/// [`OneShotSigningKey::sign_out`]'s signer, created and finished, never inlined for the same
+/// reason: the signer is moved on its way to the final, and the copies the moves leave lie
+/// below its caller's frame.
+#[inline(never)]
+fn sign_out_in_own_frame(
+    sk: &SM2PrivateKey,
+    rng: &mut dyn RNG,
+    msg: &[u8],
+    ctx: Option<&[u8]>,
+    output: &mut [u8; SIG_LEN],
+) -> Result<usize, SignatureError> {
+    let signer = SigningKey::<SM2, SIG_LEN>::create_signer(sk, rng, ctx);
+    sign_out_with_signer(signer, msg, output)
 }
 
 /// §6.1 step A5's `r = 0` or `r + k = n` check, named so it has something to unit test directly:
@@ -222,7 +264,14 @@ impl SigningKey<SM2, SIG_LEN> for SM2PrivateKey {
     ) -> Result<Self::Signer<'k>, SignatureError> {
         // PA is carried by the key, not recomputed: see SM2PrivateKey's docs.
         let (x, y) = self.derive_pk().affine();
-        Ok(SM2Signer { sk: self, hash: za_hash(ctx, &x, &y)?, k: random_k(rng)? })
+        let hash = za_hash(ctx, &x, &y)?;
+        // Dropped last, after the signer is where the caller wants it.
+        let _wipe = WipeStackBelowOnDrop::<WIPED_STACK_WORDS>;
+        // Raw DRBG output, reduced into the per-message secret: held in `Secret` so it is
+        // scrubbed rather than left on the stack.
+        let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
+        fill_bytes(rng, &mut *extra_bits).map_err(SignatureError::RNGError)?;
+        signer_in_own_frame(self, hash, &extra_bits)
     }
 }
 
@@ -234,8 +283,9 @@ impl OneShotSigningKey<SM2, SIG_LEN> for SM2PrivateKey {
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        let signer = SigningKey::<SM2, SIG_LEN>::create_signer(self, rng, ctx);
-        sign_out_with_signer(signer, msg, output)
+        let written = sign_out_in_own_frame(self, rng, msg, ctx, output);
+        wipe_stack_below::<WIPED_STACK_WORDS>();
+        written
     }
 }
 
@@ -286,7 +336,9 @@ impl SignatureSigner<SIG_LEN> for SM2Signer<'_> {
         // Steps A5 and A6 send `r = 0`, `r + k = n` and `s = 0` back to step A3 for a new `k`.
         // `k` was drawn when this signer was created and there is no RNG here to draw another
         // from, so the failure is reported instead; each case has probability about 2^-256.
-        *output = sign_with_k(self.sk, &e, &self.k).ok_or(SignatureError::GenericError(
+        let sig = sign_with_k_in_own_frame(self.sk, &e, &self.k);
+        wipe_stack_below::<WIPED_STACK_WORDS>();
+        *output = sig.ok_or(SignatureError::GenericError(
             "SM2 produced r = 0, r + k = n or s = 0; create a fresh signer and sign again",
         ))?;
         Ok(SIG_LEN)

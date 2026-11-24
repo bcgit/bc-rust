@@ -544,8 +544,8 @@ Ten workflows under `.github/workflows/`, all triggered by pull requests:
   handling of the private key, and checks what it used two ways: a search for the key, `k`, the shared point, the
   key stream and the message, and a comparison of two runs over different secrets, which must leave the same bytes.
   Sized by measurement like the RSA one, and failing for the same reason: re-measure `WIPED_STACK_WORDS` and
-  `KEY_WIPED_STACK_WORDS` in `crypto/ec/src/sm2/encryption_core.rs` (the harness reports the depth with the wipe's
-  body taken out).
+  `KEY_WIPED_STACK_WORDS` in `crypto/ec/src/sm2/encryption_core.rs`, or `WIPED_STACK_WORDS` in `keys.rs` and
+  `sm2.rs` for the signing key and signing (the harness reports the depth with the wipe's body taken out).
 - `publish_doc_benches_to_ghpages.yaml`: builds rustdoc and runs `quality_stats.sh`; on `main` it also
   publishes docs and code stats to GitHub Pages (`https://bcgit.github.io/bc-rust/`). Its bench step is
   commented out because the benches are too slow on the hosted runner, so benchmark figures come from a

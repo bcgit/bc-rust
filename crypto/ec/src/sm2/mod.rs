@@ -177,14 +177,19 @@
 //! x86-64, rustc 1.97 nightly and rustc 1.88), and the same with the body of the stack wipe
 //! taken out, which is what the computation itself uses (see the Security Considerations):
 //!
-//! | Operation                  | Stack, 1.97 | Stack, 1.88 | Unwiped, 1.97 | Unwiped, 1.88 |
-//! |----------------------------|-------------|-------------|---------------|---------------|
-//! | `encryption::keygen`       | 4,296       | 4,248       | 2,568         | 2,544         |
-//! | `derive_pk`                | 4,200       | 4,200       | 2,504         | 2,528         |
-//! | `encrypt_detached_inplace` | 8,728       | 8,728       | 5,240         | 5,008         |
-//! | `encrypt_out`              | 8,968       | 8,952       | 5,480         | 5,232         |
-//! | `decrypt_detached_inplace` | 8,616       | 8,696       | 4,824         | 4,656         |
-//! | `decrypt_out`              | 8,632       | 8,696       | 4,936         | 4,784         |
+//! | Operation                   | Stack, 1.97 | Stack, 1.88 | Unwiped, 1.97 | Unwiped, 1.88 |
+//! |-----------------------------|-------------|-------------|---------------|---------------|
+//! | `encryption::keygen`        | 4,296       | 4,248       | 2,568         | 2,544         |
+//! | `derive_pk`                 | 4,200       | 4,200       | 2,504         | 2,528         |
+//! | `encrypt_detached_inplace`  | 8,728       | 8,728       | 5,240         | 5,008         |
+//! | `encrypt_out`               | 8,968       | 8,952       | 5,480         | 5,232         |
+//! | `decrypt_detached_inplace`  | 8,616       | 8,696       | 4,824         | 4,656         |
+//! | `decrypt_out`               | 8,632       | 8,696       | 4,936         | 4,784         |
+//! | `keys::keygen`              | 5,320       | 5,272       | 2,968         | 3,008         |
+//! | `SM2PrivateKey::from_bytes` | 5,304       | 5,256       | 2,664         | 2,704         |
+//! | `create_signer`             | 4,632       | 4,584       | 1,432         | 1,384         |
+//! | `sign_out`                  | 5,176       | 5,176       | 3,320         | 3,472         |
+//! | signer's final (boxed)      | 4,408       | 4,440       | 2,840         | 2,960         |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -202,6 +207,13 @@
 //!   standard only specifies randomised `k` generation (GB/T 32918.2-2016 §6.1 step A3), so
 //!   [`SigningKey::create_signer`](bouncycastle_core::signature_key::SigningKey::create_signer)
 //!   draws `k` from the RNG it is handed, once per signer -- see [`sm2`]'s module docs.
+//! - **The stack used to load or generate a signing key, to draw `k` and to sign is overwritten
+//!   afterwards**, as for encryption below: after `from_bytes`, `keygen`, `create_signer`,
+//!   `sign_out` and the signer's final, by 5,120 bytes after the first two and 4,096 after the
+//!   others, sized from measurements of optimised x86-64 builds with rustc 1.88 and 1.97 and
+//!   checked by `dev_scripts/check_sm2_stack.sh`, with the same limits as encryption's check. A signer holds `k` in
+//!   a `Secret` until it is dropped; where a caller moves the signer, as `do_final` takes it by
+//!   value, the place it was moved from is the caller's to look after.
 //!
 //! For encryption ([`encryption`]):
 //!
