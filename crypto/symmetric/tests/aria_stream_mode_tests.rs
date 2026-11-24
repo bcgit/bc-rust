@@ -264,7 +264,7 @@ fn check<'k, const KEY_LEN: usize, const INIT_DATA_LEN: usize, K>(
 
 #[test]
 fn aria_128_cfb_vectors() {
-    check::<16, _, _>(
+    check::<16, BLOCK_LEN, _>(
         "ARIA-128-CFB",
         &ARIA128Key::<CFB>::from_key_material(&material::<16>(KEY_128)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -274,7 +274,7 @@ fn aria_128_cfb_vectors() {
 
 #[test]
 fn aria_192_cfb_vectors() {
-    check::<24, _, _>(
+    check::<24, BLOCK_LEN, _>(
         "ARIA-192-CFB",
         &ARIA192Key::<CFB>::from_key_material(&material::<24>(KEY_192)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -284,7 +284,7 @@ fn aria_192_cfb_vectors() {
 
 #[test]
 fn aria_256_cfb_vectors() {
-    check::<32, _, _>(
+    check::<32, BLOCK_LEN, _>(
         "ARIA-256-CFB",
         &ARIA256Key::<CFB>::from_key_material(&material::<32>(KEY_256)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -296,7 +296,7 @@ fn aria_256_cfb_vectors() {
 
 #[test]
 fn aria_128_ofb_vectors() {
-    check::<16, _, _>(
+    check::<16, BLOCK_LEN, _>(
         "ARIA-128-OFB",
         &ARIA128Key::<OFB>::from_key_material(&material::<16>(KEY_128)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -306,7 +306,7 @@ fn aria_128_ofb_vectors() {
 
 #[test]
 fn aria_192_ofb_vectors() {
-    check::<24, _, _>(
+    check::<24, BLOCK_LEN, _>(
         "ARIA-192-OFB",
         &ARIA192Key::<OFB>::from_key_material(&material::<24>(KEY_192)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -316,7 +316,7 @@ fn aria_192_ofb_vectors() {
 
 #[test]
 fn aria_256_ofb_vectors() {
-    check::<32, _, _>(
+    check::<32, BLOCK_LEN, _>(
         "ARIA-256-OFB",
         &ARIA256Key::<OFB>::from_key_material(&material::<32>(KEY_256)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -328,7 +328,7 @@ fn aria_256_ofb_vectors() {
 
 #[test]
 fn aria_128_cfb8_vectors() {
-    check::<16, _, _>(
+    check::<16, BLOCK_LEN, _>(
         "ARIA-128-CFB8",
         &ARIA128Key::<CFB8>::from_key_material(&material::<16>(KEY_128)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -338,7 +338,7 @@ fn aria_128_cfb8_vectors() {
 
 #[test]
 fn aria_192_cfb8_vectors() {
-    check::<24, _, _>(
+    check::<24, BLOCK_LEN, _>(
         "ARIA-192-CFB8",
         &ARIA192Key::<CFB8>::from_key_material(&material::<24>(KEY_192)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -348,7 +348,7 @@ fn aria_192_cfb8_vectors() {
 
 #[test]
 fn aria_256_cfb8_vectors() {
-    check::<32, _, _>(
+    check::<32, BLOCK_LEN, _>(
         "ARIA-256-CFB8",
         &ARIA256Key::<CFB8>::from_key_material(&material::<32>(KEY_256)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -364,7 +364,7 @@ const CTR_NONCE: [u8; CTR_NONCE_LEN] = [0u8; CTR_NONCE_LEN];
 
 #[test]
 fn aria_128_ctr_vectors() {
-    check::<16, _, _>(
+    check::<16, CTR_NONCE_LEN, _>(
         "ARIA-128-CTR",
         &ARIA128Key::<CTR>::from_key_material(&material::<16>(KEY_128)).unwrap(),
         CTR_NONCE,
@@ -374,7 +374,7 @@ fn aria_128_ctr_vectors() {
 
 #[test]
 fn aria_192_ctr_vectors() {
-    check::<24, _, _>(
+    check::<24, CTR_NONCE_LEN, _>(
         "ARIA-192-CTR",
         &ARIA192Key::<CTR>::from_key_material(&material::<24>(KEY_192)).unwrap(),
         CTR_NONCE,
@@ -384,7 +384,7 @@ fn aria_192_ctr_vectors() {
 
 #[test]
 fn aria_256_ctr_vectors() {
-    check::<32, _, _>(
+    check::<32, CTR_NONCE_LEN, _>(
         "ARIA-256-CTR",
         &ARIA256Key::<CTR>::from_key_material(&material::<32>(KEY_256)).unwrap(),
         CTR_NONCE,

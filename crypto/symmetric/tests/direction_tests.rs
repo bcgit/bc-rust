@@ -8,7 +8,9 @@ use bouncycastle_symmetric::{Decrypting, Direction, Encrypting};
 struct Enc([u8; 1]);
 struct Dec([u8; 2]);
 
-/// Compiles only when both arguments are the same type.
+/// Compiles only when both arguments are the same type. Used only in the `const` item below,
+/// which rustc 1.88 does not count as a use.
+#[allow(dead_code)]
 const fn same_type<T>(_: &T, _: &T) {}
 
 const _: () = {
