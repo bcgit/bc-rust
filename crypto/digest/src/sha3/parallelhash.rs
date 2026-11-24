@@ -57,10 +57,8 @@ use crate::sha3::shake::SHAKEInternal;
 use crate::sha3::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, Suspendable, XOF};
-// Named only by the doc links below.
-#[cfg(doc)]
 use bouncycastle_core::traits::XOFSqueezer;
+use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, Suspendable, XOF};
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,
@@ -476,6 +474,10 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
 impl<PARAMS: SHAKEParams> XOF for ParallelHashXOFInternal<PARAMS> {
     type Squeezer = CSHAKESqueezer<PARAMS>;
 
+    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.finish_squeezer(token).do_output_final_out(output)
+    }
+
     // The block count of Sec 6.3.1 step 4 is bound here; the `right_encode` that follows it is
     // not, because whether it carries 0 or the length of a final read is
     // CSHAKESqueezer's decision.
@@ -508,13 +510,15 @@ impl<PARAMS: SHAKEParams> ParallelHashInternal<PARAMS> {
     #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
-        self.do_final()
+        let mut output = alloc::vec![0u8; self.output_len()];
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), &mut output);
+        output
     }
 
     /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
     pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.do_final_out(output)
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), output)
     }
 }
 
@@ -527,12 +531,14 @@ impl<PARAMS: SHAKEParams> ParallelHashXOFInternal<PARAMS> {
     #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
-        self.do_final()
+        let mut output = alloc::vec![0u8; self.output_len()];
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), &mut output);
+        output
     }
 
     /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
     pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.do_final_out(output)
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), output)
     }
 }

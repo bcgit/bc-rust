@@ -14,7 +14,8 @@
 
 use crate::errors::SymmetricCipherError;
 use crate::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, FinishToken, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
 
@@ -49,7 +50,7 @@ where
     }
     enc.do_update_aad(aad)?;
     let written = enc.do_encrypt_out(plaintext, ciphertext)?;
-    let (last, last_len) = enc.do_encrypt_final()?;
+    let (last, last_len) = enc.finish_encrypt(&FinishToken::new())?;
     // `encrypt_out_len` is exactly `written + last_len`, so this fits in `ciphertext[..needed]`.
     ciphertext[written..written + last_len].copy_from_slice(&last[..last_len]);
     Ok(written + last_len)
@@ -82,7 +83,7 @@ where
     enc.do_update_aad(aad)?;
     let written = enc.do_encrypt_out(plaintext, ciphertext)?;
     let mut final_buf = [0u8; FINAL_LEN];
-    let (final_len, tag) = enc.do_encrypt_final_detached_out(&mut final_buf)?;
+    let (final_len, tag) = enc.finish_encrypt_detached_into(&FinishToken::new(), &mut final_buf)?;
     // `encrypt_detached_out_len` bounds `written + final_len`, so this fits in
     // `ciphertext[..needed]`.
     ciphertext[written..written + final_len].copy_from_slice(&final_buf[..final_len]);
@@ -121,7 +122,7 @@ where
         written += enc.do_encrypt_out(&tmp[..n], &mut buf[written..consumed])?;
     }
     let mut last = [0u8; FINAL_LEN];
-    let (last_len, tag) = enc.do_encrypt_final_detached_out(&mut last)?;
+    let (last_len, tag) = enc.finish_encrypt_detached_into(&FinishToken::new(), &mut last)?;
     buf[written..written + last_len].copy_from_slice(&last[..last_len]);
     Ok(tag)
 }
@@ -156,7 +157,7 @@ where
     dec.do_update_aad(aad)?;
     let written = dec.do_decrypt_out(ciphertext, plaintext)?;
     let mut last = Secret::<[u8; FINAL_LEN]>::new();
-    match dec.do_decrypt_final_out(&mut last) {
+    match dec.finish_decrypt_into(&FinishToken::new(), &mut last) {
         Ok(data_len) => {
             // `decrypt_out_len` bounds `written + data_len`, so this fits in `plaintext[..needed]`.
             plaintext[written..written + data_len].copy_from_slice(&last[..data_len]);
@@ -199,7 +200,7 @@ where
     dec.do_update_aad(aad)?;
     let written = dec.do_decrypt_out(ciphertext, plaintext)?;
     let mut final_buf = Secret::<[u8; FINAL_LEN]>::new();
-    match dec.do_decrypt_final_detached_out(tag, &mut final_buf) {
+    match dec.finish_decrypt_detached_into(&FinishToken::new(), tag, &mut final_buf) {
         Ok(final_len) => {
             plaintext[written..written + final_len].copy_from_slice(&final_buf[..final_len]);
             Ok(written + final_len)
@@ -246,7 +247,7 @@ where
         }
         // Plaintext, so wiped on every return, the error ones included.
         let mut last = Secret::<[u8; FINAL_LEN]>::new();
-        let last_len = dec.do_decrypt_final_detached_out(tag, &mut last)?;
+        let last_len = dec.finish_decrypt_detached_into(&FinishToken::new(), tag, &mut last)?;
         buf[written..written + last_len].copy_from_slice(&last[..last_len]);
         Ok(())
     })();
@@ -288,7 +289,7 @@ where
         return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
     }
     let written = enc.do_encrypt_out(plaintext, ciphertext)?;
-    let (last, last_len) = enc.do_encrypt_final()?;
+    let (last, last_len) = enc.finish_encrypt(&FinishToken::new())?;
     // `encrypt_out_len` is exactly `written + last_len`, so this fits in `ciphertext[..needed]`.
     ciphertext[written..written + last_len].copy_from_slice(&last[..last_len]);
     Ok(written + last_len)
@@ -317,7 +318,7 @@ where
     }
     let written = dec.do_decrypt_out(ciphertext, plaintext)?;
     let mut last = Secret::<[u8; FINAL_LEN]>::new();
-    match dec.do_decrypt_final_out(&mut last) {
+    match dec.finish_decrypt_into(&FinishToken::new(), &mut last) {
         Ok(data_len) => {
             // `decrypt_out_len` bounds `written + data_len`, so this fits in `plaintext[..needed]`.
             plaintext[written..written + data_len].copy_from_slice(&last[..data_len]);

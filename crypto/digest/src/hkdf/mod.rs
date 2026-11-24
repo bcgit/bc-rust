@@ -132,8 +132,8 @@ pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 /// state is at most [`SMALL_HASH_STATE_LEN`] bytes (SHA-2, SM3, RIPEMD-160): more than an
 /// operation leaves written below the frame that wipes, with room for a compiler that lays the
 /// frames out less tightly. In the x86-64 release build 384 words clear SHA-2 and SM3, and
-/// RIPEMD-160, whose compression is not itself wiped, needs 480 (448 leave its last block's
-/// working values). An unoptimised build's frames are not covered.
+/// RIPEMD-160 needs 480 (448 leave four secret-dependent bytes in the frame of its final, above
+/// the compression, which wipes its own). An unoptimised build's frames are not covered.
 const HKDF_WIPED_STACK_WORDS: usize = 576;
 
 /// As [`HKDF_WIPED_STACK_WORDS`], for a hash with a larger state (SHA-3): 768 words clear

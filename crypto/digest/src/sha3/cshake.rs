@@ -384,6 +384,10 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
 impl<PARAMS: SHAKEParams> XOF for CSHAKEInternal<PARAMS> {
     type Squeezer = SHAKESqueezer<PARAMS>;
 
+    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.finish_squeezer(token).do_output_final_out(output)
+    }
+
     fn into_squeezer(self) -> Self::Squeezer {
         let (suffix, bits) = self.suffix();
         self.shake.into_squeezer_with_suffix(suffix, bits)
@@ -633,13 +637,15 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
     #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
-        self.do_final()
+        let mut output = alloc::vec![0u8; self.output_len()];
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), &mut output);
+        output
     }
 
     /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
     pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.do_final_out(output)
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), output)
     }
 }
 

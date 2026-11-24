@@ -3,8 +3,6 @@ use crate::sha3::keccak::{
     INPUT_AFTER_FINISH, KeccakInternal, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN,
     deserialize_sha3_family_state, serialize_sha3_family_state,
 };
-#[cfg(feature = "alloc")]
-use alloc::vec::Vec;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
@@ -64,17 +62,6 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
     /// Whether the sponge has begun producing output.
     pub(in crate::sha3) fn is_squeezing(&self) -> bool {
         self.keccak.squeezing
-    }
-
-    #[cfg(feature = "alloc")]
-    fn hash_internal(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
-        self.keccak.absorb(data);
-        self.into_squeezer().do_output(result_len)
-    }
-
-    fn hash_internal_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.keccak.absorb(data);
-        self.into_squeezer().do_output_out(output)
     }
 
     /// Ends absorbing with a caller-chosen domain separator and returns the squeezing half.
@@ -425,6 +412,10 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
 impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
     type Squeezer = SHAKESqueezer<PARAMS>;
 
+    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.finish_squeezer(token).do_output_final_out(output)
+    }
+
     fn into_squeezer(self) -> Self::Squeezer {
         // The SHAKE domain separator, "1111" (FIPS 202 s. 6.2).
         self.into_squeezer_with_suffix(0x0F, 4)
@@ -437,16 +428,6 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
     ) -> Result<Self::Squeezer, HashError> {
         // The SHAKE domain separator, "1111" (FIPS 202 s. 6.2).
         self.into_squeezer_partial_bits_with_suffix(partial_byte, num_bits, 0x0F, 4)
-    }
-
-    #[cfg(feature = "alloc")]
-    fn xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
-        self.hash_internal(data, result_len)
-    }
-
-    fn xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        // hash_internal_out zeroizes `output` before writing.
-        self.hash_internal_out(data, output)
     }
 }
 

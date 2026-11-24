@@ -430,7 +430,8 @@ pub trait BlockCipherEncryptor<const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
 /// A method on `&mut self` could be called twice, or followed by more input, which for a MAC, an
 /// AEAD or a signer repeats a nonce or a one-time key. So each of those methods takes a
 /// `&FinishToken`, whose constructor is private to this crate: the callers are the provided
-/// consuming finals, which drop the worker as they return. An implementor receives the token and passes it
+/// consuming finals, which drop the worker as they return, and the provided one-shots, which
+/// build a worker, finish it where it sits and drop it. An implementor receives the token and passes it
 /// to a worker it owns and is finishing with itself (HMAC to its hash). The one other source is
 /// [`crate::hazmat::finish_token`], for code that owns a worker without implementing a worker
 /// trait, which takes on what the consuming finals guarantee; so a token shows that a final was
@@ -451,7 +452,8 @@ pub trait BlockCipherEncryptor<const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
 pub struct FinishToken(());
 
 impl FinishToken {
-    /// For the provided consuming finals in this crate and [`crate::hazmat::finish_token`].
+    /// For the provided consuming finals and one-shots in this crate and
+    /// [`crate::hazmat::finish_token`].
     pub(crate) fn new() -> Self {
         Self(())
     }
@@ -639,7 +641,9 @@ pub trait Hash: AlgorithmInfo {
 
 /// The one-shot form of a hash that takes no parameters: `SHA256::hash(msg)`.
 ///
-/// Both functions run [`Hash::do_update`] then [`Hash::do_final`] on a [`Default`] instance.
+/// Both functions run [`Hash::do_update`] then [`Hash::finish_into`] on a [`Default`] instance,
+/// which is finished where it sits rather than moved into a consuming final after it has
+/// absorbed the message.
 /// Implemented by the hashes whose `Default` is the function itself (SHA-2, SHA-3, SHAKE, SM3,
 /// Ascon); the parameterised ones (cSHAKE, KMAC, TupleHash, ParallelHash, Ascon-CXOF) and the
 /// factories offer an instance method `hash(self, data)` instead. Kept off [`Hash`] because
@@ -651,7 +655,7 @@ pub trait HashOneShot: Hash + Default {
     fn hash_out(data: &[u8], output: &mut [u8]) -> usize {
         let mut h = Self::default();
         h.do_update(data);
-        h.do_final_out(output)
+        h.finish_into(&FinishToken::new(), output)
     }
 
     /// Hashes `data` and returns the digest.
@@ -661,7 +665,9 @@ pub trait HashOneShot: Hash + Default {
     fn hash(data: &[u8]) -> Vec<u8> {
         let mut h = Self::default();
         h.do_update(data);
-        h.do_final()
+        let mut output = vec![0u8; h.output_len()];
+        h.finish_into(&FinishToken::new(), &mut output);
+        output
     }
 }
 
@@ -1918,6 +1924,13 @@ pub trait XOF: Hash {
         num_bits: usize,
     ) -> Result<Self::Squeezer, HashError>;
 
+    /// Ends the input where the value sits and makes the final read of `output.len()` bytes, the
+    /// bytes [`into_squeezer`](Self::into_squeezer) and then
+    /// [`XOFSqueezer::do_output_final_out`] would give: the one method an implementor writes for
+    /// the one-shots, which are provided over it. `output` is zeroized first; returns the number
+    /// of bytes written. Callable only by those one-shots; see [`FinishToken`].
+    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize;
+
     /// One-shot: absorbs `data` and produces `result_len` bytes.
     ///
     /// A one-shot names its length and never comes back, so this is
@@ -1925,8 +1938,8 @@ pub trait XOF: Hash {
     /// [`do_output`](XOFSqueezer::do_output)'s: where an implementation binds the length it is
     /// asked for, this binds `result_len`. For SHAKE and cSHAKE the two are the same bytes.
     ///
-    /// The default absorbs and reads in the obvious way; override it only where the type can do
-    /// better, as SHAKE does.
+    /// Provided over [`finish_xof_into`](Self::finish_xof_into), so the value that has absorbed
+    /// `data` is finished where it sits, not moved into a squeezer.
     ///
     /// Only available with the `alloc` feature.
     #[cfg(feature = "alloc")]
@@ -1935,19 +1948,21 @@ pub trait XOF: Hash {
         Self: Sized,
     {
         self.do_update(data);
-        self.into_squeezer().do_output_final(result_len)
+        let mut output = vec![0u8; result_len];
+        self.finish_xof_into(&FinishToken::new(), &mut output);
+        output
     }
 
     /// One-shot: absorbs `data` and fills `output`, which is zeroized first. Returns the number of
     /// bytes written.
     ///
-    /// A final read of `output.len()` bytes, and defaulted as [`xof`](Self::xof) is.
+    /// A final read of `output.len()` bytes, provided as [`xof`](Self::xof) is.
     fn xof_out(mut self, data: &[u8], output: &mut [u8]) -> usize
     where
         Self: Sized,
     {
         self.do_update(data);
-        self.into_squeezer().do_output_final_out(output)
+        self.finish_xof_into(&FinishToken::new(), output)
     }
 }
 

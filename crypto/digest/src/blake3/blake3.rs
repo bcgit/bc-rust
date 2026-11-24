@@ -710,6 +710,10 @@ impl Hash for BLAKE3 {
 impl XOF for BLAKE3 {
     type Squeezer = BLAKE3Squeezer;
 
+    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.finish_squeezer(token).do_output_final_out(output)
+    }
+
     fn into_squeezer(mut self) -> Self::Squeezer {
         BLAKE3Squeezer::new(self.core.finish())
     }
@@ -974,13 +978,15 @@ impl BLAKE3DeriveKey {
     #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
-        self.do_final()
+        let mut output = alloc::vec![0u8; self.output_len()];
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), &mut output);
+        output
     }
 
     /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
     pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.do_final_out(output)
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), output)
     }
 
     /// Ends the input where the hasher sits and returns the squeezer [`XOF::into_squeezer`]
@@ -1023,6 +1029,10 @@ impl Hash for BLAKE3DeriveKey {
 
 impl XOF for BLAKE3DeriveKey {
     type Squeezer = BLAKE3DeriveKeySqueezer;
+
+    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.finish_squeezer(token).do_output_final_out(output)
+    }
 
     fn into_squeezer(self) -> Self::Squeezer {
         BLAKE3DeriveKeySqueezer(self.0.into_squeezer())

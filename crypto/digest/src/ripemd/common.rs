@@ -11,12 +11,14 @@
 //! first three.
 
 use crate::ripemd::sealed::RIPEMDFamily;
+use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, HashOneShot};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use core::marker::PhantomData;
+use core::slice;
 
 /// `f(j, x, y, z) = x XOR y XOR z` (`0 <= j <= 15`).
 #[inline(always)]
@@ -131,6 +133,34 @@ pub(in crate::ripemd) fn words(block: &[u8; BLOCK_LEN]) -> [u32; 16] {
     core::array::from_fn(|i| u32::from_le_bytes(chunks[i]))
 }
 
+/// Applies `PARAMS::compress` to each of `blocks` in order. Never inlined, so that its frame lies
+/// below its caller's, where [`compress`]'s wipe reaches it.
+#[inline(never)]
+fn compress_blocks<PARAMS: RIPEMDFamily>(h: &mut [u32], blocks: &[[u8; BLOCK_LEN]]) {
+    for block in blocks {
+        PARAMS::compress(h, block);
+    }
+}
+
+/// How much stack [`wipe_stack_below`] overwrites after [`compress_blocks`], in 64-bit words:
+/// more than that frame and the compression function it calls use (240 bytes with their return
+/// addresses for RIPEMD-160 and RIPEMD-320, 224 for RIPEMD-128 and RIPEMD-256, in the x86-64
+/// release build), with room for a compiler that lays them out less tightly. An unoptimised
+/// build's frames are not covered.
+const COMPRESS_WIPED_STACK_WORDS: usize = 64;
+
+/// Compresses `blocks` in a frame of its own and overwrites the stack that frame used: the
+/// message words and the line variables spilled there are the message and the chaining value of
+/// whatever is hashed, an HMAC key among them.
+fn compress<PARAMS: RIPEMDFamily>(h: &mut [u32], blocks: &[[u8; BLOCK_LEN]]) {
+    // Only to save the wipe; mutants note: deleting it is an equivalent mutant.
+    if blocks.is_empty() {
+        return;
+    }
+    compress_blocks::<PARAMS>(h, blocks);
+    wipe_stack_below::<COMPRESS_WIPED_STACK_WORDS>();
+}
+
 /// The message buffer and byte count shared by all four functions, with MD4's padding.
 ///
 /// The pseudo-code says only "Padding is identical to that of MD4"; MD4 is RFC 1320, whose
@@ -153,8 +183,9 @@ impl Buffer {
         Self { byte_count: 0, x_buf: Secret::new(), x_buf_off: 0 }
     }
 
-    /// Absorbs `data`, calling `compress` for every completed block.
-    fn update(&mut self, mut data: &[u8], mut compress: impl FnMut(&[u8; BLOCK_LEN])) {
+    /// Absorbs `data`, calling `compress` on the completed blocks: the buffered one, then the
+    /// whole blocks of `data` in one call.
+    fn update(&mut self, mut data: &[u8], mut compress: impl FnMut(&[[u8; BLOCK_LEN]])) {
         // RFC 1320 Sec 3.2: "In the unlikely event that b is greater than 2^64, then only the
         // low-order 64 bits of b are used", so the count wraps rather than being limited.
         self.byte_count = self.byte_count.wrapping_add(data.len() as u64);
@@ -169,15 +200,13 @@ impl Buffer {
         if self.x_buf_off != 0 {
             self.x_buf[self.x_buf_off..].copy_from_slice(&data[..available]);
             data = &data[available..];
-            compress(&self.x_buf);
+            compress(slice::from_ref(&self.x_buf));
             // Once per call at most: whole blocks after this one are compressed from `data`.
             self.x_buf.fill(0);
         }
 
         let (blocks, remainder) = data.as_chunks::<BLOCK_LEN>();
-        for block in blocks {
-            compress(block);
-        }
+        compress(blocks);
         self.x_buf[..remainder.len()].copy_from_slice(remainder);
         self.x_buf_off = remainder.len();
     }
@@ -196,7 +225,7 @@ impl Buffer {
         &mut self,
         partial_byte: u8,
         num_partial_bits: usize,
-        mut compress: impl FnMut(&[u8; BLOCK_LEN]),
+        mut compress: impl FnMut(&[[u8; BLOCK_LEN]]),
     ) {
         debug_assert!(num_partial_bits <= 7);
         // The length in bits of the message before padding (Sec 3.2's `b`): byte_count is a byte
@@ -216,7 +245,7 @@ impl Buffer {
         self.x_buf_off += 1;
         if self.x_buf_off > 56 {
             self.x_buf[self.x_buf_off..].fill(0);
-            compress(&self.x_buf);
+            compress(slice::from_ref(&self.x_buf));
             self.x_buf_off = 0;
         }
         self.x_buf[self.x_buf_off..56].fill(0);
@@ -224,14 +253,14 @@ impl Buffer {
         // Sec 3.2: "A 64-bit representation of b ... is appended ... appended low-order word
         // first", i.e. little-endian.
         self.x_buf[56..].copy_from_slice(&bit_len.to_le_bytes());
-        compress(&self.x_buf);
+        compress(slice::from_ref(&self.x_buf));
     }
 }
 
 /// The state of any of the four functions: the chaining variable `h0, h1, ..` as `S` (four,
 /// five, eight or ten words) and the message buffer. Which function it is lies in the initial
 /// value given to [`Core::new`] and the `compress` passed to [`Core::update`] and
-/// [`Core::finish`], which is applied to the chaining variable and one block.
+/// [`Core::finish`], which is applied to the chaining variable and a run of blocks.
 #[derive(Clone)]
 pub(in crate::ripemd) struct Core<S: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>> {
     h: Secret<S>,
@@ -250,10 +279,10 @@ impl<S: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>> Core<S> {
     pub(in crate::ripemd) fn update(
         &mut self,
         data: &[u8],
-        compress: impl Fn(&mut [u32], &[u8; BLOCK_LEN]),
+        compress: impl Fn(&mut [u32], &[[u8; BLOCK_LEN]]),
     ) {
         let h = self.h.as_mut();
-        self.buffer.update(data, |block| compress(h, block));
+        self.buffer.update(data, |blocks| compress(h, blocks));
     }
 
     /// Pads and compresses the final block(s) (see [`Buffer::finish`]), then writes the first
@@ -268,14 +297,14 @@ impl<S: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>> Core<S> {
         num_partial_bits: usize,
         output_len: usize,
         output: &mut [u8],
-        compress: impl Fn(&mut [u32], &[u8; BLOCK_LEN]),
+        compress: impl Fn(&mut [u32], &[[u8; BLOCK_LEN]]),
     ) -> usize {
         debug_assert!(num_partial_bits <= 7);
         output.fill(0);
         let n = output.len().min(output_len);
 
         let h = self.h.as_mut();
-        self.buffer.finish(partial_byte, num_partial_bits, |block| compress(h, block));
+        self.buffer.finish(partial_byte, num_partial_bits, |blocks| compress(h, blocks));
 
         // The digest is h0 || h1 || ..., each word little-endian (RFC 1320 Sec 3.5: "we begin with
         // the low-order byte of A"), truncated to the caller's buffer.
@@ -395,17 +424,13 @@ impl<PARAMS: RIPEMDFamily> Hash for RIPEMDInternal<PARAMS> {
         PARAMS::OUTPUT_LEN
     }
 
-    // `Core::update` and `Core::finish` are handed a closure at each call site below rather than
-    // `PARAMS::compress` itself: each closure is a type of its own, so each call has its own copy
-    // of the callee, which the compiler then inlines. Sharing one copy between the two finals
-    // costs up to 64 bytes of stack in the module docs' table.
     fn do_update(&mut self, data: &[u8]) {
-        self.core.update(data, |h, block| PARAMS::compress(h, block));
+        self.core.update(data, compress::<PARAMS>);
     }
 
     fn finish_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
         // A whole-byte message is the zero-partial-bits case of the general padding.
-        self.core.finish(0, 0, PARAMS::OUTPUT_LEN, output, |h, block| PARAMS::compress(h, block))
+        self.core.finish(0, 0, PARAMS::OUTPUT_LEN, output, compress::<PARAMS>)
     }
 
     /// Bit-oriented messages: the pseudo-code defers the padding to MD4, and RFC 1320 Sec 3.1
@@ -429,7 +454,7 @@ impl<PARAMS: RIPEMDFamily> Hash for RIPEMDInternal<PARAMS> {
             num_partial_bits,
             PARAMS::OUTPUT_LEN,
             output,
-            |h, block| PARAMS::compress(h, block),
+            compress::<PARAMS>,
         ))
     }
 }
@@ -507,9 +532,9 @@ mod tests {
         for len in 0..200usize {
             let mut b = Buffer::new();
             let mut blocks = 0;
-            b.update(&vec![0xABu8; len], |_| blocks += 1);
+            b.update(&vec![0xABu8; len], |bs| blocks += bs.len());
             let before = blocks;
-            b.finish(0, 0, |_| blocks += 1);
+            b.finish(0, 0, |bs| blocks += bs.len());
             let expected_total = (len + 1 + 8).div_ceil(BLOCK_LEN);
             assert_eq!(blocks, expected_total, "len {len}");
             assert_eq!(before, len / BLOCK_LEN, "len {len}");
@@ -520,9 +545,9 @@ mod tests {
     fn test_padding_content() {
         // A 3-byte message: 0x80, zeros, then the bit length 24 little-endian in the last 8 bytes.
         let mut b = Buffer::new();
-        b.update(b"abc", |_| panic!("no block yet"));
+        b.update(b"abc", |bs| assert!(bs.is_empty(), "no block yet"));
         let mut last = None;
-        b.finish(0, 0, |blk| last = Some(*blk));
+        b.finish(0, 0, |bs| last = Some(bs[0]));
         let last = last.unwrap();
         assert_eq!(&last[..3], b"abc");
         assert_eq!(last[3], 0x80);
@@ -530,9 +555,9 @@ mod tests {
         assert_eq!(&last[56..], &24u64.to_le_bytes());
         // 56 bytes: the 0x80 lands at offset 56, so the length goes into a second block.
         let mut b = Buffer::new();
-        b.update(&[0x11u8; 56], |_| panic!("no block yet"));
+        b.update(&[0x11u8; 56], |bs| assert!(bs.is_empty(), "no block yet"));
         let mut seen = Vec::new();
-        b.finish(0, 0, |blk| seen.push(*blk));
+        b.finish(0, 0, |bs| seen.extend_from_slice(bs));
         assert_eq!(seen.len(), 2);
         assert_eq!(seen[0][56], 0x80);
         assert!(seen[0][57..].iter().all(|&x| x == 0));
@@ -550,9 +575,9 @@ mod tests {
             let mut blocks = Vec::new();
             for partial_byte in [0xA5u8, 0xA5 & mask] {
                 let mut b = Buffer::new();
-                b.update(b"abc", |_| panic!("no block yet"));
+                b.update(b"abc", |bs| assert!(bs.is_empty(), "no block yet"));
                 let mut last = None;
-                b.finish(partial_byte, n, |blk| last = Some(*blk));
+                b.finish(partial_byte, n, |bs| last = Some(bs[0]));
                 blocks.push(last.unwrap());
             }
             assert_eq!(blocks[0], blocks[1], "n {n}: unused low bits must be ignored");

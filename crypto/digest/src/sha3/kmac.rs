@@ -69,12 +69,10 @@ use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, Suspendab
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
+use bouncycastle_core::traits::XOFSqueezer;
 use bouncycastle_core::traits::{
     Algorithm, FinishToken, Hash, MACGenerator, MACVerifier, RNG, Suspendable, XOF,
 };
-// Named only by the doc links below.
-#[cfg(doc)]
-use bouncycastle_core::traits::XOFSqueezer;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{
@@ -592,6 +590,10 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
 impl<PARAMS: SHAKEParams> XOF for KMACXOFInternal<PARAMS> {
     type Squeezer = CSHAKESqueezer<PARAMS>;
 
+    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.finish_squeezer(token).do_output_final_out(output)
+    }
+
     /// The `right_encode(L)` of Sec 4.3.1 step 1 is not absorbed here: which `L` it carries depends
     /// on how the first output is read, so [`CSHAKESqueezer`] decides it.
     ///
@@ -642,12 +644,14 @@ impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
     #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
-        self.do_final()
+        let mut output = alloc::vec![0u8; self.output_len()];
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), &mut output);
+        output
     }
 
     /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
     pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.do_final_out(output)
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), output)
     }
 }

@@ -42,7 +42,7 @@ impl AsconXof128 {
     }
 
     /// Produces the next `output.len()` bytes of the XOF stream; the absorb phase was ended by
-    /// [`XOF::into_squeezer`] or by the hash final.
+    /// [`XOF::into_squeezer`], [`XOF::finish_xof_into`] or the hash final.
     fn squeeze_into(&mut self, output: &mut [u8]) -> usize {
         output.fill(0);
         self.sponge.squeeze(output);
@@ -135,6 +135,11 @@ impl Hash for AsconXof128 {
 
 impl XOF for AsconXof128 {
     type Squeezer = AsconXof128Squeezer;
+
+    fn finish_xof_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
+        self.sponge.finish_absorb();
+        self.squeeze_into(output)
+    }
 
     fn into_squeezer(mut self) -> Self::Squeezer {
         // The squeezer is squeezing from the start, so a squeezer suspended before its first

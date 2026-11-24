@@ -58,7 +58,7 @@ pub use crate::provided::{decrypt_detached_inplace, encrypt_detached_inplace};
 use crate::traits::AEADEncryptedTuple;
 use crate::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
-    KeyUnwrapper, KeyWrapper, MACGenerator, MACVerifier, RNG, StreamCipherDecryptor,
+    FinishToken, KeyUnwrapper, KeyWrapper, MACGenerator, MACVerifier, RNG, StreamCipherDecryptor,
     StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 #[cfg(feature = "alloc")]
@@ -1215,7 +1215,7 @@ pub trait MacGenerationKey<const MAC_LEN: usize> {
     fn mac_out(&self, data: &[u8], out: &mut [u8; MAC_LEN]) -> usize {
         let mut generator = self.create_generator();
         generator.do_update(data);
-        generator.do_final_out(out)
+        generator.finish_mac_into(&FinishToken::new(), out)
     }
 
     /// One-shot: the tag of `data`.
@@ -1244,7 +1244,7 @@ pub trait MacVerificationKey<const MAC_LEN: usize> {
     fn verify(&self, data: &[u8], mac: &[u8; MAC_LEN]) -> Result<(), MACError> {
         let mut verifier = self.create_verifier();
         verifier.do_update(data);
-        verifier.do_verify_final(mac)
+        verifier.finish_mac_verify(&FinishToken::new(), mac)
     }
 }
 
@@ -1286,7 +1286,7 @@ pub trait NonceMacGenerationKey<const NONCE_LEN: usize, const MAC_LEN: usize> {
         out.fill(0);
         let (mut generator, nonce) = self.create_generator(rng)?;
         generator.do_update(data);
-        Ok((generator.do_final_out(out), nonce))
+        Ok((generator.finish_mac_into(&FinishToken::new(), out), nonce))
     }
 
     /// One-shot: the nonce drawn from `rng` and the tag of `data` under it, in that order, as
@@ -1314,7 +1314,7 @@ pub trait NonceMacGenerationKey<const NONCE_LEN: usize, const MAC_LEN: usize> {
     ) -> usize {
         let mut generator = self.create_generator_nonce(nonce);
         generator.do_update(data);
-        generator.do_final_out(out)
+        generator.finish_mac_into(&FinishToken::new(), out)
     }
 
     /// One-shot: the tag of `data` under `nonce`.
@@ -1349,7 +1349,7 @@ pub trait NonceMacVerificationKey<const NONCE_LEN: usize, const MAC_LEN: usize> 
     ) -> Result<(), MACError> {
         let mut verifier = self.create_verifier(nonce);
         verifier.do_update(data);
-        verifier.do_verify_final(mac)
+        verifier.finish_mac_verify(&FinishToken::new(), mac)
     }
 }
 

@@ -89,7 +89,7 @@ impl AsconCXof128 {
     }
 
     /// Produces the next `output.len()` bytes of the XOF stream; the absorb phase was ended by
-    /// [`XOF::into_squeezer`] or by the hash final.
+    /// [`XOF::into_squeezer`], [`XOF::finish_xof_into`] or the hash final.
     fn squeeze_into(&mut self, output: &mut [u8]) -> usize {
         output.fill(0);
         self.sponge.squeeze(output);
@@ -182,6 +182,11 @@ impl Hash for AsconCXof128 {
 
 impl XOF for AsconCXof128 {
     type Squeezer = AsconCXof128Squeezer;
+
+    fn finish_xof_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
+        self.sponge.finish_absorb();
+        self.squeeze_into(output)
+    }
 
     fn into_squeezer(mut self) -> Self::Squeezer {
         // The squeezer is squeezing from the start, so a squeezer suspended before its first
@@ -346,12 +351,14 @@ impl AsconCXof128 {
     #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
-        self.do_final()
+        let mut output = alloc::vec![0u8; self.output_len()];
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), &mut output);
+        output
     }
 
     /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
     pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.do_final_out(output)
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), output)
     }
 }
