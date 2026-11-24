@@ -7,11 +7,13 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::FailingRNG;
+use bouncycastle_core_test_framework::ShortRNG;
 use bouncycastle_core_test_framework::signature::TestFrameworkSignatureKeys;
 use bouncycastle_ec::ed::ed25519::{
     Ed25519PrivateKey, Ed25519PublicKey, PRIVATE_KEY_LEN, PUBLIC_KEY_LEN, keygen, keygen_out,
     keypair_consistency_check,
 };
+use bouncycastle_rng::DefaultRNG;
 
 const ZEROIZED: SignatureError =
     SignatureError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey);
@@ -329,4 +331,17 @@ fn the_unfilled_key_is_refused_before_a_bad_context() {
         sk.as_prehash().sign_deterministic(b"msg", bad_ph),
         Err(SignatureError::LengthError(_))
     ));
+}
+
+/// A draw that comes back short is the RNG failing: refused rather than used as a key, and the
+/// key is left unfilled.
+#[test]
+fn a_short_draw_is_refused_and_leaves_the_key_unfilled() {
+    let short = |r: Result<(), SignatureError>| {
+        matches!(r, Err(SignatureError::RNGError(RNGError::GenericError(_))))
+    };
+    assert!(short(keygen(&mut ShortRNG).map(|_| ())));
+    let (_, mut sk) = keygen(&mut DefaultRNG::default()).unwrap();
+    assert!(short(keygen_out(&mut ShortRNG, &mut sk)));
+    assert!(sk == Ed25519PrivateKey::zeroized());
 }

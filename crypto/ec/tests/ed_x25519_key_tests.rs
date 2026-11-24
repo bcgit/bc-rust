@@ -5,6 +5,7 @@ use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{AlgorithmOID, PrivateKey, PublicKey};
+use bouncycastle_core_test_framework::ShortRNG;
 use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreementKeys;
 use bouncycastle_ec::ed::x25519::{
     POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey, keygen, keygen_from_seed,
@@ -381,4 +382,17 @@ fn the_unfilled_key_equals_only_an_unfilled_key() {
     {
         assert!(zeros != unfilled && unfilled != zeros);
     }
+}
+
+/// A draw that comes back short is the RNG failing: refused rather than used as a key, and the
+/// key is left unfilled.
+#[test]
+fn a_short_draw_is_refused_and_leaves_the_key_unfilled() {
+    let short = |r: Result<(), KeyAgreementError>| {
+        matches!(r, Err(KeyAgreementError::RNGError(RNGError::GenericError(_))))
+    };
+    assert!(short(keygen(&mut ShortRNG).map(|_| ())));
+    let (_, mut sk) = keygen(&mut DefaultRNG::default()).unwrap();
+    assert!(short(keygen_out(&mut ShortRNG, &mut sk)));
+    assert!(sk == X25519PrivateKey::zeroized());
 }

@@ -267,7 +267,7 @@ fn random_k<C: Curve>(rng: &mut dyn RNG) -> Result<C::Scalar, SignatureError> {
     // Raw DRBG output, reduced below into the per-message secret: held in a Secret so it is
     // scrubbed when this function returns rather than left on the stack.
     let mut extra_bits = Secret::<C::ExtraBitsDraw>::new();
-    rng.next_bytes_out(extra_bits.as_mut()).map_err(SignatureError::RNGError)?;
+    crate::rng_draw::fill_bytes(rng, extra_bits.as_mut()).map_err(SignatureError::RNGError)?;
     Ok(C::reduce_wide_bits_mod_n_minus_1((*extra_bits).as_ref()))
 }
 

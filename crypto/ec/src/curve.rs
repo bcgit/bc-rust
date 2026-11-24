@@ -262,8 +262,8 @@ pub trait Curve:
     /// [`RNG_STRENGTH`](Curve::RNG_STRENGTH): the private scalar and `[d]G` in affine form.
     ///
     /// # Errors
-    /// [`RNGError::SecurityStrengthInsufficientForAlgorithm`] below the strength, or the RNG's
-    /// own error.
+    /// [`RNGError::SecurityStrengthInsufficientForAlgorithm`] below the strength, the RNG's own
+    /// error, or [`RNGError::GenericError`] if it writes fewer bytes than asked for.
     fn keygen<const DRBG_LEN: usize>(rng: &mut dyn RNG)
     -> Result<GeneratedKeyPair<Self>, RNGError>;
     /// [`keygen`](Curve::keygen) at the curve's extra-bits draw,

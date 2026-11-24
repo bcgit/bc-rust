@@ -15,10 +15,10 @@ use bouncycastle_core::signature_key::{
 use bouncycastle_core::traits::{
     Algorithm, CollisionResistantHash, PrivateKey, PublicKey, SignatureSigner, SignatureVerifier,
 };
-use bouncycastle_core_test_framework::FailingRNG;
 use bouncycastle_core_test_framework::signature::{
     CtxBehaviour, TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
+use bouncycastle_core_test_framework::{FailingRNG, ShortRNG};
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ec::ecdsa::ecdsa::ECDSA;
 use bouncycastle_ec::ecdsa::ecdsa::EcdsaHash;
@@ -257,6 +257,31 @@ where
     let (pk2, sk2) = keygen::<C, H>(&mut FixedSeedRNG::new(seed)).unwrap();
     assert_eq!(sk1, sk2);
     assert_eq!(pk1, pk2);
+
+    // A draw that comes back short is the RNG failing, refused rather than reduced.
+    assert!(matches!(
+        keygen::<C, H>(&mut ShortRNG),
+        Err(SignatureError::RNGError(RNGError::GenericError(_)))
+    ));
+}
+
+/// The random signer's `k` from a draw that comes back short is refused, by every way of
+/// signing that draws one, and `sign_out` leaves its output zeroized.
+pub fn short_draw_is_refused<C, H, const SIG_LEN: usize>()
+where
+    C: Curve<Signature = [u8; SIG_LEN]>,
+    H: EcdsaHash + CollisionResistantHash,
+{
+    let short = |r: Result<(), SignatureError>| {
+        matches!(r, Err(SignatureError::RNGError(RNGError::GenericError(_))))
+    };
+    let (_, sk) = keygen_default::<C, H>().unwrap();
+    let msg = b"short draw";
+    assert!(short(sk.create_signer(&mut ShortRNG, None).map(|_| ())));
+    assert!(short(sk.sign(&mut ShortRNG, msg, None).map(|_| ())));
+    let mut out = [0xA5u8; SIG_LEN];
+    assert!(short(sk.sign_out(&mut ShortRNG, msg, None, &mut out).map(|_| ())));
+    assert_eq!(out, [0u8; SIG_LEN]);
 }
 
 /// The raw encoding is exactly `r || s`; anything longer or shorter is a different, malformed

@@ -367,6 +367,6 @@ pub fn keygen(
     // Dropped last, after the result is where the caller wants it.
     let _wipe = WipeStackBelowOnDrop::<KEY_WIPED_STACK_WORDS>;
     let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
-    encryption_core::fill_bytes(rng, &mut *extra_bits)?;
+    crate::rng_draw::fill_bytes(rng, &mut *extra_bits)?;
     key_pair_in_own_frame(&extra_bits)
 }

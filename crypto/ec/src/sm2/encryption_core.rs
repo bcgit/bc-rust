@@ -19,6 +19,7 @@ use crate::hazmat::sm2_mul::multiply_point;
 use crate::hazmat::sm2_point::Sm2JacobianPoint;
 use crate::hazmat::sm2_scalar::Sm2Scalar;
 use crate::hazmat::sm2_sec1;
+use crate::rng_draw::fill_bytes;
 use crate::sm2::extra_bits::reduce_wide_bits_mod_n_minus_1;
 use crate::sm2::keys::EXTRA_BITS_DRBG_OUTPUT_LEN;
 use crate::stack_wipe::wipe_stack_below;
@@ -301,16 +302,6 @@ fn decrypt_in_own_frame(
     buf: &mut [u8],
 ) -> Condition<u32> {
     decrypt_with_d(d, c1_point, c3, buf)
-}
-
-/// Fills `out` from `rng`. A count short of the buffer is the RNG failing to deliver, as its
-/// own error is.
-pub(in crate::sm2) fn fill_bytes(rng: &mut dyn RNG, out: &mut [u8]) -> Result<(), RNGError> {
-    match rng.next_bytes_out(out) {
-        Ok(written) if written == out.len() => Ok(()),
-        Ok(_) => Err(RNGError::GenericError("the RNG wrote fewer bytes than it was asked for")),
-        Err(e) => Err(e),
-    }
 }
 
 /// GB/T 32918.4-2016 Section 6.1 for the public key `PB = (pb_x, pb_y)`: `buf` holds `M` on

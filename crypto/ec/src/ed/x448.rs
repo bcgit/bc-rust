@@ -295,7 +295,7 @@ pub fn keygen_out(rng: &mut dyn RNG, sk: &mut X448PrivateKey) -> Result<(), KeyA
     if rng.security_strength() < X448::MAX_SECURITY_STRENGTH {
         return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
     }
-    if let Err(e) = rng.next_bytes_out(&mut *sk.k) {
+    if let Err(e) = crate::rng_draw::fill_bytes(rng, &mut *sk.k) {
         sk.clear();
         return Err(e.into());
     }

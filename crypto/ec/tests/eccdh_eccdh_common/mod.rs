@@ -10,6 +10,7 @@ use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
+use bouncycastle_core_test_framework::ShortRNG;
 use bouncycastle_core_test_framework::key_agreement::{
     TestFrameworkKeyAgreement, TestFrameworkKeyAgreementKeys,
 };
@@ -129,6 +130,12 @@ where
     assert_eq!(sk1, sk2);
     let (pk3, _) = keygen::<C>(&mut FixedSeedRNG::new([0x42u8; 128])).unwrap();
     assert_ne!(pk1, pk3);
+
+    // A draw that comes back short is the RNG failing, refused rather than reduced.
+    match keygen::<C>(&mut ShortRNG) {
+        Err(KeyAgreementError::RNGError(RNGError::GenericError(_))) => {}
+        other => panic!("expected a short draw to be refused, got {other:?}"),
+    }
 }
 
 /// `Z` is typed for a KDF (HKDF credits it, so the PRK it extracts is full-entropy material),

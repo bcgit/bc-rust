@@ -303,7 +303,7 @@ pub fn keygen_out(rng: &mut dyn RNG, sk: &mut X25519PrivateKey) -> Result<(), Ke
     if rng.security_strength() < X25519::MAX_SECURITY_STRENGTH {
         return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
     }
-    if let Err(e) = rng.next_bytes_out(&mut *sk.k) {
+    if let Err(e) = crate::rng_draw::fill_bytes(rng, &mut *sk.k) {
         sk.clear();
         return Err(e.into());
     }

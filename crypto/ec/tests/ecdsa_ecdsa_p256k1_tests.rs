@@ -23,6 +23,11 @@ fn two_signers_one_verifier() {
 }
 
 #[test]
+fn short_draw_is_refused() {
+    ecdsa_common::short_draw_is_refused::<Secp256K1, SHA256, 64>();
+}
+
+#[test]
 fn context_is_refused() {
     ecdsa_common::context_is_refused::<Secp256K1, SHA256, 64>();
 }
