@@ -75,9 +75,9 @@
 //! | `SM3::do_update`                                | 592 B         |
 //! | `SM3::do_final_out`                             | 624 B         |
 //! | `SM3::do_final_partial_bits_out`                | 672 B         |
-//! | `SM3::hash_out` (one-shot)                      | 880 B         |
+//! | `SM3::hash_out` (one-shot)                      | 752 B         |
 //! | `SM3::suspend` / `SM3::from_suspended`          | 8 / 40 B      |
-//! | `HmacKey::<SM3>::from_key_material` / `mac_out` | 2976 / 992 B  |
+//! | `HmacKey::<SM3>::from_key_material` / `mac_out` | 2864 / 992 B  |
 //! | `HKDF_SM3::extract_and_expand_out`              | 4432 B        |
 //!
 //! # 🚨 Security Considerations 🚨

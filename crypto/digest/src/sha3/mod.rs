@@ -166,11 +166,12 @@
 //!
 //! | Object                                                          | Size (bytes) |
 //! |-----------------------------------------------------------------|--------------|
-//! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256`, `SHAKESqueezer`       | 440          |
-//! | `CSHAKE128/256`, `KMACXOF128/256`, `TUPLEHASHXOF128/256`, `CSHAKESqueezer` | 448 |
-//! | `KMAC128/256`, `KMAC128Key`/`KMAC256Key`, `TUPLEHASH128/256`    | 456          |
-//! | `PARALLELHASHXOF128/256`                                        | 912          |
-//! | `PARALLELHASH128/256`                                           | 920          |
+//! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256`, `SHAKESqueezer`       | 424          |
+//! | `CSHAKE128/256`, `KMACXOF128/256`, `TUPLEHASHXOF128/256`, `CSHAKESqueezer` | 432 |
+//! | `KMAC128/256`, `KMAC128Key`/`KMAC256Key`                        | 432          |
+//! | `TUPLEHASH128/256`                                              | 440          |
+//! | `PARALLELHASHXOF128/256`                                        | 880          |
+//! | `PARALLELHASH128/256`                                           | 888          |
 //!
 //! Suspended states, as `SUSPENDED_*_STATE_LEN`:
 //!

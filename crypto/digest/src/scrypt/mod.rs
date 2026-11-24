@@ -52,7 +52,7 @@
 //! The working memory is [`ScryptParams::work_len`] bytes, `128 * r * (N + p + 1)`: 16 MiB at
 //! `N = 2^14, r = 8, p = 1`. It is the caller's buffer, or with the [`KDF`] impl a heap
 //! allocation; either way it is wiped before the derivation returns. Beside it the peak stack
-//! is 2312 bytes, whatever the parameters (x86-64, release, rustc 1.97.0-nightly, the deepest
+//! is 5288 bytes, whatever the parameters (x86-64, release, rustc 1.97.0-nightly, the deepest
 //! frame chain of `bench_scrypt_mem_usage`).
 //!
 //! # 🚨 Security Considerations 🚨

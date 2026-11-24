@@ -64,12 +64,12 @@
 //!
 //! | PRF | Counter | Feedback | Double-Pipeline |
 //! |---|---|---|---|
-//! | HMAC-SHA256 | 1776 | 1760 | 1776 |
-//! | HMAC-SHA512 | 3072 | 3056 | 3056 |
-//! | HMAC-SHA3-256 | 5760 | | |
+//! | HMAC-SHA256 | 3808 | 3808 | 3808 |
+//! | HMAC-SHA512 | 4912 | 4896 | 4896 |
+//! | HMAC-SHA3-256 | 7440 | | |
 //! | CMAC-AES256 | 1800 | | |
 //!
-//! [`KDF_KMAC128`] and [`KDF_KMAC256`]: 3344, of which [`MAX_KMAC_KDK_LEN`] bytes are the MAC
+//! [`KDF_KMAC128`] and [`KDF_KMAC256`]: 3504, of which [`MAX_KMAC_KDK_LEN`] bytes are the MAC
 //! key the key-derivation key is copied into.
 //!
 //! [`Secret`]: bouncycastle_utils::secret::Secret

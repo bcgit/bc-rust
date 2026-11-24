@@ -61,7 +61,7 @@
 //! | `SHA1::do_update`                        | 592 B    |
 //! | `SHA1::do_final_out`                     | 624 B    |
 //! | `SHA1::do_final_partial_bits_out`        | 672 B    |
-//! | `SHA1::hash_out` (one-shot)              | 864 B    |
+//! | `SHA1::hash_out` (one-shot)              | 752 B    |
 //! | `SHA1::suspend` / `SHA1::from_suspended` | 8 / 16 B |
 //!
 //! # 🚨 Security Considerations 🚨

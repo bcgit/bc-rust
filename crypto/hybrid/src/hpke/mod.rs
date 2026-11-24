@@ -78,13 +78,13 @@
 //!
 //! | Operation              | Stack |
 //! |------------------------|-------|
-//! | `setup_sender`         | 6,504 |
-//! | `setup_recipient`      | 5,592 |
-//! | `setup_auth_sender`    | 5,848 |
-//! | `setup_auth_recipient` | 5,528 |
-//! | `seal_out`             | 1,152 |
-//! | `open_out`             | 1,184 |
-//! | `export_out`           | 3,696 |
+//! | `setup_sender`         | 6,184 |
+//! | `setup_recipient`      | 5,272 |
+//! | `setup_auth_sender`    | 5,528 |
+//! | `setup_auth_recipient` | 5,208 |
+//! | `seal_out`             | 992   |
+//! | `open_out`             | 1,024 |
+//! | `export_out`           | 3,392 |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
