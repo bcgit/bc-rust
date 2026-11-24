@@ -5,7 +5,7 @@ use crate::mldsa::mldsa::H;
 use crate::mldsa::params::MLDSAParams;
 use crate::mldsa_common::polynomial::{Polynomial, multiply_ntt};
 use bouncycastle_core::traits::Hash;
-use bouncycastle_utils::secret::ZeroizablePrimitive;
+use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::ops::{Index, IndexMut};
 
 /// The operations this module performs on the public matrix 𝐀̂.
@@ -61,16 +61,20 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
 
     /// [`matrix_vector_ntt`](Self::matrix_vector_ntt) into `w`, a vector the caller holds.
     pub(in crate::mldsa) fn matrix_vector_ntt_out(&self, v: &Vector<l>, w: &mut Vector<k>) {
+        // 𝐯 is secret in key generation and signing, and so are its products: the one not summed
+        // in place is held in a `Secret`.
+        let mut w1 = Secret::<Polynomial>::new();
         for i in 0..k {
             // split out the 0 case to skip a no-op add_ntt()
-            w[i].coeffs.copy_from_slice(&multiply_ntt(&self.elems[i][0], &v[0]).coeffs);
+            w[i] = self.elems[i][0];
+            w[i].multiply_ntt(&v[0]);
 
-            let mut w1: Polynomial;
             for j in 1..l {
                 // dot product a vector into a matrix: multiply the input vector
                 // into each row of the matrix, then sum the results to produce a vector of
                 // length k.
-                w1 = multiply_ntt(&self.elems[i][j], &v[j]);
+                *w1 = self.elems[i][j];
+                w1.multiply_ntt(&v[j]);
                 w[i].add_ntt(&w1);
             }
         }
@@ -126,6 +130,10 @@ pub trait VectorTrait:
     /// Algorithm 47 ScalarVectorNTT(𝑐,̂ 𝐯)̂
     /// Computes the product 𝑐_hat * 𝐯_hat of a scalar 𝑐_hat and a vector 𝐯_hat over 𝑇𝑞.
     fn scalar_vector_ntt(&self, w: &Polynomial) -> Self;
+
+    /// [`scalar_vector_ntt`](Self::scalar_vector_ntt) into `out`, a vector the caller holds: the
+    /// product is secret wherever the vector is a key's.
+    fn scalar_vector_ntt_out(&self, w: &Polynomial, out: &mut Self);
 
     /// Adds 𝑞 to every negative coefficient.
     fn conditional_add_q(&mut self);
@@ -224,6 +232,13 @@ impl<const LEN: usize> VectorTrait for Vector<LEN> {
     fn sub_vector(&mut self, s: &Self) {
         for i in 0..LEN {
             self[i].sub(&s[i]);
+        }
+    }
+
+    fn scalar_vector_ntt_out(&self, w: &Polynomial, out: &mut Self) {
+        for i in 0..LEN {
+            out[i] = self[i];
+            out[i].multiply_ntt(w);
         }
     }
 

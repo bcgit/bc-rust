@@ -2,7 +2,7 @@
 //! and other intermediate values by never holding the whole thing in memory at once, but re-constructing
 //! what it needs in pieces, which generally means handling the matrices and vectors row-wise or entry-wise.
 
-use crate::mldsa_common::aux_functions::{bit_unpack_eta_out, expand_mask_poly, rej_ntt_poly};
+use crate::mldsa_common::aux_functions::{bit_unpack_eta_out, expand_mask_poly_out, rej_ntt_poly};
 use crate::mldsa_common::polynomial::Polynomial;
 use crate::mldsa_lowmemory::aux_functions::unpack_z_row;
 use crate::mldsa_lowmemory::params::MLDSAParams;
@@ -15,28 +15,31 @@ pub(in crate::mldsa_lowmemory) fn expandA_elem(rho: &[u8; 32], i: usize, j: usiz
 
 /// Compute a row of the core signing operation
 /// Alg 7: 12: 𝐰 ← NTT−1(𝐀_hat ∘ NTT(𝐲))
-pub(in crate::mldsa_lowmemory) fn compute_w_row<P: MLDSAParams>(
+///
+/// Into `w_row`, which the caller holds: 𝐰 = 𝐀𝐲 gives 𝐲 away (where 𝑘 ≥ ℓ), so it is secret, and
+/// NTT(𝐲) and its products are held in `Secret`s here.
+pub(in crate::mldsa_lowmemory) fn compute_w_row_out<P: MLDSAParams>(
     rho: &[u8; 32],
     rho_p_p: &[u8; 64],
     kappa: u16,
     row: usize,
-) -> Polynomial {
+    w_row: &mut Polynomial,
+) {
     // One loop body for every column, the first added to a zero accumulator; see
-    // `compute_wp_approx_row`.
-    let mut acc = Polynomial::new();
+    // `compute_wp_approx_row`. Each product is taken in the buffer NTT(𝐲[col]) is in.
+    let mut y_hat = Secret::<Polynomial>::new();
+    *w_row = Polynomial::new();
     for col in 0..P::l {
-        let mut y_hat = expand_mask_poly::<P>(rho_p_p, kappa + col as u16);
+        expand_mask_poly_out::<P>(rho_p_p, kappa + col as u16, &mut y_hat);
         y_hat.ntt();
-        let mut tmp = rej_ntt_poly(rho, &[col as u8, row as u8]);
-        tmp.multiply_ntt(&y_hat);
-        acc.add_ntt(&tmp);
+        y_hat.multiply_ntt(&rej_ntt_poly(rho, &[col as u8, row as u8]));
+        w_row.add_ntt(&y_hat);
     }
 
     // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
-    acc.reduce32();
-    acc.inv_ntt();
-    acc.conditional_add_q();
-    acc
+    w_row.reduce32();
+    w_row.inv_ntt();
+    w_row.conditional_add_q();
 }
 
 /// Algorithm 8 Line 9
@@ -98,17 +101,19 @@ pub(in crate::mldsa_lowmemory) fn compute_wp_approx_row<P: MLDSAParams, const SI
 /// 𝐳 is written into `z_out`, and `true` returned. `false` means the norm check rejected this
 /// component, and `z_out` then holds a partial value that the caller must discard.
 pub(in crate::mldsa_lowmemory) fn compute_z_component<P: MLDSAParams>(
-    s1: Polynomial,
+    s1: &Polynomial,
     rho_p_p: &[u8; 64],
     c_hat: &Polynomial,
     kappa: u16,
     col: usize,
     z_out: &mut Polynomial,
 ) -> bool {
-    let y = expand_mask_poly::<P>(rho_p_p, kappa + col as u16);
+    // 𝐲 is secret: it is held in a `Secret`.
+    let mut y = Secret::<Polynomial>::new();
+    expand_mask_poly_out::<P>(rho_p_p, kappa + col as u16, &mut y);
 
     // 𝑐𝐬1 ← NTT−1(𝑐_hat ∘ NTT(𝐬1)), built in place in the caller's buffer.
-    *z_out = s1;
+    *z_out = *s1;
     z_out.ntt();
     z_out.multiply_ntt(c_hat);
     z_out.inv_ntt();
@@ -120,12 +125,14 @@ pub(in crate::mldsa_lowmemory) fn compute_z_component<P: MLDSAParams>(
 }
 
 pub(in crate::mldsa_lowmemory) fn compute_w0cs2_component<P: MLDSAParams>(
-    s2: Polynomial,
+    s2: &Polynomial,
     w: &Polynomial,
     c_hat: &Polynomial,
     w0cs2_out: &mut Polynomial,
 ) -> bool {
-    let mut cs2 = s2;
+    // 𝑐𝐬2 is secret: it is held in a `Secret`.
+    let mut cs2 = Secret::<Polynomial>::new();
+    *cs2 = *s2;
     cs2.ntt();
     cs2.multiply_ntt(c_hat);
     cs2.inv_ntt();
@@ -145,11 +152,11 @@ pub(in crate::mldsa_lowmemory) fn compute_w0cs2_component<P: MLDSAParams>(
 }
 
 pub(in crate::mldsa_lowmemory) fn compute_ct0_component<P: MLDSAParams>(
-    t0_row: Polynomial,
+    t0_row: &Polynomial,
     c_hat: &Polynomial,
     ct0_out: &mut Polynomial,
 ) -> bool {
-    *ct0_out = t0_row;
+    *ct0_out = *t0_row;
     ct0_out.ntt();
     ct0_out.multiply_ntt(c_hat);
     ct0_out.inv_ntt();
@@ -157,17 +164,20 @@ pub(in crate::mldsa_lowmemory) fn compute_ct0_component<P: MLDSAParams>(
     !ct0_out.check_norm(P::gamma2)
 }
 
-/// Unpack a single s value from the packed representation.
+/// Unpack a single s value from the packed representation, into `s`, which the caller holds: it
+/// is secret.
 ///
 /// `B` is the packed buffer type, which is `P::S1Packed` or `P::S2Packed` depending on which of
 /// the two secret vectors is being unpacked.
-pub(in crate::mldsa_lowmemory) fn s_unpack<P: MLDSAParams, B: ZeroizablePrimitive + AsRef<[u8]>>(
+pub(in crate::mldsa_lowmemory) fn s_unpack_out<
+    P: MLDSAParams,
+    B: ZeroizablePrimitive + AsRef<[u8]>,
+>(
     s_packed: &Secret<B>,
     idx: usize,
-) -> Polynomial {
-    let mut s = Polynomial::new();
+    s: &mut Polynomial,
+) {
     let packed = (**s_packed).as_ref();
     let width = P::POLY_ETA_PACKED_LEN;
-    bit_unpack_eta_out::<P>(&packed[idx * width..(idx + 1) * width], &mut s);
-    s
+    bit_unpack_eta_out::<P>(&packed[idx * width..(idx + 1) * width], s);
 }

@@ -3,11 +3,12 @@
 //! what it needs in pieces, which generally means handling the matrices and vectors row-wise or entry-wise.
 
 use crate::mlkem_common::aux_functions::{
-    byte_decode, byte_encode_out, sample_ntt, sample_poly_CBD,
+    byte_decode, byte_encode_out, sample_ntt, sample_poly_CBD_out,
 };
 use crate::mlkem_common::polynomial::Polynomial;
 use crate::mlkem_lowmemory::mlkem::{N, POLY_BYTES, q};
 use crate::mlkem_lowmemory::params::MLKEMParams;
+use bouncycastle_utils::secret::Secret;
 
 /// Computes the element [i,j] of the A_hat public matrix
 pub(in crate::mlkem_lowmemory) fn expandA_elem(rho: &[u8; 32], i: usize, j: usize) -> Polynomial {
@@ -16,41 +17,39 @@ pub(in crate::mlkem_lowmemory) fn expandA_elem(rho: &[u8; 32], i: usize, j: usiz
 
 /// Computes a single row of the core keygen operation
 /// Alg 13: line 18: 𝐀_hat ∘ 𝐬_hat
-pub(in crate::mlkem_lowmemory) fn compute_A_hat_dot_s_hat<P: MLKEMParams>(
+///
+/// Into `t_hat_i`, which the caller holds; 𝐬̂ and its products are held in `Secret`s here.
+pub(in crate::mlkem_lowmemory) fn compute_A_hat_dot_s_hat_out<P: MLKEMParams>(
     rho: &[u8; 32],
     sigma: &[u8; 32],
     row: usize,
-) -> Polynomial {
-    let mut t_hat_i: Polynomial = {
-        let mut A_i0 = expandA_elem(rho, row, 0);
-        let mut s_0 = sample_poly_CBD(sigma, 0_u8, P::eta1);
-        s_0.ntt(); // now s_hat_0
-        A_i0.base_mult_montgomery(&s_0);
-
-        A_i0
-    };
-
-    for j in 1..P::k {
-        let mut A_ij = expandA_elem(rho, row, j);
-        let mut s_j = sample_poly_CBD(sigma, j as u8, P::eta1);
+    t_hat_i: &mut Polynomial,
+) {
+    // Each product is taken in the buffer 𝐬̂[𝑗] is sampled into, so that only that buffer holds
+    // anything secret; MultiplyNTTs is commutative, as the arithmetic of `base_mult_montgomery` is.
+    let mut s_j = Secret::<Polynomial>::new();
+    *t_hat_i = Polynomial::new();
+    for j in 0..P::k {
+        sample_poly_CBD_out(sigma, j as u8, P::eta1, &mut s_j);
         s_j.ntt(); // now s_hat_j
-        A_ij.base_mult_montgomery(&s_j);
-        t_hat_i.add(&A_ij);
+        s_j.base_mult_montgomery(&expandA_elem(rho, row, j));
+        t_hat_i.add(&s_j);
     }
     // during keygen we're working in the montgomery domain, not the regular NTT domain,
     // so here we do a convert_to_mont() instead of a reduce()
     t_hat_i.convert_to_mont();
-
-    t_hat_i
 }
 
 /// Compute a single row of the core encaps operation
 /// Alg 14: line 19: NTT−1(𝐀_hat_T ∘ 𝐲_hat)
-pub(in crate::mlkem_lowmemory) fn compute_A_hat_dot_y_hat<P: MLKEMParams>(
+///
+/// Into `u_i`, which the caller holds; 𝐲̂ and its products are held in `Secret`s here.
+pub(in crate::mlkem_lowmemory) fn compute_A_hat_dot_y_hat_out<P: MLKEMParams>(
     rho: &[u8; 32],
     r: &[u8; 32],
     row: usize,
-) -> Polynomial {
+    u_i: &mut Polynomial,
+) {
     // 4: for (𝑖 ← 0; 𝑖 < 𝑘; 𝑖++)
     //   ▷ re-generate matrix 𝐀 ∈ (ℤ256_𝑞 )𝑘×𝑘 sampled in Alg. 13
 
@@ -62,43 +61,36 @@ pub(in crate::mlkem_lowmemory) fn compute_A_hat_dot_y_hat<P: MLKEMParams>(
 
     // 19: 𝐮 ← NTT−1(𝐀_hat^⊺ ∘ 𝐲_hat) + 𝐞1
 
-    let mut u_i: Polynomial = {
-        let mut A_0i = expandA_elem(rho, 0, row);
-        let mut y_0 = sample_poly_CBD(r, /*N*/ 0, P::eta1);
-        y_0.ntt();
-        A_0i.base_mult_montgomery(&y_0);
-
-        A_0i
-    };
-
-    for j in 1..P::k {
-        let mut A_ji = expandA_elem(rho, j, row);
-        let mut y_j = sample_poly_CBD(r, /*N*/ j as u8, P::eta1);
+    // Each product is taken in the buffer 𝐲̂[𝑗] is sampled into; see
+    // `compute_A_hat_dot_s_hat_out`.
+    let mut y_j = Secret::<Polynomial>::new();
+    *u_i = Polynomial::new();
+    for j in 0..P::k {
+        sample_poly_CBD_out(r, /*N*/ j as u8, P::eta1, &mut y_j);
         y_j.ntt();
-        A_ji.base_mult_montgomery(&y_j);
-        u_i.add(&A_ji);
+        y_j.base_mult_montgomery(&expandA_elem(rho, j, row));
+        u_i.add(&y_j);
     }
     // The k-term sum is in (-2kq, 2kq); `inv_ntt`'s first butterfly adds two coefficients in
-    // i16, so it is reduced first (see `dot_product` in `pqc::mlkem` for the bound).
+    // i16, so it is reduced first (see `dot_product_out` in `pqc::mlkem` for the bound).
     u_i.poly_reduce();
     u_i.inv_ntt();
-
-    u_i
 }
 
 /// Compute a term of the output polynomial v of the core encaps operation based on a single row of t_hat_i and y_hat.
 /// Alg 14: line 21: 𝑣 ← NTT−1(𝐭_hat_T ∘ 𝐲_hat)
-pub(in crate::mlkem_lowmemory) fn compute_t_hat_dot_y_hat_row<P: MLKEMParams>(
+///
+/// Into `v_i`, which the caller holds: it is computed from the secret 𝐲̂.
+pub(in crate::mlkem_lowmemory) fn compute_t_hat_dot_y_hat_row_out<P: MLKEMParams>(
     r: &[u8; 32],
     t_hat_i: &Polynomial,
     row: usize,
-) -> Polynomial {
-    let mut y_i = sample_poly_CBD(r, /*N*/ row as u8, P::eta1);
-    y_i.ntt();
-    y_i.base_mult_montgomery(t_hat_i);
-    y_i.inv_ntt();
-
-    y_i
+    v_i: &mut Polynomial,
+) {
+    sample_poly_CBD_out(r, /*N*/ row as u8, P::eta1, v_i);
+    v_i.ntt();
+    v_i.base_mult_montgomery(t_hat_i);
+    v_i.inv_ntt();
 }
 
 pub(in crate::mlkem_lowmemory) fn pack_t_hat_row<P: MLKEMParams>(
@@ -136,7 +128,7 @@ pub(in crate::mlkem_lowmemory) fn pack_s_hat_row<P: MLKEMParams>(
 /// which packs a single row of the polynomial vector u according to the packing coefficient 𝑑𝑢
 /// into the correct location within the ciphertext
 pub(in crate::mlkem_lowmemory) fn compress_u_row<P: MLKEMParams, const CT_LEN: usize>(
-    u_i: Polynomial,
+    u_i: &Polynomial,
     row: usize,
     ct: &mut [u8; CT_LEN],
 ) {
@@ -345,7 +337,7 @@ mod tests {
                 x = (x + 1) % q;
             }
             let mut ct = [0u8; CT_LEN];
-            compress_u_row::<P, CT_LEN>(u_i, row, &mut ct);
+            compress_u_row::<P, CT_LEN>(&u_i, row, &mut ct);
             let f = fields(d, &ct[row * row_len..(row + 1) * row_len]);
             for (n, &c) in f.iter().enumerate() {
                 assert_eq!(c, compress_ref(d, u_i[n]), "d={d} row {row} coefficient {n}");

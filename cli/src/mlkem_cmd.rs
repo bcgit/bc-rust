@@ -81,7 +81,7 @@ pub(crate) struct ParameterSet<
     keygen: fn(&mut dyn RNG) -> Result<(PK, SK), KEMError>,
     keygen_from_seed: fn(&KeyMaterial<SEED_LEN>) -> Result<(PK, SK), KEMError>,
     keypair_consistency_check: fn(&PK, &SK) -> Result<(), KEMError>,
-    pk_of: fn(&SK) -> PK,
+    pk_of: fn(&SK) -> Result<PK, KEMError>,
     encaps: fn(&PK, &mut dyn RNG) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>,
     decaps: fn(&SK, &[u8; CT_LEN]) -> Result<KeyMaterial<SS_LEN>, KEMError>,
 }
@@ -98,7 +98,7 @@ pub(crate) const MLKEM512_SET: ParameterSet<
     keygen: MLKEM512::keygen,
     keygen_from_seed: MLKEM512::keygen_from_seed,
     keypair_consistency_check: MLKEM512::keypair_consistency_check,
-    pk_of: |sk| sk.pk().clone(),
+    pk_of: |sk| sk.pk().cloned(),
     encaps: |pk, rng| pk.encaps(rng, ()),
     decaps: |sk, ct| sk.decaps(ct, ()),
 };
@@ -115,7 +115,7 @@ pub(crate) const MLKEM768_SET: ParameterSet<
     keygen: MLKEM768::keygen,
     keygen_from_seed: MLKEM768::keygen_from_seed,
     keypair_consistency_check: MLKEM768::keypair_consistency_check,
-    pk_of: |sk| sk.pk().clone(),
+    pk_of: |sk| sk.pk().cloned(),
     encaps: |pk, rng| pk.encaps(rng, ()),
     decaps: |sk, ct| sk.decaps(ct, ()),
 };
@@ -132,7 +132,7 @@ pub(crate) const MLKEM1024_SET: ParameterSet<
     keygen: MLKEM1024::keygen,
     keygen_from_seed: MLKEM1024::keygen_from_seed,
     keypair_consistency_check: MLKEM1024::keypair_consistency_check,
-    pk_of: |sk| sk.pk().clone(),
+    pk_of: |sk| sk.pk().cloned(),
     encaps: |pk, rng| pk.encaps(rng, ()),
     decaps: |sk, ct| sk.decaps(ct, ()),
 };
@@ -177,7 +177,11 @@ pub(crate) fn mlkem_cmd<
             let pk = {
                 let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
                 (set.pk_of)(&sk)
-            };
+            }
+            .unwrap_or_else(|e| {
+                eprintln!("Error: {e:?}");
+                exit(-1)
+            });
             write_bytes_or_hex(&pk.encode(), output_hex);
         }
         MLKEMAction::CheckConsistency => {

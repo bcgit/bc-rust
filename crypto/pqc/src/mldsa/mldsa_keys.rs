@@ -6,7 +6,7 @@ use crate::mldsa::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
 use crate::mldsa::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
 use crate::mldsa::params::{PrivateKeyLen, PublicKeyLen, SignatureLen};
 use crate::mldsa_common::aux_functions::{
-    bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, simple_bit_pack_t1,
+    bit_pack_eta, bit_pack_t0, bit_unpack_eta_out, bit_unpack_t0_out, simple_bit_pack_t1,
     simple_bit_unpack_t1,
 };
 use bouncycastle_core::errors::{KeyDecodingError, KeyMaterialError, SignatureError};
@@ -670,7 +670,7 @@ impl<P: MLDSAParams> MLDSAPrivateKey<P> {
         for (s1_i, sk_chunk) in key.s1_hat.elems_mut().iter_mut().zip(sk_chunks) {
             // 3: 𝐬1[𝑖] ← BitUnpack(𝑦𝑖, 𝜂, 𝜂)
             //  ▷ this may lie outside [−𝜂, 𝜂] if input is malformed
-            s1_i.coeffs.copy_from_slice(&bit_unpack_eta::<P>(sk_chunk).coeffs);
+            bit_unpack_eta_out::<P>(sk_chunk, s1_i);
 
             // check that the coefficients are within the expected range
             for coeff in s1_i.coeffs.iter() {
@@ -690,7 +690,7 @@ impl<P: MLDSAParams> MLDSAPrivateKey<P> {
         for (s2_i, sk_chunk) in key.s2_hat.elems_mut().iter_mut().zip(sk_chunks) {
             // 6: 𝐬2[𝑖] ← BitUnpack(𝑧𝑖, 𝜂, 𝜂)
             //  ▷ this may lie outside [−𝜂, 𝜂] if input is malformed
-            s2_i.coeffs.copy_from_slice(&bit_unpack_eta::<P>(sk_chunk).coeffs);
+            bit_unpack_eta_out::<P>(sk_chunk, s2_i);
 
             // check that the coefficients are within the expected range
             for coeff in s2_i.coeffs.iter() {
@@ -713,7 +713,7 @@ impl<P: MLDSAParams> MLDSAPrivateKey<P> {
         debug_assert_eq!(last_chunk.len(), 0);
 
         for (t0_i, sk_chunk) in key.t0_hat.elems_mut().iter_mut().zip(sk_chunks) {
-            t0_i.coeffs.copy_from_slice(&bit_unpack_t0(sk_chunk).coeffs);
+            bit_unpack_t0_out(sk_chunk, t0_i);
         }
         // Deviation from the FIPS:
         // Convert this to ntt form as part of decode
@@ -780,7 +780,8 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     ///
     /// # Errors
     /// [`SignatureError::RejectionLimitExceeded`] if the bounded rejection loop (FIPS 204
-    /// Section 6.2) runs out, which has negligible probability; nothing is written.
+    /// Section 6.2) runs out, which has negligible probability, and the RNG's error if `rnd`
+    /// cannot be drawn; nothing is written.
     ///
     /// [`SigningKey::create_signer`]: bouncycastle_core::signature_key::SigningKey::create_signer
     fn sign_mu<const SIG_LEN: usize>(
@@ -797,6 +798,7 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     }
 
     /// As [`sign_mu`](Self::sign_mu), writing into `output`; returns the number of bytes written.
+    /// `output` is zeroized first and left so on every error.
     fn sign_mu_out<const SIG_LEN: usize>(
         &self,
         mu: &[u8; MLDSA_MU_LEN],
@@ -806,6 +808,8 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
+        // Cleared before the draw, so that an RNG failure leaves no stale bytes in it.
+        output.fill(0);
         let mut rnd = Rnd::new();
         draw_rnd(rng, &mut rnd)?;
         self.sign_mu_with_rnd_out(mu, &rnd, output)

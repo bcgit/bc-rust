@@ -6,7 +6,7 @@ use crate::mldsa::matrix::{MatrixTrait, VectorTrait};
 use crate::mldsa::mldsa::N;
 use crate::mldsa::params::MLDSAParams;
 use crate::mldsa_common::aux_functions::{
-    bit_unpack_gamma1, bitpack_gamma1, expand_mask_poly, power_2_round, rej_bounded_poly,
+    bit_unpack_gamma1, bitpack_gamma1, expand_mask_poly_out, power_2_round, rej_bounded_poly_out,
     rej_ntt_poly,
 };
 
@@ -167,11 +167,15 @@ pub(in crate::mldsa) fn expandS<P: MLDSAParams>(
     s2: &mut P::VecK,
 ) {
     for r in 0..P::l {
-        s1.elems_mut()[r] = rej_bounded_poly::<P>(rho, &(r as u16).to_le_bytes());
+        rej_bounded_poly_out::<P>(rho, &(r as u16).to_le_bytes(), &mut s1.elems_mut()[r]);
     }
 
     for r in 0..P::k {
-        s2.elems_mut()[r] = rej_bounded_poly::<P>(rho, &(r as u16 + P::l as u16).to_le_bytes());
+        rej_bounded_poly_out::<P>(
+            rho,
+            &(r as u16 + P::l as u16).to_le_bytes(),
+            &mut s2.elems_mut()[r],
+        );
     }
 }
 
@@ -190,16 +194,14 @@ pub(in crate::mldsa) fn power_2_round_vec<V: VectorTrait>(r: &mut V, r1: &mut V)
 /// Samples a vector 𝐲 ∈ 𝑅ℓ such that each polynomial 𝐲[𝑟] has coefficients between −𝛾1 + 1 and 𝛾1.
 /// Input: A seed 𝜌 ∈ 𝔹64 and a nonnegative integer 𝜇.
 /// Output: Vector 𝐲 ∈ 𝑅ℓ .
-pub(in crate::mldsa) fn expand_mask<P: MLDSAParams>(rho: &[u8; 64], mu: u16) -> P::VecL {
-    let mut y = P::VecL::new();
-
+///
+/// Into `y`, which the caller holds: 𝐲 is secret.
+pub(in crate::mldsa) fn expand_mask_out<P: MLDSAParams>(rho: &[u8; 64], mu: u16, y: &mut P::VecL) {
     // 2: for 𝑟 from 0 to ℓ − 1 do
-    // 3-5: lines 3 to 5 are one coordinate, see `expand_mask_poly`.
+    // 3-5: lines 3 to 5 are one coordinate, see `expand_mask_poly_out`.
     for r in 0..P::l {
-        y.elems_mut()[r] = expand_mask_poly::<P>(rho, mu + (r as u16));
+        expand_mask_poly_out::<P>(rho, mu + (r as u16), &mut y.elems_mut()[r]);
     }
-
-    y
 }
 
 /// Creates the hint vector from two Vector<k>'s, and also returns its hamming weight (ie the number of 1's).

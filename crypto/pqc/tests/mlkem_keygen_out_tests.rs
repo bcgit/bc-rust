@@ -10,7 +10,6 @@ use bouncycastle_core::traits::{KEMDecapsulator, PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::FailingRNG;
 use bouncycastle_digest::hkdf::HkdfDescription;
 use bouncycastle_digest::sha2::{SHA256, SHA512};
-use bouncycastle_pqc::mlkem::hazmat::EncapsWithRandomness;
 use bouncycastle_pqc::mlkem::{
     KdfParams, KeyLen, MLKEM512, MLKEM512_CT_LEN, MLKEM512_HKDF_SHA256_SS_LEN, MLKEM512_PK_LEN,
     MLKEM512PrivateKey, MLKEM512PrivateKeyExpanded, MLKEM768, MLKEM768_CT_LEN,
@@ -46,12 +45,12 @@ macro_rules! keygen_out_tests {
                 let (pk, sk) = $alg::keygen_from_seed(&seed(1)).unwrap();
                 let mut sk_out = $sk::zeroized();
                 $alg::keygen_from_seed_out(&seed(1), &mut sk_out).unwrap();
-                assert_eq!(*sk_out.pk(), pk);
+                assert_eq!(*sk_out.pk().unwrap(), pk);
                 assert!(sk_out == sk);
-                assert_eq!(sk_out.pk().encode(), pk.encode());
+                assert_eq!(sk_out.pk().unwrap().encode(), pk.encode());
                 assert_eq!(sk_out.encode(), sk.encode());
                 assert!(sk_out.seed() == Some(seed(1)));
-                $alg::keypair_consistency_check(sk_out.pk(), &sk_out).unwrap();
+                $alg::keypair_consistency_check(sk_out.pk().unwrap(), &sk_out).unwrap();
             }
 
             #[test]
@@ -59,10 +58,10 @@ macro_rules! keygen_out_tests {
                 let (pk, sk) = $alg::keygen(&mut rng()).unwrap();
                 let mut sk_out = $sk::zeroized();
                 $alg::keygen_out(&mut rng(), &mut sk_out).unwrap();
-                assert_eq!(sk_out.pk().encode(), pk.encode());
+                assert_eq!(sk_out.pk().unwrap().encode(), pk.encode());
                 assert_eq!(sk_out.encode(), sk.encode());
 
-                let (ss, ct) = sk_out.pk().encaps(&mut rng(), ()).unwrap();
+                let (ss, ct) = sk_out.pk().unwrap().encaps(&mut rng(), ()).unwrap();
                 assert!(sk_out.decaps(&ct, ()).unwrap() == ss);
                 assert!(sk.decaps(&ct, ()).unwrap() == ss);
             }
@@ -73,7 +72,7 @@ macro_rules! keygen_out_tests {
                 let (pk2, sk2) = $alg::keygen_from_seed(&seed(2)).unwrap();
                 let (_pk, mut sk) = $alg::keygen_from_seed(&seed(1)).unwrap();
                 $alg::keygen_from_seed_out(&seed(2), &mut sk).unwrap();
-                assert_eq!(sk.pk().encode(), pk2.encode());
+                assert_eq!(sk.pk().unwrap().encode(), pk2.encode());
                 assert_eq!(sk.encode(), sk2.encode());
                 assert!(sk.seed() == Some(seed(2)));
             }
@@ -93,6 +92,7 @@ macro_rules! keygen_out_tests {
                 assert_eq!(sk.encode(), zero_sk);
                 assert!(sk.seed().is_none());
                 assert_eq!(sk.decaps(&[0u8; $ct_len], ()).err(), Some(ZEROIZED));
+                assert_eq!(sk.pk().err(), Some(ZEROIZED));
 
                 // An RNG weaker than the parameter set.
                 let (_pk, mut sk) = $alg::keygen_from_seed(&seed(1)).unwrap();
@@ -116,6 +116,7 @@ macro_rules! keygen_out_tests {
                 ));
                 assert_eq!(sk.encode(), $sk::zeroized().encode());
                 assert!(sk.seed().is_none());
+                assert_eq!(sk.pk().err(), Some(ZEROIZED));
             }
 
             /// A decoded key carries no seed; generating into it gives it the new one.
@@ -126,7 +127,7 @@ macro_rules! keygen_out_tests {
                 assert!(sk.seed().is_none());
                 $alg::keygen_from_seed_out(&seed(2), &mut sk).unwrap();
                 let (pk2, sk2) = $alg::keygen_from_seed(&seed(2)).unwrap();
-                assert_eq!(sk.pk().encode(), pk2.encode());
+                assert_eq!(sk.pk().unwrap().encode(), pk2.encode());
                 assert_eq!(sk.encode(), sk2.encode());
                 assert!(sk.seed() == Some(seed(2)));
             }
@@ -135,27 +136,29 @@ macro_rules! keygen_out_tests {
             fn the_consistency_check_refuses_an_unfilled_key() {
                 let (pk, sk) = $alg::keygen_from_seed(&seed(1)).unwrap();
                 let zero_sk = $sk::zeroized();
-                // The unfilled key and the all-zero public key it holds agree, and are refused.
-                assert_eq!($alg::keypair_consistency_check(zero_sk.pk(), &zero_sk), Err(ZEROIZED));
+                // The all-zero public key an unfilled key holds, decoded from its encoding.
+                let zero_pk = decode_like(&pk, &[0u8; $pk_len]);
+                assert_eq!($alg::keypair_consistency_check(&zero_pk, &zero_sk), Err(ZEROIZED));
                 assert_eq!($alg::keypair_consistency_check(&pk, &zero_sk), Err(ZEROIZED));
                 assert!(matches!(
-                    $alg::keypair_consistency_check(zero_sk.pk(), &sk),
+                    $alg::keypair_consistency_check(&zero_pk, &sk),
                     Err(KEMError::ConsistencyCheckFailed(_))
                 ));
                 assert_eq!($alg::keypair_consistency_check(&pk, &sk), Ok(()));
             }
 
-            /// Documented exceptions: `pk()` and the encoders have no error to give. An unfilled
-            /// key hands out the all-zero public key, which encapsulates.
+            /// An unfilled key, plain or expanded, hands out no public key: the all-zero one it
+            /// holds would hide nothing encapsulated to it. Its encoding, which has no error to
+            /// give, is the all-zero key.
             #[test]
-            fn what_does_not_refuse_an_unfilled_key() {
+            fn an_unfilled_key_has_no_public_key() {
                 let sk = $sk::zeroized();
-                assert_eq!(sk.pk().encode(), [0u8; $pk_len]);
+                assert_eq!(sk.pk().err(), Some(ZEROIZED));
+                assert_eq!($sk_exp::from(&sk).pk().err(), Some(ZEROIZED));
                 assert_eq!(sk.encode(), $sk::zeroized().encode());
-                let (_ss, ct) = sk.pk().encaps(&mut rng(), ()).unwrap();
-                assert_ne!(ct, [0u8; $ct_len]);
-                let (_ss, ct): (_, [u8; $ct_len]) = sk.pk().encaps_with_randomness([1u8; 32]);
-                assert_ne!(ct, [0u8; $ct_len]);
+
+                let (_pk, sk) = $alg::keygen_from_seed(&seed(1)).unwrap();
+                assert!($sk_exp::from(&sk).pk().unwrap() == sk.pk().unwrap());
             }
 
             /// FIPS 203 Section 7.2 asks of an encapsulation key its type and modulus checks only:

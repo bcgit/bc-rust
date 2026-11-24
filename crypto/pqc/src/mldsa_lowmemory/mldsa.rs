@@ -373,8 +373,8 @@ use crate::mldsa_lowmemory::aux_functions::{
     ZEROED_HINT_ROW, hint_get, make_hint_row, unpack_c_tilde, unpack_h_row, use_hint_row,
 };
 use crate::mldsa_lowmemory::low_memory_helpers::{
-    compute_ct0_component, compute_w_row, compute_w0cs2_component, compute_wp_approx_row,
-    compute_z_component, s_unpack,
+    compute_ct0_component, compute_w_row_out, compute_w0cs2_component, compute_wp_approx_row,
+    compute_z_component, s_unpack_out,
 };
 use crate::mldsa_lowmemory::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPrivateKeyTrait};
 use crate::mldsa_lowmemory::mldsa_keys::{MLDSAPublicKeyInternalTrait, MLDSAPublicKeyTrait};
@@ -383,14 +383,13 @@ use crate::mldsa_lowmemory::params::{
     SignatureLen,
 };
 use crate::mldsa_lowmemory::{MLDSAPublicKey, MLDSASeedPrivateKey};
-use bouncycastle_core::errors::{RNGError, SignatureError};
+use bouncycastle_core::errors::{KeyMaterialError, RNGError, SignatureError};
 use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
-    OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, sign_out_with_signer,
-    verify_with_verifier,
+    OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, verify_with_verifier,
 };
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, FinishToken, Hash, RNG, SignatureSigner, SignatureVerifier,
@@ -505,6 +504,13 @@ impl<P: MLDSAParams> MLDSATrait<P> for MLDSA<P> {
     ) -> Result<(MLDSAPublicKey<P>, MLDSASeedPrivateKey<P>), SignatureError> {
         Self::keygen_internal(seed)
     }
+    fn keygen_from_seed_out(
+        seed: &KeyMaterial<32>,
+        pk: &mut MLDSAPublicKey<P>,
+        sk: &mut MLDSASeedPrivateKey<P>,
+    ) -> Result<(), SignatureError> {
+        sk.fill_out(seed, pk)
+    }
     /// Imports a secret key from both a seed and an encoded_sk.
     ///
     /// This is a convenience function to expand the key from seed and compare it against
@@ -540,6 +546,9 @@ impl<P: MLDSAParams> MLDSATrait<P> for MLDSA<P> {
         pk: &MLDSAPublicKey<P>,
         sk: &MLDSASeedPrivateKey<P>,
     ) -> Result<(), SignatureError> {
+        // Two keys that were never filled agree with each other, and are not a key pair.
+        pk.check_filled()?;
+        sk.check_filled()?;
         // tr = H(pk) was computed when the key was built, so no derivation is needed here.
         if bouncycastle_utils::ct::ct_eq_bytes(sk.tr(), &pk.compute_tr()) {
             Ok(())
@@ -581,8 +590,12 @@ pub(in crate::mldsa_lowmemory) fn sign_internal<
 
     // s1 and s2 are computed once here and kept in the compressed encoding specified in FIPS 204
     // Alg 17, one polynomial unpacked at a time where it is used.
-    let s1_packed: Secret<P::S1Packed> = sk.compute_s1_packed();
-    let s2_packed: Secret<P::S2Packed> = sk.compute_s2_packed();
+    let mut s1_packed = Secret::<P::S1Packed>::new();
+    sk.compute_s1_packed_out(&mut s1_packed);
+    let mut s2_packed = Secret::<P::S2Packed>::new();
+    sk.compute_s2_packed_out(&mut s2_packed);
+    // A row of 𝐬1, 𝐬2 or 𝐭0, unpacked or derived where it is used.
+    let mut key_row = Secret::<Polynomial>::new();
 
     // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
     // skip: mu has already been provided
@@ -625,7 +638,9 @@ pub(in crate::mldsa_lowmemory) fn sign_internal<
             let mut hash = H::new();
             hash.do_update(mu);
             for row in 0..P::k {
-                let mut w = compute_w_row::<P>(sk.rho(), &rho_p_p, kappa, row);
+                // 𝐰 is secret until it is cut down to 𝐰1 in place.
+                let mut w = Secret::<Polynomial>::new();
+                compute_w_row_out::<P>(sk.rho(), &rho_p_p, kappa, row, &mut w);
                 w.high_bits_inplace::<P>();
                 hash.do_update(w.w1_encode::<P>().as_ref());
             }
@@ -650,15 +665,10 @@ pub(in crate::mldsa_lowmemory) fn sign_internal<
         // 18-23 (z path): compute and encode each z polynomial directly into the caller buffer.
         let mut rejected = false;
         for col in 0..P::l {
-            let mut z = Polynomial::new();
-            if !compute_z_component::<P>(
-                s_unpack::<P, _>(&s1_packed, col),
-                &rho_p_p,
-                &c_hat,
-                kappa,
-                col,
-                &mut z,
-            ) {
+            // 𝐳 = 𝐲 + 𝑐𝐬1, secret until a round is accepted, and in a rejected one for good.
+            let mut z = Secret::<Polynomial>::new();
+            s_unpack_out::<P, _>(&s1_packed, col, &mut key_row);
+            if !compute_z_component::<P>(&key_row, &rho_p_p, &c_hat, kappa, col, &mut z) {
                 rejected = true;
                 break;
             }
@@ -676,36 +686,31 @@ pub(in crate::mldsa_lowmemory) fn sign_internal<
         // 19-28 (hint path): recompute rows as needed and write the packed hint directly.
         let mut hint_count = 0usize;
         for row in 0..P::k {
-            let mut w = compute_w_row::<P>(sk.rho(), &rho_p_p, kappa, row);
-            let mut tmp = Polynomial::new();
-            if !compute_w0cs2_component::<P>(
-                s_unpack::<P, _>(&s2_packed, row),
-                &w,
-                &c_hat,
-                &mut tmp,
-            ) {
+            let mut w = Secret::<Polynomial>::new();
+            compute_w_row_out::<P>(sk.rho(), &rho_p_p, kappa, row, &mut w);
+            // 𝐰0 − 𝑐𝐬2 + 𝑐𝐭0 and 𝑐𝐭0, derived from the key.
+            let mut w0_cs2_ct0 = Secret::<Polynomial>::new();
+            let mut ct0 = Secret::<Polynomial>::new();
+            s_unpack_out::<P, _>(&s2_packed, row, &mut key_row);
+            if !compute_w0cs2_component::<P>(&key_row, &w, &c_hat, &mut w0_cs2_ct0) {
                 rejected = true;
                 break;
             }
 
-            let mut ct0 = Polynomial::new();
-            if !compute_ct0_component::<P>(
-                // t0 is not kept in any form: `compute_t0_row` re-derives this row from the packed
-                // s1 and s2 each time.
-                sk.compute_t0_row(row, &s1_packed, &s2_packed),
-                &c_hat,
-                &mut ct0,
-            ) {
+            // t0 is not kept in any form: `compute_t0_row_out` re-derives this row from the
+            // packed s1 and s2 each time.
+            sk.compute_t0_row_out(row, &s1_packed, &s2_packed, &mut key_row);
+            if !compute_ct0_component::<P>(&key_row, &c_hat, &mut ct0) {
                 rejected = true;
                 break;
             }
 
-            tmp.add_ntt(&ct0);
-            tmp.conditional_add_q();
+            w0_cs2_ct0.add_ntt(&ct0);
+            w0_cs2_ct0.conditional_add_q();
 
             w.high_bits_inplace::<P>();
             let mut hint_row = ZEROED_HINT_ROW;
-            let weight = make_hint_row::<P>(&tmp, &w, &mut hint_row);
+            let weight = make_hint_row::<P>(&w0_cs2_ct0, &w, &mut hint_row);
             let next_hint_count = hint_count + weight as usize;
 
             // mutants note: don't have a test vector that exercises this condition,
@@ -830,10 +835,35 @@ pub trait MLDSATrait<P: MLDSAParams>: Sized {
         rng.fill_keymaterial_out(&mut seed)?;
         Self::keygen_from_seed(&seed)
     }
+    /// [`keygen`](Self::keygen) into keys the caller holds: each field of the private key is
+    /// computed in `sk` itself, so no copy of it is staged on the way and none is left behind by
+    /// a move, which wipes nothing. Start from [`MLDSASeedPrivateKey::zeroized`] and
+    /// [`MLDSAPublicKey::zeroized`]. Both keys are cleared first and left so on every error.
+    fn keygen_out(
+        rng: &mut dyn RNG,
+        pk: &mut MLDSAPublicKey<P>,
+        sk: &mut MLDSASeedPrivateKey<P>,
+    ) -> Result<(), SignatureError> {
+        pk.clear();
+        sk.clear();
+        if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
+        }
+        let mut seed = KeyMaterial::<32>::new();
+        rng.fill_keymaterial_out(&mut seed)?;
+        Self::keygen_from_seed_out(&seed, pk, sk)
+    }
     /// Imports a secret key from a seed.
     fn keygen_from_seed(
         seed: &KeyMaterial<32>,
     ) -> Result<(MLDSAPublicKey<P>, MLDSASeedPrivateKey<P>), SignatureError>;
+    /// [`keygen_from_seed`](Self::keygen_from_seed) into keys the caller holds; see
+    /// [`keygen_out`](Self::keygen_out).
+    fn keygen_from_seed_out(
+        seed: &KeyMaterial<32>,
+        pk: &mut MLDSAPublicKey<P>,
+        sk: &mut MLDSASeedPrivateKey<P>,
+    ) -> Result<(), SignatureError>;
     /// Imports a secret key from a seed and checks it against the same key in the FIPS 204
     /// Algorithm 24 skEncode() form, `FULL_SK_LEN` bytes, with a constant-time comparison.
     ///
@@ -862,14 +892,25 @@ pub trait MLDSATrait<P: MLDSAParams>: Sized {
 
 impl<P: MLDSAParams> SignatureAlgorithm for MLDSA<P> {}
 
-/// Draws `rnd` (FIPS 204 Section 3.4: "the 32-byte random value rnd shall be generated by the
-/// cryptographic module that generates the signature").
+/// Draws `rnd` (FIPS 204 Section 5.4: "the 32-byte random value 𝑟𝑛𝑑 shall be generated by the
+/// cryptographic module that generates the signature (i.e., that runs ML-DSA.Sign_internal)").
 /// Into `rnd`, so that the bytes go from the RNG to a wiped slot and not through a return value.
 pub(in crate::mldsa_lowmemory) fn draw_rnd(
     rng: &mut dyn RNG,
     rnd: &mut Rnd,
 ) -> Result<(), SignatureError> {
     rng.next_bytes_out(&mut rnd[..])?;
+    Ok(())
+}
+
+/// Refuses a private key that was never filled, by its `tr`; see
+/// [`MLDSASeedPrivateKey::zeroized`].
+pub(in crate::mldsa_lowmemory) fn check_filled_tr(
+    tr: &[u8; MLDSA_TR_LEN],
+) -> Result<(), SignatureError> {
+    if *tr == [0u8; MLDSA_TR_LEN] {
+        return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+    }
     Ok(())
 }
 
@@ -967,6 +1008,27 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, const SIG_LEN: usize>
     }
 }
 
+/// The body of the one-shots over a message: mu built over `msg` in this frame, then Algorithm
+/// 7 with `rnd`, which the caller holds. No signer is built, so `rnd` is not moved with one and
+/// left behind.
+fn sign_msg_with_rnd<
+    P: SignatureLen<SIG_LEN>,
+    SK: MLDSAPrivateKeyTrait<P>,
+    const SIG_LEN: usize,
+>(
+    sk: &SK,
+    msg: &[u8],
+    ctx: Option<&[u8]>,
+    rnd: &[u8; MLDSA_RND_LEN],
+    output: &mut [u8; SIG_LEN],
+) -> Result<usize, SignatureError> {
+    output.fill(0);
+    let mut mu_builder = sk.create_mu_builder(ctx)?;
+    mu_builder.do_update(msg);
+    let mu = mu_builder.do_final();
+    sk.sign_mu_with_rnd_out(&mu, rnd, output)
+}
+
 /*** The role impls, for the parameter set the key belongs to ***/
 
 impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> SigningKey<MLDSA<P>, SIG_LEN>
@@ -998,8 +1060,10 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotSigningKey<MLDSA<P>,
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        let signer = SigningKey::<MLDSA<P>, SIG_LEN>::create_signer(self, rng, ctx);
-        sign_out_with_signer(signer, msg, output)
+        output.fill(0);
+        let mut rnd = Rnd::new();
+        draw_rnd(rng, &mut rnd)?;
+        sign_msg_with_rnd::<P, Self, SIG_LEN>(self, msg, ctx, &rnd, output)
     }
 }
 
@@ -1030,9 +1094,7 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        let signer =
-            DeterministicSigningKey::<MLDSA<P>, SIG_LEN>::create_signer_deterministic(self, ctx);
-        sign_out_with_signer(signer, msg, output)
+        sign_msg_with_rnd::<P, Self, SIG_LEN>(self, msg, ctx, &[0u8; MLDSA_RND_LEN], output)
     }
 }
 

@@ -69,12 +69,12 @@ use crate::mldsa::{
     MLDSAPublicKeyExpanded, MLDSAPublicKeyTrait,
 };
 use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicPreHashSigningKey, DeterministicSigningKey,
     OneShotSigningKey, OneShotVerifyingKey, PreHash, PreHashAlgorithm, PreHashSigningKey,
-    PreHashVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, sign_out_with_signer,
-    verify_with_verifier,
+    PreHashVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, verify_with_verifier,
 };
 
 use crate::mldsa_common::mu_builder::compute_mu_ph;
@@ -271,6 +271,33 @@ impl<P: SignatureLen<SIG_LEN>, SK: MLDSAPrivateKeyTrait<P>, H: PreHash, const SI
             output,
         )
     }
+}
+
+/// The body of the one-shots over a message: the message hashed in this frame, then
+/// [`sign_ph_with_rnd`] with `rnd`, which the caller holds. No signer is built, so `rnd` is not
+/// moved with one and left behind.
+fn sign_msg_with_rnd<
+    P: SignatureLen<SIG_LEN>,
+    SK: MLDSAPrivateKeyTrait<P>,
+    H: PreHash,
+    const SIG_LEN: usize,
+>(
+    sk: &SK,
+    msg: &[u8],
+    ctx: Option<&[u8]>,
+    rnd: &[u8; MLDSA_RND_LEN],
+    output: &mut [u8; SIG_LEN],
+) -> Result<usize, SignatureError> {
+    output.fill(0);
+    check_filled_tr(sk.tr())?;
+    check_hash_strength::<P, H>()?;
+    const { assert!(H::OUTPUT_LEN <= MAX_PH_LEN, "the pre-hash digest fits MAX_PH_LEN") };
+    let mut hash = H::default();
+    hash.do_update(msg);
+    let mut ph = [0u8; MAX_PH_LEN];
+    let ph = &mut ph[..H::OUTPUT_LEN];
+    hash.finish_into(&finish_token(), ph);
+    sign_ph_with_rnd::<P, SK, H, SIG_LEN>(sk, ph, ctx, rnd, output)
 }
 
 /// Algorithm 4 from line 23 on, over a digest: the message representative with the hash's OID,
@@ -604,7 +631,10 @@ where
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        sign_out_with_signer(self.create_signer(rng, ctx), msg, output)
+        output.fill(0);
+        let mut rnd = Rnd::new();
+        draw_rnd(rng, &mut rnd)?;
+        sign_msg_with_rnd::<P, SK, H, SIG_LEN>(self.sk, msg, ctx, &rnd, output)
     }
 }
 
@@ -642,7 +672,7 @@ where
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        sign_out_with_signer(self.create_signer_deterministic(ctx), msg, output)
+        sign_msg_with_rnd::<P, SK, H, SIG_LEN>(self.sk, msg, ctx, &[0u8; MLDSA_RND_LEN], output)
     }
 }
 

@@ -78,7 +78,7 @@
 //!
 //! let mut sk = MLKEM768PrivateKey::zeroized();
 //! MLKEM768::keygen_out(&mut HashDRBG_SHA512::new_from_os(), &mut sk).unwrap();
-//! let pk = sk.pk();
+//! let pk = sk.pk().unwrap();
 //! ```
 //!
 //! See [`MLKEM`] and [`MLKEM::decaps_from_seed`] for an API that uses a merged
@@ -174,24 +174,28 @@
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //!
 //! Peak stack usage of each operation, measured with `mem_usage_benches/bench_mlkem_mem_usage` under
-//! `valgrind --tool=massif --stacks=yes` on 2026-11-21 (release build, one call; the Encaps and
+//! `valgrind --tool=massif --stacks=yes` on 2026-11-24 (release build, one call; the Encaps and
 //! Decaps rows are the operation alone, on a key the caller already holds, the encoded inputs being statics):
 //!
 //! | Operation | ML-KEM-512 | ML-KEM-768 | ML-KEM-1024 |
 //! |-----------|------------|------------|-------------|
-//! | KeyGen    | 12,696 | 16,664 | 22,584 |
-//! | KeyGen, `keygen_out` | 9,832 | 13,928 | 19,048 |
-//! | Encaps    | 16,920 | 23,896 | 31,960 |
-//! | Decaps    | 14,712 | 20,920 | 30,952 |
-//! | Encaps, expanded key | 16,856 | 23,896 | 32,808 |
-//! | Decaps, expanded key | 16,904 | 26,696 | 37,624 |
-//! | Encaps, HKDF | 18,744 | 23,576 | 31,640 |
-//! | Decaps, HKDF | 15,448 | 23,656 | 29,752 |
+//! | KeyGen    | 21,560 | 29,512 | 39,016 |
+//! | KeyGen, `keygen_out` | 11,480 | 15,976 | 21,480 |
+//! | Encaps    | 13,576 | 19,720 | 26,776 |
+//! | Decaps    | 12,824 | 18,264 | 25,032 |
+//! | Encaps, expanded key | 14,280 | 22,632 | 32,808 |
+//! | Decaps, expanded key | 16,920 | 26,136 | 37,064 |
+//! | Encaps, HKDF | 14,936 | 21,672 | 28,744 |
+//! | Decaps, HKDF | 13,264 | 18,616 | 25,224 |
 //!
 //! [`MLKEMTrait::keygen_out`] writes into a private key the caller holds, so no copy of it is left
-//! behind by a move. The expanded-key rows include building the expanded key. The HKDF rows
+//! behind by a move.
+//! Both KeyGen rows run the generation in a frame of its own and leave the keys in storage the
+//! caller holds: `keygen_out` writes into it, and the by-value form's result is moved into it, moves of
+//! the keys the `_out` form does not make.
+//! The expanded-key rows include building the expanded key. The HKDF rows
 //! derive a 32-byte key through [`MLKEM512_HKDF_SHA256`] and a 64-byte one through
-//! [`MLKEM768_HKDF_SHA512`] and [`MLKEM1024_HKDF_SHA512`] (measured 2026-11-24).
+//! [`MLKEM768_HKDF_SHA512`] and [`MLKEM1024_HKDF_SHA512`].
 //!
 //! Values are in bytes and include the harness's own frames. A do-nothing run of the same harness
 //! (`bench_do_nothing`) peaks at 7,680 bytes, reached in process start-up before `main` runs, so no

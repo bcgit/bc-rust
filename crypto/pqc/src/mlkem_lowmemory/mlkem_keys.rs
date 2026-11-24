@@ -1,14 +1,14 @@
-use crate::mlkem_common::aux_functions::sample_poly_CBD;
+use crate::mlkem_common::aux_functions::sample_poly_CBD_out;
 use crate::mlkem_common::polynomial::Polynomial;
 use crate::mlkem_lowmemory::low_memory_helpers::{
-    compute_A_hat_dot_s_hat, pack_s_hat_row, pack_t_hat_row, unpack_t_hat_row,
+    compute_A_hat_dot_s_hat_out, pack_s_hat_row, pack_t_hat_row, unpack_t_hat_row,
 };
 use crate::mlkem_lowmemory::mlkem::{G, H, MLKEM_SEED_LEN, POLY_BYTES, q};
 use crate::mlkem_lowmemory::params::{
     MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams, PrivateKeyLen, PublicKeyLen,
 };
-use bouncycastle_core::errors::{KEMError, KeyDecodingError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::errors::{KEMError, KeyDecodingError, KeyMaterialError};
+use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Hash, PrivateKey, PublicKey};
@@ -49,8 +49,8 @@ pub type MLKEM1024PrivateKeyExpanded = MLKEMSeedPrivateKeyExpanded<MLKEM1024Para
 /// trait (`P: PublicKeyLen<PK_LEN>`), which has one impl per parameter set and so lets the length
 /// be inferred from `P`.
 pub struct MLKEMPublicKey<P: MLKEMParams> {
-    pub(in crate::mlkem_lowmemory) t_hat_packed: P::TPacked,
-    pub(in crate::mlkem_lowmemory) rho: [u8; 32],
+    t_hat_packed: P::TPacked,
+    rho: [u8; 32],
 }
 
 // Written out rather than derived: `#[derive(Clone)]` would demand `P: Clone`, and `P` is a
@@ -249,6 +249,51 @@ impl<P: MLKEMParams> Clone for MLKEMSeedPrivateKey<P> {
 }
 
 impl<P: MLKEMParams> MLKEMSeedPrivateKey<P> {
+    /// The all-zero key: the key [`MLKEMTrait::keygen_out`](crate::mlkem_lowmemory::MLKEMTrait::keygen_out) and
+    /// [`MLKEMTrait::keygen_from_seed_out`](crate::mlkem_lowmemory::MLKEMTrait::keygen_from_seed_out) write into, so that the seeds are written where they
+    /// will live and never moved. It is not a generated key: until one of them fills it,
+    /// decapsulation with it and its [`pk()`](MLKEMPrivateKeyTrait::pk) are refused
+    /// ([`KeyMaterialError::ActingOnZeroizedKey`]), and its seed and encodings are all zero.
+    pub fn zeroized() -> Self {
+        Self {
+            _phantom: core::marker::PhantomData,
+            rho: [0u8; 32],
+            sigma: Secret::new(),
+            pk_hash: [0u8; 32],
+            z: Secret::new(),
+            seed_d: Secret::new(),
+        }
+    }
+
+    /// Whether the key holds a key. H(ek) says so: it is a SHA3-256 hash, and all zero in the
+    /// state [`zeroized`](Self::zeroized) makes and the `_out` generators leave on an error.
+    fn is_filled(&self) -> bool {
+        self.pk_hash != [0u8; 32]
+    }
+
+    /// Back to the all-zero key, the secret fields wiped.
+    pub(in crate::mlkem_lowmemory) fn clear(&mut self) {
+        self.rho = [0u8; 32];
+        self.sigma.zeroize();
+        self.pk_hash = [0u8; 32];
+        self.z.zeroize();
+        self.seed_d.zeroize();
+    }
+
+    /// The public key, derived from 𝜌 and 𝜎 (Algorithm 13) whether or not the key is filled.
+    fn derive_pk(&self) -> MLKEMPublicKey<P> {
+        MLKEMPublicKey::<P>::new(self.t_hat_packed(), self.rho)
+    }
+
+    /// FIPS 203 Algorithm 16 (ML-KEM.KeyGen_internal) from `seed` into this key, cleared first
+    /// and left so on an error; see [`MLKEMTrait::keygen_from_seed_out`](crate::mlkem_lowmemory::MLKEMTrait::keygen_from_seed_out).
+    pub(in crate::mlkem_lowmemory) fn fill_out(
+        &mut self,
+        seed: &KeyMaterial<64>,
+    ) -> Result<(), KEMError> {
+        self.fill(seed).map(|_pk| ())
+    }
+
     /// Create a new MLKEMSeedPrivateKey from a 64-byte KeyMaterial.
     /// Seed SecurityStrength must match algorithm security strength: 128-bit (ML-KEM-512), 192-bit (ML-KEM-768), or 256-bit (ML-KEM-1024).
     ///
@@ -262,6 +307,16 @@ impl<P: MLKEMParams> MLKEMSeedPrivateKey<P> {
     pub(in crate::mlkem_lowmemory) fn new_with_pk(
         seed: &KeyMaterial<64>,
     ) -> Result<(Self, MLKEMPublicKey<P>), KEMError> {
+        let mut sk = Self::zeroized();
+        let pk = sk.fill(seed)?;
+        Ok((sk, pk))
+    }
+
+    /// The key of `seed`, into this one, cleared first and left so on an error: its fields are
+    /// written where they live, straight out of the seed's `Secret`. Returns the public key,
+    /// which it derives for H(ek).
+    fn fill(&mut self, seed: &KeyMaterial<64>) -> Result<MLKEMPublicKey<P>, KEMError> {
+        self.clear();
         if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
             || seed.key_len() != 64
         {
@@ -276,21 +331,13 @@ impl<P: MLKEMParams> MLKEMSeedPrivateKey<P> {
             ));
         }
 
-        // These are Secret-safe because we're using .copy_from_slice directly out of one Secret<[u8]>
-        // into another and the contents are never touching a non-Secret buffer.
-        let mut seed_d = Secret::<[u8; 32]>::new();
-        seed_d.as_mut().copy_from_slice(seed.ref_to_bytes()[..32].try_into().unwrap());
-        let mut z = Secret::<[u8; 32]>::new();
-        z.as_mut().copy_from_slice(seed.ref_to_bytes()[32..].try_into().unwrap());
+        self.seed_d.copy_from_slice(&seed.ref_to_bytes()[..32]);
+        self.z.copy_from_slice(&seed.ref_to_bytes()[32..]);
+        self.compute_rho_and_sigma();
+        let pk = self.derive_pk();
+        self.pk_hash = pk.compute_hash();
 
-        let (rho, sigma) = Self::compute_rho_and_sigma(&seed_d);
-
-        let mut sk =
-            Self { _phantom: core::marker::PhantomData, rho, sigma, pk_hash: [0u8; 32], z, seed_d };
-        let pk = sk.pk();
-        sk.pk_hash = pk.compute_hash();
-
-        Ok((sk, pk))
+        Ok(pk)
     }
     /// Algorithm 16 line 3, dk ← (dkPKE ‖ ek ‖ H(ek) ‖ 𝑧), given the public key, which the seed key
     /// derives and the expanded key holds.
@@ -307,7 +354,9 @@ impl<P: MLKEMParams> MLKEMSeedPrivateKey<P> {
         /* dk_pke */
         // Alg 13; line 20: dkPKE ← ByteEncode12(𝐬)
         for i in 0..P::k {
-            pack_s_hat_row::<P>(&self.compute_s_hat_row(i), i, out);
+            let mut s_hat_i = Secret::<Polynomial>::new();
+            self.compute_s_hat_row_out(i, &mut s_hat_i);
+            pack_s_hat_row::<P>(&s_hat_i, i, out);
         }
         pos += P::k * POLY_BYTES;
 
@@ -331,21 +380,22 @@ impl<P: MLKEMParams> MLKEMSeedPrivateKey<P> {
     ///  ▷ expand 32+1 bytes to two pseudorandom 32-byte seeds1
     /// rho: public seed
     /// sigma: noise seed
-    fn compute_rho_and_sigma(seed_d: &[u8; 32]) -> ([u8; 32], Secret<[u8; 32]>) {
+    ///
+    /// From the key's 𝑑 into its 𝜌 and 𝜎.
+    fn compute_rho_and_sigma(&mut self) {
         // Only the second half of the output is secret, but we'll wrap the whole thing
         // so that the local copy gets zeriozed on drop.
         let mut buf: Secret<[u8; 64]> = Secret::new();
 
         let mut g = G::new();
-        g.do_update(seed_d);
+        g.do_update(&*self.seed_d);
         g.do_update(&[P::k as u8]);
-        let bytes_written = g.do_final_out(buf.as_mut());
+        // In place, not by the consuming final: a move would leave the secret input unwiped.
+        let bytes_written = g.finish_into(&finish_token(), buf.as_mut());
         debug_assert_eq!(bytes_written, 64);
 
-        let mut sigma = Secret::<[u8; 32]>::new();
-        sigma.as_mut().copy_from_slice(buf[32..64].try_into().unwrap());
-
-        (buf[..32].try_into().unwrap(), sigma)
+        self.rho.copy_from_slice(&buf[..32]);
+        self.sigma.copy_from_slice(&buf[32..64]);
     }
 }
 
@@ -353,12 +403,16 @@ impl<P: MLKEMParams> MLKEMSeedPrivateKey<P> {
 pub trait MLKEMPrivateKeyTrait<P: MLKEMParams>: Sized {
     /// New from KeyMaterial. Can throw a KEMError if the KeyMaterial does not contain sufficient entropy.
     fn from_keymaterial(seed: &KeyMaterial<64>) -> Result<Self, KEMError>;
-    /// The seed (𝑑 ‖ 𝑧) this key was built from, typed as a seed at the parameter set's strength.
-    /// A key of this module always has one.
+    /// The seed (𝑑 ‖ 𝑧) this key was built from, typed as a seed at the parameter set's strength;
+    /// for a key that was never filled, an empty [`KeyMaterial`].
     fn seed(&self) -> KeyMaterial<64>;
     /// Runs essentially a full keygen according to Algorithm 13.
+    ///
+    /// # Errors
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] for a private key that was never filled
+    /// ([`MLKEMSeedPrivateKey::zeroized`], or a key generation into it that failed).
     // Dev note: This is a partial implementation of keygen_internal(), and probably not allowed in FIPS mode.
-    fn pk(&self) -> MLKEMPublicKey<P>;
+    fn pk(&self) -> Result<MLKEMPublicKey<P>, KEMError>;
     /// H(ek), stored when the key was built.
     fn pk_hash(&self) -> &[u8; 32];
     /// This produces the full private key in the encoding specified in FIPS 203 so that it is
@@ -392,7 +446,11 @@ pub(in crate::mlkem_lowmemory) trait MLKEMPrivateKeyInternalTrait<P: MLKEMParams
 
     fn z(&self) -> &[u8; 32];
 
-    fn compute_s_hat_row(&self, idx: usize) -> Polynomial;
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] unless the key has been generated or decoded.
+    fn check_filled(&self) -> Result<(), KEMError>;
+
+    /// Row `idx` of 𝐬̂, into `s_hat_i`, which the caller holds: it is secret.
+    fn compute_s_hat_row_out(&self, idx: usize, s_hat_i: &mut Polynomial);
 
     fn rho(&self) -> &[u8; 32];
 
@@ -405,6 +463,9 @@ impl<P: MLKEMParams> MLKEMPrivateKeyTrait<P> for MLKEMSeedPrivateKey<P> {
         Self::new(seed)
     }
     fn seed(&self) -> KeyMaterial<64> {
+        if !self.is_filled() {
+            return KeyMaterial::new();
+        }
         let mut tmp = Secret::<[u8; 64]>::new();
         tmp[..32].as_mut().copy_from_slice(&*self.seed_d);
         tmp[32..].as_mut().copy_from_slice(&*self.z);
@@ -424,8 +485,9 @@ impl<P: MLKEMParams> MLKEMPrivateKeyTrait<P> for MLKEMSeedPrivateKey<P> {
 
         seed
     }
-    fn pk(&self) -> MLKEMPublicKey<P> {
-        MLKEMPublicKey::<P>::new(self.t_hat_packed(), self.rho)
+    fn pk(&self) -> Result<MLKEMPublicKey<P>, KEMError> {
+        self.check_filled()?;
+        Ok(self.derive_pk())
     }
     fn pk_hash(&self) -> &[u8; 32] {
         &self.pk_hash
@@ -443,7 +505,12 @@ impl<P: MLKEMParams> MLKEMPrivateKeyTrait<P> for MLKEMSeedPrivateKey<P> {
     where
         P: PrivateKeyLen<FULL_SK_LEN>,
     {
-        self.full_sk_out(&self.pk(), out)
+        // A key that was never filled encodes as zeros, not as the key of an all-zero seed.
+        if !self.is_filled() {
+            out.fill(0);
+            return FULL_SK_LEN;
+        }
+        self.full_sk_out(&self.derive_pk(), out)
     }
     fn sk_decode(sk: &[u8; MLKEM_SEED_LEN]) -> Self {
         // `from_bytes` fails only on a length other than 64, and the array is 64 bytes.
@@ -462,7 +529,11 @@ impl<P: MLKEMParams> MLKEMPrivateKeyInternalTrait<P> for MLKEMSeedPrivateKey<P> 
         &self.z
     }
 
-    fn compute_s_hat_row(&self, idx: usize) -> Polynomial {
+    fn check_filled(&self) -> Result<(), KEMError> {
+        if self.is_filled() { Ok(()) } else { Err(KeyMaterialError::ActingOnZeroizedKey.into()) }
+    }
+
+    fn compute_s_hat_row_out(&self, idx: usize, s_hat_i: &mut Polynomial) {
         debug_assert!(idx < P::k);
 
         // We're doing just one row of this:
@@ -472,11 +543,10 @@ impl<P: MLKEMParams> MLKEMPrivateKeyInternalTrait<P> for MLKEMSeedPrivateKey<P> 
         //   ▷ 𝐬[𝑖] ∈ ℤ256 sampled from CBD
         // 10: 𝑁 ← 𝑁 + 1
         // Note: here n = 0
-        let mut s_i = sample_poly_CBD(&self.sigma, idx as u8, P::eta1);
+        sample_poly_CBD_out(&self.sigma, idx as u8, P::eta1, s_hat_i);
 
         // 16: 𝐬_hat ← NTT(𝐬)̂
-        s_i.ntt();
-        s_i
+        s_hat_i.ntt();
     }
 
     fn rho(&self) -> &[u8; 32] {
@@ -487,10 +557,13 @@ impl<P: MLKEMParams> MLKEMPrivateKeyInternalTrait<P> for MLKEMSeedPrivateKey<P> 
     fn t_hat_packed(&self) -> P::TPacked {
         let mut t_hat_packed = <P::TPacked as ZeroizablePrimitive>::ZEROED;
 
+        // A row is 𝐭̂ only once 𝐞̂ is added: until then it is 𝐀̂ ∘ 𝐬̂, from which 𝐞̂ = 𝐭̂ − 𝐀̂ ∘ 𝐬̂
+        // follows, so it is held in a `Secret`, as 𝐞 is.
+        let mut t_hat_i = Secret::<Polynomial>::new();
         for i in 0..P::k {
             // first half of
             // 18: 𝐭_hat ← 𝐀_hat ∘ 𝐬_hat + 𝐞_hat
-            let mut t_hat_i = compute_A_hat_dot_s_hat::<P>(&self.rho, &self.sigma, i);
+            compute_A_hat_dot_s_hat_out::<P>(&self.rho, &self.sigma, i, &mut t_hat_i);
 
             // second half of
             // 18: 𝐭_hat ← 𝐀_hat ∘ 𝐬_hat + 𝐞_hat
@@ -501,7 +574,8 @@ impl<P: MLKEMParams> MLKEMPrivateKeyInternalTrait<P> for MLKEMSeedPrivateKey<P> 
                 //   ▷ 𝐞[𝑖] ∈ ℤ256 sampled from CBD
                 // 14: 𝑁 ← 𝑁 + 1
                 // Note: here n = P::k
-                let mut e_i = sample_poly_CBD(&self.sigma, (P::k + i) as u8, P::eta1);
+                let mut e_i = Secret::<Polynomial>::new();
+                sample_poly_CBD_out(&self.sigma, (P::k + i) as u8, P::eta1, &mut e_i);
 
                 e_i.ntt(); // technically now e_hat_i
                 t_hat_i.add(&e_i);
@@ -619,8 +693,9 @@ impl<P: MLKEMParams> MLKEMPrivateKeyTrait<P> for MLKEMSeedPrivateKeyExpanded<P> 
     fn seed(&self) -> KeyMaterial<64> {
         self.dk.seed()
     }
-    fn pk(&self) -> MLKEMPublicKey<P> {
-        MLKEMPublicKey::<P>::new(self.t_hat_packed, self.dk.rho)
+    fn pk(&self) -> Result<MLKEMPublicKey<P>, KEMError> {
+        self.dk.check_filled()?;
+        Ok(MLKEMPublicKey::<P>::new(self.t_hat_packed, self.dk.rho))
     }
     fn pk_hash(&self) -> &[u8; 32] {
         self.dk.pk_hash()
@@ -638,7 +713,11 @@ impl<P: MLKEMParams> MLKEMPrivateKeyTrait<P> for MLKEMSeedPrivateKeyExpanded<P> 
     where
         P: PrivateKeyLen<FULL_SK_LEN>,
     {
-        self.dk.full_sk_out(&self.pk(), out)
+        if !self.dk.is_filled() {
+            out.fill(0);
+            return FULL_SK_LEN;
+        }
+        self.dk.full_sk_out(&MLKEMPublicKey::<P>::new(self.t_hat_packed, self.dk.rho), out)
     }
     fn sk_decode(sk: &[u8; MLKEM_SEED_LEN]) -> Self {
         Self::from(&MLKEMSeedPrivateKey::sk_decode(sk))
@@ -651,7 +730,7 @@ impl<P: MLKEMParams> MLKEMPrivateKeyInternalTrait<P> for MLKEMSeedPrivateKeyExpa
     ) -> Result<(Self, MLKEMPublicKey<P>), KEMError> {
         // The construction derives t-hat for H(ek); keep it rather than derive it again.
         let (dk, pk) = MLKEMSeedPrivateKey::new_with_pk(seed)?;
-        let t_hat_packed = pk.t_hat_packed;
+        let t_hat_packed = *pk.t_hat_packed();
         Ok((Self { dk, t_hat_packed }, pk))
     }
 
@@ -659,8 +738,12 @@ impl<P: MLKEMParams> MLKEMPrivateKeyInternalTrait<P> for MLKEMSeedPrivateKeyExpa
         self.dk.z()
     }
 
-    fn compute_s_hat_row(&self, idx: usize) -> Polynomial {
-        self.dk.compute_s_hat_row(idx)
+    fn check_filled(&self) -> Result<(), KEMError> {
+        self.dk.check_filled()
+    }
+
+    fn compute_s_hat_row_out(&self, idx: usize, s_hat_i: &mut Polynomial) {
+        self.dk.compute_s_hat_row_out(idx, s_hat_i)
     }
 
     fn rho(&self) -> &[u8; 32] {

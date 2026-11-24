@@ -7,6 +7,7 @@ use crate::mlkem_common::{N, q};
 use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_digest::sha3::{SHAKE128, SHAKE256};
+use bouncycastle_utils::secret::Secret;
 
 /// Algorithm 5 ByteEncode_d(𝐹)
 /// Encodes an array of 𝑑-bit integers into a byte array for 1 ≤ 𝑑 ≤ 12.
@@ -162,10 +163,10 @@ pub fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 /// Takes a seed as input and outputs a pseudorandom sample from the distribution D𝜂(𝑅𝑞).
 /// Input: byte array 𝐵 ∈ 𝔹64𝜂 .
 /// Output: array 𝑓 ∈ ℤ256  ▷ the coefficients of the sampled polynomial
-pub fn sample_poly_cbd(bytes: &[u8], eta: i16) -> Polynomial {
+///
+/// Into `f`, which the caller holds: the sample is secret wherever ML-KEM draws one.
+pub fn sample_poly_cbd_out(bytes: &[u8], eta: i16, f: &mut Polynomial) {
     debug_assert_eq!(bytes.len(), 64 * eta as usize);
-
-    let mut f = Polynomial::new();
 
     match eta {
         2 => {
@@ -203,45 +204,25 @@ pub fn sample_poly_cbd(bytes: &[u8], eta: i16) -> Polynomial {
         }
         _ => unreachable!("Wrong Eta"),
     }
-
-    f
 }
 
-/// SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
+/// SamplePolyCBD𝜂(PRF𝜂(𝑏, 𝑛)), into `f`, which the caller holds.
 /// Performs both the PRF and SamplePolyCBD steps
-pub fn sample_poly_CBD(b: &[u8; 32], n: u8, eta: i16) -> Polynomial {
+pub fn sample_poly_CBD_out(b: &[u8; 32], n: u8, eta: i16, f: &mut Polynomial) {
     // Alg 13: 9: 𝐬[𝑖] ← SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
     //  ▷ 𝐬[𝑖] ∈ ℤ256 sampled from CBD
-    match eta {
-        2 => {
-            let buf = {
-                let mut xof = SHAKE256::new();
-                xof.do_update(b);
-                xof.do_update(&n.to_le_bytes());
+    // PRF𝜂(𝑠, 𝑏) is SHAKE256(𝑠‖𝑏, 8 · 64 · 𝜂) (FIPS 203 Sec 4.1, eq. 4.3): 64𝜂 bytes, at most
+    // 192. They are the sample before it is decoded, so they are held in a `Secret`.
+    debug_assert!(eta == 2 || eta == 3);
+    let mut buf = Secret::<[u8; 3 * 64]>::new();
+    let prf = &mut buf[..64 * eta as usize];
+    let mut xof = SHAKE256::new();
+    xof.do_update(b);
+    xof.do_update(&n.to_le_bytes());
+    let mut xof = xof.finish_squeezer(&finish_token());
+    xof.do_output_out(prf);
 
-                let mut buf = [0u8; 2 * 64];
-                let mut xof = xof.finish_squeezer(&finish_token());
-                xof.do_output_out(&mut buf);
-                buf
-            };
-
-            sample_poly_cbd(&buf, eta)
-        }
-        3 => {
-            let buf = {
-                let mut xof = SHAKE256::new();
-                xof.do_update(b);
-                xof.do_update(&n.to_le_bytes());
-                let mut buf = [0u8; 3 * 64];
-                let mut xof = xof.finish_squeezer(&finish_token());
-                xof.do_output_out(&mut buf);
-                buf
-            };
-
-            sample_poly_cbd(&buf, eta)
-        }
-        _ => unreachable!(),
-    }
+    sample_poly_cbd_out(prf, eta, f);
 }
 
 fn little_endian_to_u24(bs: &[u8], off: usize) -> u32 {

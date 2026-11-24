@@ -53,7 +53,7 @@ mod mlkem_key_tests {
         assert_eq!(pk_bytes, expected_pk_bytes.as_slice());
 
         // test re-deriving pk from sk;
-        assert_eq!(*sk.pk(), decoded_pk);
+        assert_eq!(*sk.pk().unwrap(), decoded_pk);
     }
 
     #[test]

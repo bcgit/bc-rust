@@ -6,7 +6,7 @@
 use crate::mlkem::matrix::{MatrixTrait, VectorTrait};
 use crate::mlkem::mlkem::N;
 use crate::mlkem::params::MLKEMParams;
-use crate::mlkem_common::aux_functions::{sample_ntt, sample_poly_CBD};
+use crate::mlkem_common::aux_functions::{sample_ntt, sample_poly_CBD_out};
 use crate::mlkem_common::polynomial::Polynomial;
 
 // Into `A_hat`, a matrix the caller holds: a matrix returned by value is built in this frame and
@@ -22,18 +22,8 @@ pub(in crate::mlkem) fn expandA<P: MLKEMParams>(rho: &[u8; 32], A_hat: &mut P::M
     }
 }
 
-/// Internal helper for keygen since both s_hat and e_hat have identical sampling code
-pub(in crate::mlkem) fn sample_vector_CBD<P: MLKEMParams>(
-    b: &[u8; 32],
-    n: u8,
-    eta: i16,
-) -> P::VecK {
-    let mut v = P::VecK::new();
-    sample_vector_CBD_out::<P>(b, n, eta, &mut v);
-    v
-}
-
-/// [`sample_vector_CBD`] into `v`, a vector the caller holds.
+/// The vector of `k` CBD polynomials SamplePolyCBD𝜂(PRF𝜂(𝑏, 𝑁)) for 𝑁 = `n`, `n` + 1, ...: 𝐬 and
+/// 𝐞 of Algorithm 13, 𝐲 and 𝐞1 of Algorithm 14. Into `v`, which the caller holds: each is secret.
 pub(in crate::mlkem) fn sample_vector_CBD_out<P: MLKEMParams>(
     b: &[u8; 32],
     mut n: u8,
@@ -41,25 +31,25 @@ pub(in crate::mlkem) fn sample_vector_CBD_out<P: MLKEMParams>(
     v: &mut P::VecK,
 ) {
     for i in 0..P::k {
-        v[i] = sample_poly_CBD(b, n, eta);
+        sample_poly_CBD_out(b, n, eta, &mut v[i]);
 
         // Alg 13: 10: 𝑁 ← 𝑁 + 1
         n += 1;
     }
 }
 
-pub(in crate::mlkem) fn pack_ciphertext<P: MLKEMParams, const CT_LEN: usize>(
+/// Algorithm 14 lines 22-24, 𝑐1 ‖ 𝑐2, into `out`, which the caller holds. It is the ciphertext,
+/// except in decapsulation, where it is the re-encryption 𝑐′ and secret until compared.
+pub(in crate::mlkem) fn pack_ciphertext_out<P: MLKEMParams, const CT_LEN: usize>(
     u: &P::VecK,
     v: &Polynomial,
-) -> [u8; CT_LEN] {
-    let mut out = [0u8; CT_LEN];
-
+    out: &mut [u8; CT_LEN],
+) {
     // each of the N i16's will take du bits, so a polynomial takes N * du bits, then we have k of them
     let lim: usize = P::k * (N * (P::du as usize) / 8);
 
     u.compress_pol_vec::<P>(&mut out[..lim]);
     v.compress_poly::<P>(&mut out[lim..]);
-    out
 }
 
 pub(in crate::mlkem) fn unpack_ciphertext_u<P: MLKEMParams, const CT_LEN: usize>(

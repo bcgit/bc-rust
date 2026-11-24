@@ -38,8 +38,9 @@ impl<P: MLKEMParams + CiphertextLen<CT_LEN>, const CT_LEN: usize> PlainEncaps<CT
         &self,
         rng: &mut dyn RNG,
         ct: &mut [u8; CT_LEN],
-    ) -> Result<(KeyMaterial<MLKEM_SS_LEN>, usize), KEMError> {
-        MLKEM::<P>::encaps_with_rng(self, rng, ct)
+        K: &mut KeyMaterial<MLKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        MLKEM::<P>::encaps_with_rng(self, rng, ct, K)
     }
 }
 
@@ -53,24 +54,33 @@ impl<P: MLKEMParams + CiphertextLen<CT_LEN>, const CT_LEN: usize> PlainEncaps<CT
         &self,
         rng: &mut dyn RNG,
         ct: &mut [u8; CT_LEN],
-    ) -> Result<(KeyMaterial<MLKEM_SS_LEN>, usize), KEMError> {
-        MLKEM::<P>::encaps_with_rng(self, rng, ct)
+        K: &mut KeyMaterial<MLKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        MLKEM::<P>::encaps_with_rng(self, rng, ct, K)
     }
 }
 
 impl<P: MLKEMParams + CiphertextLen<CT_LEN>, const CT_LEN: usize> PlainDecaps<CT_LEN>
     for MLKEMPrivateKey<P>
 {
-    fn decaps_K(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError> {
-        MLKEM::<P>::decaps_checked(self, ct)
+    fn decaps_K(
+        &self,
+        ct: &[u8; CT_LEN],
+        K: &mut KeyMaterial<MLKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        MLKEM::<P>::decaps_checked(self, ct, K)
     }
 }
 
 impl<P: MLKEMParams + CiphertextLen<CT_LEN>, const CT_LEN: usize> PlainDecaps<CT_LEN>
     for MLKEMPrivateKeyExpanded<P>
 {
-    fn decaps_K(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError> {
-        MLKEM::<P>::decaps_checked(self, ct)
+    fn decaps_K(
+        &self,
+        ct: &[u8; CT_LEN],
+        K: &mut KeyMaterial<MLKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        MLKEM::<P>::decaps_checked(self, ct, K)
     }
 }
 

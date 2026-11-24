@@ -102,20 +102,23 @@
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //!
 //! Peak stack usage of each operation, measured with `mem_usage_benches/bench_mldsa_mem_usage` under
-//! `valgrind --tool=massif --heap=no --stacks=yes` on 2026-11-21 (release build, one call):
+//! `valgrind --tool=massif --heap=no --stacks=yes` on 2026-11-24 (release build, one call):
 //!
 //! | Operation             | ML-DSA-44 | ML-DSA-65 | ML-DSA-87 |
 //! |-----------------------|-----------|-----------|-----------|
-//! | KeyGen                | 40,792    | 63,768    | 99,528    |
-//! | KeyGen, `keygen_out`  | 40,344    | 62,840    | 97,960    |
-//! | Sign                  | 76,152    | 112,704   | 165,896   |
+//! | KeyGen                | 71,432    | 106,960   | 158,040   |
+//! | KeyGen, `keygen_out`  | 41,864    | 65,624    | 102,016   |
+//! | Sign                  | 67,848    | 106,760   | 158,616   |
 //! | Verify                | 58,584    | 88,792    | 133,160   |
-//! | Sign, expanded key    | 78,536    | 115,648   | 170,488   |
+//! | Sign, expanded key    | 70,232    | 110,040   | 163,208   |
 //! | Verify, expanded key  | 59,896    | 89,960    | 139,952   |
 //!
 //! Values are in bytes and include the harness's own frames; the expanded-key rows include building the
 //! expanded key from the key it borrows. [`MLDSATrait::keygen_out`] writes into keys the caller holds,
-//! so no copy of the private key is left behind by a move.
+//! so no copy of the private key is left behind by a move. Both KeyGen rows run the generation in a
+//! frame of its own and leave the keys in storage the caller holds: `keygen_out` writes into it,
+//! and the by-value form's result is moved into it, moves of the keys the `_out` form does not
+//! make.
 //!
 //! # 🚨 Security Considerations 🚨
 //!

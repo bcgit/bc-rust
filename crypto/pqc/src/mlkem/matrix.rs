@@ -5,9 +5,8 @@ use core::ops::{Index, IndexMut};
 
 use crate::mlkem::mlkem::{N, q};
 use crate::mlkem::params::MLKEMParams;
-use crate::mlkem_common::polynomial;
 use crate::mlkem_common::polynomial::Polynomial;
-use bouncycastle_utils::secret::ZeroizablePrimitive;
+use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
 /// The operations this module performs on a vector of polynomials, i.e. on an element of 𝑅^LEN.
 ///
@@ -26,8 +25,9 @@ pub trait VectorTrait:
 
     /// Adds another vector to this one, coordinatewise, in the NTT domain.
     fn add_vector_ntt(&mut self, s: &Self);
-    /// The dot product of two vectors in the NTT domain.
-    fn dot_product(&self, v: &Self) -> Polynomial;
+    /// The dot product of two vectors in the NTT domain, into `w`, which the caller holds: one
+    /// of the vectors is secret wherever ML-KEM takes the product.
+    fn dot_product_out(&self, v: &Self, w: &mut Polynomial);
     /// Barrett-reduces every coefficient.
     fn reduce(&mut self);
     /// Applies the NTT to every coordinate.
@@ -53,10 +53,8 @@ pub trait MatrixTrait: Sized + Clone {
     fn new() -> Self;
     /// Overwrites the polynomial at `elems[row][col]`.
     fn set_elem(&mut self, row: usize, col: usize, p: Polynomial);
-    /// Computes 𝐀̂ ∘ 𝐯̂, transposing 𝐀̂ first when `transpose` is set.
-    fn matrix_vector_ntt<const transpose: bool>(&self, v: &Self::Vec) -> Self::Vec;
-
-    /// [`matrix_vector_ntt`](Self::matrix_vector_ntt) into `w`, a vector the caller holds.
+    /// Computes 𝐀̂ ∘ 𝐯̂, transposing 𝐀̂ first when `transpose` is set, into `w`, a vector the caller
+    /// holds: 𝐯̂ is secret wherever ML-KEM takes the product.
     fn matrix_vector_ntt_out<const transpose: bool>(&self, v: &Self::Vec, w: &mut Self::Vec);
 }
 
@@ -69,47 +67,33 @@ pub struct Matrix<const k: usize, const l: usize> {
 
 impl<const k: usize, const l: usize> Matrix<k, l> {
     pub(in crate::mlkem) fn new() -> Self {
-        Self { elems: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
+        // A repeat expression: an array `map` builds the matrix in a temporary and copies it.
+        Self { elems: [[Polynomial::new(); l]; k] }
     }
 
     /// The matrix-vector product over 𝑇𝑞 of FIPS 203 Section 2.4.7: 𝐰̂ ← 𝐀̂ ∘ 𝐮̂ (2.12), or
     /// 𝐲̂ ← 𝐀̂ᵀ ∘ 𝐮̂ (2.13) when `transpose` is true, each entry product being MultiplyNTTs
-    /// (Algorithm 11).
+    /// (Algorithm 11), into `w`, a vector the caller holds.
     /// Input: vector of length l
     /// Output: vector of length k
-    pub(in crate::mlkem) fn matrix_vector_ntt<const transpose: bool>(
-        &self,
-        v: &Vector<l>,
-    ) -> Vector<k> {
-        let mut w = Vector::<k>::new();
-        self.matrix_vector_ntt_out::<transpose>(v, &mut w);
-        w
-    }
-
-    /// [`matrix_vector_ntt`](Self::matrix_vector_ntt) into `w`, a vector the caller holds.
     pub(in crate::mlkem) fn matrix_vector_ntt_out<const transpose: bool>(
         &self,
         v: &Vector<l>,
         w: &mut Vector<k>,
     ) {
+        // The products are of the secret 𝐯̂, so the one not summed in place is held in a `Secret`.
+        let mut w1 = Secret::<Polynomial>::new();
         for i in 0..k {
             // split out the 0 case to skip a no-op add_ntt()
-            w[i] = if transpose {
-                polynomial::base_mult_montgomery(&self.elems[0][i], &v[0])
-            } else {
-                polynomial::base_mult_montgomery(&self.elems[i][0], &v[0])
-            };
+            w[i] = if transpose { self.elems[0][i] } else { self.elems[i][0] };
+            w[i].base_mult_montgomery(&v[0]);
 
-            let mut w1: Polynomial;
             for j in 1..l {
                 // dot product a vector into a matrix: multiply the input vector
                 // into each row of the matrix, then sum the results to produce a vector of
                 // length k.
-                w1 = if transpose {
-                    polynomial::base_mult_montgomery(&self.elems[j][i], &v[j])
-                } else {
-                    polynomial::base_mult_montgomery(&self.elems[i][j], &v[j])
-                };
+                *w1 = if transpose { self.elems[j][i] } else { self.elems[i][j] };
+                w1.base_mult_montgomery(&v[j]);
 
                 w[i].add(&w1);
             }
@@ -135,10 +119,6 @@ impl<const k: usize> MatrixTrait for Matrix<k, k> {
 
     fn set_elem(&mut self, row: usize, col: usize, p: Polynomial) {
         self.elems[row][col] = p;
-    }
-
-    fn matrix_vector_ntt<const transpose: bool>(&self, v: &Vector<k>) -> Vector<k> {
-        Matrix::matrix_vector_ntt::<transpose>(self, v)
     }
 
     fn matrix_vector_ntt_out<const transpose: bool>(&self, v: &Vector<k>, w: &mut Vector<k>) {
@@ -199,23 +179,26 @@ impl<const k: usize> VectorTrait for Vector<k> {
         }
     }
 
-    fn dot_product(&self, v: &Self) -> Polynomial {
+    fn dot_product_out(&self, v: &Self, w: &mut Polynomial) {
         // split out the 0 case to skip a no-op add_ntt()
-        let mut w = polynomial::base_mult_montgomery(&self[0], &v[0]);
+        *w = self[0];
+        w.base_mult_montgomery(&v[0]);
 
+        // The products are of a secret vector, so the one not summed in place is held in a
+        // `Secret`.
+        let mut w1 = Secret::<Polynomial>::new();
         for i in 1..k {
-            let w1 = polynomial::base_mult_montgomery(&self[i], &v[i]);
+            *w1 = self[i];
+            w1.base_mult_montgomery(&v[i]);
             w.add(&w1);
         }
-        // Reduced before it is returned: each product coefficient is a sum of two Montgomery
+        // Reduced at the end: each product coefficient is a sum of two Montgomery
         // reductions in (-q, q), so the k-term sum is in (-2kq, 2kq), up to 16q for ML-KEM-1024,
         // and the callers feed it to `inv_ntt`, whose first butterfly adds two coefficients in
         // i16 (limit 9.84q). FIPS 203 Sec 3.3 allows deferring a reduction only while the result
         // is right for every input; without this one the margin was empirical (a search reached
         // 8.9q on a real key), and bc-java and the pq-crystals reference reduce at this point.
         w.poly_reduce();
-
-        w
     }
 
     fn reduce(&mut self) {
@@ -485,9 +468,9 @@ mod tests {
         check::<MLKEM1024Params, 4>();
     }
 
-    /// `dot_product` returns reduced coefficients, in [0, q]: the k-term sum of Montgomery
+    /// `dot_product_out` writes reduced coefficients, in [0, q]: the k-term sum of Montgomery
     /// products is in (-2kq, 2kq) and the callers' `inv_ntt` adds two coefficients in i16, so
-    /// the reduction at the end of `dot_product` is what keeps the sum in range (the review's
+    /// the reduction at the end of `dot_product_out` is what keeps the sum in range (the review's
     /// M1, which arose from that reduction being commented out). An LCG spreads the inputs over
     /// (-q, q), the range NTT-domain coefficients take.
     #[test]
@@ -506,7 +489,8 @@ mod tests {
                     b[i][j] = next();
                 }
             }
-            let w = a.dot_product(&b);
+            let mut w = Polynomial::new();
+            a.dot_product_out(&b, &mut w);
             for j in 0..N {
                 assert!((0..=q).contains(&w[j]), "coefficient {j} is {}", w[j]);
             }

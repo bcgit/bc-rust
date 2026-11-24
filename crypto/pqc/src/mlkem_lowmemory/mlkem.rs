@@ -21,11 +21,11 @@
 //! assert_eq!(ss, ss1);
 //! ```
 
-use crate::mlkem_common::aux_functions::sample_poly_CBD;
+use crate::mlkem_common::aux_functions::sample_poly_CBD_out;
 use crate::mlkem_common::polynomial::Polynomial;
 use crate::mlkem_lowmemory::low_memory_helpers::{
-    compress_u_row, compute_A_hat_dot_y_hat, compute_t_hat_dot_y_hat_row, unpack_ciphertext_u_row,
-    unpack_ciphertext_v, unpack_t_hat_row,
+    compress_u_row, compute_A_hat_dot_y_hat_out, compute_t_hat_dot_y_hat_row_out,
+    unpack_ciphertext_u_row, unpack_ciphertext_v, unpack_t_hat_row,
 };
 use crate::mlkem_lowmemory::mlkem_keys::{
     MLKEMPrivateKeyInternalTrait, MLKEMPrivateKeyTrait, MLKEMPublicKey, MLKEMPublicKeyTrait,
@@ -148,14 +148,16 @@ impl<P: MLKEMParams> MLKEM<P> {
     /// Input: message 𝑚 ∈ 𝔹32 .
     /// Input: randomness 𝑟 ∈ 𝔹32 .
     /// Output: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
-    fn pke_encrypt<const CT_LEN: usize>(
+    ///
+    /// Into `ct`, which the caller holds. Everything derived from 𝑟 and 𝑚 on the way is held in
+    /// a `Secret` of this frame, and so is wiped when it returns.
+    fn pke_encrypt_out<const CT_LEN: usize>(
         t_hat_packed: &P::TPacked,
         rho: &[u8; 32],
         m: &[u8; 32],
         r: &[u8; 32],
-    ) -> [u8; CT_LEN] {
-        let mut ct = [0u8; CT_LEN];
-
+        ct: &mut [u8; CT_LEN],
+    ) {
         // 1: 𝑁 ← 0
         //  since the number of loops here is static; the N values can be hard-coded rather than using a counter
 
@@ -171,14 +173,16 @@ impl<P: MLKEMParams> MLKEM<P> {
         // coordinate is sampled and transformed again where it is needed: 𝑘(𝑘 + 1) CBD samplings
         // and NTTs instead of 𝑘, which is 12 instead of 3 for ML-KEM-768. That is the trade this
         // module makes, memory over time.
+        let mut u_i = Secret::<Polynomial>::new();
         for i in 0..P::k {
-            let mut u_i = compute_A_hat_dot_y_hat::<P>(rho, r, i);
+            compute_A_hat_dot_y_hat_out::<P>(rho, r, i, &mut u_i);
 
-            let e1_i = sample_poly_CBD(r, (P::k + i) as u8, P::eta2);
+            let mut e1_i = Secret::<Polynomial>::new();
+            sample_poly_CBD_out(r, (P::k + i) as u8, P::eta2, &mut e1_i);
             u_i.add(&e1_i);
             u_i.poly_reduce();
 
-            compress_u_row::<P, CT_LEN>(u_i, i, &mut ct);
+            compress_u_row::<P, CT_LEN>(&u_i, i, ct);
         }
 
         // 17: 𝑒2 ← SamplePolyCBD_𝜂2(PRF𝜂2 (𝑟, 𝑁))
@@ -187,34 +191,37 @@ impl<P: MLKEMParams> MLKEM<P> {
         // 23: 𝑐2 ← ByteEncode_𝑑𝑣(Compress_𝑑𝑣(𝑣))
         {
             // compute v, which is a single polynomial, but requires iterating over the vectors t_hat and y_hat
-            let mut v = compute_t_hat_dot_y_hat_row::<P>(
+            let mut v = Secret::<Polynomial>::new();
+            compute_t_hat_dot_y_hat_row_out::<P>(
                 r,
                 &unpack_t_hat_row(t_hat_packed.as_ref(), 0),
                 /*row*/ 0,
+                &mut v,
             );
 
+            // `u_i` is spent: it holds each term 𝐭̂[𝑖] ∘ 𝐲̂[𝑖] in turn.
             for i in 1..P::k {
-                let v_i = compute_t_hat_dot_y_hat_row::<P>(
+                compute_t_hat_dot_y_hat_row_out::<P>(
                     r,
                     &unpack_t_hat_row(t_hat_packed.as_ref(), i),
                     /*row*/ i,
+                    &mut u_i,
                 );
-                v.add(&v_i);
+                v.add(&u_i);
             }
 
             // perform polynomial addition
-            let e2 = sample_poly_CBD(r, 2 * P::k as u8, P::eta2);
+            let mut e2 = Secret::<Polynomial>::new();
+            sample_poly_CBD_out(r, 2 * P::k as u8, P::eta2, &mut e2);
             v.add(&e2);
 
-            let mu = Polynomial::from_msg(m);
-            v.add(&mu);
+            // 𝜇 is added as it is decoded, and not held.
+            v.add_msg(m);
 
             v.poly_reduce();
 
             v.compress_poly::<P>(&mut ct[CT_LEN - (N * (P::dv as usize) / 8)..]);
         }
-
-        ct
     }
 
     /// Algorithm 17 ML-KEM.Encaps_internal(ek, 𝑚)
@@ -227,34 +234,33 @@ impl<P: MLKEMParams> MLKEM<P> {
     /// Reachable from outside the module only through
     /// [`EncapsWithRandomness`](crate::mlkem_lowmemory::hazmat::EncapsWithRandomness), which carries the security
     /// notes on supplying `m`.
-    pub(in crate::mlkem_lowmemory) fn encaps_internal<const CT_LEN: usize>(
+    ///
+    /// Into `ct` and `K`, which the caller holds, so that no copy of 𝐾 is returned by value.
+    pub(in crate::mlkem_lowmemory) fn encaps_internal_out<const CT_LEN: usize>(
         ek: &MLKEMPublicKey<P>,
         m: &[u8; 32],
-    ) -> (Secret<[u8; MLKEM_SS_LEN]>, [u8; CT_LEN]) {
+        ct: &mut [u8; CT_LEN],
+        K: &mut [u8; MLKEM_SS_LEN],
+    ) {
         // 1: (𝐾, 𝑟) ← G(𝑚‖H(ek))
-        //  ▷ derive shared secret key 𝐾 and randomness 𝑟. Both are secret and held in `Secret`,
-        //  as is the G output they are split from.
-        let (K, r) = {
+        //  ▷ derive shared secret key 𝐾 and randomness 𝑟. Both are secret: 𝑟 is read where the G
+        //  output holds it, in a `Secret` of this frame.
+        let mut g_out = Secret::<[u8; 64]>::new();
+        {
             let mut g = G::new();
             g.do_update(m);
             g.do_update(&ek.compute_hash());
-            let mut buf = Secret::<[u8; 64]>::new();
-            let bytes_written = g.do_final_out(&mut *buf);
+            // In place, not by the consuming final: a move would leave the secret input unwiped.
+            let bytes_written = g.finish_into(&finish_token(), &mut *g_out);
             debug_assert_eq!(bytes_written, 64);
-
-            let mut K = Secret::<[u8; MLKEM_SS_LEN]>::new();
-            K.copy_from_slice(&buf[..32]);
-            let mut r = Secret::<[u8; 32]>::new();
-            r.copy_from_slice(&buf[32..64]);
-            (K, r)
-        };
+        }
+        K.copy_from_slice(&g_out[..32]);
+        // The range is 32 bytes, so the conversion cannot fail.
+        let r: &[u8; 32] = g_out[32..64].try_into().unwrap();
 
         // 2: 𝑐 ← K-PKE.Encrypt(ek, 𝑚, 𝑟)
         //  ▷ encrypt 𝑚 using K-PKE with randomness 𝑟
-        // deviation from FIPS:
-        let ct = Self::pke_encrypt(ek.t_hat_packed(), ek.rho(), m, &r);
-
-        (K, ct)
+        Self::pke_encrypt_out(ek.t_hat_packed(), ek.rho(), m, r, ct);
     }
 
     /// Algorithm 15 K-PKE.Decrypt(dkPKE, 𝑐)
@@ -262,10 +268,14 @@ impl<P: MLKEMParams> MLKEM<P> {
     /// Input: decryption key dkPKE ∈ 𝔹384𝑘.
     /// Input: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     /// Output: message 𝑚 ∈ 𝔹32 .
-    fn pke_decrypt<DK: MLKEMPrivateKeyInternalTrait<P>, const CT_LEN: usize>(
+    ///
+    /// Into `m`, which the caller holds: 𝑚 is an internal value (FIPS 203 Sec 3.3) that must not
+    /// outlive the decapsulation, and the rows of 𝐬̂ and 𝑤 are held in `Secret`s of this frame.
+    fn pke_decrypt_out<DK: MLKEMPrivateKeyInternalTrait<P>, const CT_LEN: usize>(
         dk: &DK,
         ct: &[u8; CT_LEN],
-    ) -> Secret<[u8; 32]> {
+        m: &mut [u8; 32],
+    ) {
         // 1: 𝑐1 ← 𝑐[0 ∶ 32𝑑𝑢𝑘]
         // 3: 𝐮′ ← Decompress_𝑑𝑢(ByteDecode_𝑑𝑢(𝑐1))
 
@@ -274,53 +284,36 @@ impl<P: MLKEMParams> MLKEM<P> {
 
         // first half of
         // 6: 𝑤 ← 𝑣′ − NTT−1(𝐬_hat^T ∘ NTT(𝐮′))
-        let v1 = {
-            // i = 0 case
-            let mut v1 = {
-                let mut s_hat_i = dk.compute_s_hat_row(0);
-                {
-                    let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(0, ct);
-                    u_prime_i.ntt();
-                    s_hat_i.base_mult_montgomery(&u_prime_i);
-                }
-                s_hat_i.inv_ntt();
-
-                s_hat_i
-            };
-
-            for i in 1..P::k {
-                let mut s_hat_i = dk.compute_s_hat_row(i);
-                {
-                    let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(i, ct);
-                    u_prime_i.ntt();
-                    s_hat_i.base_mult_montgomery(&u_prime_i);
-                }
-                s_hat_i.inv_ntt();
+        let mut v1 = Secret::<Polynomial>::new();
+        let mut s_hat_i = Secret::<Polynomial>::new();
+        for i in 0..P::k {
+            dk.compute_s_hat_row_out(i, &mut s_hat_i);
+            {
+                // 𝐮′ is the ciphertext's, so public.
+                let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(i, ct);
+                u_prime_i.ntt();
+                s_hat_i.base_mult_montgomery(&u_prime_i);
+            }
+            s_hat_i.inv_ntt();
+            if i == 0 {
+                *v1 = *s_hat_i;
+            } else {
                 v1.add(&s_hat_i);
             }
-
-            v1
-        };
+        }
 
         // 2: 𝑐2 ← 𝑐[32𝑑𝑢𝑘 ∶ 32(𝑑𝑢𝑘 + 𝑑𝑣)]
         // 4: 𝑣′ ← Decompress_𝑑𝑣(ByteDecode_𝑑𝑣(𝑐2))
-        let w = {
-            // second half of
-            // 6: 𝑤 ← 𝑣′ − NTT−1(𝐬_hat^T ∘ NTT(𝐮′))
-            let mut v_prime = unpack_ciphertext_v::<P, CT_LEN>(ct);
-
-            v_prime.sub(&v1);
-            v_prime.poly_reduce();
-
-            v_prime // rename to w
-        };
+        // second half of
+        // 6: 𝑤 ← 𝑣′ − NTT−1(𝐬_hat^T ∘ NTT(𝐮′))
+        let mut w = Secret::<Polynomial>::new();
+        *w = unpack_ciphertext_v::<P, CT_LEN>(ct);
+        w.sub(&v1);
+        w.poly_reduce();
 
         // 7: 𝑚 ← ByteEncode1(Compress1(𝑤))
-        //   ▷ decode plaintext 𝑚 from polynomial 𝑤, into a `Secret`: it is an internal value
-        //   (FIPS 203 Sec 3.3) that must not outlive the decapsulation.
-        let mut m = Secret::<[u8; 32]>::new();
-        *m = w.to_msg();
-        m
+        //   ▷ decode plaintext 𝑚 from polynomial 𝑤
+        w.to_msg_out(m);
     }
 
     /// Algorithm 18 ML-KEM.Decaps_internal(dk, 𝑐)
@@ -328,10 +321,13 @@ impl<P: MLKEMParams> MLKEM<P> {
     /// Input: decapsulation key dk ∈ 𝔹768𝑘+96 .
     /// Input: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     /// Output: shared secret key 𝐾 ∈ 𝔹32 .
-    fn decaps_internal<DK: MLKEMPrivateKeyInternalTrait<P>, const CT_LEN: usize>(
+    ///
+    /// Into `K`, which the caller holds; the intermediates are held in `Secret`s of this frame.
+    fn decaps_internal_out<DK: MLKEMPrivateKeyInternalTrait<P>, const CT_LEN: usize>(
         dk: &DK,
         c: &[u8; CT_LEN],
-    ) -> Secret<[u8; MLKEM_SS_LEN]> {
+        K: &mut [u8; MLKEM_SS_LEN],
+    ) {
         // I have tried to keep this as clean as possible for correspondence with the FIPS,
         // but I have moved things around so that I can use unnamed scopes to limit how many
         // stack variables are alive at the same time.
@@ -343,57 +339,60 @@ impl<P: MLKEMParams> MLKEM<P> {
         // Nothing to do since dk is already decoded.
 
         // 5: 𝑚′ ← K-PKE.Decrypt(dkPKE, 𝑐)
-        let m_prime = Self::pke_decrypt(dk, c);
+        let mut m_prime = Secret::<[u8; 32]>::new();
+        Self::pke_decrypt_out(dk, c, &mut m_prime);
 
         // Compute the trial shared secret key
         // 6: (𝐾′, 𝑟′) ← G(𝑚′‖ℎ)̄
-        let (K_prime, r_prime) = {
-            let mut buf: Secret<[u8; 64]> = Secret::new();
+        // K' and r' are read where the G output holds them, in a `Secret`.
+        let mut g_out: Secret<[u8; 64]> = Secret::new();
+        {
             let mut g = G::new();
             g.do_update(&*m_prime);
             g.do_update(dk.pk_hash());
-            let bytes_written = g.do_final_out(&mut *buf);
+            // In place, not by the consuming final: a move would leave the secret input unwiped.
+            let bytes_written = g.finish_into(&finish_token(), &mut *g_out);
             debug_assert_eq!(bytes_written, 64);
-
-            let mut K_prime: Secret<[u8; MLKEM_SS_LEN]> = Secret::new();
-            K_prime.copy_from_slice(&buf[..32]);
-            let mut r_prime: Secret<[u8; 32]> = Secret::new();
-            r_prime.copy_from_slice(&buf[32..64]);
-            (K_prime, r_prime)
-        };
+        }
+        // The ranges are 32 bytes, so the conversions cannot fail.
+        let K_prime: &[u8; MLKEM_SS_LEN] = g_out[..32].try_into().unwrap();
+        let r_prime: &[u8; 32] = g_out[32..64].try_into().unwrap();
 
         // 7: 𝐾_bar ← J(𝑧‖𝑐)
         //   Compute the rejection sampling key.
         //   Note to future optimizers: this needs to be computed outside of the if at line 9 below
         //   because if its computation is conditional on the Fujisaki-Okamoto check failing, then
         //   there will be a timing difference between success and failure.
-
-        let K_bar: Secret<[u8; MLKEM_SS_LEN]> = {
-            let mut K_bar: Secret<[u8; MLKEM_SS_LEN]> = Secret::new();
+        let mut K_bar: Secret<[u8; MLKEM_SS_LEN]> = Secret::new();
+        {
             let mut j = J::new();
             j.do_update(dk.z());
             j.do_update(c);
             let mut j = j.finish_squeezer(&finish_token());
             let bytes_written = j.do_output_out(&mut *K_bar);
             debug_assert_eq!(bytes_written, MLKEM_SS_LEN);
-
-            K_bar
-        };
+        }
 
         // 8: 𝑐′ ← K-PKE.Encrypt(ekPKE, 𝑚′, 𝑟′)
         //   ▷ re-encrypt using the derived randomness 𝑟′
         // A seed key holds no 𝐭̂, so it derives one here (Algorithm 13 again, most of what makes
         // this module's decapsulation slower than its encapsulation); an expanded key hands over
         // the copy it holds.
-        let c_prime = Self::pke_encrypt::<CT_LEN>(&dk.t_hat_packed(), dk.rho(), &m_prime, &r_prime);
+        // 𝑐′ differs from 𝑐 when the ciphertext was not one made to this key, and then it is
+        // derived from 𝑚′, so it is held in a `Secret`.
+        let mut c_prime = Secret::<[u8; CT_LEN]>::new();
+        Self::pke_encrypt_out::<CT_LEN>(
+            &dk.t_hat_packed(),
+            dk.rho(),
+            &m_prime,
+            r_prime,
+            &mut c_prime,
+        );
 
         // 9: if 𝑐 ≠ 𝑐′ then
         // 10: 𝐾′ ← 𝐾_bar
         //  ▷ if ciphertexts do not match, “implicitly reject"
-        let mut K_out = Secret::<[u8; MLKEM_SS_LEN]>::new();
-        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes_condition(c, &c_prime));
-
-        K_out
+        conditional_copy_bytes(K_prime, &K_bar, K, ct_eq_bytes_condition(c, &*c_prime));
     }
 
     /// Decapsulation from the seed form of the private key: builds the key with
@@ -411,13 +410,16 @@ impl<P: MLKEMParams> MLKEM<P> {
         sk.decaps(ct, ())
     }
 
-    /// Algorithm 20 ML-KEM.Encaps(ek), lines 1-5.
+    /// Algorithm 20 ML-KEM.Encaps(ek), lines 1-5, into `ct` and `ss`, both cleared first and
+    /// left so on an error.
     pub(in crate::mlkem_lowmemory) fn encaps_with_rng<const CT_LEN: usize>(
         ek: &MLKEMPublicKey<P>,
         rng: &mut dyn RNG,
         ct: &mut [u8; CT_LEN],
-    ) -> Result<(KeyMaterial<MLKEM_SS_LEN>, usize), KEMError> {
+        ss: &mut KeyMaterial<MLKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
         ct.fill(0);
+        ss.zeroize();
 
         // 1: 𝑚 ← 𝔹32, from the caller's RNG, which must be at least as strong as the parameter set
         if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
@@ -427,13 +429,18 @@ impl<P: MLKEMParams> MLKEM<P> {
         rng.next_bytes_out(&mut *m)?;
 
         // 5: (𝐾, 𝑐) ← ML-KEM.Encaps_internal(ek, 𝑚)
-        let (K, c) = Self::encaps_internal::<CT_LEN>(ek, &m);
-        *ct = c;
+        let mut K = Secret::<[u8; MLKEM_SS_LEN]>::new();
+        Self::encaps_internal_out::<CT_LEN>(ek, &m, ct, &mut K);
 
-        Ok((Self::shared_secret_key(&K)?, CT_LEN))
+        if let Err(e) = Self::shared_secret_key_out(&K, ss) {
+            ct.fill(0);
+            return Err(e);
+        }
+        Ok(CT_LEN)
     }
 
-    /// Algorithm 21 ML-KEM.Decaps(dk, 𝑐) over either form of this module's private key.
+    /// Algorithm 21 ML-KEM.Decaps(dk, 𝑐) over either form of this module's private key, into
+    /// `ss`, cleared first and left so on an error.
     ///
     /// Of the Section 7.3 decapsulation input checks, 1 (the ciphertext length) is the type of
     /// `ct`; 2 and 3 concern the FIPS 203 encoding of dk, which this module's keys never hold: a
@@ -444,24 +451,34 @@ impl<P: MLKEMParams> MLKEM<P> {
     >(
         dk: &DK,
         ct: &[u8; CT_LEN],
-    ) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError> {
+        ss: &mut KeyMaterial<MLKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
+        dk.check_filled()?;
         // 1: 𝐾′ ← ML-KEM.Decaps_internal(dk, 𝑐)
-        let K = Self::decaps_internal(dk, ct);
+        let mut K = Secret::<[u8; MLKEM_SS_LEN]>::new();
+        Self::decaps_internal_out(dk, ct, &mut K);
 
-        Self::shared_secret_key(&K)
+        Self::shared_secret_key_out(&K, ss)?;
+        Ok(MLKEM_SS_LEN)
     }
 
-    /// The shared secret as [`KeyMaterial`]: full-entropy bytes at the parameter set's strength.
+    /// The shared secret into `key`: full-entropy bytes at the parameter set's strength.
     /// Typed inside the hazardous window, where an all-zero value is not re-typed `Zeroized`:
-    /// 𝐾 is uniform, so all zeros (probability 2^-256) is a valid secret, not an error.
-    fn shared_secret_key(K: &[u8; MLKEM_SS_LEN]) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError> {
-        let mut key = KeyMaterial::<MLKEM_SS_LEN>::new();
-        do_hazardous_operations(&mut key, |key| {
+    /// 𝐾 is uniform, so all zeros (probability 2^-256) is a valid secret, not an error. `key`
+    /// is left zeroized on an error.
+    fn shared_secret_key_out(
+        K: &[u8; MLKEM_SS_LEN],
+        key: &mut KeyMaterial<MLKEM_SS_LEN>,
+    ) -> Result<(), KEMError> {
+        let typed = do_hazardous_operations(key, |key| {
             key.set_bytes_as_type(K, KeyType::CryptographicRandom)?;
             key.set_security_strength(P::MAX_SECURITY_STRENGTH)
-        })?;
-
-        Ok(key)
+        });
+        if typed.is_err() {
+            key.zeroize();
+        }
+        Ok(typed?)
     }
 }
 
@@ -471,6 +488,12 @@ impl<P: MLKEMParams> MLKEMTrait<P> for MLKEM<P> {
         seed: &KeyMaterial<64>,
     ) -> Result<(MLKEMPublicKey<P>, MLKEMSeedPrivateKey<P>), KEMError> {
         Self::keygen_internal(seed)
+    }
+    fn keygen_from_seed_out(
+        seed: &KeyMaterial<64>,
+        sk: &mut MLKEMSeedPrivateKey<P>,
+    ) -> Result<(), KEMError> {
+        sk.fill_out(seed)
     }
     /// Imports a secret key from both a seed and an encoded_sk.
     ///
@@ -500,6 +523,8 @@ impl<P: MLKEMParams> MLKEMTrait<P> for MLKEM<P> {
         pk: &MLKEMPublicKey<P>,
         sk: &MLKEMSeedPrivateKey<P>,
     ) -> Result<(), KEMError> {
+        // A private key that was never filled is refused, not compared.
+        sk.check_filled()?;
         if *sk.pk_hash() == pk.compute_hash() {
             Ok(())
         } else {
@@ -522,10 +547,30 @@ pub trait MLKEMTrait<P: MLKEMParams>: Sized {
         rng.fill_keymaterial_out(&mut seed)?;
         Self::keygen_from_seed(&seed)
     }
+    /// [`keygen`](Self::keygen) into a private key the caller holds: each field is computed in
+    /// `sk` itself, so no copy of it is staged on the way and none is left behind by a move,
+    /// which wipes nothing. Start from [`MLKEMSeedPrivateKey::zeroized`]; the public key is
+    /// [`sk.pk()`](MLKEMPrivateKeyTrait::pk), derived again from the seed. `sk` is cleared first
+    /// and left so on every error.
+    fn keygen_out(rng: &mut dyn RNG, sk: &mut MLKEMSeedPrivateKey<P>) -> Result<(), KEMError> {
+        sk.clear();
+        if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
+            Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+        }
+        let mut seed = KeyMaterial::<64>::new();
+        rng.fill_keymaterial_out(&mut seed)?;
+        Self::keygen_from_seed_out(&seed, sk)
+    }
     /// Imports a secret key from a seed.
     fn keygen_from_seed(
         seed: &KeyMaterial<64>,
     ) -> Result<(MLKEMPublicKey<P>, MLKEMSeedPrivateKey<P>), KEMError>;
+    /// [`keygen_from_seed`](Self::keygen_from_seed) into a private key the caller holds; see
+    /// [`keygen_out`](Self::keygen_out).
+    fn keygen_from_seed_out(
+        seed: &KeyMaterial<64>,
+        sk: &mut MLKEMSeedPrivateKey<P>,
+    ) -> Result<(), KEMError>;
     /// Imports a secret key from both a seed and its FIPS 203 encoding.
     ///
     /// Expands the key from the seed and compares its Algorithm 16 encoding
@@ -571,10 +616,7 @@ impl<P: MLKEMParams + CiphertextLen<CT_LEN>, const CT_LEN: usize>
         ct: &mut [u8; CT_LEN],
         ss: &mut KeyMaterial<MLKEM_SS_LEN>,
     ) -> Result<usize, KEMError> {
-        ss.zeroize();
-        let (K, written) = MLKEM::<P>::encaps_with_rng(self.ek, rng, ct)?;
-        *ss = K;
-        Ok(written)
+        MLKEM::<P>::encaps_with_rng(self.ek, rng, ct, ss)
     }
 }
 
@@ -606,9 +648,7 @@ impl<
         ct: &[u8; CT_LEN],
         ss: &mut KeyMaterial<MLKEM_SS_LEN>,
     ) -> Result<usize, KEMError> {
-        ss.zeroize();
-        *ss = MLKEM::<P>::decaps_checked(self.dk, ct)?;
-        Ok(MLKEM_SS_LEN)
+        MLKEM::<P>::decaps_checked(self.dk, ct, ss)
     }
 }
 

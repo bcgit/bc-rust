@@ -60,11 +60,32 @@ pub type MLKEM1024PrivateKeyExpanded = MLKEMPrivateKeyExpanded<MLKEM1024Params>;
 /// trait (`P: PublicKeyLen<PK_LEN>`), which has one impl per parameter set and so lets the length
 /// be inferred from `P`.
 pub struct MLKEMPublicKey<P: MLKEMParams> {
-    pub(in crate::mlkem) t_hat: P::VecK,
-    pub(in crate::mlkem) rho: [u8; 32],
+    t_hat: P::VecK,
+    rho: [u8; 32],
 }
 
 impl<P: MLKEMParams> MLKEMPublicKey<P> {
+    /// FIPS 203 Algorithm 13, lines 3-7 and the first half of line 18, into this key: 𝜌 is set
+    /// and 𝐭̂ ← 𝐀̂ ∘ 𝐬̂, with 𝐀̂ = ExpandA(𝜌) expanded for the product and dropped.
+    // Inlined so the 𝐀̂ matrix lives in `pke_keygen_out`'s frame: a frame of its own stacks it on
+    // top of the caller's, about 2 to 5 kB more on KeyGen (measured with `#[inline(never)]`).
+    #[inline(always)]
+    pub(in crate::mlkem) fn keygen_A_hat_s_hat(&mut self, rho: &[u8; 32], s_hat: &P::VecK) {
+        self.rho = *rho;
+        // 3: for (𝑖 ← 0; 𝑖 < 𝑘; 𝑖++)
+        //  ▷ generate matrix A_hat ∈ (ℤ256)^k x k
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&self.rho, &mut A_hat);
+
+        A_hat.matrix_vector_ntt_out::<false>(s_hat, &mut self.t_hat);
+    }
+
+    /// FIPS 203 Algorithm 13, the second half of line 18: 𝐭̂ ← 𝐭̂ + 𝐞̂.
+    #[inline(always)]
+    pub(in crate::mlkem) fn keygen_add_e_hat(&mut self, e_hat: &P::VecK) {
+        self.t_hat.add_vector_ntt(e_hat);
+    }
+
     /// The all-zero key, which an unfilled [`MLKEMPrivateKey`] holds until key generation
     /// writes ek into it.
     pub(in crate::mlkem) fn zeroized() -> Self {
@@ -282,7 +303,7 @@ impl<P: MLKEMParams> Clone for MLKEMPublicKeyExpanded<P> {
 
 impl<P: MLKEMParams> MLKEMPublicKeyInternalTrait<P> for MLKEMPublicKeyExpanded<P> {
     fn rho(&self) -> &[u8; 32] {
-        &self.ek.rho
+        self.ek.rho()
     }
 
     fn t_hat(&self) -> &P::VecK {
@@ -354,7 +375,7 @@ impl<P: MLKEMParams> From<&MLKEMPublicKey<P>> for MLKEMPublicKeyExpanded<P> {
     fn from(ek: &MLKEMPublicKey<P>) -> Self {
         // 𝐀̂ is expanded in the value returned, not in a local that is then moved into it.
         let mut expanded = Self { ek: ek.clone(), A_hat: P::MatrixA::new() };
-        expandA::<P>(&ek.rho, &mut expanded.A_hat);
+        expandA::<P>(ek.rho(), &mut expanded.A_hat);
         expanded
     }
 }
@@ -380,10 +401,10 @@ impl<P: MLKEMParams> MLKEMPrivateKey<P> {
     ///
     /// # 🚨 Security Considerations 🚨
     ///
-    /// Neither the encoding of this key nor its [`pk()`](MLKEMPrivateKeyTrait::pk) is refused,
-    /// those methods having no error to give: they are the all-zero private and public keys,
-    /// which anyone can compute, and a ciphertext made for that public key hides nothing. Do not
-    /// store, send or encapsulate to the keys of a generation that failed.
+    /// The encoding of this key is not refused, having no error to give: it is the all-zero
+    /// private key, which anyone can compute. Do not store or send the key of a generation that
+    /// failed. Its [`pk()`](MLKEMPrivateKeyTrait::pk) is refused: the all-zero public key it
+    /// holds would hide nothing encapsulated to it.
     // The check is not in `create_decapsulator`: there it cost the one-shot decapsulation 2.1 to
     // 4.3 kB of stack (the module's memory table is measured with it where it is).
     pub fn zeroized() -> Self {
@@ -546,9 +567,11 @@ pub trait MLKEMPrivateKeyTrait<P: MLKEMParams>: Sized {
     fn seed(&self) -> Option<KeyMaterial<64>>;
 
     /// The public key, which the private key holds (FIPS 203 Algorithm 16 line 3, dk includes ek).
-    /// For a private key that was never filled it is the all-zero key; see
-    /// [`MLKEMPrivateKey::zeroized`].
-    fn pk(&self) -> &MLKEMPublicKey<P>;
+    ///
+    /// # Errors
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] for a private key that was never filled
+    /// ([`MLKEMPrivateKey::zeroized`], or a key generation into it that failed).
+    fn pk(&self) -> Result<&MLKEMPublicKey<P>, KEMError>;
     /// Get a ref to the stored public key hash.
     fn pk_hash(&self) -> &[u8; 32];
     /// Decode the private key from its FIPS 203 encoding, with the Section 7.3 decapsulation key
@@ -573,6 +596,10 @@ pub(in crate::mlkem) trait MLKEMPrivateKeyInternalTrait<P: MLKEMParams>:
 
     /// Get a ref to s_hat
     fn s_hat(&self) -> &P::VecK;
+
+    /// The public key the key holds, unchecked: for the module's own paths, which have checked
+    /// the key is filled or have just filled it.
+    fn ek(&self) -> &MLKEMPublicKey<P>;
 
     fn z(&self) -> &Secret<[u8; 32]>;
 
@@ -607,8 +634,9 @@ impl<P: MLKEMParams> MLKEMPrivateKeyTrait<P> for MLKEMPrivateKey<P> {
         Some(seed)
     }
 
-    fn pk(&self) -> &MLKEMPublicKey<P> {
-        &self.ek
+    fn pk(&self) -> Result<&MLKEMPublicKey<P>, KEMError> {
+        self.check_filled()?;
+        Ok(&self.ek)
     }
 
     fn pk_hash(&self) -> &[u8; 32] {
@@ -641,6 +669,10 @@ impl<P: MLKEMParams> MLKEMPrivateKeyInternalTrait<P> for MLKEMPrivateKey<P> {
 
     fn s_hat(&self) -> &P::VecK {
         &self.s_hat
+    }
+
+    fn ek(&self) -> &MLKEMPublicKey<P> {
+        &self.ek
     }
 
     fn z(&self) -> &Secret<[u8; 32]> {
@@ -755,7 +787,7 @@ impl<P: MLKEMParams> From<&MLKEMPrivateKey<P>> for MLKEMPrivateKeyExpanded<P> {
     fn from(dk: &MLKEMPrivateKey<P>) -> Self {
         // 𝐀̂ is expanded in the value returned, not in a local that is then moved into it.
         let mut expanded = Self { dk: dk.clone(), A_hat: P::MatrixA::new() };
-        expandA::<P>(&dk.ek.rho, &mut expanded.A_hat);
+        expandA::<P>(dk.ek.rho(), &mut expanded.A_hat);
         expanded
     }
 }
@@ -813,7 +845,7 @@ impl<P: MLKEMParams> MLKEMPrivateKeyTrait<P> for MLKEMPrivateKeyExpanded<P> {
         self.dk.seed()
     }
 
-    fn pk(&self) -> &MLKEMPublicKey<P> {
+    fn pk(&self) -> Result<&MLKEMPublicKey<P>, KEMError> {
         self.dk.pk()
     }
 
@@ -846,6 +878,10 @@ impl<P: MLKEMParams> MLKEMPrivateKeyInternalTrait<P> for MLKEMPrivateKeyExpanded
 
     fn s_hat(&self) -> &P::VecK {
         self.dk.s_hat()
+    }
+
+    fn ek(&self) -> &MLKEMPublicKey<P> {
+        self.dk.ek()
     }
 
     fn z(&self) -> &Secret<[u8; 32]> {

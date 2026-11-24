@@ -1,18 +1,20 @@
 use crate::mldsa_common::aux_functions::{
-    bit_pack_eta, bit_pack_t0, power_2_round, rej_bounded_poly, simple_bit_pack_t1,
+    bit_pack_eta, bit_pack_t0, power_2_round, rej_bounded_poly_out, simple_bit_pack_t1,
     simple_bit_unpack_t1,
 };
 use crate::mldsa_common::polynomial::Polynomial;
-use crate::mldsa_lowmemory::low_memory_helpers::{expandA_elem, s_unpack};
+use crate::mldsa_lowmemory::low_memory_helpers::{expandA_elem, s_unpack_out};
 use crate::mldsa_lowmemory::mldsa::{
     H, MLDSA_MU_LEN, MLDSA_RND_LEN, N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN,
 };
-use crate::mldsa_lowmemory::mldsa::{MuBuilder, Rnd, draw_rnd, sign_internal, verify_internal};
+use crate::mldsa_lowmemory::mldsa::{
+    MuBuilder, Rnd, check_filled_tr, draw_rnd, sign_internal, verify_internal,
+};
 use crate::mldsa_lowmemory::params::{
     FullPrivateKeyLen, PrivateKeyLen, PublicKeyLen, SignatureLen,
 };
 use crate::mldsa_lowmemory::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
-use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
+use bouncycastle_core::errors::{KeyDecodingError, KeyMaterialError, SignatureError};
 use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -113,10 +115,6 @@ pub trait MLDSAPublicKeyTrait<P: MLDSAParams>: Sized {
 }
 
 pub(in crate::mldsa_lowmemory) trait MLDSAPublicKeyInternalTrait<P: MLDSAParams> {
-    /// Not exposing a constructor publicly because the user should get an instance either by
-    /// running a keygen, or by decoding an existing key.
-    fn new(rho: [u8; 32], t1_packed: P::T1Packed) -> Self;
-
     /// Get a ref to rho
     fn rho(&self) -> &[u8; 32];
 
@@ -125,6 +123,34 @@ pub(in crate::mldsa_lowmemory) trait MLDSAPublicKeyInternalTrait<P: MLDSAParams>
 }
 
 impl<P: MLDSAParams> MLDSAPublicKey<P> {
+    /// The all-zero key: the public key [`MLDSATrait::keygen_out`] and
+    /// [`MLDSATrait::keygen_from_seed_out`] write into. It is not a public key, and until one of
+    /// them fills it, verification with it is refused
+    /// ([`KeyMaterialError::ActingOnZeroizedKey`]).
+    ///
+    /// The test is on 𝜌, so a decoded key whose 𝜌 is all zero is refused in the same way; no
+    /// generated key has one.
+    pub fn zeroized() -> Self {
+        Self { rho: [0u8; 32], t1_packed: <P::T1Packed as ZeroizablePrimitive>::ZEROED }
+    }
+
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] unless the key holds a key. 𝜌 says so: it is 32
+    /// bytes of SHAKE256 output in a generated key, and all zero in the state
+    /// [`zeroized`](Self::zeroized) makes and the `_out` generators leave on an error.
+    pub(in crate::mldsa_lowmemory) fn check_filled(&self) -> Result<(), SignatureError> {
+        if self.rho == [0u8; 32] {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
+        Ok(())
+    }
+
+    /// Back to the all-zero key.
+    pub(in crate::mldsa_lowmemory) fn clear(&mut self) {
+        self.rho = [0u8; 32];
+        // Cleared where it lies: assigning the zero value builds it in a temporary first.
+        self.t1_packed.as_mut().fill(0);
+    }
+
     /// Algorithm 23 pkDecode(𝑝𝑘)
     /// Reverses the procedure pkEncode.
     /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑).
@@ -140,6 +166,12 @@ impl<P: MLDSAParams> MLDSAPublicKey<P> {
 }
 
 impl<P: MLDSAParams> MLDSAPublicKeyTrait<P> for MLDSAPublicKey<P> {
+    /// Refused for a key that was never filled, and so are its verifiers.
+    fn create_mu_builder(&self, ctx: Option<&[u8]>) -> Result<MuBuilder, SignatureError> {
+        self.check_filled()?;
+        MuBuilder::from_tr(&self.compute_tr(), ctx)
+    }
+
     fn compute_tr(&self) -> [u8; 64] {
         let mut tr = [0u8; 64];
         // tr = H(pkEncode(rho, t1), 64), the encoding being rho || t1_packed
@@ -159,15 +191,12 @@ impl<P: MLDSAParams> MLDSAPublicKeyTrait<P> for MLDSAPublicKey<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
+        self.check_filled()?;
         verify_internal::<P, Self, SIG_LEN>(self, mu, sig)
     }
 }
 
 impl<P: MLDSAParams> MLDSAPublicKeyInternalTrait<P> for MLDSAPublicKey<P> {
-    fn new(rho: [u8; 32], t1_packed: P::T1Packed) -> Self {
-        Self { rho, t1_packed }
-    }
-
     fn rho(&self) -> &[u8; 32] {
         &self.rho
     }
@@ -306,6 +335,8 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     /// key's `tr` and to `ctx`, which then takes the message in chunks. `ctx` longer than 255
     /// bytes is the error of FIPS 204 Algorithm 2, line 1.
     fn create_mu_builder(&self, ctx: Option<&[u8]>) -> Result<MuBuilder, SignatureError> {
+        // A key that was never filled is refused here, so its signers are too.
+        check_filled_tr(self.tr())?;
         MuBuilder::from_tr(self.tr(), ctx)
     }
 
@@ -322,7 +353,8 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     ///
     /// # Errors
     /// [`SignatureError::RejectionLimitExceeded`] if the bounded rejection loop (FIPS 204
-    /// Section 6.2) runs out, which has negligible probability; nothing is written.
+    /// Section 6.2) runs out, which has negligible probability, and the RNG's error if `rnd`
+    /// cannot be drawn; nothing is written.
     ///
     /// [`SigningKey::create_signer`]: bouncycastle_core::signature_key::SigningKey::create_signer
     fn sign_mu<const SIG_LEN: usize>(
@@ -339,6 +371,7 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     }
 
     /// As [`sign_mu`](Self::sign_mu), writing into `output`; returns the number of bytes written.
+    /// `output` is zeroized first and left so on every error.
     fn sign_mu_out<const SIG_LEN: usize>(
         &self,
         mu: &[u8; MLDSA_MU_LEN],
@@ -348,6 +381,8 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
+        // Cleared before the draw, so that an RNG failure leaves no stale bytes in it.
+        output.fill(0);
         let mut rnd = Rnd::new();
         draw_rnd(rng, &mut rnd)?;
         self.sign_mu_with_rnd_out(mu, &rnd, output)
@@ -450,18 +485,103 @@ impl<P: MLDSAParams> Display for MLDSASeedPrivateKey<P> {
 }
 
 impl<P: MLDSAParams> MLDSASeedPrivateKey<P> {
-    /// Create a new MLDSASeedPrivateKey from a 32-byte KeyMaterial, deriving `tr` on the way.
-    /// The seed's `SecurityStrength` must be at least the parameter set's: 128-bit (ML-DSA-44),
-    /// 192-bit (ML-DSA-65) or 256-bit (ML-DSA-87); otherwise [`SignatureError::KeyGenError`].
-    pub fn new(seed: &KeyMaterial<32>) -> Result<Self, SignatureError> {
-        Self::new_with_pk(seed).map(|(sk, _pk)| sk)
+    /// The all-zero key: the key [`MLDSATrait::keygen_out`] and
+    /// [`MLDSATrait::keygen_from_seed_out`] write into, so that the seed and what is derived from
+    /// it are written where they will live and never moved. It is not a generated key: until one
+    /// of them fills it, signing with it is refused ([`KeyMaterialError::ActingOnZeroizedKey`]),
+    /// it has no [`seed`](MLDSAPrivateKeyTrait::seed), and its encodings are all zero.
+    pub fn zeroized() -> Self {
+        Self {
+            _phantom: core::marker::PhantomData,
+            seed: KeyMaterial::new(),
+            rho: [0u8; 32],
+            rho_prime: Secret::new(),
+            K: Secret::new(),
+            tr: [0u8; 64],
+        }
     }
 
-    /// [`Self::new`], also returning the public key the construction derives on the way to
-    /// `tr`, so that key generation does not derive it twice.
-    pub(in crate::mldsa_lowmemory) fn new_with_pk(
+    /// Whether the key holds a key: `tr` is a SHAKE256 output in a generated key, and all zero in
+    /// the state [`zeroized`](Self::zeroized) makes and the `_out` generators leave on an error.
+    fn is_filled(&self) -> bool {
+        self.tr != [0u8; 64]
+    }
+
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] unless the key holds a key.
+    pub(in crate::mldsa_lowmemory) fn check_filled(&self) -> Result<(), SignatureError> {
+        check_filled_tr(&self.tr)
+    }
+
+    /// Back to the all-zero key, the secret fields wiped.
+    pub(in crate::mldsa_lowmemory) fn clear(&mut self) {
+        self.seed.zeroize();
+        self.rho = [0u8; 32];
+        self.rho_prime.zeroize();
+        self.K.zeroize();
+        self.tr = [0u8; 64];
+    }
+
+    /// FIPS 204 Algorithm 6 (ML-DSA.KeyGen_internal) from `seed` into this key and `pk`, both
+    /// cleared first and left so on an error: the seed is copied, and 𝜌, 𝜌′ and 𝐾 derived, where
+    /// they live in the key.
+    pub(in crate::mldsa_lowmemory) fn fill_out(
+        &mut self,
         seed: &KeyMaterial<32>,
-    ) -> Result<(Self, MLDSAPublicKey<P>), SignatureError> {
+        pk: &mut MLDSAPublicKey<P>,
+    ) -> Result<(), SignatureError> {
+        self.clear();
+        pk.clear();
+        Self::check_seed(seed)?;
+
+        // Copied in place: a `clone` would stage the seed in a temporary and move it in.
+        let copied = do_hazardous_operations(&mut self.seed, |own| {
+            own.set_bytes_as_type(seed.ref_to_bytes(), seed.key_type())?;
+            own.set_security_strength(seed.security_strength())
+        });
+        if let Err(e) = copied {
+            self.clear();
+            return Err(e.into());
+        }
+
+        // Alg 6; 1: (rho, rho_prime, K) <- H(𝜉||IntegerToBytes(𝑘, 1)||IntegerToBytes(ℓ, 1), 128)
+        let mut h = H::default();
+        h.do_update(self.seed.ref_to_bytes());
+        h.do_update(&(P::k as u8).to_le_bytes());
+        h.do_update(&(P::l as u8).to_le_bytes());
+        let mut h = h.finish_squeezer(&finish_token());
+        let bytes_written = h.do_output_out(&mut self.rho);
+        debug_assert_eq!(bytes_written, 32);
+        let bytes_written = h.do_output_out(self.rho_prime.deref_mut());
+        debug_assert_eq!(bytes_written, 64);
+        let bytes_written = h.do_output_out(self.K.deref_mut());
+        debug_assert_eq!(bytes_written, 32);
+
+        pk.rho = self.rho;
+        self.derive_t1_packed_into(&mut pk.t1_packed);
+        self.tr = pk.compute_tr();
+        Ok(())
+    }
+
+    /// The 𝐭1 of [`MLDSAPrivateKeyTrait::derive_pk`], packed into `t1_packed`.
+    fn derive_t1_packed_into(&self, t1_packed: &mut P::T1Packed) {
+        // The goal here is to get t1, which is built and compressed one row at a time.
+
+        let mut s1_packed = Secret::<P::S1Packed>::new();
+        self.compute_s1_packed_out(&mut s1_packed);
+        let mut s2_packed = Secret::<P::S2Packed>::new();
+        self.compute_s2_packed_out(&mut s2_packed);
+
+        debug_assert_eq!(P::T1_PACKED_LEN, POLY_T1PACKED_LEN * P::k);
+        let mut t1_i = Polynomial::new();
+        for i in 0..P::k {
+            self.compute_t1_row_out(i, &s1_packed, &s2_packed, &mut t1_i);
+            t1_packed.as_mut()[i * POLY_T1PACKED_LEN..(i + 1) * POLY_T1PACKED_LEN]
+                .copy_from_slice(&simple_bit_pack_t1(&t1_i));
+        }
+    }
+
+    /// The seed checks of key generation.
+    fn check_seed(seed: &KeyMaterial<32>) -> Result<(), SignatureError> {
         if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
             || seed.key_len() != 32
         {
@@ -475,6 +595,25 @@ impl<P: MLDSAParams> MLDSASeedPrivateKey<P> {
                 "Seed SecurityStrength must match algorithm security strength: 128-bit (ML-DSA-44), 192-bit (ML-DSA-65), or 256-bit (ML-DSA-87).",
             ));
         }
+        Ok(())
+    }
+
+    /// Create a new MLDSASeedPrivateKey from a 32-byte KeyMaterial, deriving `tr` on the way.
+    /// The seed's `SecurityStrength` must be at least the parameter set's: 128-bit (ML-DSA-44),
+    /// 192-bit (ML-DSA-65) or 256-bit (ML-DSA-87); otherwise [`SignatureError::KeyGenError`].
+    pub fn new(seed: &KeyMaterial<32>) -> Result<Self, SignatureError> {
+        Self::new_with_pk(seed).map(|(sk, _pk)| sk)
+    }
+
+    /// [`Self::new`], also returning the public key the construction derives on the way to
+    /// `tr`, so that key generation does not derive it twice.
+    // Its own assembly rather than a wrapper over `fill_out`: as a wrapper it cost the KeyGen
+    // rows of the module's memory table 0.8 to 2.5 kB of stack. `keygen_out` is the form that
+    // leaves no copy of the key behind.
+    pub(in crate::mldsa_lowmemory) fn new_with_pk(
+        seed: &KeyMaterial<32>,
+    ) -> Result<(Self, MLDSAPublicKey<P>), SignatureError> {
+        Self::check_seed(seed)?;
 
         let (rho, rho_prime, K) = Self::compute_rhos_and_K(seed);
 
@@ -516,49 +655,54 @@ impl<P: MLDSAParams> MLDSASeedPrivateKey<P> {
         (rho, rho_prime, K)
     }
 
-    fn compute_t_row(
+    /// Row `idx` of 𝐭 = NTT−1(𝐀̂ ∘ NTT(𝐬1)) + 𝐬2, into `t_i`. The rows of 𝐬1 and 𝐬2 and their
+    /// products are held in `Secret`s here.
+    fn compute_t_row_out(
         &self,
         idx: usize,
         s1_packed: &Secret<P::S1Packed>,
         s2_packed: &Secret<P::S2Packed>,
-    ) -> Polynomial {
+        t_i: &mut Polynomial,
+    ) {
         debug_assert!(idx < P::k);
 
-        let mut t_i = {
-            // One loop body for every column, the first added to a zero accumulator; see
-            // `compute_wp_approx_row`.
-            let mut t_hat_i = Polynomial::new();
-            for col in 0..P::l {
-                // s1 is unpacked from its compressed form a row at a time.
-                let mut s1_hat = s_unpack::<P, _>(s1_packed, col);
-                s1_hat.ntt();
-                let mut A_elem = expandA_elem(&self.rho, idx, col);
-                A_elem.multiply_ntt(&s1_hat);
-                t_hat_i.add_ntt(&A_elem);
-            }
-            // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
-            t_hat_i.reduce32();
-            t_hat_i.inv_ntt();
+        let mut s_row = Secret::<Polynomial>::new();
+        let mut A_elem = Secret::<Polynomial>::new();
+        // One loop body for every column, the first added to a zero accumulator; see
+        // `compute_wp_approx_row`.
+        *t_i = Polynomial::new();
+        for col in 0..P::l {
+            // s1 is unpacked from its compressed form a row at a time.
+            s_unpack_out::<P, _>(s1_packed, col, &mut s_row);
+            s_row.ntt();
+            *A_elem = expandA_elem(&self.rho, idx, col);
+            A_elem.multiply_ntt(&s_row);
+            t_i.add_ntt(&A_elem);
+        }
+        // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+        t_i.reduce32();
+        t_i.inv_ntt();
 
-            t_hat_i
-        };
-
-        let s2 = s_unpack::<P, _>(s2_packed, idx);
-        t_i.add_ntt(&s2);
+        s_unpack_out::<P, _>(s2_packed, idx, &mut s_row);
+        t_i.add_ntt(&s_row);
         t_i.conditional_add_q();
-
-        t_i
     }
 }
 
 impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> PrivateKey<SK_LEN> for MLDSASeedPrivateKey<P> {
     /// Encodes the private key seed.
     fn encode(&self) -> [u8; SK_LEN] {
-        self.seed.ref_to_bytes().try_into().unwrap()
+        let mut out = [0u8; SK_LEN];
+        self.encode_out(&mut out);
+        out
     }
 
+    /// All zero for a key that was never filled.
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
         out.fill(0);
+        if !self.is_filled() {
+            return SK_LEN;
+        }
 
         out.copy_from_slice(self.seed.ref_to_bytes());
 
@@ -592,7 +736,7 @@ impl<P: MLDSAParams> MLDSAPrivateKeyTrait<P> for MLDSASeedPrivateKey<P> {
     }
 
     fn seed(&self) -> Option<&KeyMaterial<32>> {
-        Some(&self.seed)
+        self.is_filled().then_some(&self.seed)
     }
 
     fn tr(&self) -> &[u8; 64] {
@@ -600,21 +744,9 @@ impl<P: MLDSAParams> MLDSAPrivateKeyTrait<P> for MLDSASeedPrivateKey<P> {
     }
 
     fn derive_pk(&self) -> MLDSAPublicKey<P> {
-        // The goal here is to get t1, which is built and compressed one row at a time.
-
-        let s1_packed: Secret<P::S1Packed> = self.compute_s1_packed();
-        let s2_packed: Secret<P::S2Packed> = self.compute_s2_packed();
-
         let mut t1_packed = <P::T1Packed as ZeroizablePrimitive>::ZEROED;
-        debug_assert_eq!(P::T1_PACKED_LEN, POLY_T1PACKED_LEN * P::k);
-
-        for i in 0..P::k {
-            t1_packed.as_mut()[i * POLY_T1PACKED_LEN..(i + 1) * POLY_T1PACKED_LEN].copy_from_slice(
-                &simple_bit_pack_t1(&self.compute_t1_row(i, &s1_packed, &s2_packed)),
-            );
-        }
-
-        MLDSAPublicKey::<P>::new(self.rho, t1_packed)
+        self.derive_t1_packed_into(&mut t1_packed);
+        MLDSAPublicKey { rho: self.rho, t1_packed }
     }
     fn encode_full_sk<const FULL_SK_LEN: usize>(&self) -> [u8; FULL_SK_LEN]
     where
@@ -630,6 +762,10 @@ impl<P: MLDSAParams> MLDSAPrivateKeyTrait<P> for MLDSASeedPrivateKey<P> {
         P: FullPrivateKeyLen<FULL_SK_LEN>,
     {
         out.fill(0);
+        // A key that was never filled encodes as zeros, not as the key of an all-zero seed.
+        if !self.is_filled() {
+            return FULL_SK_LEN;
+        }
 
         // Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
 
@@ -645,14 +781,16 @@ impl<P: MLDSAParams> MLDSAPrivateKeyTrait<P> for MLDSASeedPrivateKey<P> {
         // 2: for 𝑖 from 0 to ℓ − 1 do
         // 3:   𝑠𝑘 ← 𝑠𝑘 || BitPack (𝐬1[𝑖], 𝜂, 𝜂)
         // 4: end for
-        let s1_packed = self.compute_s1_packed();
+        let mut s1_packed = Secret::<P::S1Packed>::new();
+        self.compute_s1_packed_out(&mut s1_packed);
         out[off..off + P::S1_PACKED_LEN].copy_from_slice((*s1_packed).as_ref());
         off += P::S1_PACKED_LEN;
 
         // 5: for 𝑖 from 0 to 𝑘 − 1 do
         // 6:   𝑠𝑘 ← 𝑠𝑘 || BitPack (𝐬2[𝑖], 𝜂, 𝜂)
         // 7: end for
-        let s2_packed = self.compute_s2_packed();
+        let mut s2_packed = Secret::<P::S2Packed>::new();
+        self.compute_s2_packed_out(&mut s2_packed);
         out[off..off + P::S2_PACKED_LEN].copy_from_slice((*s2_packed).as_ref());
         off += P::S2_PACKED_LEN;
 
@@ -660,8 +798,9 @@ impl<P: MLDSAParams> MLDSAPrivateKeyTrait<P> for MLDSASeedPrivateKey<P> {
         // 9:   𝑠𝑘 ← 𝑠𝑘 || BitPack (𝐭0[𝑖], 2𝑑−1 − 1, 2𝑑−1)
         // 10: end for
         debug_assert_eq!(off + P::k * POLY_T0PACKED_LEN, FULL_SK_LEN);
+        let mut t0_i = Secret::<Polynomial>::new();
         for row in 0..P::k {
-            let t0_i = self.compute_t0_row(row, &s1_packed, &s2_packed);
+            self.compute_t0_row_out(row, &s1_packed, &s2_packed, &mut t0_i);
             out[off..off + POLY_T0PACKED_LEN].copy_from_slice(&bit_pack_t0(&t0_i));
             off += POLY_T0PACKED_LEN;
         }
@@ -683,39 +822,37 @@ pub(in crate::mldsa_lowmemory) trait MLDSAPrivateKeyInternalTrait<P: MLDSAParams
         seed: &KeyMaterial<32>,
     ) -> Result<(Self, MLDSAPublicKey<P>), SignatureError>;
 
-    /// A single entry of a privacy key vector.
-    /// These tend to be used very transiently, so we won't bother wrapping it as a Secret.
-    fn compute_s1_row(&self, idx: usize) -> Polynomial;
+    /// Row `idx` of 𝐬1, into `s1_i`, which the caller holds: it is secret.
+    fn compute_s1_row_out(&self, idx: usize, s1_i: &mut Polynomial);
 
-    /// Private key component.
-    /// The packed representation sticks around for the whole computation, so
-    /// we'll wrap in as a Secret.
-    fn compute_s1_packed(&self) -> Secret<P::S1Packed>;
+    /// 𝐬1 in the packing of FIPS 204 Algorithm 24 lines 2-4, into `out`, which the caller holds
+    /// in a `Secret`.
+    fn compute_s1_packed_out(&self, out: &mut P::S1Packed);
 
-    /// A single entry of a privacy key vector.
-    /// These tend to be used very transiently, so we won't bother wrapping it as a Secret.
-    fn compute_s2_row(&self, idx: usize) -> Polynomial;
+    /// Row `idx` of 𝐬2, into `s2_i`, which the caller holds: it is secret.
+    fn compute_s2_row_out(&self, idx: usize, s2_i: &mut Polynomial);
 
-    /// Private key component.
-    /// The packed representation sticks around for the whole computation, so
-    /// we'll wrap in as a Secret.
-    fn compute_s2_packed(&self) -> Secret<P::S2Packed>;
+    /// 𝐬2 in the packing of FIPS 204 Algorithm 24 lines 5-7, into `out`, which the caller holds
+    /// in a `Secret`.
+    fn compute_s2_packed_out(&self, out: &mut P::S2Packed);
 
-    /// Public key component.
-    fn compute_t0_row(
+    /// Private key component: row `idx` of 𝐭0, into `t0_i`, which the caller holds.
+    fn compute_t0_row_out(
         &self,
         idx: usize,
         s1_packed: &Secret<P::S1Packed>,
         s2_packed: &Secret<P::S2Packed>,
-    ) -> Polynomial;
+        t0_i: &mut Polynomial,
+    );
 
-    /// Public key component.
-    fn compute_t1_row(
+    /// Public key component: row `idx` of 𝐭1, into `t1_i`.
+    fn compute_t1_row_out(
         &self,
         idx: usize,
         s1_packed: &Secret<P::S1Packed>,
         s2_packed: &Secret<P::S2Packed>,
-    ) -> Polynomial;
+        t1_i: &mut Polynomial,
+    );
 }
 
 impl<P: MLDSAParams> MLDSAPrivateKeyInternalTrait<P> for MLDSASeedPrivateKey<P> {
@@ -733,62 +870,58 @@ impl<P: MLDSAParams> MLDSAPrivateKeyInternalTrait<P> for MLDSASeedPrivateKey<P> 
         &self.K
     }
 
-    fn compute_s1_row(&self, idx: usize) -> Polynomial {
+    fn compute_s1_row_out(&self, idx: usize, s1_i: &mut Polynomial) {
         debug_assert!(idx < P::l);
-        rej_bounded_poly::<P>(&self.rho_prime, &(idx as u16).to_le_bytes())
+        rej_bounded_poly_out::<P>(&self.rho_prime, &(idx as u16).to_le_bytes(), s1_i)
     }
 
-    fn compute_s1_packed(&self) -> Secret<P::S1Packed> {
-        let mut s1_packed: Secret<P::S1Packed> = Secret::new();
+    fn compute_s1_packed_out(&self, out: &mut P::S1Packed) {
+        let mut s1_i = Secret::<Polynomial>::new();
         let width = P::POLY_ETA_PACKED_LEN;
         for idx in 0..P::l {
-            let s1_i = self.compute_s1_row(idx);
-            bit_pack_eta::<P>(&s1_i, &mut s1_packed.as_mut()[idx * width..(idx + 1) * width]);
+            self.compute_s1_row_out(idx, &mut s1_i);
+            bit_pack_eta::<P>(&s1_i, &mut out.as_mut()[idx * width..(idx + 1) * width]);
         }
-        s1_packed
     }
 
-    fn compute_s2_row(&self, idx: usize) -> Polynomial {
+    fn compute_s2_row_out(&self, idx: usize, s2_i: &mut Polynomial) {
         debug_assert!(idx < P::k);
-        rej_bounded_poly::<P>(&self.rho_prime, &((idx + P::l) as u16).to_le_bytes())
+        rej_bounded_poly_out::<P>(&self.rho_prime, &((idx + P::l) as u16).to_le_bytes(), s2_i)
     }
 
-    fn compute_s2_packed(&self) -> Secret<P::S2Packed> {
-        let mut s2_packed: Secret<P::S2Packed> = Secret::new();
+    fn compute_s2_packed_out(&self, out: &mut P::S2Packed) {
+        let mut s2_i = Secret::<Polynomial>::new();
         let width = P::POLY_ETA_PACKED_LEN;
         for idx in 0..P::k {
-            let s2_i = self.compute_s2_row(idx);
-            bit_pack_eta::<P>(&s2_i, &mut s2_packed.as_mut()[idx * width..(idx + 1) * width]);
+            self.compute_s2_row_out(idx, &mut s2_i);
+            bit_pack_eta::<P>(&s2_i, &mut out.as_mut()[idx * width..(idx + 1) * width]);
         }
-        s2_packed
     }
 
-    fn compute_t0_row(
+    fn compute_t0_row_out(
         &self,
         idx: usize,
         s1_packed: &Secret<P::S1Packed>,
         s2_packed: &Secret<P::S2Packed>,
-    ) -> Polynomial {
-        let mut t0 = self.compute_t_row(idx, s1_packed, s2_packed);
+        t0_i: &mut Polynomial,
+    ) {
+        self.compute_t_row_out(idx, s1_packed, s2_packed, t0_i);
         for j in 0..N {
-            (_, t0[j]) = power_2_round(t0[j]);
+            (_, t0_i[j]) = power_2_round(t0_i[j]);
         }
-
-        t0
     }
 
-    fn compute_t1_row(
+    fn compute_t1_row_out(
         &self,
         idx: usize,
         s1_packed: &Secret<P::S1Packed>,
         s2_packed: &Secret<P::S2Packed>,
-    ) -> Polynomial {
-        let mut t1 = self.compute_t_row(idx, s1_packed, s2_packed);
+        t1_i: &mut Polynomial,
+    ) {
+        self.compute_t_row_out(idx, s1_packed, s2_packed, t1_i);
         for j in 0..N {
-            (t1[j], _) = power_2_round(t1[j]);
+            (t1_i[j], _) = power_2_round(t1_i[j]);
         }
-
-        t1
     }
 }
 
@@ -802,6 +935,8 @@ impl<P: MLDSAParams> SignMuWithRnd<P> for MLDSASeedPrivateKey<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
+        output.fill(0);
+        self.check_filled()?;
         sign_internal::<P, Self, SIG_LEN>(self, mu, rnd, output)
     }
 }

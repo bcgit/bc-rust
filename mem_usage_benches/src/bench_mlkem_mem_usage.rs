@@ -629,7 +629,11 @@ fn bench_mlkem512_keygen() {
     )
     .unwrap();
 
-    let (pk, _sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
+    // The keys go to storage the caller holds, as `keygen_out` writes into, so that the two
+    // forms are measured alike.
+    let mut keys = None;
+    measure(|| keys = Some(MLKEM512::keygen_from_seed(&seed).unwrap()));
+    let (pk, _sk) = keys.unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -650,7 +654,11 @@ fn bench_mlkem512_lowmemory_keygen() {
     )
     .unwrap();
 
-    let (pk, _sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
+    // The keys go to storage the caller holds, as `keygen_out` writes into, so that the two
+    // forms are measured alike.
+    let mut keys = None;
+    measure(|| keys = Some(MLKEM512::keygen_from_seed(&seed).unwrap()));
+    let (pk, _sk) = keys.unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -671,7 +679,11 @@ fn bench_mlkem768_keygen() {
     )
     .unwrap();
 
-    let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
+    // The keys go to storage the caller holds, as `keygen_out` writes into, so that the two
+    // forms are measured alike.
+    let mut keys = None;
+    measure(|| keys = Some(MLKEM768::keygen_from_seed(&seed).unwrap()));
+    let (pk, _sk) = keys.unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -692,7 +704,11 @@ fn bench_mlkem768_lowmemory_keygen() {
     )
     .unwrap();
 
-    let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
+    // The keys go to storage the caller holds, as `keygen_out` writes into, so that the two
+    // forms are measured alike.
+    let mut keys = None;
+    measure(|| keys = Some(MLKEM768::keygen_from_seed(&seed).unwrap()));
+    let (pk, _sk) = keys.unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -713,7 +729,11 @@ fn bench_mlkem1024_keygen() {
     )
     .unwrap();
 
-    let (pk, _sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
+    // The keys go to storage the caller holds, as `keygen_out` writes into, so that the two
+    // forms are measured alike.
+    let mut keys = None;
+    measure(|| keys = Some(MLKEM1024::keygen_from_seed(&seed).unwrap()));
+    let (pk, _sk) = keys.unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -734,7 +754,11 @@ fn bench_mlkem1024_lowmemory_keygen() {
     )
     .unwrap();
 
-    let (pk, _sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
+    // The keys go to storage the caller holds, as `keygen_out` writes into, so that the two
+    // forms are measured alike.
+    let mut keys = None;
+    measure(|| keys = Some(MLKEM1024::keygen_from_seed(&seed).unwrap()));
+    let (pk, _sk) = keys.unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -2110,8 +2134,8 @@ fn bench_mlkem512_keygen_out() {
     .unwrap();
 
     let mut sk = bouncycastle::pqc::mlkem::MLKEM512PrivateKey::zeroized();
-    MLKEM512::keygen_from_seed_out(&seed, &mut sk).unwrap();
-    println!("{:x?}", sk.pk().encode());
+    measure(|| MLKEM512::keygen_from_seed_out(&seed, &mut sk).unwrap());
+    println!("{:x?}", sk.pk().unwrap().encode());
 }
 
 fn bench_mlkem768_keygen_out() {
@@ -2132,8 +2156,8 @@ fn bench_mlkem768_keygen_out() {
     .unwrap();
 
     let mut sk = bouncycastle::pqc::mlkem::MLKEM768PrivateKey::zeroized();
-    MLKEM768::keygen_from_seed_out(&seed, &mut sk).unwrap();
-    println!("{:x?}", sk.pk().encode());
+    measure(|| MLKEM768::keygen_from_seed_out(&seed, &mut sk).unwrap());
+    println!("{:x?}", sk.pk().unwrap().encode());
 }
 
 fn bench_mlkem1024_keygen_out() {
@@ -2154,8 +2178,77 @@ fn bench_mlkem1024_keygen_out() {
     .unwrap();
 
     let mut sk = bouncycastle::pqc::mlkem::MLKEM1024PrivateKey::zeroized();
-    MLKEM1024::keygen_from_seed_out(&seed, &mut sk).unwrap();
-    println!("{:x?}", sk.pk().encode());
+    measure(|| MLKEM1024::keygen_from_seed_out(&seed, &mut sk).unwrap());
+    println!("{:x?}", sk.pk().unwrap().encode());
+}
+
+fn bench_mlkem512_lowmemory_keygen_out() {
+    use bouncycastle::pqc::mlkem_lowmemory::{MLKEM512, MLKEMPrivateKeyTrait, MLKEMTrait};
+
+    eprintln!("MLKEM512_lowmemory/KeyGenOut");
+
+    let seed = KeyMaterial512::from_bytes_as_type(
+        &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
+            0x1C, 0x1D, 0x1E, 0x1F, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+            0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+            0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,
+        ],
+        KeyType::Seed,
+    )
+    .unwrap();
+
+    let mut sk = bouncycastle::pqc::mlkem_lowmemory::MLKEM512PrivateKey::zeroized();
+    measure(|| MLKEM512::keygen_from_seed_out(&seed, &mut sk).unwrap());
+    // H(ek): the public key itself would be derived again.
+    println!("{:x?}", sk.pk_hash());
+}
+
+fn bench_mlkem768_lowmemory_keygen_out() {
+    use bouncycastle::pqc::mlkem_lowmemory::{MLKEM768, MLKEMPrivateKeyTrait, MLKEMTrait};
+
+    eprintln!("MLKEM768_lowmemory/KeyGenOut");
+
+    let seed = KeyMaterial512::from_bytes_as_type(
+        &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
+            0x1C, 0x1D, 0x1E, 0x1F, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+            0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+            0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,
+        ],
+        KeyType::Seed,
+    )
+    .unwrap();
+
+    let mut sk = bouncycastle::pqc::mlkem_lowmemory::MLKEM768PrivateKey::zeroized();
+    measure(|| MLKEM768::keygen_from_seed_out(&seed, &mut sk).unwrap());
+    // H(ek): the public key itself would be derived again.
+    println!("{:x?}", sk.pk_hash());
+}
+
+fn bench_mlkem1024_lowmemory_keygen_out() {
+    use bouncycastle::pqc::mlkem_lowmemory::{MLKEM1024, MLKEMPrivateKeyTrait, MLKEMTrait};
+
+    eprintln!("MLKEM1024_lowmemory/KeyGenOut");
+
+    let seed = KeyMaterial512::from_bytes_as_type(
+        &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
+            0x1C, 0x1D, 0x1E, 0x1F, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+            0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+            0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,
+        ],
+        KeyType::Seed,
+    )
+    .unwrap();
+
+    let mut sk = bouncycastle::pqc::mlkem_lowmemory::MLKEM1024PrivateKey::zeroized();
+    measure(|| MLKEM1024::keygen_from_seed_out(&seed, &mut sk).unwrap());
+    // H(ek): the public key itself would be derived again.
+    println!("{:x?}", sk.pk_hash());
 }
 
 /// Encapsulation with the expanded key, including building it from the key loaded beforehand.
@@ -2514,6 +2607,9 @@ fn main() {
     // bench_mlkem512_keygen_out()
     // bench_mlkem768_keygen_out()
     // bench_mlkem1024_keygen_out()
+    // bench_mlkem512_lowmemory_keygen_out()
+    // bench_mlkem768_lowmemory_keygen_out()
+    // bench_mlkem1024_lowmemory_keygen_out()
     // bench_mlkem512_encaps_expanded_pk()
     // bench_mlkem768_encaps_expanded_pk()
     // bench_mlkem1024_encaps_expanded_pk()

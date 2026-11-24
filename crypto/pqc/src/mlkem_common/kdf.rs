@@ -206,19 +206,25 @@ impl<const SS_LEN: usize> MLKEMKdfPairing<HkdfDescription<'_, SHA512>, SS_LEN> f
 /// it returns. Its impls are `#[inline(always)]` for the worker's peak stack, which the KDF rows
 /// of the stack harness measure.
 pub(crate) trait PlainEncaps<const CT_LEN: usize> {
-    /// Algorithm 20 ML-KEM.Encaps(ek): 𝐾 and the number of bytes written to `ct`, which is
-    /// zeroized first.
+    /// Algorithm 20 ML-KEM.Encaps(ek) into `ct` and `K`, both zeroized first and left so on an
+    /// error; returns the number of bytes written to `ct`.
     fn encaps_K(
         &self,
         rng: &mut dyn RNG,
         ct: &mut [u8; CT_LEN],
-    ) -> Result<(KeyMaterial<MLKEM_SS_LEN>, usize), KEMError>;
+        K: &mut KeyMaterial<MLKEM_SS_LEN>,
+    ) -> Result<usize, KEMError>;
 }
 
 /// The plain ML-KEM decapsulation of a private key; see [`PlainEncaps`].
 pub(crate) trait PlainDecaps<const CT_LEN: usize> {
-    /// Algorithm 21 ML-KEM.Decaps(dk, 𝑐): 𝐾.
-    fn decaps_K(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError>;
+    /// Algorithm 21 ML-KEM.Decaps(dk, 𝑐) into `K`, zeroized first and left so on an error;
+    /// returns the number of bytes written.
+    fn decaps_K(
+        &self,
+        ct: &[u8; CT_LEN],
+        K: &mut KeyMaterial<MLKEM_SS_LEN>,
+    ) -> Result<usize, KEMError>;
 }
 
 /// The encapsulator an ML-KEM public key hands out through
@@ -278,7 +284,9 @@ impl<
         ss: &mut KeyMaterial<SS_LEN>,
     ) -> Result<usize, KEMError> {
         ss.zeroize();
-        let (K, written) = self.ek.encaps_K(rng, ct)?;
+        // 𝐾 is made in this frame and wiped when it drops.
+        let mut K = KeyMaterial::<MLKEM_SS_LEN>::new();
+        let written = self.ek.encaps_K(rng, ct, &mut K)?;
         // A ciphertext for a secret the caller never gets is not left in the buffer; `derive`
         // leaves `ss` zeroized on its errors.
         if let Err(e) = P::derive(self.params, &K, ss) {
@@ -346,7 +354,9 @@ impl<
         ss: &mut KeyMaterial<SS_LEN>,
     ) -> Result<usize, KEMError> {
         ss.zeroize();
-        let K = self.dk.decaps_K(ct)?;
+        // 𝐾 is made in this frame and wiped when it drops.
+        let mut K = KeyMaterial::<MLKEM_SS_LEN>::new();
+        self.dk.decaps_K(ct, &mut K)?;
         P::derive(self.params, &K, ss)?;
         Ok(SS_LEN)
     }
