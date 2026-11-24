@@ -81,7 +81,7 @@ mod mldsa_tests {
 
     #[test]
     fn test_framework_signature() {
-        let tf = TestFrameworkSignature::new(true);
+        let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
 
         tf.test_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(
             || MLDSA44::keygen(&mut DefaultRNG::default()),
@@ -101,7 +101,7 @@ mod mldsa_tests {
     #[test]
     fn test_framework_deterministic_signature() {
         use bouncycastle_pqc::mldsa::{MLDSA65PrivateKeyExpanded, MLDSA65PublicKeyExpanded};
-        let tf = TestFrameworkSignature::new(true);
+        let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
         tf.test_deterministic_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
         tf.test_deterministic_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_SIG_LEN>(|| MLDSA65::keygen(&mut DefaultRNG::default()), false);
         tf.test_deterministic_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_SIG_LEN>(|| MLDSA87::keygen(&mut DefaultRNG::default()), false);
@@ -198,7 +198,7 @@ mod mldsa_tests {
             Ok((OneShotOnlyPk(pk), OneShotOnlySk(sk)))
         }
 
-        let tf = TestFrameworkSignature::new(true);
+        let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
         tf.test_one_shot_signature::<MLDSA44, _, _, MLDSA44_SIG_LEN>(keygen::<false>, false);
         tf.test_deterministic_one_shot_signature::<MLDSA44, _, _, MLDSA44_SIG_LEN>(
             keygen::<false>, false,
@@ -216,7 +216,7 @@ mod mldsa_tests {
     #[test]
     #[ignore]
     fn test_framework_signature_extensive() {
-        let tf = TestFrameworkSignature::new(true);
+        let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
 
         tf.test_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(
             || MLDSA44::keygen(&mut DefaultRNG::default()),

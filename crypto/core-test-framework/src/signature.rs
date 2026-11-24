@@ -32,17 +32,6 @@ pub struct TestFrameworkSignature {
 }
 
 impl TestFrameworkSignature {
-    /// For an algorithm that binds the context into the signature (`true`,
-    /// [`CtxBehaviour::Bound`]) or takes none and refuses one (`false`,
-    /// [`CtxBehaviour::Refused`]).
-    pub fn new(alg_accepts_ctx: bool) -> Self {
-        Self::with_ctx_behaviour(if alg_accepts_ctx {
-            CtxBehaviour::Bound
-        } else {
-            CtxBehaviour::Refused
-        })
-    }
-
     /// For an algorithm with the given treatment of the context.
     pub fn with_ctx_behaviour(ctx: CtxBehaviour) -> Self {
         Self { ctx }

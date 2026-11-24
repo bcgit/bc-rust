@@ -13,7 +13,7 @@ mod hash_mldsa_tests {
     use bouncycastle_core::hazmat::FixedSeedRNG;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
+    use bouncycastle_core_test_framework::signature::{CtxBehaviour, TestFrameworkSignature};
     use bouncycastle_digest::sha2::{SHA256, SHA512};
     use bouncycastle_digest::sha3::{SHAKE128, SHAKE256};
     use bouncycastle_pqc::mldsa_lowmemory::{
@@ -71,7 +71,7 @@ mod hash_mldsa_tests {
     /// of the four named pairings; the digest-supplied roles are the next two tests'.
     #[test]
     fn core_framework_roles_over_the_message() {
-        let tf = TestFrameworkSignature::new(true);
+        let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
         tf.test_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHA256>, false);
         tf.test_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHA512>, false);
         tf.test_signature::<_, _, _, MLDSA65_SIG_LEN>(views_65::<SHA512>, false);
@@ -83,7 +83,7 @@ mod hash_mldsa_tests {
 
     #[test]
     fn core_framework_signature() {
-        let tf = TestFrameworkSignature::new(true);
+        let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
 
         // HashML-DSA-44 with SHA-256, the one SHA-256 pairing
         tf.test_ph_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHA256>, false);
@@ -97,7 +97,7 @@ mod hash_mldsa_tests {
     /// The deterministic variant over a pre-hash, through the framework's suite.
     #[test]
     fn core_framework_deterministic_ph_signature() {
-        let tf = TestFrameworkSignature::new(true);
+        let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
         tf.test_deterministic_ph_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHA256>, false);
         tf.test_deterministic_ph_signature::<_, _, _, MLDSA65_SIG_LEN>(views_65::<SHA512>, false);
         tf.test_deterministic_ph_signature::<_, _, _, MLDSA87_SIG_LEN>(views_87::<SHA512>, false);
@@ -438,7 +438,7 @@ mod hash_mldsa_tests {
     /// 128-bit strength fits ML-DSA-44 only; SHAKE256's 64-byte digest fits all three.
     #[test]
     fn shake_pre_hashes() {
-        let tf = TestFrameworkSignature::new(true);
+        let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
         tf.test_ph_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHAKE128>, false);
         tf.test_ph_signature::<_, _, _, MLDSA44_SIG_LEN>(views_44::<SHAKE256>, false);
         tf.test_ph_signature::<_, _, _, MLDSA65_SIG_LEN>(views_65::<SHAKE256>, false);

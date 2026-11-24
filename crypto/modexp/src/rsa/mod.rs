@@ -355,6 +355,10 @@
 //!   §6.4.1.4.3's validation of a key pair, primality included, for a key from elsewhere; its
 //!   cost is that of some tens of private-key operations, so it is the caller's to ask for. Keys
 //!   from this module's own `keygen` meet FIPS 186-5 Appendix A.1.1's criteria by construction.
+//! - **PKCS#1 v1.5 verification accepts the `DigestInfo` with or without `NULL` parameters.**
+//!   Signing always writes the `AlgorithmIdentifier` with `parameters NULL`; verification also
+//!   accepts it with `parameters` absent, which some implementations produce for a hash OID,
+//!   and checks every other byte of the encoding strictly.
 //! - **Key generation is not constant-time.** Rejection sampling of prime candidates is
 //!   inherently data-dependent in how many candidates it draws and where each is rejected, and the
 //!   small-modulus arithmetic on candidates uses ordinary integer division -- see [`keygen`]'s docs
