@@ -69,8 +69,8 @@
 //! (spec s. 5.4).
 //!
 //! Peak stack per call, measured by painting the stack below a non-inlined call into the operation
-//! (the object and the output buffer included, the 4 KiB input static, and the 1 KiB stack wipe
-//! after compressing; release build with thin LTO, x86_64, rustc 1.97.0-nightly):
+//! (the object and the output buffer included, the 4 KiB input static, and the stack wipe after
+//! compressing, 1 KiB or 512 bytes; release build with thin LTO, x86_64, rustc 1.97.0-nightly):
 //!
 //! | Operation                                              | Stack   |
 //! |--------------------------------------------------------|---------|
@@ -81,7 +81,7 @@
 //! | [`BLAKE3KeyedHashKey`] from key material               | 456 B   |
 //! | [`BLAKE3KeyedHashKey`] `mac_out`                       | 3064 B  |
 //! | [`BLAKE3KeyedHash`] `into_squeezer`, 512 bytes         | 5816 B  |
-//! | [`BLAKE3DeriveKey`] `new`, `hash_out`                  | 6424 B  |
+//! | [`BLAKE3DeriveKey`] `new`, `hash_out`                  | 6280 B  |
 //!
 //! # 🚨 Security Considerations 🚨
 //!

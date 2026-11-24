@@ -37,14 +37,22 @@ const KEY_LEN: usize = 32;
 /// bytes."
 const MAX_DEPTH: usize = 54;
 
-/// How much stack [`wipe_stack_below`] overwrites after each operation that compresses, which runs
-/// in a frame of its own (the `*_in_own_frame` functions), in 64-bit words: more than the deepest
-/// of them uses (696 bytes with return addresses, `finish_out_in_own_frame`, in the x86-64
-/// release build), with room for a compiler that lays the frames out less tightly. What the
-/// compression function and its callers leave there (the working state, the message words, the
-/// chaining values) is the message, the key (keyed_hash) or the key material (derive_key). An
-/// unoptimised build's frames are not covered.
+/// How much stack [`wipe_stack_below`] overwrites after a final or an update that completes a
+/// chunk, each of which runs in a frame of its own (the `*_in_own_frame` functions), in 64-bit
+/// words: more than the deepest of them uses (696 bytes with return addresses,
+/// `finish_out_in_own_frame`, and the 124 bytes of red zone `compress` writes below its own frame,
+/// in the x86-64 release build), with room for a compiler that lays the frames out less tightly.
+/// What the compression function and its callers leave there (the working state, the message
+/// words, the chaining values) is the message, the key (keyed_hash) or the key material
+/// (derive_key). An unoptimised build's frames are not covered.
 const WIPED_STACK_WORDS: usize = 128;
+
+/// As [`WIPED_STACK_WORDS`], after one of the shallower operations that compress a block at a
+/// time: an update within the current chunk (`update_chunk_in_own_frame`, 304 bytes), a squeezer
+/// read (232) and [`BLAKE3Squeezer::from_suspended`] (168), each with the 124-byte red zone of
+/// `compress` below it. A residue probe of
+/// 64-byte updates finds the dead stack clean from 50 words, on rustc 1.88 and 1.97-nightly.
+const BLOCK_WIPED_STACK_WORDS: usize = 64;
 
 /// As [`WIPED_STACK_WORDS`], after a [`BLAKE3KeyedHashKey`] is read from key material
 /// (`read_key_words_in_own_frame` and the accessors it calls use under 100 bytes).
@@ -547,20 +555,36 @@ impl<K: KeyWords> Blake3Core<K> {
     }
 
     /// Absorbs `input`, in a frame of its own whose stack is overwritten afterwards whenever a
-    /// block may have been compressed.
+    /// block may have been compressed: by [`WIPED_STACK_WORDS`] when the current chunk is
+    /// completed (its chaining value merged into the tree, compressing parent nodes), by
+    /// [`BLOCK_WIPED_STACK_WORDS`] when only blocks of the current chunk are compressed. Both
+    /// choices depend only on lengths.
     fn update(&mut self, input: &[u8]) {
         self.assert_not_finished();
-        // Only to save the wipe. Mutants note: a mutant of the condition changes only whether the
-        // stack is overwritten, which no test observes.
+        // Mutants note: a mutant of `compresses`, or one sending more updates down the
+        // chunk-completing branch (`>` to `>=`, the condition to `true`), changes only which stack
+        // is overwritten, which no test observes.
         let compresses = self.chunk_state.block_len as usize + input.len() > BLOCK_LEN;
-        self.update_in_own_frame(input);
-        if compresses {
+        if self.chunk_state.len() + input.len() > CHUNK_LEN {
+            self.update_in_own_frame(input);
             wipe_stack_below::<WIPED_STACK_WORDS>();
+        } else {
+            self.update_chunk_in_own_frame(input);
+            if compresses {
+                wipe_stack_below::<BLOCK_WIPED_STACK_WORDS>();
+            }
         }
     }
 
-    /// The absorption of [`Self::update`]. A block is compressed only once it is full and more
-    /// input follows (s. 5.1.1), so input that fits in the buffered block compresses nothing.
+    /// The absorption of [`Self::update`] for input that fits in the current chunk, so that no
+    /// chunk is completed.
+    #[inline(never)]
+    fn update_chunk_in_own_frame(&mut self, input: &[u8]) {
+        self.chunk_state.update(self.key_words.words(), input);
+    }
+
+    /// The absorption of [`Self::update`] for input that completes the current chunk. A block is
+    /// compressed only once it is full and more input follows (s. 5.1.1).
     #[inline(never)]
     fn update_in_own_frame(&mut self, mut input: &[u8]) {
         let mut chunk_cv = Secret::<[u32; 8]>::new();
@@ -938,7 +962,7 @@ impl BLAKE3Squeezer {
 impl XOFSqueezer for BLAKE3Squeezer {
     fn do_output_out(&mut self, output: &mut [u8]) -> usize {
         let written = self.squeeze_in_own_frame(output);
-        wipe_stack_below::<WIPED_STACK_WORDS>();
+        wipe_stack_below::<BLOCK_WIPED_STACK_WORDS>();
         written
     }
 }
@@ -1037,7 +1061,7 @@ impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
                 output_block_counter - 1,
                 &mut squeezer.buf,
             );
-            wipe_stack_below::<WIPED_STACK_WORDS>();
+            wipe_stack_below::<BLOCK_WIPED_STACK_WORDS>();
         }
 
         Ok(squeezer.clone())
