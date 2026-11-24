@@ -224,9 +224,15 @@ impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for CSHAKEInternal<PARAMS
 }
 
 /// The absorbing phase. Once output begins the sponge is a [`SHAKESqueezer`] -- the domain suffix
-/// is in, and nothing cSHAKE-specific remains -- so it suspends and resumes as one.
+/// is in, and nothing cSHAKE-specific remains -- so it suspends and resumes as one. A value that
+/// has been finished where it sits (`finish_squeezer`, [`Hash::finish_into`]) is not suspended:
+/// as with KMACXOF, TupleHashXOF and ParallelHashXOF, `suspend` panics.
 impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_CSHAKE_STATE_LEN> for CSHAKEInternal<PARAMS> {
+    /// # Panics
+    /// If the value has been finished through a [`FinishToken`]: no type resumes the state it
+    /// would write.
     fn suspend(self) -> [u8; SUSPENDED_CSHAKE_STATE_LEN] {
+        self.assert_not_finished();
         suspend_component(&self)
     }
 

@@ -423,6 +423,28 @@ fn a_finished_shake_suspends_as_its_squeezer() {
     assert_eq!(resumed.do_output(64), expected.do_output(64));
 }
 
+/// A cSHAKE finished where it sits is not suspended, as KMACXOF, TupleHashXOF and
+/// ParallelHashXOF are not: no type resumes the state it would write.
+#[test]
+fn a_finished_cshake_is_not_suspended() {
+    let mut cshake = CSHAKE128::new(b"name", b"custom");
+    cshake.do_update(b"abc");
+    let _ = cshake.finish_squeezer(&finish_token()).do_output(8);
+    refused("cSHAKE128 suspend after finish_squeezer", || cshake.suspend());
+
+    let mut cshake = CSHAKE256::new(b"name", b"custom");
+    let mut out = [0u8; 64];
+    cshake.finish_into(&finish_token(), &mut out);
+    refused("cSHAKE256 suspend after finish_into", || cshake.suspend());
+
+    // Unfinished, it still suspends and resumes.
+    let mut cshake = CSHAKE128::new(b"name", b"custom");
+    cshake.do_update(b"abc");
+    let state = cshake.clone().suspend();
+    let mut resumed = CSHAKE128::from_suspended(state).unwrap();
+    assert_eq!(resumed.into_squeezer().do_output(32), cshake.into_squeezer().do_output(32));
+}
+
 /// The same rule after a hash final taken where the value sits, which is how the library's own
 /// code finishes a hash it holds.
 #[test]
