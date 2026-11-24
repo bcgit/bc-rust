@@ -188,15 +188,15 @@
 * Workers are finished where they sit, and a worker held as `Box<dyn ..>` can finish its message (#173). Each worker
   trait (`Hash`, the symmetric and AEAD encryptors and decryptors, `MACGenerator` / `MACVerifier`, `SignatureSigner` /
   `SignatureVerifier`) now has one required finishing method on `&mut self` (`finish_into`,
-  `finish_partial_bits_into`, `finish_encrypt`, `finish_decrypt`,
+  `finish_partial_bits_into`, `finish_encrypt`, `finish_decrypt_into`,
   `finish_encrypt_detached_into`, `finish_decrypt_detached_into`, `finish_mac_into`, `finish_mac_verify`,
   `finish_signature_into`, `finish_signature_verify`), and the consuming finals are provided over it, each with a
   `_boxed` twin taking `self: Box<Self>` (`do_final_out_boxed`, `do_final_partial_bits_out_boxed`,
-  `do_encrypt_final_boxed`, `do_decrypt_final_boxed`, `do_encrypt_final_detached_out_boxed`,
-  `do_decrypt_final_detached_out_boxed`, `do_verify_final_boxed`). A boxed worker's `Secret` state is wiped inside its
-  box, which the final never moves it out of. The finishing methods take a `&core::traits::FinishToken`, whose
-  constructor is private to `core`, so that they are called by the provided consuming finals and not a second time by
-  accident; a worker type that deliberately hands its token to a worker it only borrows can still defeat this. Callers
+  `do_encrypt_final_boxed`, `do_decrypt_final_boxed`, `do_decrypt_final_out_boxed`,
+  `do_encrypt_final_detached_out_boxed`, `do_decrypt_final_detached_out_boxed`, `do_verify_final_boxed`). A boxed
+  worker's `Secret` state is wiped inside its box, which the final never moves it out of. The finishing methods take a
+  `&core::traits::FinishToken`, whose constructor is private to `core`, so that they are called by the provided
+  consuming finals and not a second time by accident; a worker type that deliberately hands its token to a worker it only borrows can still defeat this. Callers
   are unaffected; an implementor of a worker trait outside this workspace writes the in-place method instead of the
   consuming final. Code that owns a worker without implementing a worker trait takes a token from
   `core::hazmat::finish_token()` and with it the duty to finish the worker once and not use it again: the X9.63 and
@@ -385,3 +385,4 @@
 * The in-place AEAD one-shots no longer leave plaintext in a stack buffer of their own: ChaCha20-Poly1305's and Ascon-AEAD128's `encrypt_detached_inplace` / `decrypt_detached_inplace` work in the caller's buffer with no copy, and `core::symmetric_key::encrypt_detached_inplace` / `decrypt_detached_inplace`, which the GCM and CCM keys use, wipe the chunk and last-block buffers they copy plaintext through. Outputs are unchanged.
 * `core::base64`: `Base64Encoder` and `Base64Decoder` keep the incomplete block they hold in a `Secret`, wiped on drop, and a `Base64Decoder` whose `do_update_out` fails for any reason other than padding or a short buffer is wiped and refuses every later call with the new `Base64Error::DecoderFailed` (it kept the symbols of the failed block and went on decoding). `core::hex` wipes the half-decoded byte its decoder holds on every return, the errors included.
 * The `KDF` one-shots `derive_key` and `derive_key_from_multiple` derive straight into the boxed key they return, leaving no copy of it on the stack (and the call's peak stack is that much lower, about 1.1 KB for KBKDF).
+* `SymmetricCipherDecryptor`'s required finishing method is `finish_decrypt_into(&mut self, token, out: &mut [u8; FINAL_LEN]) -> Result<usize, _>`, which writes the last plaintext into the caller's buffer, zeroized past the count and on every error, where `finish_decrypt` returned it by value; an implementor outside the workspace writes the new method. `do_decrypt_final_out` now writes straight into the caller's buffer, and the key one-shots (`decrypt_out`, `decrypt_with_aad_out` and their declared-length forms) finish into a `Secret`, so a CBC/PKCS7 decrypt no longer leaves its last plaintext block on the stack. `do_decrypt_final` and `do_decrypt_final_boxed` still return the block by value, with the bytes after the data now 0 where a padded final returned the padding; the new `do_decrypt_final_out_boxed` is the boxed form that leaves no copy. The provided `_out` finals, detached ones included, zeroize the caller's buffer on an error themselves as well, whatever the implementor left there. Outputs are otherwise unchanged.

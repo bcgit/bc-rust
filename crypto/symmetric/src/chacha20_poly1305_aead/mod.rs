@@ -470,16 +470,18 @@ impl SymmetricCipherDecryptor<NONCE_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, Decr
         Ok(release)
     }
 
-    fn finish_decrypt(
+    fn finish_decrypt_into(
         &mut self,
         token: &FinishToken,
-    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        out: &mut [u8; TAG_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        out.fill(0);
         if self.held_len != TAG_LEN {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
         let tag = self.held;
         self.verify_tag(token, &tag)?;
-        Ok(([0u8; TAG_LEN], 0))
+        Ok(0)
     }
 
     fn decrypt_out_len(ciphertext_len: usize) -> usize {

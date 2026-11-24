@@ -99,7 +99,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///     let bytes_written = decryptor.do_decrypt_out(piece, &mut out).expect("decryption");
 ///     recovered.extend_from_slice(&out[..bytes_written]);
 /// }
-/// let (last_block, last_len) = decryptor.do_decrypt_final().expect("a valid final block");
+/// let mut last_block = [0u8; AES_BLOCK_LEN];
+/// let last_len = decryptor.do_decrypt_final_out(&mut last_block).expect("a valid final block");
 /// recovered.extend_from_slice(&last_block[..last_len]);
 /// assert_eq!(recovered, plaintext);
 /// ```

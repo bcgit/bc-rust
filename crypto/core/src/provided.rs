@@ -155,8 +155,9 @@ where
     }
     dec.do_update_aad(aad)?;
     let written = dec.do_decrypt_out(ciphertext, plaintext)?;
-    match dec.do_decrypt_final() {
-        Ok((last, data_len)) => {
+    let mut last = Secret::<[u8; FINAL_LEN]>::new();
+    match dec.do_decrypt_final_out(&mut last) {
+        Ok(data_len) => {
             // `decrypt_out_len` bounds `written + data_len`, so this fits in `plaintext[..needed]`.
             plaintext[written..written + data_len].copy_from_slice(&last[..data_len]);
             Ok(written + data_len)
@@ -315,8 +316,9 @@ where
         return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
     }
     let written = dec.do_decrypt_out(ciphertext, plaintext)?;
-    match dec.do_decrypt_final() {
-        Ok((last, data_len)) => {
+    let mut last = Secret::<[u8; FINAL_LEN]>::new();
+    match dec.do_decrypt_final_out(&mut last) {
+        Ok(data_len) => {
             // `decrypt_out_len` bounds `written + data_len`, so this fits in `plaintext[..needed]`.
             plaintext[written..written + data_len].copy_from_slice(&last[..data_len]);
             Ok(written + data_len)

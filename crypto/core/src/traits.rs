@@ -83,7 +83,10 @@ pub trait AEADCipherDecryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
     where
         Self: Sized,
     {
-        self.finish_decrypt_detached_into(&FinishToken::new(), tag, plaintext)
+        zeroize_on_err(
+            self.finish_decrypt_detached_into(&FinishToken::new(), tag, plaintext),
+            plaintext,
+        )
     }
 
     /// [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out) for a worker held
@@ -97,7 +100,10 @@ pub trait AEADCipherDecryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; FINAL_LEN],
     ) -> Result<usize, SymmetricCipherError> {
-        self.finish_decrypt_detached_into(&FinishToken::new(), tag, plaintext)
+        zeroize_on_err(
+            self.finish_decrypt_detached_into(&FinishToken::new(), tag, plaintext),
+            plaintext,
+        )
     }
 
     /// Finishes the decryption with the tag detached, where the worker sits: the one detached
@@ -113,11 +119,10 @@ pub trait AEADCipherDecryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
 
     /// As [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out), returning
     /// the final buffer together with the number of leading bytes of it that are plaintext, the
-    /// shape of [`SymmetricCipherDecryptor::do_decrypt_final`]. The two are provided the other way
-    /// round from the base trait's pair -- the `_out` form is the one an implementor's method fills --
-    /// because that is the form that lets an implementor decrypt the held-back bytes straight into
-    /// the caller's buffer. On failure no buffer is returned, so nothing unauthenticated is left
-    /// behind by this call.
+    /// shape of [`SymmetricCipherDecryptor::do_decrypt_final`]. On failure no buffer is returned,
+    /// so nothing unauthenticated is left behind by this call. On success the plaintext is
+    /// returned by value, as from [`SymmetricCipherDecryptor::do_decrypt_final`];
+    /// [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out) leaves no copy.
     ///
     /// # Errors
     /// As [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out).
@@ -1481,12 +1486,12 @@ pub trait Suspendable<const SERIALIZED_STATE_LEN: usize>: Sized {
 /// decryptor releases may be only partly data. A padding scheme's final block carries
 /// `data_len < BLOCK_LEN` bytes of plaintext and the rest padding, and an authenticated cipher may
 /// release nothing at all once it has checked the tag. So
-/// [`do_decrypt_final`](Self::do_decrypt_final) returns the buffer *and* how much of it is data,
-/// and the one-shot length helper is an upper bound rather than an exact count.
+/// [`do_decrypt_final_out`](Self::do_decrypt_final_out) returns how much of the final buffer is
+/// data, and the one-shot length helper is an upper bound rather than an exact count.
 ///
 /// The one-shots are the key's, provided over these streaming methods. An implementor writes
 /// only [`update_out_len`](Self::do_decrypt_out_len), [`do_update_out`](Self::do_decrypt_out),
-/// [`finish_decrypt`](Self::finish_decrypt) and
+/// [`finish_decrypt_into`](Self::finish_decrypt_into) and
 /// [`decrypt_out_len`](Self::decrypt_out_len); the constructor is the key's, and never part of
 /// the trait.
 pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: usize>:
@@ -1557,9 +1562,10 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     }
 
     /// Finishes the decryption, consuming the decryptor: processes whatever was held back, checks
-    /// it -- padding, tag -- and returns the final buffer together with the number of leading
-    /// bytes of it that are plaintext. The remainder of the buffer is not data and must not be
-    /// used.
+    /// it -- padding, tag -- and writes the plaintext part of the final buffer into `plaintext`.
+    /// Returns the number of bytes written. The entire output buffer is zeroized before the
+    /// plaintext is written, so any bytes past that count will be 0, and it is left zeroized on
+    /// every error.
     ///
     /// # Errors
     /// [`SymmetricCipherError::DataNotBlockAligned`] if a block cipher's ciphertext was not a whole
@@ -1568,37 +1574,6 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     /// [`SymmetricCipherError::PaddingError`] or
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the check fails. In every error case the
     /// caller learns only that decryption failed, not where.
-    fn do_decrypt_final(mut self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>
-    where
-        Self: Sized,
-    {
-        self.finish_decrypt(&FinishToken::new())
-    }
-
-    /// [`do_decrypt_final`](Self::do_decrypt_final) for a worker held as
-    /// `Box<dyn SymmetricCipherDecryptor>`, which cannot call a method that takes `self` by
-    /// value. The box is consumed, so a stored worker is finished exactly once, and nothing is
-    /// moved out of it: the worker is wiped where it sits.
-    ///
-    /// Only available with the `alloc` feature.
-    #[cfg(feature = "alloc")]
-    fn do_decrypt_final_boxed(
-        mut self: Box<Self>,
-    ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
-        self.finish_decrypt(&FinishToken::new())
-    }
-
-    /// Finishes the decryption where the worker sits: the one finishing method an implementor
-    /// writes, with [`do_decrypt_final`](Self::do_decrypt_final)'s contract. Callable only by
-    /// the provided finals; see [`FinishToken`].
-    fn finish_decrypt(
-        &mut self,
-        token: &FinishToken,
-    ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>;
-
-    /// As [`do_decrypt_final`](Self::do_decrypt_final), writing the data part of the final buffer
-    /// into `plaintext`. Returns the number of bytes written. The entire output buffer is zeroized
-    /// before the plaintext is written, so any bytes past that count will be 0.
     fn do_decrypt_final_out(
         mut self,
         plaintext: &mut [u8; FINAL_LEN],
@@ -1606,10 +1581,64 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     where
         Self: Sized,
     {
-        plaintext.fill(0);
-        let (buffer, data_len) = self.finish_decrypt(&FinishToken::new())?;
-        plaintext[..data_len].copy_from_slice(&buffer[..data_len]);
-        Ok(data_len)
+        zeroize_on_err(self.finish_decrypt_into(&FinishToken::new(), plaintext), plaintext)
+    }
+
+    /// [`do_decrypt_final_out`](Self::do_decrypt_final_out) for a worker held as
+    /// `Box<dyn SymmetricCipherDecryptor>`. The box is consumed, and nothing is moved out of it:
+    /// the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
+    fn do_decrypt_final_out_boxed(
+        mut self: Box<Self>,
+        plaintext: &mut [u8; FINAL_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        zeroize_on_err(self.finish_decrypt_into(&FinishToken::new(), plaintext), plaintext)
+    }
+
+    /// Finishes the decryption where the worker sits, writing into `out`: the one finishing
+    /// method an implementor writes, with [`do_decrypt_final_out`](Self::do_decrypt_final_out)'s
+    /// contract. Callable only by the provided finals; see [`FinishToken`].
+    fn finish_decrypt_into(
+        &mut self,
+        token: &FinishToken,
+        out: &mut [u8; FINAL_LEN],
+    ) -> Result<usize, SymmetricCipherError>;
+
+    /// As [`do_decrypt_final_out`](Self::do_decrypt_final_out), returning the final buffer
+    /// together with the number of leading bytes of it that are plaintext; the rest is 0.
+    ///
+    /// The plaintext is returned by value, so the copies of it the move leaves on the stack are
+    /// not wiped. [`do_decrypt_final_out`](Self::do_decrypt_final_out) writes straight into the
+    /// caller's buffer and leaves no copy.
+    ///
+    /// # Errors
+    /// As [`do_decrypt_final_out`](Self::do_decrypt_final_out).
+    fn do_decrypt_final(mut self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>
+    where
+        Self: Sized,
+    {
+        let mut plaintext = [0u8; FINAL_LEN];
+        let data_len = self.finish_decrypt_into(&FinishToken::new(), &mut plaintext)?;
+        Ok((plaintext, data_len))
+    }
+
+    /// [`do_decrypt_final`](Self::do_decrypt_final) for a worker held as
+    /// `Box<dyn SymmetricCipherDecryptor>`, which cannot call a method that takes `self` by
+    /// value. The box is consumed, so a stored worker is finished exactly once, and nothing is
+    /// moved out of it: the worker is wiped where it sits. The plaintext is returned by value, as
+    /// from [`do_decrypt_final`](Self::do_decrypt_final);
+    /// [`do_decrypt_final_out_boxed`](Self::do_decrypt_final_out_boxed) leaves no copy.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
+    fn do_decrypt_final_boxed(
+        mut self: Box<Self>,
+    ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
+        let mut plaintext = [0u8; FINAL_LEN];
+        let data_len = self.finish_decrypt_into(&FinishToken::new(), &mut plaintext)?;
+        Ok((plaintext, data_len))
     }
 
     /// An upper bound on the plaintext recovered from `ciphertext_len` bytes of ciphertext, i.e.
@@ -1920,4 +1949,13 @@ pub trait XOF: Hash {
         self.do_update(data);
         self.into_squeezer().do_output_final_out(output)
     }
+}
+
+/// Zeroizes `out` if `result` is an error, behind the `finish_` method that should already have:
+/// a decrypting final releases nothing on failure even from an implementor that left data there.
+fn zeroize_on_err<T, E>(result: Result<T, E>, out: &mut [u8]) -> Result<T, E> {
+    if result.is_err() {
+        out.fill(0);
+    }
+    result
 }

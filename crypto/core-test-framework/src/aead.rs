@@ -1257,6 +1257,15 @@ impl TestFrameworkAEADTaggedLayout {
         dec.do_update_aad(AAD).unwrap();
         dec.do_decrypt_out(&tampered, &mut pt).unwrap();
         assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::AEADTagCheckFailed)));
+        let mut dec = key.create_decryptor(&nonce);
+        dec.do_update_aad(AAD).unwrap();
+        dec.do_decrypt_out(&tampered, &mut pt).unwrap();
+        let mut last = [0xEEu8; FINAL_LEN];
+        assert!(matches!(
+            dec.do_decrypt_final_out(&mut last),
+            Err(SymmetricCipherError::AEADTagCheckFailed)
+        ));
+        assert_eq!(last, [0u8; FINAL_LEN], "a failed final leaves its buffer zeroized");
 
         let mut wrong_tag = [0u8; TAG_LEN];
         wrong_tag.copy_from_slice(&ct[msg.len()..]);

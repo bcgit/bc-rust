@@ -419,9 +419,10 @@ end its message, and took `Clone` off the cipher workers. QUALITY_AND_STYLE.md h
 - **A by-value final is not in the vtable.** `do_final(self)` cannot be called on `Box<dyn ..>`,
   and a `self: Box<Self>` twin written as a forward moves the worker out of its box, leaving the
   heap block unwiped. Each worker trait therefore has a required `&mut self` finishing method
-  (`finish_into`, `finish_encrypt`, `finish_mac_into`, `finish_signature_verify`, ...; `Hash`
-  has a second for a partial last byte); the consuming finals and their `_boxed` twins are
-  provided over it, and an implementor writes only the `finish_` methods.
+  (`finish_into`, `finish_encrypt`, `finish_decrypt_into`, `finish_mac_into`,
+  `finish_signature_verify`, ...; `Hash` has a second for a partial last byte); the consuming
+  finals and their `_boxed` twins are provided over it, and an implementor writes only the
+  `finish_` methods.
 - **The token guards against accidents, not against intent.** The `finish_` methods take a
   `&FinishToken` whose constructor is private to `core`, so only a provided final calls them.
   Code that owns a worker without being one (a KDF's block loop, `MuBuilder::do_final`,

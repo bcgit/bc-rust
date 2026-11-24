@@ -1424,10 +1424,12 @@ where
     /// [`SymmetricCipherError::DecryptionFailed`] if fewer than `DATA_LEN + TAG_LEN` bytes were
     /// supplied -- Sec 6.2 step 1's "If Clen <= Tlen, then return INVALID", for a `C` whose
     /// length is fixed; [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify.
-    fn finish_decrypt(
+    fn finish_decrypt_into(
         &mut self,
         token: &FinishToken,
-    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        out: &mut [u8; TAG_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        out.fill(0);
         // Tag bytes are only held once the whole payload has been released, so a full tag means
         // a full payload too; a short payload shows up here as no tag at all.
         if self.tag_len < TAG_LEN {
@@ -1435,7 +1437,7 @@ where
         }
         let tag = self.tag;
         self.finish(token, &tag)?;
-        Ok(([0u8; TAG_LEN], 0))
+        Ok(0)
     }
 
     /// `C` less its inline tag, as for any AEAD; the frame's own bound is
@@ -1648,15 +1650,17 @@ where
 
     /// Sec 6.2 step 1 on the inline layout: the ciphertext must be exactly the declared
     /// payload and a whole tag, else it is malformed.
-    fn finish_decrypt(
+    fn finish_decrypt_into(
         &mut self,
         token: &FinishToken,
-    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        out: &mut [u8; TAG_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        out.fill(0);
         if self.ccm.owed != 0 || self.tag_len != TAG_LEN {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
         self.ccm.verify_tag(token, &self.tag)?;
-        Ok(([0u8; TAG_LEN], 0))
+        Ok(0)
     }
 
     fn decrypt_out_len(ciphertext_len: usize) -> usize {

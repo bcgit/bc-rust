@@ -327,11 +327,12 @@ where
     }
 
     /// Nothing is held back, so there is nothing to finish.
-    fn finish_decrypt(
+    fn finish_decrypt_into(
         &mut self,
         _token: &FinishToken,
-    ) -> Result<([u8; 0], usize), SymmetricCipherError> {
-        Ok(([], 0))
+        _out: &mut [u8; 0],
+    ) -> Result<usize, SymmetricCipherError> {
+        Ok(0)
     }
 
     /// Exact rather than an upper bound: a stream cipher never changes the length of its data.

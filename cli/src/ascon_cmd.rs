@@ -182,7 +182,7 @@ fn aead128_encrypt_stream(
 /// Decrypts a stream whose final 16 bytes are the tag, which is only known once EOF is reached.
 /// The key's decryptor holds the last 16 bytes it has seen back itself, releasing everything
 /// before them as soon as it is known not to be part of the tag; at EOF
-/// [`SymmetricCipherDecryptor::do_decrypt_final`] checks what it held back as the tag.
+/// [`SymmetricCipherDecryptor::do_decrypt_final_out`] checks what it held back as the tag.
 fn aead128_decrypt_stream(
     key: &AsconAEAD128Key,
     nonce: Option<&[u8; 16]>,
@@ -224,8 +224,9 @@ fn aead128_decrypt_stream(
         helpers::write_bytes_or_hex(&out[..written], output_hex);
     }
 
-    match cipher.do_decrypt_final() {
-        Ok((last, last_len)) => {
+    let mut last = [0u8; 16];
+    match cipher.do_decrypt_final_out(&mut last) {
+        Ok(last_len) => {
             helpers::write_bytes_or_hex(&last[..last_len], output_hex);
             if output_hex {
                 crate::helpers::write_stdout(b"\n");

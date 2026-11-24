@@ -9,6 +9,7 @@ mod toy_block_cipher;
 use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::Mode;
+use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
@@ -200,6 +201,18 @@ fn tampered_final_block_is_rejected() {
             other => panic!("len {len}: expected InvalidPadding, got {other:?}"),
         }
         assert!(out.iter().all(|&b| b == 0), "len {len}: a failed decrypt must zeroize `out`");
+
+        // The streaming final decrypts the last block into its buffer before the padding check,
+        // and must wipe it when that fails.
+        let mut dec = key.create_decryptor(&iv);
+        let mut released = vec![0u8; dec.do_decrypt_out_len(n)];
+        dec.do_decrypt_out(&ct[..n], &mut released).unwrap();
+        let mut last = [0xEEu8; B];
+        assert!(matches!(
+            dec.do_decrypt_final_out(&mut last),
+            Err(SymmetricCipherError::PaddingError(PaddingError::InvalidPadding))
+        ));
+        assert_eq!(last, [0u8; B], "len {len}: a failed final must zeroize its buffer");
     }
 }
 
@@ -226,6 +239,31 @@ fn malformed_ciphertext_lengths_are_rejected() {
     // streaming: nothing fed at all
     let dec = key.create_decryptor(&iv);
     assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::DecryptionFailed)));
+
+    // The same two through `do_decrypt_final_out`, which leaves its buffer zeroed on either,
+    // and through the worker's own `finish_decrypt_into`, which must do so without the
+    // provided final's backstop.
+    for direct in [false, true] {
+        let mut dec = key.create_decryptor(&iv);
+        dec.do_decrypt_out(&[0u8; B + 3], &mut out).unwrap();
+        let mut last = [0xEEu8; B];
+        let r = if direct {
+            dec.finish_decrypt_into(&finish_token(), &mut last)
+        } else {
+            dec.do_decrypt_final_out(&mut last)
+        };
+        assert!(matches!(r, Err(SymmetricCipherError::DataNotBlockAligned)));
+        assert_eq!(last, [0u8; B], "an unaligned final must zeroize its buffer (direct {direct})");
+        let mut dec = key.create_decryptor(&iv);
+        let mut last = [0xEEu8; B];
+        let r = if direct {
+            dec.finish_decrypt_into(&finish_token(), &mut last)
+        } else {
+            dec.do_decrypt_final_out(&mut last)
+        };
+        assert!(matches!(r, Err(SymmetricCipherError::DecryptionFailed)));
+        assert_eq!(last, [0u8; B], "an empty final must zeroize its buffer (direct {direct})");
+    }
 }
 
 #[test]
@@ -357,4 +395,24 @@ fn no_padding_decryptor_accepts_empty_and_rejects_unaligned() {
 
 fn os_rng() -> bouncycastle_rng::HashDRBG_SHA512 {
     bouncycastle_rng::HashDRBG_SHA512::new_from_os()
+}
+
+/// A padded decryptor held as `Box<dyn SymmetricCipherDecryptor>` finishes into the caller's
+/// buffer through `do_decrypt_final_out_boxed`.
+#[test]
+fn a_boxed_decryptor_finishes_into_the_callers_buffer() {
+    let key = key();
+    let len = 2 * B + 3;
+    let mut ct = vec![0u8; Enc::encrypt_out_len(len)];
+    let (n, iv) = key.encrypt_out(&mut os_rng(), &msg(len), &mut ct).unwrap();
+    let mut dec: Box<dyn SymmetricCipherDecryptor<B, B> + '_> = Box::new(key.create_decryptor(&iv));
+    let mut rec = vec![0u8; dec.do_decrypt_out_len(n)];
+    let w = dec.do_decrypt_out(&ct[..n], &mut rec).unwrap();
+    rec.truncate(w);
+    let mut last = [0xEEu8; B];
+    let data_len = dec.do_decrypt_final_out_boxed(&mut last).unwrap();
+    assert_eq!(data_len, 3);
+    assert!(last[data_len..].iter().all(|&b| b == 0), "the bytes after the data are zeroed");
+    rec.extend_from_slice(&last[..data_len]);
+    assert_eq!(rec, msg(len));
 }

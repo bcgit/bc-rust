@@ -137,8 +137,8 @@ use bouncycastle_core::traits::{
 /// assert_eq!(ciphertext.len(), plaintext.len() + 16);
 ///
 /// // Decrypt in 19-byte pieces. The decryptor holds back the last 16 bytes it has seen, since
-/// // those may be the tag, so a call can write fewer bytes than it was handed; `do_decrypt_final`
-/// // checks the tag and releases whatever is still held back.
+/// // those may be the tag, so a call can write fewer bytes than it was handed;
+/// // `do_decrypt_final_out` checks the tag and releases whatever is still held back.
 /// let mut decryptor = key.create_decryptor(&nonce);
 /// decryptor.do_update_aad(aad).expect("aad");
 /// let mut recovered = Vec::new();
@@ -147,7 +147,8 @@ use bouncycastle_core::traits::{
 ///     let bytes_written = decryptor.do_decrypt_out(piece, &mut out).expect("decryption");
 ///     recovered.extend_from_slice(&out[..bytes_written]);
 /// }
-/// let (last, last_len) = decryptor.do_decrypt_final().expect("a valid tag");
+/// let mut last = [0u8; 16];
+/// let last_len = decryptor.do_decrypt_final_out(&mut last).expect("a valid tag");
 /// recovered.extend_from_slice(&last[..last_len]);
 /// assert_eq!(recovered, plaintext);
 /// ```

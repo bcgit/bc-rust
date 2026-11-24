@@ -516,16 +516,18 @@ impl SymmetricCipherDecryptor<ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN>
     /// # Errors
     /// [`SymmetricCipherError::DecryptionFailed`] if fewer than `ASCON_AEAD128_TAG_LEN` bytes were
     /// seen in all; [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify.
-    fn finish_decrypt(
+    fn finish_decrypt_into(
         &mut self,
         token: &FinishToken,
-    ) -> Result<([u8; ASCON_AEAD128_TAG_LEN], usize), SymmetricCipherError> {
+        out: &mut [u8; ASCON_AEAD128_TAG_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        out.fill(0);
         if self.held_len < ASCON_AEAD128_TAG_LEN {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
         let tag = self.held;
         self.verify_tag(token, &tag)?;
-        Ok(([0u8; ASCON_AEAD128_TAG_LEN], 0))
+        Ok(0)
     }
 
     /// Everything but the trailing tag.

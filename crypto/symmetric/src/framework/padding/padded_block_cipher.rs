@@ -13,6 +13,7 @@ use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, FinishToken,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
+use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::Secret;
 use core::array::from_mut;
 use core::marker::PhantomData;
@@ -172,8 +173,31 @@ where
 /// Decrypts data produced by a [`PaddedBlockCipherEncryptor`] with the matching cipher and padding.
 ///
 /// Only the last block carries padding, so [`do_update_out`](Self::do_decrypt_out) always withholds
-/// the most recent complete block and [`do_decrypt_final`](Self::do_decrypt_final) unpads it.
+/// the most recent complete block and
+/// [`do_decrypt_final_out`](Self::do_decrypt_final_out) unpads it.
 /// One-shot: the key's `decrypt_out`.
+///
+/// A boxed decryptor is finished once, by
+/// [`do_decrypt_final_out_boxed`](SymmetricCipherDecryptor::do_decrypt_final_out_boxed), which
+/// consumes the box:
+///
+/// ```compile_fail,E0382
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+/// use bouncycastle_core::traits::SymmetricCipherDecryptor;
+/// use bouncycastle_symmetric::aes::AES128Key;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::PKCS7;
+///
+/// let bytes: [u8; 16] = core::array::from_fn(|i| i as u8);
+/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
+/// let key = AES128Key::<CBC<PKCS7>>::from_key_material(&material).unwrap();
+/// let dec: Box<dyn SymmetricCipherDecryptor<16, 16> + '_> =
+///     Box::new(key.create_decryptor(&[0u8; 16]));
+/// let mut last = [0u8; 16];
+/// let _ = dec.do_decrypt_final_out_boxed(&mut last);
+/// let _ = dec.do_decrypt_final_out_boxed(&mut last);
+/// ```
 pub struct PaddedBlockCipherDecryptor<D, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
 where
     D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>,
@@ -292,16 +316,18 @@ where
         Ok(out_len)
     }
 
-    /// Decrypts and unpads the held final block. Returns the block and its data length; the rest is
-    /// padding. `DataNotBlockAligned` if the ciphertext was not a whole number of blocks;
-    /// `DecryptionFailed` if it was empty under a scheme that always pads (a padded message is at
-    /// least one block); `PaddingError` if the
-    /// padding is malformed. Under a scheme that adds nothing, an empty ciphertext is the empty
-    /// message and every held block is entirely data.
-    fn finish_decrypt(
+    /// Decrypts the held final block into `out` and unpads it there. Returns its data length; the
+    /// padding after it is zeroized. `DataNotBlockAligned` if the ciphertext was not a whole number
+    /// of blocks; `DecryptionFailed` if it was empty under a scheme that always pads (a padded
+    /// message is at least one block); `PaddingError` if the padding is malformed. Under a scheme
+    /// that adds nothing, an empty ciphertext is the empty message and every held block is
+    /// entirely data.
+    fn finish_decrypt_into(
         &mut self,
         _token: &FinishToken,
-    ) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
+        out: &mut [u8; BLOCK_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        out.fill(0);
         if self.buf_len != 0 {
             return Err(SymmetricCipherError::DataNotBlockAligned);
         }
@@ -309,15 +335,29 @@ where
             return if P::ALWAYS_PADS {
                 Err(SymmetricCipherError::DecryptionFailed)
             } else {
-                Ok(([0u8; BLOCK_LEN], 0))
+                Ok(0)
             };
         };
-        // The worker keeps the ciphertext block; the plaintext is in a scratch that is wiped.
-        let mut block: Secret<[u8; BLOCK_LEN]> = Secret::new();
-        *block = *held;
-        self.decryptor.do_decrypt_blocks_inplace(block.as_chunks_mut().0)?;
-        let data_len = P::unpad(&block)?;
-        Ok((*block, data_len))
+        // The worker keeps the ciphertext block; the plaintext goes straight into `out`.
+        *out = *held;
+        let mut decrypt_and_unpad = || -> Result<usize, SymmetricCipherError> {
+            self.decryptor.do_decrypt_blocks_inplace(out.as_chunks_mut().0)?;
+            Ok(P::unpad(out)?)
+        };
+        match decrypt_and_unpad() {
+            Ok(data_len) => {
+                // Constant-time in data_len, as `PKCS7::pad` is: every byte is visited.
+                for (i, b) in out.iter_mut().enumerate() {
+                    let is_padding = Condition::<i64>::is_gte(i as i64, data_len as i64);
+                    *b = is_padding.select(0, *b as i64) as u8;
+                }
+                Ok(data_len)
+            }
+            Err(e) => {
+                out.fill(0);
+                Err(e)
+            }
+        }
     }
 
     /// `ciphertext_len - 1` for a scheme that always pads (at least one byte of the final block is

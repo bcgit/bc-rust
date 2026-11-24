@@ -51,7 +51,8 @@
 //!     let mut dec = key.create_decryptor(&nonce);
 //!     let mut pt = vec![0u8; ct.len()];
 //!     let n = dec.do_decrypt_out(ct, &mut pt)?;
-//!     let (last, last_len) = dec.do_decrypt_final()?;
+//!     let mut last = [0u8; 16];
+//!     let last_len = dec.do_decrypt_final_out(&mut last)?;
 //!     pt.truncate(n);
 //!     pt.extend_from_slice(&last[..last_len]);
 //!     Ok(pt)
@@ -135,7 +136,8 @@
 //! dec.do_update_aad(aad).unwrap();
 //! let mut pt = vec![0u8; ct.len()];
 //! let written = dec.do_decrypt_out(&ct, &mut pt).unwrap();
-//! let (_last, last_len) = dec.do_decrypt_final().unwrap();
+//! let mut last = [0u8; 16];
+//! let last_len = dec.do_decrypt_final_out(&mut last).unwrap();
 //! pt.truncate(written + last_len);
 //! assert_eq!(pt, message);
 //! ```
@@ -778,16 +780,18 @@ where
     /// all (Algorithm 5 step 1's "lengths not supported"). Otherwise checks the tag held in `tail`
     /// against the GHASH state built up by every prior `do_update_out` call. Releases nothing: an
     /// authenticated cipher's final output may be empty once the tag has been checked.
-    fn finish_decrypt(
+    fn finish_decrypt_into(
         &mut self,
         token: &FinishToken,
-    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        out: &mut [u8; TAG_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        out.fill(0);
         if self.tail_len < TAG_LEN {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
         let tag = *self.tail;
         self.finish(token, &tag)?;
-        Ok(([0u8; TAG_LEN], 0))
+        Ok(0)
     }
 
     fn decrypt_out_len(ciphertext_len: usize) -> usize {
