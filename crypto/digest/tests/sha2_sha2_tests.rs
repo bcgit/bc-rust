@@ -95,6 +95,13 @@ mod sha2_tests {
                     h.do_final_partial_bits(0xFF, bad),
                     Err(HashError::InvalidLength(_))
                 ));
+                // a refused call clears the caller's buffer, a longer one in full
+                let mut out = [0xA5u8; 80];
+                assert!(matches!(
+                    H::default().do_final_partial_bits_out(0xFF, bad, &mut out),
+                    Err(HashError::InvalidLength(_))
+                ));
+                assert_eq!(out, [0u8; 80]);
             }
 
             // only the top num_partial_bits bits of partial_byte may influence the result
@@ -392,6 +399,29 @@ mod sha2_tests {
 
         // and byte_count 0 is still the empty-message digest, i.e. the high word is zero there
         assert_eq!(with_byte_count(0).do_final(), SHA512::new().do_final());
+    }
+
+    /// A block compressed out of the buffer is not left in it: a suspended state carries no 8
+    /// bytes of it, only the bytes still buffered.
+    #[test]
+    fn suspended_state_carries_no_compressed_block() {
+        use bouncycastle_core::traits::Suspendable;
+        fn check<const N: usize, H: Hash + Default + Suspendable<N>>(block_len: usize) {
+            let msg: Vec<u8> =
+                (0..block_len + 20).map(|i| (i as u8).wrapping_mul(29) ^ 0x5A).collect();
+            let mut h = H::default();
+            h.do_update(&msg[..10]);
+            h.do_update(&msg[10..]);
+            let state = h.suspend();
+            for w in msg[..block_len].windows(8) {
+                assert!(!state.windows(8).any(|s| s == w), "{block_len}-byte block");
+            }
+        }
+        check::<SUSPENDED_SHA256_STATE_LEN, SHA224>(64);
+        check::<SUSPENDED_SHA256_STATE_LEN, SHA256>(64);
+        check::<SUSPENDED_SHA512_STATE_LEN, SHA384>(128);
+        check::<SUSPENDED_SHA512_STATE_LEN, SHA512>(128);
+        check::<SUSPENDED_SHA512_STATE_LEN, SHA512_256>(128);
     }
 
     /// A suspended state whose byte count and buffer offset disagree modulo the block length

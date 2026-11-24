@@ -98,6 +98,10 @@
 //!   lookups.
 //! * The `keyed_hash` and `derive_key` workers are not suspendable: their states hold key
 //!   material.
+//! * `into_squeezer` moves the hasher, and a move wipes nothing: a copy of its chaining values
+//!   may stay on the stack. One that has absorbed a secret, or is keyed, is finished with
+//!   `finish_squeezer` instead ([`BLAKE3KeyedHash::finish_squeezer`]), which leaves it where it
+//!   sits, to be dropped.
 //!
 //! # Suspending and resuming execution
 //!

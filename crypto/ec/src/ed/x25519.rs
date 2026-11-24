@@ -126,19 +126,19 @@
 //!
 //! | Entry point                         | Stack  |
 //! |-------------------------------------|--------|
-//! | `keygen_from_seed`                  | 1272 B |
-//! | `keygen_out`                        | 1176 B |
-//! | `X25519PrivateKey::from_bytes`      | 1272 B |
-//! | `X25519PrivateKey::from_bytes_out`  | 1160 B |
-//! | `agree` on the private key          | 1304 B |
-//! | `encaps` on the public key          | 2648 B |
-//! | `decaps` on the private key         | 2312 B |
+//! | `keygen_from_seed`                  | 1368 B |
+//! | `keygen_out`                        | 1272 B |
+//! | `X25519PrivateKey::from_bytes`      | 1368 B |
+//! | `X25519PrivateKey::from_bytes_out`  | 1256 B |
+//! | `agree` on the private key          | 1400 B |
+//! | `encaps` on the public key          | 4696 B |
+//! | `decaps` on the private key         | 4104 B |
 //!
 //! Key generation, decoding a private key, and key agreement each run one Montgomery ladder plus
 //! the field inversion: the chain is the in-place scalar multiplication, the field inversion and
 //! a field multiplication. The `keygen_out` figure leaves out the RNG.
 //! The KEM figures additionally run HPKE.DHKEM, and their chain runs through HKDF-SHA256's HMAC
-//! and SHA-256 compression. The `encaps` figure includes the DRBG that draws the ephemeral key.
+//! key, whose construction is followed by a 2 KiB stack wipe, the deepest frame. The `encaps` figure includes the DRBG that draws the ephemeral key.
 //!
 //! # 🚨 Security Considerations 🚨
 //!

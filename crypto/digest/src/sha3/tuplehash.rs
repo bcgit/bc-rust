@@ -56,7 +56,8 @@
 use alloc::vec::Vec;
 
 use crate::sha3::cshake::{
-    CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer, absorb_encoded_string_into,
+    CSHAKE_COMPONENT_LEN, CSHAKEBorrowedSqueezer, CSHAKEInternal, CSHAKESqueezer,
+    absorb_encoded_string_into,
 };
 use crate::sha3::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::errors::{HashError, SuspendableError};
@@ -292,6 +293,8 @@ impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for TupleHashXOFInternal<
     type Key = ();
 
     fn write_state(&self, out: &mut [u8]) {
+        // A value that lent out its squeezer is finished, as KMACXOF's is.
+        self.cshake.assert_not_lent();
         self.cshake.write_tagged(PARAMS::TUPLEHASHXOF_STATE_TAG, out)
     }
 
@@ -329,7 +332,12 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
     }
 
     /// Appends **one tuple element**.
+    ///
+    /// # Panics
+    /// If the value has lent out its squeezer through
+    /// [`finish_squeezer`](TupleHashXOFInternal::finish_squeezer).
     fn do_update(&mut self, data: &[u8]) {
+        self.cshake.assert_not_lent();
         absorb_encoded_string_into(&mut self.cshake, data);
     }
 
@@ -370,6 +378,7 @@ impl<PARAMS: SHAKEParams> XOF for TupleHashXOFInternal<PARAMS> {
     // The `right_encode` of Sec 5.3.1 step 4 is not absorbed here: whether it carries 0 or the
     // length of a final read is CSHAKESqueezer's decision.
     fn into_squeezer(self) -> Self::Squeezer {
+        self.cshake.assert_not_finished();
         CSHAKESqueezer::new(self.cshake)
     }
 
@@ -407,6 +416,19 @@ impl<PARAMS: SHAKEParams> TupleHashInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> TupleHashXOFInternal<PARAMS> {
+    /// Ends the input phase where the sponge sits and lends out its squeezing half:
+    /// [`XOF::into_squeezer`] without the move, as
+    /// [`KMACXOFInternal::finish_squeezer`](crate::sha3::kmac::KMACXOFInternal::finish_squeezer)
+    /// does. The squeezer reads as the one [`XOF::into_squeezer`] returns: a first read through
+    /// [`XOFSqueezer::do_output_final`] is the fixed-length TupleHash of that length. Afterwards
+    /// the value is finished (see [`FinishToken`]): a second call continues the stream the first
+    /// read chose, and anything else that would absorb or finish again panics, in every build.
+    ///
+    /// [`XOFSqueezer::do_output_final`]: bouncycastle_core::traits::XOFSqueezer::do_output_final
+    pub fn finish_squeezer(&mut self, _token: &FinishToken) -> CSHAKEBorrowedSqueezer<'_, PARAMS> {
+        self.cshake.finish_squeezer_unbound()
+    }
+
     /// One-shot: hashes `data` with this instance's parameters.
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.

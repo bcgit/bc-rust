@@ -363,3 +363,21 @@ fn the_library_hashes_claim_one_strength() {
     check::<SM3>();
     check::<RIPEMD160>();
 }
+
+/// `keygen_from_rng` takes whatever key type the RNG gives its draw (`FixedSeedRNG` labels it
+/// `Seed`) and returns a `MACKey` of the hash's output length: the RNG's bytes, keying HMAC as
+/// `generate` does from the same stream. The seed is longer than one draw, so two draws differ.
+#[test]
+fn keygen_from_rng_types_any_rng_output_as_a_mac_key() {
+    let seed: [u8; 64] = core::array::from_fn(|i| i as u8);
+    let mut rng = FixedSeedRNG::new(seed);
+    let first = HmacKey::<SHA256>::keygen_from_rng(&mut rng).expect("a 256-bit RNG suffices");
+    assert_eq!(first.key_type(), KeyType::MACKey);
+    assert_eq!(first.ref_to_bytes(), &seed[..32]);
+    let second = HmacKey::<SHA256>::keygen_from_rng(&mut rng).unwrap();
+    assert_eq!(second.ref_to_bytes(), &seed[32..]);
+
+    let generated = HmacKey::<SHA256>::generate(&mut FixedSeedRNG::new(seed)).unwrap();
+    let from_drawn = HmacKey::<SHA256>::from_key_material(&first).unwrap();
+    assert_eq!(from_drawn.mac(MSG), generated.mac(MSG));
+}

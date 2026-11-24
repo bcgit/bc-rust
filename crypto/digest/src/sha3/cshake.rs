@@ -364,6 +364,11 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
         assert!(!self.shake.is_squeezing(), "{}", INPUT_AFTER_FINISH);
     }
 
+    /// Whether this value has lent out its squeezer.
+    pub(in crate::sha3) fn is_lent(&self) -> bool {
+        self.lent
+    }
+
     /// Panics if this value has lent out its squeezer.
     pub(in crate::sha3) fn assert_not_lent(&self) {
         assert!(!self.lent, "{}", INPUT_AFTER_FINISH);

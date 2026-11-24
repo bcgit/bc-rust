@@ -439,7 +439,7 @@ end its message, and took `Clone` off the cipher workers. QUALITY_AND_STYLE.md h
   same test (Ascon) or a doctest (ChaCha20, Poly1305). A wrapper over another worker must be
   named over a `Clone` inner type, or a derived `Clone`, being conditional, passes unnoticed.
   Check a new assertion by putting `Clone` back on the type. `Tkw` is in that test over TDEA;
-  `HMAC`, the BLAKE MACs and `HpkeContext` carry `compile_fail` doctests.
+  `HMAC`, `HKDF`, the BLAKE MACs and `HpkeContext` carry `compile_fail` doctests.
 - **`git stash create` fails with an intent-to-add file in the tree;** stage the file before
   pushing a work-in-progress tree to apollo for a mutants run.
 

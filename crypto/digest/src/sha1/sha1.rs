@@ -1,7 +1,9 @@
+use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::traits::{FinishToken, Hash, HashOneShot, Suspendable};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{min, secret::Secret};
+use core::slice;
 
 /// The digest length in bytes: FIPS 180-4 Figure 1, a 160-bit message digest.
 const OUTPUT_LEN: usize = 20;
@@ -42,6 +44,21 @@ const fn parity(x: u32, y: u32, z: u32) -> u32 {
 const fn maj(x: u32, y: u32, z: u32) -> u32 {
     (x & y) | (z & (x ^ y))
 }
+
+/// FIPS 180-4 s. 6.1.2: each message block M(1), ..., M(N) is processed in order. Never inlined,
+/// so that its frame lies below its caller's, where [`SHA1::compress`]'s wipe reaches it.
+#[inline(never)]
+fn compress_blocks(h: &mut [u32; 5], blocks: &[[u8; 64]]) {
+    for block in blocks {
+        compress_block(h, block);
+    }
+}
+
+/// How much stack [`wipe_stack_below`] overwrites after [`compress_blocks`], in 64-bit words:
+/// more than that frame, which calls nothing, uses (288 bytes with its return address in the
+/// x86-64 release build), with room for a compiler that lays it out less tightly. An unoptimised
+/// build's frame is not covered.
+const COMPRESS_WIPED_STACK_WORDS: usize = 64;
 
 /// FIPS 180-4 s. 6.1.2, one iteration of the outer loop: absorbs a single 512-bit message block
 /// into the hash value `s` (H(i-1) in, H(i) out).
@@ -108,11 +125,19 @@ impl SHA1 {
         Self { h, byte_count: 0, x_buf: Secret::new(), x_buf_off: 0 }
     }
 
-    fn compress(&mut self, blocks: &[[u8; 64]]) {
-        // FIPS 180-4 s. 6.1.2: each message block M(1), ..., M(N) is processed in order.
-        for block in blocks {
-            compress_block(&mut self.h, block);
+    /// Compresses `blocks` in a frame of its own and overwrites the stack that frame used: the
+    /// message schedule and the working variables spilled there are the message and the
+    /// chaining value of whatever is hashed.
+    ///
+    /// Takes the chaining value rather than `&mut self` so callers can pass `self.x_buf` as the
+    /// block without a conflicting borrow.
+    fn compress(h: &mut [u32; 5], blocks: &[[u8; 64]]) {
+        // Only to save the wipe; mutants note: deleting it is an equivalent mutant.
+        if blocks.is_empty() {
+            return;
         }
+        compress_blocks(h, blocks);
+        wipe_stack_below::<COMPRESS_WIPED_STACK_WORDS>();
     }
 
     /// Pads and compresses the final block(s) as per FIPS 180-4 s. 5.1.1, then writes the digest.
@@ -151,7 +176,7 @@ impl SHA1 {
         // FIPS 180-4 s. 5.1.1: if fewer than 64 bits remain for l, the k zero bits run into a second block.
         if self.x_buf_off > 56 {
             self.x_buf[self.x_buf_off..].fill(0x00);
-            compress_block(&mut self.h, &self.x_buf);
+            Self::compress(&mut self.h, slice::from_ref(&self.x_buf));
             self.x_buf_off = 0;
         }
 
@@ -164,7 +189,7 @@ impl SHA1 {
         // results here; a surviving `|`/`^` swap is an equivalent mutant.
         let bit_len: u64 = (self.byte_count << 3) | (num_partial_bits as u64);
         self.x_buf[56..64].copy_from_slice(&bit_len.to_be_bytes());
-        compress_block(&mut self.h, &self.x_buf);
+        Self::compress(&mut self.h, slice::from_ref(&self.x_buf));
 
         // FIPS 180-4 s. 6.1.2: the digest is H_0(N) || ... || H_4(N) (big-endian words), truncated
         // to the caller's buffer if that is shorter.
@@ -222,13 +247,16 @@ impl Hash for SHA1 {
             self.x_buf[self.x_buf_off..].copy_from_slice(&block[..available]);
             block = &block[available..];
 
-            compress_block(&mut self.h, &self.x_buf);
+            Self::compress(&mut self.h, slice::from_ref(&self.x_buf));
+            // Not left where a clone or a suspended state would carry it. Once per call at
+            // most: whole blocks after this one are compressed from `block`.
+            self.x_buf.fill(0);
         }
 
         // FIPS 180-4 s. 5.2.1: the message is parsed into 512-bit blocks; a partial trailing block waits in x_buf.
         let (chunks, remainder) = block.as_chunks::<64>();
 
-        self.compress(chunks);
+        Self::compress(&mut self.h, chunks);
 
         let remaining = remainder.len();
         self.x_buf[..remaining].copy_from_slice(remainder);
@@ -251,6 +279,8 @@ impl Hash for SHA1 {
         num_partial_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
+        // Cleared before the check, so that a refused call leaves nothing stale in the buffer.
+        output.fill(0);
         if num_partial_bits > 7 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }

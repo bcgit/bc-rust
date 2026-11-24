@@ -99,16 +99,16 @@
 //!
 //! | Entry point                          | Stack  |
 //! |--------------------------------------|--------|
-//! | `keygen`                             | 2536 B |
-//! | `keygen_out`                         | 2344 B |
-//! | `Ed25519PrivateKey::from_bytes`      | 2536 B |
-//! | `Ed25519PrivateKey::from_bytes_out`  | 2200 B |
-//! | `Ed25519PublicKey::from_bytes`       | 3704 B |
-//! | `Ed25519PrivateKey::pk`              | 2072 B |
-//! | Ed25519 sign                         | 2952 B |
-//! | Ed25519 verify                       | 5224 B |
-//! | Ed25519ph sign                       | 4040 B |
-//! | Ed25519ph verify                     | 6408 B |
+//! | `keygen`                             | 2680 B |
+//! | `keygen_out`                         | 2488 B |
+//! | `Ed25519PrivateKey::from_bytes`      | 2680 B |
+//! | `Ed25519PrivateKey::from_bytes_out`  | 2344 B |
+//! | `Ed25519PublicKey::from_bytes`       | 4376 B |
+//! | `Ed25519PrivateKey::pk`              | 1944 B |
+//! | Ed25519 sign                         | 3096 B |
+//! | Ed25519 verify                       | 5896 B |
+//! | Ed25519ph sign                       | 4184 B |
+//! | Ed25519ph verify                     | 7080 B |
 //!
 //! The key generation figures leave out the RNG. The Ed25519ph figures are for the streaming
 //! signer and verifier, and include the worker: a SHA-512 state and the context.

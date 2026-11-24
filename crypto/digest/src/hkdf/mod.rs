@@ -8,9 +8,11 @@
 //! a hash that already has an HMAC ([`HMACParams`]).
 //! The library provides the following concrete instantiations of HKDF:
 //!
-//! | Hash family | Instantiations                                                           |
-//! |-------------|--------------------------------------------------------------------------|
+//! | Hash family | Instantiations                                                                   |
+//! |-------------|----------------------------------------------------------------------------------|
 //! | SHA-2       | `bouncycastle_digest::sha2::hkdf` -- `HKDF_SHA256`, `HKDF_SHA384`, `HKDF_SHA512` |
+//! | SM3         | `bouncycastle_digest::sm3::hkdf` -- `HKDF_SM3`                                   |
+//! | RIPEMD      | `bouncycastle_digest::ripemd::hkdf` -- `HKDF_RIPEMD160`                          |
 //!
 //! An algorithm that derives its output through HKDF (a KEM such as ML-KEM-512-HKDF-SHA256) is
 //! made from an [`HkdfDescription`], the hash and the salt as readable fields, as the KDF of a
@@ -56,7 +58,7 @@
 //! The [`HKDF`] object uses no heap memory, and the `*_out` methods allocate nothing; the
 //! `Box<dyn KeyMaterialTrait>`-returning one-shots of the `KDF` trait allocate their output. The
 //! object's size depends on the hash and is tabulated with the instantiations: see the Memory
-//! Usage section of [`crate::sha2::hkdf`].
+//! Usage sections of [`crate::sha2::hkdf`], [`crate::sm3::hkdf`] and [`crate::ripemd::hkdf`].
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -97,6 +99,7 @@ use crate::ripemd::RIPEMD160;
 use crate::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use crate::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use crate::sm3::SM3;
+use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError};
 use bouncycastle_core::hazmat::{
     KdfCredit, WithoutCollisionResistance, do_hazardous_operations, label_kdf_output,
@@ -104,7 +107,6 @@ use bouncycastle_core::hazmat::{
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
 use bouncycastle_core::traits::{Algorithm, KDF};
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
@@ -124,6 +126,27 @@ use bouncycastle_core::traits::XOF;
 ///       nightly Rust, and not on stable. Once they merge that feature, we will be able to get rid of this
 ///       and declare `prk: &mut KeyMaterial<H::OUTPUT_LEN>` instead of this hack.
 pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
+
+/// How much stack [`wipe_stack_below`] overwrites after each HKDF operation, which runs in a frame
+/// of its own (the `*_in_own_frame` functions, `expand_fill`), in 64-bit words, for a hash whose
+/// state is at most [`SMALL_HASH_STATE_LEN`] bytes (SHA-2, SM3, RIPEMD-160): more than an
+/// operation leaves written below the frame that wipes, with room for a compiler that lays the
+/// frames out less tightly. In the x86-64 release build 384 words clear SHA-2 and SM3, and
+/// RIPEMD-160, whose compression is not itself wiped, needs 480 (448 leave its last block's
+/// working values). An unoptimised build's frames are not covered.
+const HKDF_WIPED_STACK_WORDS: usize = 576;
+
+/// As [`HKDF_WIPED_STACK_WORDS`], for a hash with a larger state (SHA-3): 768 words clear
+/// SHA3-224 and SHA3-256, and a `KDF` derivation over SHA3-384 or SHA3-512 needs 960 (896 leave
+/// 8 bytes) in the x86-64 release build.
+const HKDF_LARGE_STATE_WIPED_STACK_WORDS: usize = 1152;
+
+/// The hash state size, in bytes, up to which [`HKDF_WIPED_STACK_WORDS`] is enough. The depth an
+/// operation writes to follows the size of the hash: its frames hold copies of hash states and of
+/// [`HmacKey`]s, two states each, so SHA-3's 400-odd bytes of sponge reach further than SHA-512's
+/// 200-odd. The block length does not order them the same way (SHA3-512's is shorter than
+/// SHA-512's).
+const SMALL_HASH_STATE_LEN: usize = 256;
 
 /*** Parameters ***/
 
@@ -169,7 +192,7 @@ impl HKDFParams for SM3 {
     const HKDF_ALG_NAME: &'static str = crate::sm3::hkdf::HKDF_SM3_NAME;
 }
 impl HKDFParams for RIPEMD160 {
-    const HKDF_ALG_NAME: &'static str = "HKDF-RIPEMD160";
+    const HKDF_ALG_NAME: &'static str = crate::ripemd::hkdf::HKDF_RIPEMD160_NAME;
 }
 
 /// HKDF over [`WithoutCollisionResistance<H>`] is HKDF over `H`, as its HMAC is.
@@ -184,7 +207,16 @@ impl<H: HKDFParams> HKDFParams for WithoutCollisionResistance<H> {
 /// ones). The concrete instantiations over the library's own hashes, along with their name constants,
 /// live in the hash modules -- see `bouncycastle_digest::sha2::hkdf::HKDF_SHA256` and
 /// `bouncycastle_digest::sha2::hkdf::HKDF_SHA512`.
-#[derive(Clone)]
+///
+/// Not `Clone`: mid-extract it holds the salt key's pad states and an inner hash that has
+/// absorbed the IKM, and keyed workers do not clone. A second derivation comes from the salt.
+///
+/// ```compile_fail
+/// # use bouncycastle_digest::hkdf::HKDF;
+/// # use bouncycastle_digest::sha2::SHA256;
+/// fn cloneable<T: Clone>() {}
+/// cloneable::<HKDF<SHA256>>();
+/// ```
 pub struct HKDF<H: HKDFParams> {
     // Optional because the extract-phase HMAC cannot be keyed until the salt is provided.
     // None must correspond to a state of Uninitialized.
@@ -200,7 +232,6 @@ pub struct HKDF<H: HKDFParams> {
 /// The extract phase's HMAC, held as its two halves: the salt key and the inner hash absorbing
 /// the IKM. An `HMAC` worker borrows its key, and a struct cannot borrow from itself, so the
 /// phase is run through `bouncycastle_digest::hmac::hazmat`'s `inner_state` and `finish_out` instead.
-#[derive(Clone)]
 struct HkdfExtract<H: HKDFParams> {
     key: HmacKey<H>,
     inner: H,
@@ -261,6 +292,16 @@ impl<H: HKDFParams> HKDF<H> {
     /// and for a hash whose half output is under 112 bits (RIPEMD-160) it is
     /// [`SecurityStrength::None`], so a seeded output of that hash carries no strength.
     const MAX_STRENGTH: SecurityStrength = SecurityStrength::from_bytes(H::OUTPUT_LEN / 2);
+
+    /// Overwrites the stack an operation's own-frame function used, by the hash's class (see
+    /// [`SMALL_HASH_STATE_LEN`]). The branch is on a constant, so only one wipe is compiled in.
+    fn wipe_below() {
+        if size_of::<H>() <= SMALL_HASH_STATE_LEN {
+            wipe_stack_below::<HKDF_WIPED_STACK_WORDS>();
+        } else {
+            wipe_stack_below::<HKDF_LARGE_STATE_WIPED_STACK_WORDS>();
+        }
+    }
 
     /// Get a new, uninstantiated HKDF object.
     pub fn new() -> Self {
@@ -340,12 +381,24 @@ impl<H: HKDFParams> HKDF<H> {
     ) -> Result<usize, MACError> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
         prk.zeroize();
-        // PRK = HMAC-Hash(salt, IKM)
+        let result = Self::extract_in_own_frame(salt, ikm, prk);
+        Self::wipe_below();
+        result
+    }
 
+    /// [`Self::extract_out`]'s work. Never inlined, so that what it leaves of the salt key, the
+    /// IKM and the PRK lies below its caller's frame, where the caller's wipe reaches it.
+    #[inline(never)]
+    fn extract_in_own_frame(
+        salt: &(impl KeyMaterialTrait + ?Sized),
+        ikm: &(impl KeyMaterialTrait + ?Sized),
+        prk: &mut KeyMaterial<MAX_HMAC_OUTPUT_LEN>,
+    ) -> Result<usize, MACError> {
+        // PRK = HMAC-Hash(salt, IKM)
         let mut hkdf = Self::new();
-        hkdf.do_extract_init(salt)?;
+        hkdf.do_extract_init_inner(salt)?;
         hkdf.do_extract_update_key(ikm)?;
-        let bytes_written = hkdf.do_extract_final_out(prk)?;
+        let bytes_written = hkdf.do_extract_final_in_own_frame(prk)?;
 
         Ok(bytes_written)
     }
@@ -395,7 +448,9 @@ impl<H: HKDFParams> HKDF<H> {
     ) -> Result<usize, KDFError> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
         okm.zeroize();
-        let written = Self::expand_fill(prk.ref_to_bytes(), info, L, okm)?;
+        let written = Self::expand_fill(prk.ref_to_bytes(), info, L, okm);
+        Self::wipe_below();
+        let written = written?;
         // The output is the KDF's, not the PRK's: the [`KDF`] trait's rule with the PRK as the
         // one key. It is at least HashLen bytes, so a PRK that credits at all seeds the output.
         let labelled = label_kdf_output(&[prk], written, Self::SEED_LEN, Self::MAX_STRENGTH, okm);
@@ -412,7 +467,11 @@ impl<H: HKDFParams> HKDF<H> {
     ///
     /// # Errors
     /// [`KDFError::InvalidLength`] as [`Self::expand_out`] documents; `okm` is left zeroized.
+    ///
+    /// Never inlined, so that what it leaves of the PRK, its pad states and T lies below its
+    /// caller's frame, where the caller's wipe reaches it.
     #[allow(non_snake_case)] // for L
+    #[inline(never)]
     fn expand_fill(
         prk: &[u8],
         info: &[u8],
@@ -466,7 +525,7 @@ impl<H: HKDFParams> HKDF<H> {
         // The PRK, re-typed as the MAC key it is (see mac_key_copy). One key object for the whole
         // expansion: the pads are computed once here, before any byte of `okm` is written, and each
         // block's HMAC starts from a clone of them.
-        let prk_key = HmacKey::<H>::from_key_material(&Self::mac_key_copy(prk)?)?;
+        let prk_key = HmacKey::<H>::from_key_material_unwiped(&Self::mac_key_copy(prk)?, false)?;
 
         // T(i) is output key material, so it zeroizes on drop.
         #[allow(non_snake_case)]
@@ -534,8 +593,25 @@ impl<H: HKDFParams> HKDF<H> {
     ) -> Result<usize, KDFError> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
         okm.zeroize();
+        let result = Self::extract_and_expand_in_own_frame(salt, ikm, info, L, okm);
+        Self::wipe_below();
+        result
+    }
+
+    /// [`Self::extract_and_expand_out`]'s work, on an `okm` the caller has zeroized. Never
+    /// inlined, so that what it leaves of the salt key, the IKM, the PRK and T lies below its
+    /// caller's frame, where the caller's wipe reaches it.
+    #[allow(non_snake_case)]
+    #[inline(never)]
+    fn extract_and_expand_in_own_frame(
+        salt: &(impl KeyMaterialTrait + ?Sized),
+        ikm: &(impl KeyMaterialTrait + ?Sized),
+        info: &[u8],
+        L: usize,
+        okm: &mut (impl KeyMaterialTrait + ?Sized),
+    ) -> Result<usize, KDFError> {
         let mut hkdf = Self::new();
-        hkdf.do_extract_init(salt)?;
+        hkdf.do_extract_init_inner(salt)?;
         hkdf.do_extract_update_key(ikm)?;
         // `do_extract_init` has set it.
         let HkdfExtract { key, inner } = hkdf.hmac.as_mut().unwrap();
@@ -628,6 +704,19 @@ impl<H: HKDFParams> HKDF<H> {
         &mut self,
         salt: &(impl KeyMaterialTrait + ?Sized),
     ) -> Result<usize, MACError> {
+        let result = self.do_extract_init_inner(salt);
+        Self::wipe_below();
+        result
+    }
+
+    /// [`Self::do_extract_init`]'s work. Never inlined, so that the copies of the salt key's pad
+    /// states that moving it into `self` leaves lie below its caller's frame, where the caller's
+    /// wipe reaches them.
+    #[inline(never)]
+    fn do_extract_init_inner(
+        &mut self,
+        salt: &(impl KeyMaterialTrait + ?Sized),
+    ) -> Result<usize, MACError> {
         if self.state >= HkdfStates::Initialized {
             return Err(MACError::InvalidState("Initialized twice"));
         };
@@ -635,7 +724,7 @@ impl<H: HKDFParams> HKDF<H> {
         // The salt is often empty or short, so HMAC's key-strength check is skipped; the entropy
         // credit below accounts for it.
         let salt_key = Self::salt_as_mac_key(salt)?;
-        let key = HmacKey::<H>::from_key_material_allow_weak(&salt_key)?;
+        let key = HmacKey::<H>::from_key_material_unwiped(&salt_key, true)?;
         let inner = hmac_hazmat::inner_state(&key);
         self.hmac = Some(HkdfExtract { key, inner });
 
@@ -718,6 +807,19 @@ impl<H: HKDFParams> HKDF<H> {
         mut self,
         prk: &mut KeyMaterial<MAX_HMAC_OUTPUT_LEN>,
     ) -> Result<usize, MACError> {
+        let result = self.do_extract_final_in_own_frame(prk);
+        Self::wipe_below();
+        result
+    }
+
+    /// [`Self::do_extract_final_out`]'s work, on the instance where it sits. Never inlined, so
+    /// that what it leaves of the PRK lies below its caller's frame, where the caller's wipe
+    /// reaches it.
+    #[inline(never)]
+    fn do_extract_final_in_own_frame(
+        &mut self,
+        prk: &mut KeyMaterial<MAX_HMAC_OUTPUT_LEN>,
+    ) -> Result<usize, MACError> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
         prk.zeroize();
         if self.state == HkdfStates::Uninitialized {
@@ -791,6 +893,24 @@ impl<H: HKDFParams> KDF for HKDF<H> {
         output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         output_key.zeroize();
+        let result = self.derive_in_own_frame(ikms, fixed_info, len, output_key);
+        Self::wipe_below();
+        result
+    }
+}
+
+impl<H: HKDFParams> HKDF<H> {
+    /// [`KDF::derive_key_from_multiple_out`]'s work, on an `output_key` the caller has zeroized.
+    /// Never inlined, so that what it leaves of the IKMs, the PRK and T lies below its caller's
+    /// frame, where the caller's wipe reaches it.
+    #[inline(never)]
+    fn derive_in_own_frame(
+        &self,
+        ikms: &[&dyn KeyMaterialTrait],
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut dyn KeyMaterialTrait,
+    ) -> Result<usize, KDFError> {
         if ikms.is_empty() {
             return Err(KDFError::InvalidLength("a derivation from no keys is refused"));
         }
@@ -809,7 +929,7 @@ impl<H: HKDFParams> KDF for HKDF<H> {
             Some(extract) => &extract.key,
             None => {
                 let no_salt = Self::salt_as_mac_key(&KeyMaterial0::new())?;
-                absent_salt = HmacKey::<H>::from_key_material_allow_weak(&no_salt)?;
+                absent_salt = HmacKey::<H>::from_key_material_unwiped(&no_salt, true)?;
                 &absent_salt
             }
         };

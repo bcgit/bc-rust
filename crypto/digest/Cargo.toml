@@ -94,6 +94,10 @@ name = "sm3_hkdf_sm3_benches"
 harness = false
 
 [[bench]]
+name = "ripemd_hkdf_ripemd160_benches"
+harness = false
+
+[[bench]]
 name = "sm3_hmac_sm3_benches"
 harness = false
 

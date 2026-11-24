@@ -3094,6 +3094,56 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Perform HKDF-RIPEMD160 (RFC 5869 extract-then-expand) of the provided input keying material:
+    ///     OKM = HKDF-Expand(HKDF-Extract(salt, ikm), info, len)
+    /// A legacy construction, for the protocols that require it.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HKDF_RIPEMD160 {
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt value in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
+
+        /// An Input Keying Material in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the input keying material in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// Perform HMAC-SHA224 of the content provided on stdin.
     /// Supports streaming update for low memory footprint.
     /// Note: in production uses, secrets should not be passed on the command-line because they get
@@ -8665,6 +8715,28 @@ fn run() {
             x,
         }) => hkdf_cmd::hkdf_cmd(
             HKDFVariant::SM3,
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            *secret_salt,
+            *len,
+            *x,
+        ),
+        Some(Subcommands::HKDF_RIPEMD160 {
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            secret_salt,
+            len,
+            x,
+        }) => hkdf_cmd::hkdf_cmd(
+            HKDFVariant::RIPEMD160,
             salt,
             salt_file,
             ikm,

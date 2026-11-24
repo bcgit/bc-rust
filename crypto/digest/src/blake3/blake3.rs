@@ -307,7 +307,16 @@ struct Blake3Core<K: KeyWords = Secret<[u32; 8]>> {
     cv_stack_len: u8,
     /// The mode flag of s. 2.3, set "for every compression".
     flags: u32,
+    /// Set when the input is ended by a final that leaves the value behind (`finish_into`,
+    /// `finish_squeezer`, the MAC finals): from then on the value takes no more input, no other
+    /// final and no suspend. Not part of the suspended state.
+    finished: bool,
 }
+
+/// What a BLAKE3 value panics with when it is given input, finished again or suspended after it
+/// was finished.
+const INPUT_AFTER_FINISH: &str =
+    "the hasher has been finished: it takes no more input, no other final and no suspend";
 
 /// Where a [`Blake3Core`] reads its key words from.
 trait KeyWords {
@@ -406,7 +415,23 @@ impl<K: KeyWords> Blake3Core<K> {
             cv_stack: Secret::new(),
             cv_stack_len: 0,
             flags,
+            finished: false,
         }
+    }
+
+    /// Panics if the input has been ended where the value sits.
+    fn assert_not_finished(&self) {
+        assert!(!self.finished, "{}", INPUT_AFTER_FINISH);
+    }
+
+    /// Ends the input: the root node's compression inputs, with the value marked finished.
+    ///
+    /// # Panics
+    /// If it was finished already.
+    fn finish(&mut self) -> Output {
+        self.assert_not_finished();
+        self.finished = true;
+        self.root_output()
     }
 
     fn push_stack(&mut self, cv: &[u32; 8]) {
@@ -442,6 +467,7 @@ impl<K: KeyWords> Blake3Core<K> {
     }
 
     fn update(&mut self, mut input: &[u8]) {
+        self.assert_not_finished();
         let mut chunk_cv = Secret::<[u32; 8]>::new();
         while !input.is_empty() {
             // s. 5.1.1: "chunk CVs are added only after the caller supplies at least 1 byte for the
@@ -464,11 +490,12 @@ impl<K: KeyWords> Blake3Core<K> {
     }
 
     /// The default-length hash: zeroizes `output`, then writes `min(output.len(), 32)` bytes of
-    /// root output read from `&self`, so the state is finished where it sits.
-    fn finish_default_len(&self, output: &mut [u8]) -> usize {
+    /// root output, finishing the state where it sits.
+    fn finish_default_len(&mut self, output: &mut [u8]) -> usize {
+        self.assert_not_finished();
         output.fill(0);
         let n = *min(&output.len(), &OUT_LEN);
-        BLAKE3Squeezer::new(self.root_output()).do_output_out(&mut output[..n])
+        BLAKE3Squeezer::new(self.finish()).do_output_out(&mut output[..n])
     }
 
     /// The root node's held-back compression.
@@ -515,6 +542,7 @@ impl<K: KeyWords> Blake3Core<K> {
     /// those are the key. `read_state` restores it from the key words. Stale bytes past
     /// `block_len` and stale CVs past `cv_stack_len` are not written either.
     fn write_state(&self, out: &mut [u8]) {
+        self.assert_not_finished();
         debug_assert_eq!(out.len(), CORE_STATE_LEN);
         let cs = &self.chunk_state;
         if cs.blocks_compressed != 0 {
@@ -604,6 +632,21 @@ impl BLAKE3 {
     }
 }
 
+impl BLAKE3 {
+    /// Ends the input where the hasher sits and returns the squeezer [`XOF::into_squeezer`]
+    /// would, without moving the hasher, whose chunk state and chaining-value stack are computed
+    /// from what was absorbed. The squeezer holds only the root compression's inputs (s. 2.6).
+    /// Afterwards the hasher is finished (see [`FinishToken`]): the caller lets it drop.
+    ///
+    /// # Panics
+    /// If the hasher was finished already, by this or by a final that takes `&mut self`; and
+    /// from this call on, any input, other final or [`Suspendable::suspend`] panics, in every
+    /// build.
+    pub fn finish_squeezer(&mut self, _token: &FinishToken) -> BLAKE3Squeezer {
+        BLAKE3Squeezer::new(self.core.finish())
+    }
+}
+
 impl Default for BLAKE3 {
     fn default() -> Self {
         Self::new()
@@ -667,8 +710,8 @@ impl Hash for BLAKE3 {
 impl XOF for BLAKE3 {
     type Squeezer = BLAKE3Squeezer;
 
-    fn into_squeezer(self) -> Self::Squeezer {
-        BLAKE3Squeezer::new(self.core.root_output())
+    fn into_squeezer(mut self) -> Self::Squeezer {
+        BLAKE3Squeezer::new(self.core.finish())
     }
 
     /// Only `num_bits == 0` is accepted; see [`Hash::do_final_partial_bits`] on [`BLAKE3`].
@@ -939,6 +982,13 @@ impl BLAKE3DeriveKey {
         self.do_update(data);
         self.do_final_out(output)
     }
+
+    /// Ends the input where the hasher sits and returns the squeezer [`XOF::into_squeezer`]
+    /// would, without moving the hasher, which holds the key material's chaining values. As
+    /// [`BLAKE3::finish_squeezer`]; the caller lets the hasher drop.
+    pub fn finish_squeezer(&mut self, token: &FinishToken) -> BLAKE3DeriveKeySqueezer {
+        BLAKE3DeriveKeySqueezer(self.0.finish_squeezer(token))
+    }
 }
 
 impl Hash for BLAKE3DeriveKey {
@@ -1122,8 +1172,19 @@ impl BLAKE3KeyedHash<'_, Encrypting> {
     /// Ends the input and returns a squeezer for keyed output of any length (s. 2.6). Its first
     /// 32 bytes are the [`MACGenerator`] tag. No minimum length applies: choosing a safe output
     /// length is the caller's responsibility.
-    pub fn into_squeezer(self) -> BLAKE3KeyedSqueezer {
-        BLAKE3KeyedSqueezer(BLAKE3Squeezer::new(self.core.root_output()))
+    pub fn into_squeezer(mut self) -> BLAKE3KeyedSqueezer {
+        BLAKE3KeyedSqueezer(BLAKE3Squeezer::new(self.core.finish()))
+    }
+
+    /// As [`Self::into_squeezer`], where the worker sits: the worker, whose chaining values are
+    /// keyed, is not moved. Afterwards it is finished (see [`FinishToken`]): the caller lets it
+    /// drop.
+    ///
+    /// # Panics
+    /// As [`BLAKE3::finish_squeezer`]: if the worker was finished already, and on any input or
+    /// final after this.
+    pub fn finish_squeezer(&mut self, _token: &FinishToken) -> BLAKE3KeyedSqueezer {
+        BLAKE3KeyedSqueezer(BLAKE3Squeezer::new(self.core.finish()))
     }
 }
 
@@ -1133,7 +1194,7 @@ impl MACGenerator<OUT_LEN> for BLAKE3KeyedHash<'_, Encrypting> {
     }
 
     fn finish_mac_into(&mut self, _token: &FinishToken, out: &mut [u8; OUT_LEN]) -> usize {
-        BLAKE3Squeezer::new(self.core.root_output()).do_output_out(out)
+        BLAKE3Squeezer::new(self.core.finish()).do_output_out(out)
     }
 }
 
@@ -1151,7 +1212,7 @@ impl MACVerifier<OUT_LEN> for BLAKE3KeyedHash<'_, Decrypting> {
         // The recomputed tag is the valid tag of whatever message was absorbed, so it is kept
         // off the stack's leftovers.
         let mut computed: Secret<[u8; OUT_LEN]> = Secret::new();
-        BLAKE3Squeezer::new(self.core.root_output()).do_output_out(&mut *computed);
+        BLAKE3Squeezer::new(self.core.finish()).do_output_out(&mut *computed);
         if ct::ct_eq_bytes(&*computed, mac) { Ok(()) } else { Err(MACError::VerificationFailed) }
     }
 }

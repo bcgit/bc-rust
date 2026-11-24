@@ -63,6 +63,7 @@ use crate::sha3::cshake::{
     CSHAKE_COMPONENT_LEN, CSHAKEBorrowedSqueezer, CSHAKEInternal, CSHAKESqueezer,
 };
 use crate::sha3::{SHAKE128Params, SHAKE256Params, SHAKEParams};
+use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -177,6 +178,9 @@ pub type KMAC256Key<const MAC_LEN: usize = 64> = KMACKeyInternal<SHAKE256Params,
 /// The key binding shared by KMAC and KMACXOF: the key-type check and, unless `allow_weak_key`,
 /// the strength check, then Sec 4.3 step 1's `bytepad(encode_string(K), rate)` absorbed into a
 /// cSHAKE under `"KMAC"` and `customization`.
+///
+/// The keyed sponge inverts to the key (the permutation is public), so the constructors build
+/// the value that holds it through [`keyed_in_own_frame`].
 fn keyed_cshake<PARAMS: SHAKEParams>(
     key: &dyn KeyMaterialTrait,
     customization: &[u8],
@@ -202,6 +206,28 @@ fn keyed_cshake<PARAMS: SHAKEParams>(
     Ok(cshake)
 }
 
+/// Runs `build`, which makes a value holding a keyed sponge, in a frame of its own, and
+/// overwrites the stack it used, where moving the sponge into the value leaves copies of it,
+/// before the value is handed on.
+fn keyed_in_own_frame<T>(build: impl FnOnce() -> T) -> T {
+    let value = run_in_own_frame(build);
+    wipe_stack_below::<KEYED_WIPED_STACK_WORDS>();
+    value
+}
+
+/// Never inlined, so that `build`'s frame lies below its caller's, where the caller's wipe
+/// reaches it.
+#[inline(never)]
+fn run_in_own_frame<T>(build: impl FnOnce() -> T) -> T {
+    build()
+}
+
+/// How much stack [`wipe_stack_below`] overwrites after a keyed sponge is built, in 64-bit
+/// words: more than the build leaves written below the frame that wipes (about 950 bytes in the
+/// x86-64 release build), with room for a compiler that lays the frames out less tightly. An
+/// unoptimised build's frames are not covered.
+const KEYED_WIPED_STACK_WORDS: usize = 192;
+
 impl<PARAMS: SHAKEParams, const MAC_LEN: usize> KMACKeyInternal<PARAMS, MAC_LEN> {
     /// The MAC's bounds on `L`, a compile-time error where a key type is used: from
     /// [`KMAC_MIN_OUTPUT_LEN`] to [`KMAC_MAX_OUTPUT_LEN`]. It is evaluated when a constructor is
@@ -225,7 +251,7 @@ impl<PARAMS: SHAKEParams, const MAC_LEN: usize> KMACKeyInternal<PARAMS, MAC_LEN>
     /// this KMAC's security strength.
     pub fn with_params(key: &dyn KeyMaterialTrait, customization: &[u8]) -> Result<Self, MACError> {
         const { Self::LEN_CHECK };
-        Ok(Self { cshake: keyed_cshake(key, customization, false)? })
+        keyed_in_own_frame(|| Ok(Self { cshake: keyed_cshake(key, customization, false)? }))
     }
 
     /// As [`with_params`](Self::with_params) without the strength check.
@@ -237,7 +263,7 @@ impl<PARAMS: SHAKEParams, const MAC_LEN: usize> KMACKeyInternal<PARAMS, MAC_LEN>
         customization: &[u8],
     ) -> Result<Self, MACError> {
         const { Self::LEN_CHECK };
-        Ok(Self { cshake: keyed_cshake(key, customization, true)? })
+        keyed_in_own_frame(|| Ok(Self { cshake: keyed_cshake(key, customization, true)? }))
     }
 }
 
@@ -477,7 +503,9 @@ impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
     ) -> Result<Self, MACError> {
         // The key binding is identical to KMAC's; only the length encoding differs, and that is
         // applied when output begins.
-        Ok(Self { cshake: keyed_cshake(key, customization, allow_weak_key)? })
+        keyed_in_own_frame(|| {
+            Ok(Self { cshake: keyed_cshake(key, customization, allow_weak_key)? })
+        })
     }
 }
 

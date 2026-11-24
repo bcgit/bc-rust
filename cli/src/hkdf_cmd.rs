@@ -10,6 +10,7 @@ use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::digest::hkdf;
 use bouncycastle::digest::hkdf::{HKDF, HKDFParams};
+use bouncycastle::digest::ripemd::hkdf::HKDF_RIPEMD160;
 use bouncycastle::digest::sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
 use bouncycastle::digest::sm3::hkdf::HKDF_SM3;
 
@@ -19,6 +20,7 @@ pub(crate) enum HKDFVariant {
     SHA384,
     SHA512,
     SM3,
+    RIPEMD160,
 }
 
 #[allow(clippy::too_many_arguments)] // one flag per RFC 5869 input, each inline or from a file
@@ -71,6 +73,7 @@ pub(crate) fn hkdf_cmd(
         HKDFVariant::SHA384 => run(HKDF_SHA384::new(), &salt, &ikm, &info, len, &mut out_key),
         HKDFVariant::SHA512 => run(HKDF_SHA512::new(), &salt, &ikm, &info, len, &mut out_key),
         HKDFVariant::SM3 => run(HKDF_SM3::new(), &salt, &ikm, &info, len, &mut out_key),
+        HKDFVariant::RIPEMD160 => run(HKDF_RIPEMD160::new(), &salt, &ikm, &info, len, &mut out_key),
     };
     if let Err(e) = result {
         eprintln!("Error: HKDF failed: {e}");

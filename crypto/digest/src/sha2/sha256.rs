@@ -1,4 +1,5 @@
 use crate::sha2::SHA256InitValue;
+use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, HashOneShot, Suspendable};
@@ -158,13 +159,33 @@ impl<PARAMS: SHA256InitValue> Sha256State<PARAMS> {
         Self { _params: core::marker::PhantomData, h }
     }
 
+    /// Compresses `blocks` in a frame of its own and overwrites the stack that frame used: the
+    /// message schedule and the working variables spilled there are the message and the
+    /// chaining value of whatever is hashed, an HMAC key or a private key among them.
     fn compress(&mut self, blocks: &[[u8; 64]]) {
-        // FIPS 180-4 s. 6.2.2: each message block M(1), ..., M(N) is processed in order.
-        for block in blocks {
-            compress_block(&mut self.h, block);
+        // Only to save the wipe; mutants note: deleting it is an equivalent mutant.
+        if blocks.is_empty() {
+            return;
         }
+        compress_blocks(&mut self.h, blocks);
+        wipe_stack_below::<COMPRESS_WIPED_STACK_WORDS>();
     }
 }
+
+/// FIPS 180-4 s. 6.2.2: each message block M(1), ..., M(N) is processed in order. Never inlined,
+/// so that its frame lies below its caller's, where [`Sha256State::compress`]'s wipe reaches it.
+#[inline(never)]
+fn compress_blocks(h: &mut [u32; 8], blocks: &[[u8; 64]]) {
+    for block in blocks {
+        compress_block(h, block);
+    }
+}
+
+/// How much stack [`wipe_stack_below`] overwrites after [`compress_blocks`], in 64-bit words:
+/// more than that frame, which calls nothing, uses (256 bytes with its return address in the
+/// x86-64 release build), with room for a compiler that lays it out less tightly. An unoptimised
+/// build's frame is not covered.
+const COMPRESS_WIPED_STACK_WORDS: usize = 64;
 
 /// Internal struct for SHA256.
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
@@ -306,6 +327,9 @@ impl<PARAMS: SHA256InitValue> Hash for SHA256Internal<PARAMS> {
             block = &block[available..];
 
             self.state.compress(slice::from_ref(&self.x_buf));
+            // Not left where a clone or a suspended state would carry it. Once per call at
+            // most: whole blocks after this one are compressed from `block`.
+            self.x_buf.fill(0);
         }
 
         // FIPS 180-4 s. 5.2.1: the message is parsed into 512-bit blocks; a partial trailing block waits in x_buf.
@@ -334,6 +358,8 @@ impl<PARAMS: SHA256InitValue> Hash for SHA256Internal<PARAMS> {
         num_partial_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
+        // Cleared before the check, so that a refused call leaves nothing stale in the buffer.
+        output.fill(0);
         if num_partial_bits > 7 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }

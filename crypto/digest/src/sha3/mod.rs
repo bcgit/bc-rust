@@ -197,11 +197,11 @@
 //! * The sponge state and queue are held in [`bouncycastle_utils::secret::Secret`] and zeroized on
 //!   drop, where the value then is. [`XOF::into_squeezer`] moves the sponge, and a move wipes
 //!   nothing: a copy of the state, from which what was absorbed can be computed back, may stay
-//!   on the stack. A SHAKE, cSHAKE or KMACXOF that has absorbed a secret is finished with
+//!   on the stack. An XOF of this module that has absorbed a secret is finished with
 //!   `finish_squeezer` instead ([`SHAKEInternal::finish_squeezer`]), which lends out the squeezer
-//!   where the sponge sits. Those three have it; TupleHashXOF and ParallelHashXOF do not, nor,
-//!   outside this module, do Ascon's XOFs or BLAKE3. A value finished that way is to be dropped:
-//!   giving it more input, or finishing it any other way, panics.
+//!   where the sponge sits, as BLAKE3's types do; Ascon's XOFs do not have it. A value
+//!   finished that way is to be dropped: giving it more input, or finishing it any other way,
+//!   panics.
 //! * The Keccak-f permutation spills lanes of the state to its stack frame, and those are the
 //!   message, the key or the output of whatever is hashed, so it runs in a frame of its own
 //!   that is overwritten after every call. The overwrite is sized for an optimised build

@@ -52,17 +52,17 @@
 //!
 //! Per-call stack usage does not depend on the data length. The figures are the frames the
 //! compiler reports for the release build (x86-64 Linux, rustc 1.97.0-nightly), summed down
-//! each entry point's deepest call path with a return address per call; the compression
-//! function, with its 80-word message schedule, is 264 bytes of every one (see
-//! `mem_usage_benches/src/bench_sha1_mem_usage.rs`):
+//! each entry point's deepest call path with a return address per call. The deepest frame of
+//! each is the 64-word stack wipe that follows the compression, 544 bytes with its return
+//! address (see `mem_usage_benches/src/bench_sha1_mem_usage.rs`):
 //!
-//! | Entry point                              | Stack   |
-//! |------------------------------------------|---------|
-//! | `SHA1::do_update`                        | 328 B   |
-//! | `SHA1::do_final_out`                     | 352 B   |
-//! | `SHA1::do_final_partial_bits_out`        | 376 B   |
-//! | `SHA1::hash_out` (one-shot)              | 584 B   |
-//! | `SHA1::suspend` / `SHA1::from_suspended` | 8 / 8 B |
+//! | Entry point                              | Stack    |
+//! |------------------------------------------|----------|
+//! | `SHA1::do_update`                        | 592 B    |
+//! | `SHA1::do_final_out`                     | 624 B    |
+//! | `SHA1::do_final_partial_bits_out`        | 672 B    |
+//! | `SHA1::hash_out` (one-shot)              | 864 B    |
+//! | `SHA1::suspend` / `SHA1::from_suspended` | 8 / 16 B |
 //!
 //! # 🚨 Security Considerations 🚨
 //!

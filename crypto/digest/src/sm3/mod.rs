@@ -70,15 +70,15 @@
 //! below each entry point in the release build (x86-64 Linux, rustc 1.97.0-nightly, return
 //! addresses included; see `mem_usage_benches/src/bench_sm3_mem_usage.rs`):
 //!
-//! | Entry point                                     | Stack       |
-//! |-------------------------------------------------|-------------|
-//! | `SM3::do_update`                                | 320 B       |
-//! | `SM3::do_final_out`                             | 336 B       |
-//! | `SM3::do_final_partial_bits_out`                | 464 B       |
-//! | `SM3::hash_out` (one-shot)                      | 592 B       |
-//! | `SM3::suspend` / `SM3::from_suspended`          | 8 / 80 B    |
-//! | `HmacKey::<SM3>::from_key_material` / `mac_out` | 992 / 928 B |
-//! | `HKDF_SM3::extract_and_expand_out`              | 2560 B      |
+//! | Entry point                                     | Stack         |
+//! |-------------------------------------------------|---------------|
+//! | `SM3::do_update`                                | 592 B         |
+//! | `SM3::do_final_out`                             | 624 B         |
+//! | `SM3::do_final_partial_bits_out`                | 672 B         |
+//! | `SM3::hash_out` (one-shot)                      | 880 B         |
+//! | `SM3::suspend` / `SM3::from_suspended`          | 8 / 40 B      |
+//! | `HmacKey::<SM3>::from_key_material` / `mac_out` | 2976 / 1072 B |
+//! | `HKDF_SM3::extract_and_expand_out`              | 4688 B        |
 //!
 //! # 🚨 Security Considerations 🚨
 //!

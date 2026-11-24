@@ -49,7 +49,8 @@
 use alloc::vec::Vec;
 
 use crate::sha3::cshake::{
-    CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer, absorb_left_encode_into, right_encode,
+    CSHAKE_COMPONENT_LEN, CSHAKEBorrowedSqueezer, CSHAKEInternal, CSHAKESqueezer,
+    absorb_left_encode_into, right_encode,
 };
 use crate::sha3::keccak::SHA3_FAMILY_STATE_LEN;
 use crate::sha3::shake::SHAKEInternal;
@@ -370,6 +371,24 @@ impl<PARAMS: SHAKEParams> ParallelHashXOFInternal<PARAMS> {
     pub fn new(block_size: NonZeroUsize, customization: &[u8]) -> Self {
         Self { state: ParallelState::new(block_size, customization) }
     }
+
+    /// Ends the input phase where the sponge sits and lends out its squeezing half:
+    /// [`XOF::into_squeezer`] without the move, as
+    /// [`KMACXOFInternal::finish_squeezer`](crate::sha3::kmac::KMACXOFInternal::finish_squeezer)
+    /// does. The squeezer reads as the one [`XOF::into_squeezer`] returns: a first read through
+    /// [`XOFSqueezer::do_output_final`] is the fixed-length ParallelHash of that length. Afterwards
+    /// the value is finished (see [`FinishToken`]): a second call continues the stream the first
+    /// read chose, and anything else that would absorb or finish again panics, in every build.
+    ///
+    /// [`XOFSqueezer::do_output_final`]: bouncycastle_core::traits::XOFSqueezer::do_output_final
+    pub fn finish_squeezer(&mut self, _token: &FinishToken) -> CSHAKEBorrowedSqueezer<'_, PARAMS> {
+        // The short last block and the block count go in once, at the first call (Sec 6.3.1
+        // steps 3 and 4); the `right_encode(L)` after them is the first read's to choose.
+        if !self.state.cshake.is_lent() {
+            self.state.finish_blocks();
+        }
+        self.state.cshake.finish_squeezer_unbound()
+    }
 }
 
 impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for ParallelHashXOFInternal<PARAMS> {
@@ -377,6 +396,8 @@ impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for ParallelHashXOFIntern
     type Key = ();
 
     fn write_state(&self, out: &mut [u8]) {
+        // A value that lent out its squeezer is finished, as KMACXOF's is.
+        self.state.cshake.assert_not_lent();
         self.state.write_state(PARAMS::PARALLELHASHXOF_STATE_TAG, out)
     }
 
@@ -411,7 +432,13 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
         self.state.cshake.output_len()
     }
 
+    /// # Panics
+    /// If the value has lent out its squeezer through
+    /// [`finish_squeezer`](ParallelHashXOFInternal::finish_squeezer).
     fn do_update(&mut self, data: &[u8]) {
+        // Checked here and not left to the outer cSHAKE: input goes to the block's inner sponge
+        // first and reaches the outer one only when a block fills.
+        self.state.cshake.assert_not_lent();
         self.state.do_update(data);
     }
 
@@ -453,6 +480,7 @@ impl<PARAMS: SHAKEParams> XOF for ParallelHashXOFInternal<PARAMS> {
     // not, because whether it carries 0 or the length of a final read is
     // CSHAKESqueezer's decision.
     fn into_squeezer(mut self) -> Self::Squeezer {
+        self.state.cshake.assert_not_finished();
         self.state.finish_blocks();
         CSHAKESqueezer::new(self.state.cshake)
     }

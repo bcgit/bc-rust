@@ -298,3 +298,28 @@ fn generate_refuses_an_rng_below_the_kmac_strength() {
     ));
     assert!(KMAC128Key::<32>::generate(&mut weak).is_ok());
 }
+
+/// Whether any 8 bytes of `secret` appear in `haystack`.
+fn contains_any_window(haystack: &[u8], secret: &[u8]) -> bool {
+    secret.windows(8).any(|w| haystack.windows(8).any(|h| h == w))
+}
+
+/// The key is absorbed as SP 800-185 Sec 4.3 step 1's `bytepad(encode_string(K), rate)`, through
+/// the sponge's input queue; a worker's suspended state, which is a copy of the keyed sponge,
+/// carries none of its bytes. Keys that end inside the first block and that run past it.
+#[test]
+fn a_suspended_worker_does_not_carry_the_key() {
+    use bouncycastle_core::traits::Suspendable;
+    let bytes: [u8; 200] = core::array::from_fn(|i| (i as u8).wrapping_mul(37).wrapping_add(11));
+    for len in [32, 100, 168, 200] {
+        let key = KeyMaterial::<200>::from_bytes_as_type(&bytes[..len], KeyType::MACKey).unwrap();
+        let k128 = KMAC128Key::<32>::with_params(&key, b"S").unwrap();
+        let state = k128.create_generator().suspend();
+        assert!(!contains_any_window(&state, &bytes[..len]), "KMAC128, {len}-byte key");
+        let k256 = KMAC256Key::<64>::with_params(&key, b"").unwrap();
+        let state = k256.create_generator().suspend();
+        assert!(!contains_any_window(&state, &bytes[..len]), "KMAC256, {len}-byte key");
+        let xof = KMACXOF128::new(&key, b"", false).unwrap();
+        assert!(!contains_any_window(&xof.suspend(), &bytes[..len]), "KMACXOF128, {len}-byte key");
+    }
+}

@@ -13,6 +13,7 @@ mod blake3_tests {
     use super::vectors::{CASES, CONTEXT, OUTPUT_LEN, input};
     use bouncycastle_core::direction::Encrypting;
     use bouncycastle_core::errors::{HashError, SuspendableError};
+    use bouncycastle_core::hazmat::finish_token;
     use bouncycastle_core::hex;
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
@@ -44,6 +45,9 @@ mod blake3_tests {
 
             let mut b = BLAKE3::new();
             b.do_update(&msg);
+            let mut in_place = b.clone();
+            let got = in_place.finish_squeezer(&finish_token()).do_output(OUTPUT_LEN);
+            assert_eq!(got, expected, "finish_squeezer / len {len}");
             assert_eq!(b.into_squeezer().do_output(OUTPUT_LEN), expected, "squeeze / len {len}");
 
             // Split reads: inside block 0, exactly at the block boundary, and across it.
@@ -68,6 +72,10 @@ mod blake3_tests {
 
             assert_eq!(BLAKE3DeriveKey::new(CONTEXT).hash(&msg), expected[..32], "len {len}");
             assert_eq!(BLAKE3DeriveKey::new(CONTEXT).xof(&msg, OUTPUT_LEN), expected, "len {len}");
+            let mut kdf = BLAKE3DeriveKey::new(CONTEXT);
+            kdf.do_update(&msg);
+            let got = kdf.finish_squeezer(&finish_token()).do_output(OUTPUT_LEN);
+            assert_eq!(got, expected, "finish_squeezer / len {len}");
         }
     }
 
@@ -597,5 +605,88 @@ mod blake3_tests {
                 "counter {bad}"
             );
         }
+    }
+
+    /* ------------------------- a finished value takes nothing ------------------------------ */
+
+    /// `f` must panic with the finished-value refusal and nothing else.
+    fn refused<R>(what: &str, f: impl FnOnce() -> R) {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        let payload = catch_unwind(AssertUnwindSafe(f))
+            .map(|_| ())
+            .expect_err(&format!("{what}: a finished value was used again without a panic"));
+        let msg = payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_default();
+        assert!(msg.contains("the hasher has been finished"), "{what}: panicked with {msg:?}");
+    }
+
+    /// After `finish` (`finish_squeezer` or a final that takes `&mut self`), every way of giving
+    /// input, finishing again or suspending is refused, and no output is written.
+    fn finished_takes_nothing<X: XOF + Clone>(
+        name: &str,
+        make: impl Fn() -> X,
+        finish: impl Fn(&mut X),
+        suspend: Option<fn(X)>,
+    ) {
+        let token = finish_token();
+        let mut finished = make();
+        finished.do_update(b"a secret");
+        finish(&mut finished);
+
+        for n in [0usize, 1, 64, 1025] {
+            let mut x = finished.clone();
+            refused(&format!("{name}: do_update of {n}"), || x.do_update(&vec![7u8; n]));
+        }
+        let mut out = [0xAAu8; 32];
+        refused(&format!("{name}: do_final"), || finished.clone().do_final());
+        refused(&format!("{name}: do_final_out"), || finished.clone().do_final_out(&mut out));
+        let mut x = finished.clone();
+        refused(&format!("{name}: finish_into"), || x.finish_into(&token, &mut out));
+        assert_eq!(out, [0xAAu8; 32], "{name}: output after a refused final");
+        refused(&format!("{name}: into_squeezer"), || drop(finished.clone().into_squeezer()));
+        refused(&format!("{name}: xof"), || finished.clone().xof(b"more", 32));
+        let mut x = finished.clone();
+        refused(&format!("{name}: finish again"), || finish(&mut x));
+        if let Some(suspend) = suspend {
+            refused(&format!("{name}: suspend"), || suspend(finished.clone()));
+        }
+    }
+
+    #[test]
+    fn a_finished_blake3_takes_nothing() {
+        let suspend: fn(BLAKE3) = |x| {
+            let _ = x.suspend();
+        };
+        finished_takes_nothing(
+            "BLAKE3 after finish_squeezer",
+            BLAKE3::new,
+            |x| drop(x.finish_squeezer(&finish_token())),
+            Some(suspend),
+        );
+        finished_takes_nothing(
+            "BLAKE3 after finish_into",
+            BLAKE3::new,
+            |x| {
+                let _ = x.finish_into(&finish_token(), &mut [0u8; 32]);
+            },
+            Some(suspend),
+        );
+        finished_takes_nothing(
+            "BLAKE3DeriveKey after finish_squeezer",
+            || BLAKE3DeriveKey::new(CONTEXT),
+            |x| drop(x.finish_squeezer(&finish_token())),
+            None,
+        );
+        finished_takes_nothing(
+            "BLAKE3DeriveKey after finish_into",
+            || BLAKE3DeriveKey::new(CONTEXT),
+            |x| {
+                let _ = x.finish_into(&finish_token(), &mut [0u8; 32]);
+            },
+            None,
+        );
     }
 }

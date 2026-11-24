@@ -55,6 +55,9 @@
 //! ## HMAC
 //! See [hmac].
 //!
+//! ## HKDF
+//! See [hkdf].
+//!
 //! # Memory Usage
 //!
 //! No heap memory is used by the algorithm itself; the `Vec<u8>`-returning convenience methods
@@ -78,7 +81,8 @@
 //! | `do_final_partial_bits_out`                   | 256        | 272        | 256        | 320        |
 //! | `hash_out` (one-shot)                         | 560        | 512        | 608        | 608        |
 //! | `suspend` / `from_suspended`                  | 8 / 144    | 8 / 8      | 8 / 192    | 8 / 8      |
-//! | `HmacKey::from_key_material` / `mac_out`      |            | 880 / 816  |            |            |
+//! | `HmacKey::from_key_material` / `mac_out`      |            | 2944 / 800 |            |            |
+//! | `HKDF_RIPEMD160::extract_and_expand_out`      |            | 4784       |            |            |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -125,6 +129,7 @@ mod common;
 mod ripemd128;
 mod ripemd160;
 
+pub mod hkdf;
 pub mod hmac;
 
 use self::common::BLOCK_LEN;

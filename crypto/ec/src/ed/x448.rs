@@ -121,14 +121,14 @@
 //! | `X448PrivateKey::from_bytes`      | 2872 B |
 //! | `X448PrivateKey::from_bytes_out`  | 2728 B |
 //! | `agree` on the private key        | 2856 B |
-//! | `encaps` on the public key        | 4536 B |
-//! | `decaps` on the private key       | 4200 B |
+//! | `encaps` on the public key        | 6136 B |
+//! | `decaps` on the private key       | 5608 B |
 //!
 //! The first five each run one Montgomery ladder plus the field inversion, which use 1800 B
 //! below the entry point's own frame; the peak is the 2584 B frame that then overwrites that
 //! stack (see "What is wiped" below). The `keygen_out` figure leaves out the RNG. The KEM
-//! figures peak in HKDF-SHA512's HMAC and SHA-512 compression, and the `encaps` figure includes
-//! the DRBG that draws the ephemeral key.
+//! figures peak in the 2 KiB stack wipe that follows the construction of HKDF-SHA512's HMAC
+//! key, and the `encaps` figure includes the DRBG that draws the ephemeral key.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
