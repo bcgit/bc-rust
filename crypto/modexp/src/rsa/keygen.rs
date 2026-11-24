@@ -268,14 +268,15 @@ fn div<const N: usize>(a: &[u64; N], d: &[u64; N]) -> [u64; N] {
     let mut quotient = [0u64; N];
     for limb in (0..N).rev() {
         for bit in (0..64).rev() {
-            // rem = 2*rem + next bit; rem < d before, so the true value is < 2d and one
-            // conditional subtraction restores rem < d. The bit that leaves the top limb is the
-            // "carry" case, in which the subtraction is always due.
-            let carry = rem[N - 1] >> 63;
+            // rem = 2*rem + next bit; rem < d before, so the new value is < 2d and one
+            // conditional subtraction restores rem < d. rem never exceeds the bits of `a` read
+            // so far, which before the last bit are at most a >> 1 < 2^(64N-1), so the shift
+            // cannot carry out of the top limb.
+            debug_assert!(rem[N - 1] >> 63 == 0);
             rem = shl(&rem, 1);
             rem[0] |= (a[limb] >> bit) & 1;
             let (diff, borrow) = nat::sub(&rem, d);
-            if carry == 1 || borrow == 0 {
+            if borrow == 0 {
                 rem = diff;
                 quotient[limb] |= 1 << bit;
             }
