@@ -126,8 +126,9 @@
 //!   distinct initial values, and are not vulnerable to length extension in the same direct way, but
 //!   should still not be used as `H(k || m)` MACs.
 //! * The chaining value and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
-//!   zeroized on drop. Transient copies (working variables and message schedule) in registers/stack
-//!   locals during compression are not zeroized.
+//!   zeroized on drop. The compression function runs in a frame of its own, and the stack it used,
+//!   where the message schedule and working variables are spilled, is overwritten after it returns
+//!   (in an optimised build; an unoptimised build's frames are larger than the overwrite).
 //! * The implementation contains no data-dependent branches or table lookups.
 //! * Message length: FIPS 180-4 permits 2^64 bits for SHA-224/256 and 2^128 bits for SHA-384/512
 //!   and SHA-512/t. This implementation supports 2^61 - 1 bytes for SHA-224/256 (the standard's

@@ -117,7 +117,8 @@
 //!   values need to be treated and protected the same as secret keys"). [`HmacKey`] and the worker
 //!   hold them as hash states, which the hash modules zeroize on drop; neither has a `Debug` that
 //!   prints them. The padded key block they are built from is a [`Secret`] scratch, zeroized when
-//!   construction returns.
+//!   construction returns, and the stack a worker uses to take the inner state and to finish a
+//!   tag is overwritten before it returns.
 //!
 //! [`Secret`]: bouncycastle_utils::secret::Secret
 //! [`MacVerificationKey::verify`]: bouncycastle_core::symmetric_key::MacVerificationKey::verify
@@ -223,6 +224,16 @@ const LARGEST_HASHER_OUTPUT_LEN: usize = 64;
 /// down; hashing a long key writes up to 1504 bytes below the key's frame, and is wiped where it
 /// ends. An unoptimised build's frames are not covered.
 const KEY_WIPED_STACK_WORDS: usize = 256;
+
+/// How much stack [`wipe_stack_below`] overwrites after a worker takes the key's inner pad
+/// state, in 64-bit words. In the x86-64 release build the clone's frame is at most 216 bytes
+/// (SHA-512's), and 16 words clear every hash.
+const LOAD_WIPED_STACK_WORDS: usize = 32;
+
+/// How much stack [`wipe_stack_below`] overwrites after a tag is finished, in 64-bit words. In
+/// the x86-64 release build 48 clear RIPEMD-160 (40 leave four bytes in its final's frame, below
+/// the 312 of the finishing frame) and 32 clear SHA-2 and SM3; SHA-3 leaves nothing.
+const FINISH_WIPED_STACK_WORDS: usize = 64;
 
 /*** Key ***/
 
@@ -401,10 +412,26 @@ impl<HASH: HMACParams> FromAnyKeyMaterial for HmacKey<HASH> {
 
 impl<HASH: HMACParams> HmacKey<HASH> {
     /// `H` after absorbing `K XOR ipad`, ready for the text: the start of RFC 2104 Section 2
-    /// step (4). What a worker's updates feed; `finish_out` is its other half. The pair is
-    /// reachable outside the module only through [`hazmat`].
+    /// step (4), returned for [`hazmat`]; `finish_out` is its other half. A worker takes it
+    /// through [`Self::load_inner_state`] instead.
     pub(in crate::hmac) fn inner_state(&self) -> HASH {
         self.inner.clone()
+    }
+
+    /// [`Self::inner_state`] written over `hasher` where it sits, rather than returned: the
+    /// pad state is key-equivalent (RFC 2104 Section 4), and a returned one leaves copies in the
+    /// caller's frame. The clone is made in [`Self::load_inner_state_in_own_frame`], and the
+    /// stack it used is overwritten here.
+    fn load_inner_state(&self, hasher: &mut HASH) {
+        self.load_inner_state_in_own_frame(hasher);
+        wipe_stack_below::<LOAD_WIPED_STACK_WORDS>();
+    }
+
+    /// [`Self::load_inner_state`]'s clone. Never inlined, so that the copy of the pad state the
+    /// clone passes through lies below its caller's frame, where the caller's wipe reaches it.
+    #[inline(never)]
+    fn load_inner_state_in_own_frame(&self, hasher: &mut HASH) {
+        hasher.clone_from(&self.inner);
     }
 
     /// RFC 2104 Section 2 steps (4), (6) and (7) over an inner hash that has absorbed the text:
@@ -413,6 +440,21 @@ impl<HASH: HMACParams> HmacKey<HASH> {
     /// first [`HashAlgParams::OUTPUT_LEN`] bytes. Returns the number of bytes written. Neither
     /// hash is moved; `token` is the one a worker's final was given, or [`hazmat`]'s.
     pub(in crate::hmac) fn finish_out(
+        &self,
+        token: &FinishToken,
+        inner: &mut HASH,
+        out: &mut [u8],
+    ) -> usize {
+        let n = self.finish_out_in_own_frame(token, inner, out);
+        wipe_stack_below::<FINISH_WIPED_STACK_WORDS>();
+        n
+    }
+
+    /// [`Self::finish_out`]'s work. Never inlined, so that the copies of the outer pad state and
+    /// of the inner digest that it and the hashes' finals leave lie below its caller's frame,
+    /// where the caller's wipe reaches them.
+    #[inline(never)]
+    fn finish_out_in_own_frame(
         &self,
         token: &FinishToken,
         inner: &mut HASH,
@@ -474,8 +516,14 @@ where
 /// cloneable::<HMAC<'static, SHA256, Encrypting>>();
 /// ```
 pub struct HMAC<'k, HASH: HMACParams, Dir> {
-    /// RFC 2104 Section 2 steps (3)-(4): `H(K XOR ipad, text)` in progress.
+    /// RFC 2104 Section 2 steps (3)-(4): `H(K XOR ipad, text)` in progress, once `keyed`; the
+    /// hash's initial state until then.
     hasher: HASH,
+    /// Whether `hasher` holds the key's inner pad state. The worker is returned by value, and
+    /// moved by its callers; it takes the pad state at its first update or at its final, where
+    /// it sits, so that a move before then copies no key-equivalent state. A move after the
+    /// first update (a consuming `do_final`, say) does copy it, into the caller's frame.
+    keyed: bool,
     /// The key, for `H` after absorbing `K XOR opad` at step (7).
     key: &'k HmacKey<HASH>,
     dir: PhantomData<Dir>,
@@ -498,13 +546,22 @@ const IPAD_BYTE: u8 = 0x36;
 const OPAD_BYTE: u8 = 0x5C;
 
 impl<'k, HASH: HMACParams, Dir> HMAC<'k, HASH, Dir> {
-    /// A worker at the start of step (3), over a clone of the key's inner pad state.
+    /// A worker at the start of step (3), not yet holding the key's inner pad state.
     fn new(key: &'k HmacKey<HASH>) -> Self {
-        Self { hasher: key.inner.clone(), key, dir: PhantomData }
+        Self { hasher: HASH::default(), keyed: false, key, dir: PhantomData }
+    }
+
+    /// Puts the key's inner pad state in `hasher`, the first time it is called.
+    fn ensure_keyed(&mut self) {
+        if !self.keyed {
+            self.key.load_inner_state(&mut self.hasher);
+            self.keyed = true;
+        }
     }
 
     /// Step (3): the text, in pieces.
     fn absorb(&mut self, data: &[u8]) {
+        self.ensure_keyed();
         self.hasher.do_update(data)
     }
 
@@ -522,6 +579,7 @@ impl<'k, HASH: HMACParams, Dir> HMAC<'k, HASH, Dir> {
                 "HMACParams::MACKey must be KeyMaterial<OUTPUT_LEN>"
             )
         };
+        self.ensure_keyed();
         self.key.finish_out(token, &mut self.hasher, out)
     }
 }

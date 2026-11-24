@@ -81,8 +81,9 @@
 //! * SHA-1 is a Merkle-Damgard construction and is subject to length extension: `H(k || m)` is
 //!   not a MAC.
 //! * The hash value and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
-//!   zeroized on drop. The message schedule and working variables on the stack during
-//!   compression are not zeroized.
+//!   zeroized on drop. The compression function runs in a frame of its own, and the stack it used,
+//!   where the message schedule and working variables are spilled, is overwritten after it returns
+//!   (in an optimised build; an unoptimised build's frames are larger than the overwrite).
 //! * The implementation contains no data-dependent branches or table lookups.
 //! * Message length: FIPS 180-4 permits messages shorter than 2^64 bits, so this implementation
 //!   supports 2^61 - 1 bytes.

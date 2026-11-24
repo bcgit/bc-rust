@@ -83,8 +83,8 @@
 //! | `do_final_partial_bits_out`                   | 688        | 688         | 688        | 736        |
 //! | `hash_out` (one-shot)                         | 832        | 768         | 864        | 832        |
 //! | `suspend` / `from_suspended`                  | 8 / 144    | 8 / 8       | 8 / 192    | 8 / 8      |
-//! | `HmacKey::from_key_material` / `mac_out`      |            | 2832 / 1056 |            |            |
-//! | `HKDF_RIPEMD160::extract_and_expand_out`      |            | 4672        |            |            |
+//! | `HmacKey::from_key_material` / `mac_out`      |            | 2832 / 1216 |            |            |
+//! | `HKDF_RIPEMD160::extract_and_expand_out`      |            | 4432        |            |            |
 //!
 //! # 🚨 Security Considerations 🚨
 //!

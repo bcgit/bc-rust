@@ -165,12 +165,12 @@
 //! |-----------------------------------------------------------|--------------|
 //! | `HmacKey` for `HMAC_SHA224`, `HMAC_SHA256`                 | 224          |
 //! | `HmacKey` for `HMAC_SHA384`, `HMAC_SHA512`                 | 416          |
-//! | `HMAC_SHA224`, `HMAC_SHA256` worker                        | 120          |
-//! | `HMAC_SHA384`, `HMAC_SHA512` worker                        | 216          |
+//! | `HMAC_SHA224`, `HMAC_SHA256` worker                        | 128          |
+//! | `HMAC_SHA384`, `HMAC_SHA512` worker                        | 224          |
 //!
 //! The key is two of the underlying hash object (see `crate::sha2`'s Memory Usage section): the
 //! inner and the outer pad state, 2 x 112 = 224 for the SHA-256 family, 2 x 208 = 416 for the
-//! SHA-512 family. The worker is the inner hash plus a reference to the key it borrows.
+//! SHA-512 family. The worker is the inner hash plus a reference to the key it borrows and a flag.
 //!
 //! # 🚨 Security Considerations 🚨
 //!

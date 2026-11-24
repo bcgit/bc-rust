@@ -77,8 +77,8 @@
 //! | `SM3::do_final_partial_bits_out`                | 672 B         |
 //! | `SM3::hash_out` (one-shot)                      | 880 B         |
 //! | `SM3::suspend` / `SM3::from_suspended`          | 8 / 40 B      |
-//! | `HmacKey::<SM3>::from_key_material` / `mac_out` | 2976 / 1072 B |
-//! | `HKDF_SM3::extract_and_expand_out`              | 4688 B        |
+//! | `HmacKey::<SM3>::from_key_material` / `mac_out` | 2976 / 992 B  |
+//! | `HKDF_SM3::extract_and_expand_out`              | 4432 B        |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -86,8 +86,9 @@
 //! * SM3 is a Merkle–Damgård construction and is therefore subject to length-extension:
 //!   `H(k || m)` is not a secure MAC. Use HMAC ([`sm3::hmac`](crate::sm3::hmac)) for keyed hashing.
 //! * The chaining value and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
-//!   zeroized on drop. Transient copies (working variables and message schedule) in registers/stack
-//!   locals during compression are not zeroized.
+//!   zeroized on drop. The compression function runs in a frame of its own, and the stack it used,
+//!   where the message schedule and working variables are spilled, is overwritten after it returns
+//!   (in an optimised build; an unoptimised build's frames are larger than the overwrite).
 //! * The implementation contains no data-dependent branches or table lookups.
 //! * Message length: the specification permits messages shorter than 2^64 bits, so this
 //!   implementation supports 2^61 - 1 bytes.

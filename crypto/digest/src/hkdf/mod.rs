@@ -131,10 +131,10 @@ pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 /// of its own (the `*_in_own_frame` functions, `expand_fill`), in 64-bit words, for a hash whose
 /// state is at most [`SMALL_HASH_STATE_LEN`] bytes (SHA-2, SM3, RIPEMD-160): more than an
 /// operation leaves written below the frame that wipes, with room for a compiler that lays the
-/// frames out less tightly. In the x86-64 release build 384 words clear SHA-2 and SM3, and
-/// RIPEMD-160 needs 480 (448 leave four secret-dependent bytes in the frame of its final, above
-/// the compression, which wipes its own). An unoptimised build's frames are not covered.
-const HKDF_WIPED_STACK_WORDS: usize = 576;
+/// frames out less tightly. In the x86-64 release build 384 words clear every such hash (320
+/// leave 48 bytes of a `KDF` derivation over SHA-384 or SHA-512; HMAC's finishing wipes its own
+/// frames). An unoptimised build's frames are not covered.
+const HKDF_WIPED_STACK_WORDS: usize = 448;
 
 /// As [`HKDF_WIPED_STACK_WORDS`], for a hash with a larger state (SHA-3): 768 words clear
 /// SHA3-224 and SHA3-256, and a `KDF` derivation over SHA3-384 or SHA3-512 needs 960 (896 leave
