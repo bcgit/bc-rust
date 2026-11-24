@@ -5,7 +5,9 @@
 //! Section 4.1 (Option 1, `H(x) = hash(x)`); which one runs is the instance `main` passes.
 //! The `kbkdf-*` subcommands (SP 800-108r1, `kbkdf_cmd.rs`) run through it too.
 
-use crate::helpers::{decode_hex_arg, load_secret, read_input_file, write_secret_bytes_or_hex};
+use crate::helpers::{
+    decode_hex_arg, finish_stdout, load_secret, read_input_file, write_secret_bytes_or_hex,
+};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::traits::KDF;
 use std::process::exit;
@@ -42,7 +44,11 @@ pub(crate) fn kdf_cmd(
         eprintln!("Error: key derivation failed: {e:?}");
         exit(-1);
     }
-    write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
+    let written = write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
+    // `exit` runs no destructors, so the secrets are dropped before a failed write exits.
+    drop(out_key);
+    drop(z);
+    finish_stdout(written);
 }
 
 /// The `KDF` trait derives from an empty key (the framework's suites hold that), which no user

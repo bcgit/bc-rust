@@ -35,8 +35,8 @@
 //! types implement.
 
 use crate::helpers::{
-    println_stdout, read_input_file, read_secret_file, stream_stdin, write_bytes_or_hex,
-    write_bytes_or_hex_to_file, write_private_key,
+    WriteError, finish_stdout, flush_stdout, println_stdout, read_input_file, read_secret_file,
+    stream_stdin, try_write_bytes_or_hex_to_file, write_bytes_or_hex, write_private_key,
 };
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
@@ -209,8 +209,11 @@ fn rsa_keygen_cmd<A: RsaSignatureAlgorithm, const PK_LEN: usize, const SK_LEN: u
         eprintln!("Error: {alg_name} key generation failed: {e:?}");
         exit(-1);
     });
-    write_bytes_or_hex_to_file(&pk.encode(), pkfile, output_hex);
-    write_private_key(&sk, output_hex);
+    let written = try_write_bytes_or_hex_to_file(&pk.encode(), pkfile, output_hex)
+        .and_then(|()| write_private_key(&sk, output_hex).map_err(WriteError::from));
+    // `exit` runs no destructors, so the key is dropped before a failed write exits.
+    drop(sk);
+    finish_stdout(written);
 }
 
 /// One RSASSA-PSS pairing: `keygen` and `verify` as for every scheme; `sign` draws the salt from
@@ -257,6 +260,8 @@ fn rsa_pss_cmd<
                 exit(-1);
             });
             write_bytes_or_hex(&sig, output_hex);
+            // A short signature is held in std's stdout buffer; see `write_stdout`.
+            flush_stdout();
         }
         RSAAction::Verify => do_verify::<A, PK_LEN, SIG_LEN>(pkfile, sigfile, alg_name),
     }
@@ -302,6 +307,8 @@ fn rsa_pkcs1_cmd<
                 exit(-1);
             });
             write_bytes_or_hex(&sig, output_hex);
+            // A short signature is held in std's stdout buffer; see `write_stdout`.
+            flush_stdout();
         }
         RSAAction::Verify => do_verify::<A, PK_LEN, SIG_LEN>(pkfile, sigfile, alg_name),
     }

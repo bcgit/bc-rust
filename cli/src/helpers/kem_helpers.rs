@@ -2,8 +2,8 @@
 //! commands (`x25519`, `eccdh-p256` and its siblings), written once over the key roles.
 
 use crate::helpers::{
-    read_input_file_or_stdin, read_secret_file, write_bytes_or_hex, write_bytes_or_hex_to_file,
-    write_secret_bytes_or_hex, write_stdout,
+    WriteError, finish_stdout, read_input_file_or_stdin, read_secret_file, try_write_bytes_or_hex,
+    try_write_bytes_or_hex_to_file, try_write_stdout, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
@@ -30,14 +30,19 @@ pub(crate) fn encaps_cmd<PK, const PK_LEN: usize, const CT_LEN: usize, const SS_
         eprintln!("Error: encapsulation failed: {e:?}");
         exit(-1);
     });
-    if let Some(ctfile) = ctfile {
-        write_bytes_or_hex_to_file(&ct, ctfile, output_hex);
-        write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+    let written = if let Some(ctfile) = ctfile {
+        try_write_bytes_or_hex_to_file(&ct, ctfile, output_hex).and_then(|()| {
+            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex).map_err(WriteError::from)
+        })
     } else {
-        write_bytes_or_hex(&ct, true);
-        write_stdout(b"\n");
-        write_secret_bytes_or_hex(ss.ref_to_bytes(), true);
-    }
+        try_write_bytes_or_hex(&ct, true)
+            .and_then(|()| try_write_stdout(b"\n"))
+            .and_then(|()| write_secret_bytes_or_hex(ss.ref_to_bytes(), true))
+            .map_err(WriteError::from)
+    };
+    // `exit` runs no destructors, so the secret is dropped before a failed write exits.
+    drop(ss);
+    finish_stdout(written);
 }
 
 /// Decapsulation of the ciphertext in `--ctfile` or on stdin with the private key in
@@ -77,5 +82,7 @@ pub(crate) fn decaps_cmd<SK, const SK_LEN: usize, const CT_LEN: usize, const SS_
         eprintln!("Error: decapsulation failed: {e:?}");
         exit(-1);
     });
-    write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+    let written = write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+    drop(ss);
+    finish_stdout(written);
 }

@@ -3,7 +3,8 @@
 //! never from the command line, as for `pbkdf2`.
 
 use crate::helpers::{
-    decode_hex_arg, read_input_file, read_secret_file_or_stdin, write_secret_bytes_or_hex,
+    decode_hex_arg, finish_stdout, read_input_file, read_secret_file_or_stdin,
+    write_secret_bytes_or_hex,
 };
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::traits::KDF;
@@ -66,5 +67,9 @@ pub(crate) fn scrypt_cmd(
         eprintln!("Error: key derivation failed: {e:?}");
         exit(-1);
     }
-    write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
+    let written = write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
+    // `exit` runs no destructors, so the secrets are dropped before a failed write exits.
+    drop(out_key);
+    drop(password);
+    finish_stdout(written);
 }

@@ -5,8 +5,12 @@
 //! (`OPENSSL_*`).
 
 mod common;
-use common::{listed_in_help, pseudo_random, run, run_err, run_err_silent, run_ok, tohex, unhex};
-use std::path::PathBuf;
+use common::{
+    BC_RUST, listed_in_help, pseudo_random, run, run_err, run_err_silent, run_ok, tohex, unhex,
+};
+use std::io::{ErrorKind, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const CMD: &str = "sm2-encryption";
@@ -221,4 +225,82 @@ fn missing_and_malformed_keys_are_errors() {
     // A private key of zero.
     let out = run(&[CMD, "pk-from-sk"], &[0u8; 32]);
     assert!(!out.status.success() && out.stdout.is_empty());
+}
+
+/// `C1` in the hybrid form decrypts as the uncompressed form does: the annex's `y1` is even, so
+/// its tag is `06`.
+#[test]
+fn a_hybrid_c1_decrypts() {
+    let sk = temp_file("annex-sk", &unhex(ANNEX_C_DB));
+    let mut ciphertext = annex_c_c1c3c2();
+    ciphertext[0] = 0x06;
+    assert_eq!(run_ok(&[CMD, "decrypt", "--skfile", &sk], &ciphertext), ANNEX_C_M);
+    ciphertext[0] = 0x07;
+    let err = run_err_silent(&[CMD, "decrypt", "--skfile", &sk], &ciphertext);
+    assert_eq!(err, "Error: SM2 decryption failed.\n");
+}
+
+/// Where the command's stdout goes in [`run_into`].
+enum Sink {
+    /// A pipe whose read end is closed before the command writes.
+    ClosedPipe,
+    /// `/dev/full`, where every write fails with `ENOSPC`.
+    Full,
+}
+
+/// Runs `bc-rust <args...>` with `stdin_bytes` on stdin and stdout sent to `sink`, and returns
+/// the exit status and stderr.
+fn run_into(args: &[&str], stdin_bytes: &[u8], sink: Sink) -> (ExitStatus, String) {
+    let stdout = match sink {
+        Sink::ClosedPipe => Stdio::piped(),
+        Sink::Full => {
+            Stdio::from(std::fs::OpenOptions::new().write(true).open("/dev/full").unwrap())
+        }
+    };
+    let mut child = Command::new(BC_RUST)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(stdout)
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn bc-rust");
+    // Closed before stdin is written, so before a command that reads stdin first writes.
+    drop(child.stdout.take());
+    match child.stdin.take().expect("stdin piped").write_all(stdin_bytes) {
+        Ok(()) => {}
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
+        Err(e) => panic!("failed to write to stdin: {e}"),
+    }
+    let out = child.wait_with_output().expect("failed to wait for bc-rust");
+    (out.status, String::from_utf8_lossy(&out.stderr).into_owned())
+}
+
+/// A write to stdout that fails ends `keygen` and `decrypt` as it ends every command: a reader
+/// that has gone away is a quiet exit with status 0, and any other failure is reported, with
+/// status 255. `decrypt` writes 100,000 bytes, past std's 1 KiB stdout buffer, so its write
+/// itself fails; `keygen`'s 32 or 64 bytes stay in that buffer, and it is the flush at the end of
+/// the command that fails, which `/dev/full` shows (with no flush it exited 0 and lost the key).
+/// The secrets the two commands hold are dropped or wiped before the exit, which no test can see
+/// from outside the process.
+#[test]
+fn a_failed_write_to_stdout_keeps_its_exit_status() {
+    let (sk, pk) = key_files();
+    let message = pseudo_random(100_000, 7);
+    let ciphertext = run_ok(&[CMD, "encrypt", "--pkfile", &pk], &message);
+
+    for hex in [&[][..], &["-x"][..]] {
+        let decrypt = [&[CMD, "decrypt", "--skfile", &sk], hex].concat();
+        let keygen = [&[CMD, "keygen"], hex].concat();
+        for args in [&decrypt, &keygen] {
+            let stdin = if args == &decrypt { &ciphertext[..] } else { b"" };
+            let (status, err) = run_into(args, stdin, Sink::ClosedPipe);
+            assert_eq!((status.code(), err.as_str()), (Some(0), ""), "{args:?}");
+
+            if Path::new("/dev/full").exists() {
+                let (status, err) = run_into(args, stdin, Sink::Full);
+                assert_eq!(status.code(), Some(255), "{args:?}");
+                assert!(err.starts_with("Error: failed to write to stdout: "), "{err}");
+            }
+        }
+    }
 }

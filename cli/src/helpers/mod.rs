@@ -335,17 +335,60 @@ pub(crate) fn read_stdin_all() -> Vec<u8> {
 /// `.unwrap()` on a write all turn into a panic. So every write to stdout in this binary goes
 /// through here or [`flush_stdout`], and a broken pipe is a quiet exit with status 0: the reader
 /// got what it asked for. Any other write failure is reported and is an error.
+///
+/// `exit` runs no destructors, so a caller holding a secret writes with [`try_write_stdout`]
+/// instead, drops its secrets, and then passes the result to [`finish_stdout`].
+///
+/// Stdout is std's line-buffered writer, with a 1 KiB buffer: a write shorter than that with no
+/// newline is held in the buffer and reaches the file descriptor only on a later write, a flush
+/// or the flush std makes at exit, which ignores errors. So a command ends its secret output
+/// with [`finish_stdout`], whose flush reports the failure the write did not. What passes
+/// through the buffer, a short secret included, is left in it: std frees it at exit without
+/// wiping it.
 pub(crate) fn write_stdout(bytes: &[u8]) {
-    if let Err(e) = io::stdout().write_all(bytes) {
-        exit_on_write_error(e);
+    exit_if_write_failed(try_write_stdout(bytes));
+}
+
+/// [`write_stdout`] that returns the failure rather than exiting on it.
+pub(crate) fn try_write_stdout(bytes: &[u8]) -> io::Result<()> {
+    io::stdout().write_all(bytes)
+}
+
+/// A write that failed: to stdout, or to the named file.
+pub(crate) enum WriteError {
+    Stdout(io::Error),
+    File(String, io::Error),
+}
+
+impl From<io::Error> for WriteError {
+    fn from(e: io::Error) -> Self {
+        WriteError::Stdout(e)
+    }
+}
+
+/// Exits as [`write_stdout`] or [`write_bytes_or_hex_to_file`] does if `result` is a failed
+/// write, and otherwise returns: for a caller that has dropped or wiped its secrets since the
+/// write.
+pub(crate) fn exit_if_write_failed(result: Result<(), impl Into<WriteError>>) {
+    match result.map_err(Into::into) {
+        Ok(()) => {}
+        Err(WriteError::Stdout(e)) => exit_on_write_error(e),
+        Err(WriteError::File(filename, e)) => exit_on_file_write_error(&filename, e),
     }
 }
 
 /// Flushes stdout; see [`write_stdout`] for the broken-pipe behaviour.
 pub(crate) fn flush_stdout() {
-    if let Err(e) = io::stdout().flush() {
-        exit_on_write_error(e);
-    }
+    exit_if_write_failed(io::stdout().flush());
+}
+
+/// The end of a command's output: if `result` is a failed write, exits as
+/// [`exit_if_write_failed`] does; otherwise flushes stdout, so that output std still holds in
+/// its buffer is written now, and a failed flush exits as a failed write does. For a caller that
+/// has dropped or wiped its secrets since the write; see [`write_stdout`].
+pub(crate) fn finish_stdout(result: Result<(), impl Into<WriteError>>) {
+    exit_if_write_failed(result);
+    flush_stdout();
 }
 
 /// `println!` without the panic: `text` and a newline, through [`write_stdout`].
@@ -363,20 +406,28 @@ fn exit_on_write_error(e: io::Error) -> ! {
 }
 
 pub(crate) fn write_bytes_or_hex(bytes: &[u8], output_hex: bool) {
+    exit_if_write_failed(try_write_bytes_or_hex(bytes, output_hex));
+}
+
+/// [`write_bytes_or_hex`] that returns the failure rather than exiting on it, for public bytes
+/// written while a secret is held; see [`write_stdout`].
+pub(crate) fn try_write_bytes_or_hex(bytes: &[u8], output_hex: bool) -> io::Result<()> {
     if output_hex {
-        write_stdout(hex::encode(bytes).as_bytes());
+        try_write_stdout(hex::encode(bytes).as_bytes())
     } else {
-        write_stdout(bytes);
+        try_write_stdout(bytes)
     }
 }
 
 /// [`write_bytes_or_hex`] for a secret (a private key, a shared secret): the hex form is built
 /// in a stack buffer that is wiped, a chunk at a time, rather than in a heap `String` that is
 /// freed as it stands, and each digit is computed, not looked up by the secret nibble.
-pub(crate) fn write_secret_bytes_or_hex(bytes: &[u8], output_hex: bool) {
+///
+/// A failed write is returned, not acted on, and the hex buffer is wiped before it is: the
+/// caller drops its secrets and then hands the result to [`exit_if_write_failed`].
+pub(crate) fn write_secret_bytes_or_hex(bytes: &[u8], output_hex: bool) -> io::Result<()> {
     if !output_hex {
-        write_stdout(bytes);
-        return;
+        return try_write_stdout(bytes);
     }
     let mut hex = Secret::<[u8; 2 * CHUNK_LEN]>::new();
     for chunk in bytes.chunks(CHUNK_LEN) {
@@ -384,19 +435,21 @@ pub(crate) fn write_secret_bytes_or_hex(bytes: &[u8], output_hex: bool) {
             hex[2 * i] = hex_digit(b >> 4);
             hex[2 * i + 1] = hex_digit(b & 0x0f);
         }
-        write_stdout(&hex[..2 * chunk.len()]);
+        try_write_stdout(&hex[..2 * chunk.len()])?;
     }
+    Ok(())
 }
 
 /// A private key's encoding to stdout, raw or as hex: it is encoded into a wiped buffer, not
-/// returned by value, and written by [`write_secret_bytes_or_hex`].
+/// returned by value, and written by [`write_secret_bytes_or_hex`], whose result this returns
+/// once the buffer is wiped.
 pub(crate) fn write_private_key<SK: PrivateKey<SK_LEN>, const SK_LEN: usize>(
     sk: &SK,
     output_hex: bool,
-) {
+) -> io::Result<()> {
     let mut bytes = Secret::<[u8; SK_LEN]>::new();
     let len = sk.encode_out(&mut bytes);
-    write_secret_bytes_or_hex(&bytes[..len], output_hex);
+    write_secret_bytes_or_hex(&bytes[..len], output_hex)
 }
 
 /// Overwrites `bytes` with zeros through volatile writes, for a secret held in a `Vec`, which
@@ -444,17 +497,30 @@ fn hex_digit(n: u8) -> u8 {
 
 /// Writes `bytes`, raw or as hex, to a new file `filename`; a failure names the path.
 pub(crate) fn write_bytes_or_hex_to_file(bytes: &[u8], filename: &str, output_hex: bool) {
-    let result = File::create(filename).and_then(|mut file| {
-        if output_hex {
-            file.write_all(hex::encode(bytes).as_bytes())
-        } else {
-            file.write_all(bytes)
-        }
-    });
-    if let Err(e) = result {
-        eprintln!("Error: couldn't write file '{filename}': {e}");
-        exit(-1);
-    }
+    exit_if_write_failed(try_write_bytes_or_hex_to_file(bytes, filename, output_hex));
+}
+
+/// [`write_bytes_or_hex_to_file`] that returns the failure rather than exiting on it, for a
+/// caller holding a secret; see [`write_stdout`].
+pub(crate) fn try_write_bytes_or_hex_to_file(
+    bytes: &[u8],
+    filename: &str,
+    output_hex: bool,
+) -> Result<(), WriteError> {
+    File::create(filename)
+        .and_then(|mut file| {
+            if output_hex {
+                file.write_all(hex::encode(bytes).as_bytes())
+            } else {
+                file.write_all(bytes)
+            }
+        })
+        .map_err(|e| WriteError::File(filename.to_owned(), e))
+}
+
+fn exit_on_file_write_error(filename: &str, e: io::Error) -> ! {
+    eprintln!("Error: couldn't write file '{filename}': {e}");
+    exit(-1);
 }
 
 // ---- seeds -----------------------------------------------------------------------------------

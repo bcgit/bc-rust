@@ -22,7 +22,7 @@
 #
 # What a pass shows: that in a release build for the host, by the installed toolchain, the
 # wipes reach as far as the operations write. The wipes are sized by measurement on x86-64
-# Linux, with room over what review reported for arm64 Linux, and CI runs this on both
+# Linux, with room over what was measured in review on arm64 Linux, and CI runs this on both
 # (.github/workflows/sm2-stack.yml). A pass says nothing of another target or another compiler,
 # and nothing of a debug build, whose frames are larger and are not covered. It does not look at
 # registers, at the heap, or at what a caller does with a key it was returned.

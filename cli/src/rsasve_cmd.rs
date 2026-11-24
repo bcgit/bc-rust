@@ -19,8 +19,8 @@
 //! a KDF (e.g. `hkdf`) before it can be used as a key.
 
 use crate::helpers::{
-    println_stdout, read_input_file_or_stdin, read_secret_file, write_bytes_or_hex,
-    write_bytes_or_hex_to_file, write_private_key, write_secret_bytes_or_hex,
+    WriteError, finish_stdout, read_input_file_or_stdin, read_secret_file, try_write_bytes_or_hex,
+    try_write_bytes_or_hex_to_file, try_write_stdout, write_private_key, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::errors::KEMError;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
@@ -86,8 +86,11 @@ fn rsasve_cmd<
                 eprintln!("Error: {alg_name} key generation failed: {e:?}");
                 exit(-1);
             });
-            write_bytes_or_hex_to_file(&pk.encode(), pkfile, output_hex);
-            write_private_key(&sk, output_hex);
+            let written = try_write_bytes_or_hex_to_file(&pk.encode(), pkfile, output_hex)
+                .and_then(|()| write_private_key(&sk, output_hex).map_err(WriteError::from));
+            // `exit` runs no destructors, so the key is dropped before a failed write exits.
+            drop(sk);
+            finish_stdout(written);
         }
         RSASVEAction::Encaps => {
             let pk = PK::from_bytes(&read_input_file_or_stdin(pkfile)).unwrap_or_else(|e| {
@@ -101,17 +104,20 @@ fn rsasve_cmd<
                 eprintln!("Error: {alg_name} encapsulation failed: {e:?}");
                 exit(-1);
             });
-            match ctfile {
+            let written = match ctfile {
                 Some(ctfile) => {
-                    write_bytes_or_hex_to_file(&ct, ctfile, output_hex);
-                    write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+                    try_write_bytes_or_hex_to_file(&ct, ctfile, output_hex).and_then(|()| {
+                        write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex)
+                            .map_err(WriteError::from)
+                    })
                 }
-                None => {
-                    write_bytes_or_hex(&ct, true);
-                    println_stdout("");
-                    write_secret_bytes_or_hex(ss.ref_to_bytes(), true);
-                }
-            }
+                None => try_write_bytes_or_hex(&ct, true)
+                    .and_then(|()| try_write_stdout(b"\n"))
+                    .and_then(|()| write_secret_bytes_or_hex(ss.ref_to_bytes(), true))
+                    .map_err(WriteError::from),
+            };
+            drop(ss);
+            finish_stdout(written);
         }
         RSASVEAction::Decaps => {
             let ct = crate::mlkem_cmd::read_ciphertext::<CT_LEN>(ctfile, alg_name);
@@ -135,7 +141,9 @@ fn rsasve_cmd<
                 eprintln!("Error: {alg_name} decapsulation failed: {e:?}");
                 exit(-1);
             });
-            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            let written = write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            drop(ss);
+            finish_stdout(written);
         }
     }
 }

@@ -436,38 +436,111 @@ fn a_failed_detached_decryption_leaves_the_buffer_zeroized() {
     }
 }
 
-/// Step B1: `C1` is a point on the curve in the uncompressed form with both coordinates below
-/// `p`, or the ciphertext is refused, whatever the rest of it is.
+/// `C1` with its tag set to `tag`.
+fn retagged(c1: &[u8], tag: u8) -> Vec<u8> {
+    [&[tag][..], &c1[1..]].concat()
+}
+
+/// The hybrid tag that matches the parity of `c1`'s `y`.
+fn hybrid_tag(c1: &[u8]) -> u8 {
+    0x06 | (c1[64] & 1)
+}
+
+/// Step B1 converts `C1` from the uncompressed or the hybrid form (GB/T 32918.1-2016 Section
+/// 4.2.10), and a ciphertext decrypts the same in either. The two `X2_ZERO` points have one `x`
+/// and the two parities of `y`; the annex's `y` is even.
 #[test]
-fn c1_that_is_not_a_point_in_the_uncompressed_form_is_refused() {
+fn c1_in_the_hybrid_form_decrypts() {
+    let model_sk = sk(MODEL_D);
+    let mut tags = Vec::new();
+    for (c1, c3, c2) in X2_ZERO {
+        let tag = hybrid_tag(&hex(c1));
+        tags.push(tag);
+        let hybrid = retagged(&hex(c1), tag);
+        let c1c3c2 = [hybrid.clone(), hex(c3), hex(c2)].concat();
+        assert_eq!(decrypt_both_orders(&model_sk, &c1c3c2).unwrap(), b"x2 is zero");
+
+        let mut buf = hex(c2);
+        model_sk
+            .decrypt_detached_inplace(
+                &hybrid.try_into().unwrap(),
+                &hex(c3).try_into().unwrap(),
+                &mut buf,
+            )
+            .unwrap();
+        assert_eq!(buf, b"x2 is zero");
+    }
+    assert_eq!(tags, [0x07, 0x06]);
+
+    let annex = [retagged(&hex(ANNEX_C_C1), 0x06), hex(ANNEX_C_C3), hex(ANNEX_C_C2)].concat();
+    assert_eq!(decrypt_both_orders(&sk(ANNEX_C_DB), &annex).unwrap(), ANNEX_C_M);
+}
+
+/// A hybrid tag is refused when it disagrees with the parity of `y` (GB/T 32918.1-2016 Section
+/// 4.2.9 d) 3) and 4.2.10 e)), in both APIs, with the buffer zeroized.
+#[test]
+fn c1_in_the_hybrid_form_with_the_wrong_parity_is_refused() {
+    let model_sk = sk(MODEL_D);
+    for (c1, c3, c2) in X2_ZERO {
+        let wrong = retagged(&hex(c1), hybrid_tag(&hex(c1)) ^ 1);
+        let c1c3c2 = [wrong.clone(), hex(c3), hex(c2)].concat();
+        assert_eq!(
+            decrypt_both_orders(&model_sk, &c1c3c2),
+            Err(PublicKeyEncryptionError::DecryptionFailed)
+        );
+
+        let mut buf = hex(c2);
+        assert_eq!(
+            model_sk.decrypt_detached_inplace(
+                &wrong.try_into().unwrap(),
+                &hex(c3).try_into().unwrap(),
+                &mut buf,
+            ),
+            Err(PublicKeyEncryptionError::DecryptionFailed)
+        );
+        assert_eq!(buf, [0; 10]);
+    }
+}
+
+/// Step B1: `C1` is a point on the curve in the uncompressed or hybrid form with both
+/// coordinates below `p`, or the ciphertext is refused, whatever the rest of it is.
+#[test]
+fn c1_that_is_not_a_point_in_the_uncompressed_or_hybrid_form_is_refused() {
     let model_sk = sk(MODEL_D);
 
-    // The control: a valid point whose x is 1.
+    // The control: a valid point whose x is 1, in both forms.
     let small_x = [hex(SMALL_X_C1), hex(SMALL_X_C3), hex(SMALL_X_C2)].concat();
     assert_eq!(decrypt_both_orders(&model_sk, &small_x).unwrap(), b"range check");
-    // The same point with x + p for x: a coordinate that is not below p.
-    let out_of_range = [hex(SMALL_X_C1_PLUS_P), hex(SMALL_X_C3), hex(SMALL_X_C2)].concat();
-    assert_eq!(
-        decrypt_both_orders(&model_sk, &out_of_range),
-        Err(PublicKeyEncryptionError::DecryptionFailed)
-    );
+    let small_x_hybrid = retagged(&hex(SMALL_X_C1), hybrid_tag(&hex(SMALL_X_C1)));
+    let small_x = [small_x_hybrid, hex(SMALL_X_C3), hex(SMALL_X_C2)].concat();
+    assert_eq!(decrypt_both_orders(&model_sk, &small_x).unwrap(), b"range check");
 
-    // A point off the curve, with the C2 and C3 that go with it.
-    let off_curve = [hex(OFF_CURVE_C1), hex(OFF_CURVE_C3), hex(OFF_CURVE_C2)].concat();
-    assert_eq!(
-        decrypt_both_orders(&model_sk, &off_curve),
-        Err(PublicKeyEncryptionError::DecryptionFailed)
-    );
+    // The same point with x + p for x: a coordinate that is not below p, in both forms.
+    let plus_p = hex(SMALL_X_C1_PLUS_P);
+    for c1 in [plus_p.clone(), retagged(&plus_p, hybrid_tag(&plus_p))] {
+        let out_of_range = [c1, hex(SMALL_X_C3), hex(SMALL_X_C2)].concat();
+        assert_eq!(
+            decrypt_both_orders(&model_sk, &out_of_range),
+            Err(PublicKeyEncryptionError::DecryptionFailed)
+        );
+    }
 
-    // The annex's ciphertext with C1 in the other forms of GB/T 32918.1-2016 Section 4.2.9.
+    // A point off the curve, with the C2 and C3 that go with it, in both forms.
+    let off = hex(OFF_CURVE_C1);
+    for c1 in [off.clone(), retagged(&off, hybrid_tag(&off))] {
+        let off_curve = [c1, hex(OFF_CURVE_C3), hex(OFF_CURVE_C2)].concat();
+        assert_eq!(
+            decrypt_both_orders(&model_sk, &off_curve),
+            Err(PublicKeyEncryptionError::DecryptionFailed)
+        );
+    }
+
+    // The annex's ciphertext with C1 in the compressed form of GB/T 32918.1-2016 Section 4.2.9,
+    // which no 65-byte C1 holds, and under tags of no form.
     let annex_sk = sk(ANNEX_C_DB);
     let (c1, c3, c2) = (hex(ANNEX_C_C1), hex(ANNEX_C_C3), hex(ANNEX_C_C2));
-    let y_is_odd = c1[64] & 1;
-    // Hybrid: 06 or 07 by the parity of y, then x and y.
-    for prefix in [0x06, 0x07, 0x06 | y_is_odd] {
-        let mut hybrid = c1.clone();
-        hybrid[0] = prefix;
-        let ciphertext = [hybrid, c3.clone(), c2.clone()].concat();
+    for tag in [0x01, 0x05, 0x08, 0x84, 0x86] {
+        let ciphertext = [retagged(&c1, tag), c3.clone(), c2.clone()].concat();
         assert_eq!(
             decrypt_both_orders(&annex_sk, &ciphertext),
             Err(PublicKeyEncryptionError::DecryptionFailed)

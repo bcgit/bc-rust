@@ -19,8 +19,8 @@
 //! it needs its own command function and its own `--idfile` flag.
 
 use crate::helpers::{
-    println_stdout, read_input_file, read_secret_file, read_secret_file_or_stdin, stream_stdin,
-    write_bytes_or_hex, write_private_key,
+    finish_stdout, flush_stdout, println_stdout, read_input_file, read_secret_file,
+    read_secret_file_or_stdin, stream_stdin, write_bytes_or_hex, write_private_key,
 };
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
@@ -79,21 +79,36 @@ pub(crate) fn ecdsa_cmd<
     match action {
         ECDSAAction::Keygen => {
             let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
-            write_private_key(&sk, output_hex);
+            let written = write_private_key(&sk, output_hex);
+            // `exit` runs no destructors, so the key is dropped before a failed write exits.
+            drop(sk);
+            finish_stdout(written);
         }
         ECDSAAction::PkFromSk => {
-            let sk =
-                parse_sk::<SK, SK_LEN>(read_secret_file_or_stdin(skfile).ref_to_bytes(), alg_name);
-            write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
+            // `exit` runs no destructors, so the key is dropped before the write, which ends
+            // the process on a failure.
+            let pk = {
+                let sk = parse_sk::<SK, SK_LEN>(
+                    read_secret_file_or_stdin(skfile).ref_to_bytes(),
+                    alg_name,
+                );
+                sk.derive_pk()
+            };
+            write_bytes_or_hex(&pk.encode(), output_hex);
         }
         ECDSAAction::CheckConsistency => {
-            let sk =
-                parse_sk::<SK, SK_LEN>(read_secret_file_or_stdin(skfile).ref_to_bytes(), alg_name);
-
             let pk_bytes = require_file(pkfile, "pkfile");
             let pk = parse_pk::<PK, PK_LEN>(&pk_bytes, alg_name);
 
-            if sk.derive_pk() == pk {
+            // As above: the key is dropped before either branch can exit.
+            let matches = {
+                let sk = parse_sk::<SK, SK_LEN>(
+                    read_secret_file_or_stdin(skfile).ref_to_bytes(),
+                    alg_name,
+                );
+                sk.derive_pk() == pk
+            };
+            if matches {
                 println_stdout("SUCCESS: pk and sk match.");
             } else {
                 eprintln!("FAILURE: pk and sk do not match.");
@@ -101,22 +116,29 @@ pub(crate) fn ecdsa_cmd<
             }
         }
         ECDSAAction::Sign => {
-            let sk =
-                parse_sk::<SK, SK_LEN>(require_secret(skfile, "skfile").ref_to_bytes(), alg_name);
+            // The key is dropped before the signature is written; see `PkFromSk`.
+            let sig = {
+                let sk = parse_sk::<SK, SK_LEN>(
+                    require_secret(skfile, "skfile").ref_to_bytes(),
+                    alg_name,
+                );
 
-            // stream the message from stdin; ECDSA has no context string
-            let sig = if deterministic {
-                let mut signer = sk.create_signer_deterministic(None).unwrap();
-                stream_stdin(|chunk| signer.do_update(chunk));
-                signer.do_final().unwrap()
-            } else {
-                let mut signer =
-                    sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), None).unwrap();
-                stream_stdin(|chunk| signer.do_update(chunk));
-                signer.do_final().unwrap()
+                // stream the message from stdin; ECDSA has no context string
+                if deterministic {
+                    let mut signer = sk.create_signer_deterministic(None).unwrap();
+                    stream_stdin(|chunk| signer.do_update(chunk));
+                    signer.do_final().unwrap()
+                } else {
+                    let mut signer =
+                        sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), None).unwrap();
+                    stream_stdin(|chunk| signer.do_update(chunk));
+                    signer.do_final().unwrap()
+                }
             };
 
             write_bytes_or_hex(&sig, output_hex);
+            // A short signature is held in std's stdout buffer; see `write_stdout`.
+            flush_stdout();
         }
         ECDSAAction::Verify => {
             let pk_bytes = require_file(pkfile, "pkfile");

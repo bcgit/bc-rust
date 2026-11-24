@@ -4,7 +4,7 @@
 
 use crate::helpers::kem_helpers::{decaps_cmd, encaps_cmd};
 use crate::helpers::{
-    println_stdout, read_input_file, read_secret_file_or_stdin, write_bytes_or_hex,
+    finish_stdout, println_stdout, read_input_file, read_secret_file_or_stdin, write_bytes_or_hex,
     write_private_key, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::agreement_key::AgreementKey;
@@ -49,7 +49,10 @@ pub(crate) fn x448_cmd(
                 eprintln!("Error: key generation failed: {e:?}");
                 exit(-1);
             });
-            write_private_key(&sk, output_hex);
+            let written = write_private_key(&sk, output_hex);
+            // `exit` runs no destructors, so the key is dropped before a failed write exits.
+            drop(sk);
+            finish_stdout(written);
         }
         X448Action::PkFromSk => {
             // The private key is dropped before the write, which ends the process on a closed
@@ -89,7 +92,9 @@ pub(crate) fn x448_cmd(
                 eprintln!("Error: key agreement failed: {e:?}");
                 exit(-1);
             });
-            write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
+            let written = write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
+            drop(z);
+            finish_stdout(written);
         }
         X448Action::Encaps => {
             encaps_cmd::<X448PublicKey, POINT_LEN, POINT_LEN, DHKEM_SS_LEN>(

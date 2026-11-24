@@ -10,9 +10,10 @@
 //! ciphertexts through the plain one. All of them are raw bytes, or hex with `--hex-input`.
 
 use crate::helpers::{
-    SecretBytes, decode_hex_arg, load_secret, parse_seed, read_input_file,
-    read_input_file_or_stdin, read_secret_file_or_stdin, seed_error, write_bytes_or_hex,
-    write_bytes_or_hex_to_file, write_private_key, write_secret_bytes_or_hex,
+    SecretBytes, WriteError, decode_hex_arg, finish_stdout, load_secret, parse_seed,
+    read_input_file, read_input_file_or_stdin, read_secret_file_or_stdin, seed_error,
+    try_write_bytes_or_hex, try_write_bytes_or_hex_to_file, try_write_stdout, write_bytes_or_hex,
+    write_private_key, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::errors::KEMError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
@@ -151,32 +152,45 @@ pub(crate) fn mlkem_cmd<
     ctfile: &Option<String>,
     output_hex: bool,
 ) {
+    // `exit` runs no destructors, so each arm drops its secrets before a write's result, or
+    // a check's, can end the process.
     match action {
         MLKEMAction::Keygen => {
-            let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os())
-                .unwrap_or_else(|e| keygen_error(e));
-            write_private_key(&sk, output_hex);
+            let written = {
+                let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os())
+                    .unwrap_or_else(|e| keygen_error(e));
+                write_private_key(&sk, output_hex)
+            };
+            finish_stdout(written);
         }
         MLKEMAction::KeygenFromSeed => {
-            let input = read_secret_file_or_stdin(skfile);
-            let seed = parse_seed::<SEED_LEN>(input.ref_to_bytes())
-                .unwrap_or_else(|e| seed_error::<SEED_LEN>(e));
-            let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap_or_else(|e| keygen_error(e));
-            write_private_key(&sk, output_hex);
+            let written = {
+                let input = read_secret_file_or_stdin(skfile);
+                let seed = parse_seed::<SEED_LEN>(input.ref_to_bytes())
+                    .unwrap_or_else(|e| seed_error::<SEED_LEN>(e));
+                let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap_or_else(|e| keygen_error(e));
+                write_private_key(&sk, output_hex)
+            };
+            finish_stdout(written);
         }
         MLKEMAction::PkFromSk => {
-            let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
-            write_bytes_or_hex(&(set.pk_of)(&sk).encode(), output_hex);
+            let pk = {
+                let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
+                (set.pk_of)(&sk)
+            };
+            write_bytes_or_hex(&pk.encode(), output_hex);
         }
         MLKEMAction::CheckConsistency => {
-            let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
             let pk = parse_pk(set, &read_required_file(pkfile, "pkfile"));
-            match (set.keypair_consistency_check)(&pk, &sk) {
-                Ok(_) => crate::helpers::println_stdout("SUCCESS: pk and sk match."),
-                Err(_) => {
-                    eprintln!("Error: the public and private keys do not match.");
-                    exit(-1);
-                }
+            let matches = {
+                let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
+                (set.keypair_consistency_check)(&pk, &sk).is_ok()
+            };
+            if matches {
+                crate::helpers::println_stdout("SUCCESS: pk and sk match.");
+            } else {
+                eprintln!("Error: the public and private keys do not match.");
+                exit(-1);
             }
         }
         MLKEMAction::Encaps => {
@@ -186,16 +200,23 @@ pub(crate) fn mlkem_cmd<
                     eprintln!("Error: encapsulation failed: {e:?}");
                     exit(-1);
                 });
-            write_encaps_output(&ss, &ct, ctfile, output_hex);
+            let written = write_encaps_output(&ss, &ct, ctfile, output_hex);
+            drop(ss);
+            finish_stdout(written);
         }
         MLKEMAction::Decaps => {
-            let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
             let ct = read_ciphertext::<CT_LEN>(ctfile, set.name);
-            let ss = (set.decaps)(&sk, &ct).unwrap_or_else(|e| {
+            let ss = {
+                let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
+                (set.decaps)(&sk, &ct)
+            };
+            let ss = ss.unwrap_or_else(|e| {
                 eprintln!("Error: decapsulation failed: {e:?}");
                 exit(-1);
             });
-            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            let written = write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            drop(ss);
+            finish_stdout(written);
         }
     }
 }
@@ -282,35 +303,46 @@ pub(crate) fn mlkem_hkdf_cmd<
                     eprintln!("Error: encapsulation failed: {e:?}");
                     exit(-1);
                 });
-            write_encaps_output(&ss, &ct, ctfile, output_hex);
+            let written = write_encaps_output(&ss, &ct, ctfile, output_hex);
+            drop(ss);
+            finish_stdout(written);
         }
         MLKEMHkdfAction::Decaps => {
-            let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
             let ct = read_ciphertext::<CT_LEN>(ctfile, set.name);
-            let ss = sk.decaps(&ct, params).unwrap_or_else(|e| {
+            // `exit` runs no destructors, so the key is dropped before the result is looked at.
+            let ss = {
+                let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
+                sk.decaps(&ct, params)
+            };
+            let ss = ss.unwrap_or_else(|e| {
                 eprintln!("Error: decapsulation failed: {e:?}");
                 exit(-1);
             });
-            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            let written = write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            drop(ss);
+            finish_stdout(written);
         }
     }
 }
 
 /// The ciphertext to file and the secret to stdout, or both to stdout in hex separated by a
-/// newline when there is no ctfile.
+/// newline when there is no ctfile. A failed write is returned for the caller to act on once it
+/// has dropped the secret.
 fn write_encaps_output<const SS_LEN: usize, const CT_LEN: usize>(
     ss: &KeyMaterial<SS_LEN>,
     ct: &[u8; CT_LEN],
     ctfile: &Option<String>,
     output_hex: bool,
-) {
+) -> Result<(), WriteError> {
     if let Some(ctfile) = ctfile {
-        write_bytes_or_hex_to_file(ct, ctfile, output_hex);
-        write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+        try_write_bytes_or_hex_to_file(ct, ctfile, output_hex).and_then(|()| {
+            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex).map_err(WriteError::from)
+        })
     } else {
-        write_bytes_or_hex(ct, true);
-        crate::helpers::write_stdout(b"\n");
-        write_secret_bytes_or_hex(ss.ref_to_bytes(), true);
+        try_write_bytes_or_hex(ct, true)
+            .and_then(|()| try_write_stdout(b"\n"))
+            .and_then(|()| write_secret_bytes_or_hex(ss.ref_to_bytes(), true))
+            .map_err(WriteError::from)
     }
 }
 

@@ -148,21 +148,51 @@ pub fn decode(bytes: &[u8]) -> Option<(Sm2FieldElement, Sm2FieldElement)> {
             if bytes[0] != 0x04 {
                 return None;
             }
-            let x_bytes: [u8; 32] = bytes[1..33].try_into().ok()?;
-            let y_bytes: [u8; 32] = bytes[33..65].try_into().ok()?;
-            let x_limbs = limbs_from_be_bytes(&x_bytes);
-            let y_limbs = limbs_from_be_bytes(&y_bytes);
-            if either_out_of_range(&x_limbs, &y_limbs) {
-                return None;
-            }
-            let x = Sm2FieldElement::from_limbs(x_limbs);
-            let y = Sm2FieldElement::from_limbs(y_limbs);
-            if !Sm2JacobianPoint::is_on_curve(&x, &y) {
-                return None;
-            }
-            Some((x, y))
+            decode_coordinates(bytes[1..65].try_into().ok()?)
         }
         _ => None,
+    }
+}
+
+/// `X || Y` as a point: both coordinates below `p` and on the curve (SEC 1 §2.3.4 steps 3.3 to
+/// 3.5), whatever the tag in front of them said.
+fn decode_coordinates(xy: &[u8; 64]) -> Option<(Sm2FieldElement, Sm2FieldElement)> {
+    let x_limbs = limbs_from_be_bytes(xy[..32].try_into().ok()?);
+    let y_limbs = limbs_from_be_bytes(xy[32..].try_into().ok()?);
+    if either_out_of_range(&x_limbs, &y_limbs) {
+        return None;
+    }
+    let x = Sm2FieldElement::from_limbs(x_limbs);
+    let y = Sm2FieldElement::from_limbs(y_limbs);
+    if !Sm2JacobianPoint::is_on_curve(&x, &y) {
+        return None;
+    }
+    Some((x, y))
+}
+
+/// Decodes and validates a 65-byte point in the uncompressed form (`04 || X || Y`) or the hybrid
+/// form (`06 || X || Y` or `07 || X || Y`) of GB/T 32918.1-2016 Section 4.2.10 (4.2.9 in the
+/// English translation of GM/T 0003.1-2012), which SEC 1 does not have. Returns `None` for
+/// anything invalid, including a compressed tag.
+///
+/// The hybrid tag carries `ỹ`, the rightmost bit of `y` (Annex A.5): 4.2.9 d) 3) writes `06` for
+/// `ỹ = 0` and `07` for `ỹ = 1`, and 4.2.10 e) reads `y` from `Y` and `ỹ` from the tag and
+/// converts `(x, ỹ)` to the point. The two agree only when `y`'s rightmost bit is `ỹ`, so a tag
+/// that disagrees with `y` is refused. The point is public, so the parity is tested with a
+/// branch.
+pub fn decode_uncompressed_or_hybrid(
+    bytes: &[u8; 65],
+) -> Option<(Sm2FieldElement, Sm2FieldElement)> {
+    let y_tilde: Option<u64> = match bytes[0] {
+        0x04 => None,
+        0x06 => Some(0),
+        0x07 => Some(1),
+        _ => return None,
+    };
+    let (x, y) = decode_coordinates(bytes[1..].try_into().ok()?)?;
+    match y_tilde {
+        Some(bit) if y.to_limbs()[0] & 1 != bit => None,
+        _ => Some((x, y)),
     }
 }
 
@@ -170,6 +200,12 @@ pub fn decode(bytes: &[u8]) -> Option<(Sm2FieldElement, Sm2FieldElement)> {
 /// [`Sm2JacobianPoint`].
 pub fn decode_point(bytes: &[u8]) -> Option<Sm2JacobianPoint> {
     let (x, y) = decode(bytes)?;
+    Some(Sm2JacobianPoint::from_affine(x, y))
+}
+
+/// [`decode_uncompressed_or_hybrid`] directly into a [`Sm2JacobianPoint`].
+pub fn decode_point_uncompressed_or_hybrid(bytes: &[u8; 65]) -> Option<Sm2JacobianPoint> {
+    let (x, y) = decode_uncompressed_or_hybrid(bytes)?;
     Some(Sm2JacobianPoint::from_affine(x, y))
 }
 

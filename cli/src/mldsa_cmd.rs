@@ -8,8 +8,9 @@
 //! hex with `--hex-input`.
 
 use crate::helpers::{
-    parse_seed, read_input_file, read_input_file_or_stdin, read_secret_file,
-    read_secret_file_or_stdin, seed_error, stream_stdin, write_bytes_or_hex, write_private_key,
+    finish_stdout, flush_stdout, parse_seed, read_input_file, read_input_file_or_stdin,
+    read_secret_file, read_secret_file_or_stdin, seed_error, stream_stdin, write_bytes_or_hex,
+    write_private_key,
 };
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
@@ -182,75 +183,95 @@ pub(crate) fn mldsa_cmd<P, const PK_LEN: usize, const SK_LEN: usize, const SIG_L
 ) where
     P: PublicKeyLen<PK_LEN> + PrivateKeyLen<SK_LEN> + SignatureLen<SIG_LEN>,
 {
+    // `exit` runs no destructors, so the key-handling arms drop their secrets before a
+    // write's result, or a check's, can end the process.
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os())
-                .unwrap_or_else(|e| keygen_error(e));
-            write_private_key(&sk, output_hex);
+            let written = {
+                let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os())
+                    .unwrap_or_else(|e| keygen_error(e));
+                write_private_key(&sk, output_hex)
+            };
+            finish_stdout(written);
         }
         MLDSAAction::KeygenFromSeed => {
-            let input = read_secret_file_or_stdin(files.sk);
-            let seed = parse_seed::<MLDSA_SEED_LEN>(input.ref_to_bytes())
-                .unwrap_or_else(|e| seed_error::<MLDSA_SEED_LEN>(e));
-            let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap_or_else(|e| keygen_error(e));
-            write_private_key(&sk, output_hex);
+            let written = {
+                let input = read_secret_file_or_stdin(files.sk);
+                let seed = parse_seed::<MLDSA_SEED_LEN>(input.ref_to_bytes())
+                    .unwrap_or_else(|e| seed_error::<MLDSA_SEED_LEN>(e));
+                let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap_or_else(|e| keygen_error(e));
+                write_private_key(&sk, output_hex)
+            };
+            finish_stdout(written);
         }
         MLDSAAction::PkFromSk => {
-            let sk = parse_sk(set, read_secret_file_or_stdin(files.sk).ref_to_bytes());
-            write_bytes_or_hex(&(set.pk_of)(&sk).encode(), output_hex);
+            let pk = {
+                let sk = parse_sk(set, read_secret_file_or_stdin(files.sk).ref_to_bytes());
+                (set.pk_of)(&sk)
+            };
+            write_bytes_or_hex(&pk.encode(), output_hex);
         }
         MLDSAAction::CheckConsistency => {
-            let sk = parse_sk(set, read_secret_file_or_stdin(files.sk).ref_to_bytes());
             let pk = parse_pk(set, &read_required_file(files.pk, "pkfile"));
-            match (set.keypair_consistency_check)(&pk, &sk) {
-                Ok(_) => crate::helpers::println_stdout("SUCCESS: pk and sk match."),
-                Err(_) => {
-                    eprintln!("Error: the public and private keys do not match.");
-                    exit(-1);
-                }
+            let matches = {
+                let sk = parse_sk(set, read_secret_file_or_stdin(files.sk).ref_to_bytes());
+                (set.keypair_consistency_check)(&pk, &sk).is_ok()
+            };
+            if matches {
+                crate::helpers::println_stdout("SUCCESS: pk and sk match.");
+            } else {
+                eprintln!("Error: the public and private keys do not match.");
+                exit(-1);
             }
         }
         MLDSAAction::Sign => {
-            let sk = parse_sk(set, read_required_secret(files.sk, "skfile").ref_to_bytes());
             let ctx = read_ctx(files.ctx);
             let ctx = Some(ctx.as_slice());
-            let mut rng = HashDRBG_SHA512::new_from_os();
-            match (prehash, deterministic) {
-                (None, false) => {
-                    let s = sk.create_signer(&mut rng, ctx).unwrap_or_else(|e| signer_error(e));
-                    sign_stream(s, output_hex)
+            // `exit` runs no destructors, so the key and the signer are dropped before a
+            // failure is reported or the signature written.
+            let sig = {
+                let sk = parse_sk(set, read_required_secret(files.sk, "skfile").ref_to_bytes());
+                let mut rng = HashDRBG_SHA512::new_from_os();
+                match (prehash, deterministic) {
+                    (None, false) => sk
+                        .create_signer(&mut rng, ctx)
+                        .map_err(SignFailure::Start)
+                        .and_then(sign_stream),
+                    (None, true) => sk
+                        .create_signer_deterministic(ctx)
+                        .map_err(SignFailure::Start)
+                        .and_then(sign_stream),
+                    (Some(hash), det) => match (hash, allow_weak_hash) {
+                        (PreHashAlg::Sha256, false) => {
+                            sign_ph::<P, SHA256, SIG_LEN>(&sk, &mut rng, ctx, det)
+                        }
+                        (PreHashAlg::Sha256, true) => {
+                            sign_ph::<P, AnyStrength<SHA256>, SIG_LEN>(&sk, &mut rng, ctx, det)
+                        }
+                        (PreHashAlg::Sha512, false) => {
+                            sign_ph::<P, SHA512, SIG_LEN>(&sk, &mut rng, ctx, det)
+                        }
+                        (PreHashAlg::Sha512, true) => {
+                            sign_ph::<P, AnyStrength<SHA512>, SIG_LEN>(&sk, &mut rng, ctx, det)
+                        }
+                        (PreHashAlg::Shake128, false) => {
+                            sign_ph::<P, SHAKE128, SIG_LEN>(&sk, &mut rng, ctx, det)
+                        }
+                        (PreHashAlg::Shake128, true) => {
+                            sign_ph::<P, AnyStrength<SHAKE128>, SIG_LEN>(&sk, &mut rng, ctx, det)
+                        }
+                        (PreHashAlg::Shake256, false) => {
+                            sign_ph::<P, SHAKE256, SIG_LEN>(&sk, &mut rng, ctx, det)
+                        }
+                        (PreHashAlg::Shake256, true) => {
+                            sign_ph::<P, AnyStrength<SHAKE256>, SIG_LEN>(&sk, &mut rng, ctx, det)
+                        }
+                    },
                 }
-                (None, true) => {
-                    let s = sk.create_signer_deterministic(ctx).unwrap_or_else(|e| signer_error(e));
-                    sign_stream(s, output_hex)
-                }
-                (Some(hash), det) => match (hash, allow_weak_hash) {
-                    (PreHashAlg::Sha256, false) => {
-                        sign_ph::<P, SHA256, SIG_LEN>(&sk, &mut rng, ctx, det, output_hex)
-                    }
-                    (PreHashAlg::Sha256, true) => sign_ph::<P, AnyStrength<SHA256>, SIG_LEN>(
-                        &sk, &mut rng, ctx, det, output_hex,
-                    ),
-                    (PreHashAlg::Sha512, false) => {
-                        sign_ph::<P, SHA512, SIG_LEN>(&sk, &mut rng, ctx, det, output_hex)
-                    }
-                    (PreHashAlg::Sha512, true) => sign_ph::<P, AnyStrength<SHA512>, SIG_LEN>(
-                        &sk, &mut rng, ctx, det, output_hex,
-                    ),
-                    (PreHashAlg::Shake128, false) => {
-                        sign_ph::<P, SHAKE128, SIG_LEN>(&sk, &mut rng, ctx, det, output_hex)
-                    }
-                    (PreHashAlg::Shake128, true) => sign_ph::<P, AnyStrength<SHAKE128>, SIG_LEN>(
-                        &sk, &mut rng, ctx, det, output_hex,
-                    ),
-                    (PreHashAlg::Shake256, false) => {
-                        sign_ph::<P, SHAKE256, SIG_LEN>(&sk, &mut rng, ctx, det, output_hex)
-                    }
-                    (PreHashAlg::Shake256, true) => sign_ph::<P, AnyStrength<SHAKE256>, SIG_LEN>(
-                        &sk, &mut rng, ctx, det, output_hex,
-                    ),
-                },
-            }
+            };
+            write_bytes_or_hex(&sig.unwrap_or_else(|e| e.exit()), output_hex);
+            // A short signature is held in std's stdout buffer; see `write_stdout`.
+            flush_stdout();
         }
         MLDSAAction::Verify => {
             let pk = parse_pk(set, &read_required_file(files.pk, "pkfile"));
@@ -296,18 +317,23 @@ pub(crate) fn mldsa_cmd<P, const PK_LEN: usize, const SK_LEN: usize, const SIG_L
         }
         MLDSAAction::SignMu => {
             refuse_mu_with_prehash(prehash);
-            let sk = parse_sk(set, read_required_secret(files.sk, "skfile").ref_to_bytes());
             let mu = read_mu(files.mu);
-            let sig = if deterministic {
-                (set.sign_mu_deterministic)(&sk, &mu)
-            } else {
-                (set.sign_mu)(&sk, &mu, &mut HashDRBG_SHA512::new_from_os())
+            // As for `Sign`: the key is dropped before the result is looked at.
+            let sig = {
+                let sk = parse_sk(set, read_required_secret(files.sk, "skfile").ref_to_bytes());
+                if deterministic {
+                    (set.sign_mu_deterministic)(&sk, &mu)
+                } else {
+                    (set.sign_mu)(&sk, &mu, &mut HashDRBG_SHA512::new_from_os())
+                }
             };
             let sig = sig.unwrap_or_else(|e| {
                 eprintln!("Error: signing failed: {e:?}");
                 exit(-1);
             });
             write_bytes_or_hex(&sig, output_hex);
+            // A short signature is held in std's stdout buffer; see `write_stdout`.
+            flush_stdout();
         }
         MLDSAAction::VerifyMu => {
             refuse_mu_with_prehash(prehash);
@@ -362,24 +388,42 @@ fn signer_error(e: SignatureError) -> ! {
     exit(-1);
 }
 
+/// Why a signature was not made, reported by the caller once it has dropped the key.
+enum SignFailure {
+    /// The signer refused to start; see [`signer_error`].
+    Start(SignatureError),
+    /// The signer refused to finish.
+    Sign(SignatureError),
+}
+
+impl SignFailure {
+    fn exit(self) -> ! {
+        match self {
+            SignFailure::Start(e) => signer_error(e),
+            SignFailure::Sign(e) => {
+                eprintln!("Error: signing failed: {e:?}");
+                exit(-1);
+            }
+        }
+    }
+}
+
 /// Signs stdin with the pre-hash `H`: hedged, or deterministic.
 fn sign_ph<P, H, const SIG_LEN: usize>(
     sk: &MLDSAPrivateKey<P>,
     rng: &mut dyn RNG,
     ctx: Option<&[u8]>,
     deterministic: bool,
-    output_hex: bool,
-) where
+) -> Result<[u8; SIG_LEN], SignFailure>
+where
     P: SignatureLen<SIG_LEN>,
     H: PreHash + CollisionResistantHash,
 {
     let sk = sk.as_prehash::<H>();
     if deterministic {
-        let s = sk.create_signer_deterministic(ctx);
-        sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
+        sk.create_signer_deterministic(ctx).map_err(SignFailure::Start).and_then(sign_stream)
     } else {
-        let s = sk.create_signer(rng, ctx);
-        sign_stream(s.unwrap_or_else(|e| signer_error(e)), output_hex)
+        sk.create_signer(rng, ctx).map_err(SignFailure::Start).and_then(sign_stream)
     }
 }
 
@@ -393,14 +437,13 @@ where
     verify_stream(v.unwrap_or_else(|e| signer_error(e)), sig)
 }
 
-/// Streams stdin into `signer` and writes the signature.
-fn sign_stream<const SIG_LEN: usize>(mut signer: impl SignatureSigner<SIG_LEN>, output_hex: bool) {
+/// Streams stdin into `signer` and returns the signature. A failed read of stdin still exits
+/// here, with the signer and its key alive.
+fn sign_stream<const SIG_LEN: usize>(
+    mut signer: impl SignatureSigner<SIG_LEN>,
+) -> Result<[u8; SIG_LEN], SignFailure> {
     stream_stdin(|chunk| signer.do_update(chunk));
-    let sig = signer.do_final().unwrap_or_else(|e| {
-        eprintln!("Error: signing failed: {e:?}");
-        exit(-1);
-    });
-    write_bytes_or_hex(&sig, output_hex);
+    signer.do_final().map_err(SignFailure::Sign)
 }
 
 /// Streams stdin into `verifier` and reports whether `sig` verifies, through the exit status.

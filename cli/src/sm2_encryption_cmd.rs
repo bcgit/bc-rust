@@ -14,9 +14,9 @@
 //! says, which is for the key files, and `-x` writes hex followed by a newline.
 
 use crate::helpers::{
-    SecretBytes, read_input_file, read_secret_file, read_secret_file_or_stdin,
-    read_secret_stdin_all, read_stdin_all, wipe, write_bytes_or_hex, write_private_key,
-    write_secret_bytes_or_hex, write_stdout,
+    SecretBytes, finish_stdout, read_input_file, read_secret_file, read_secret_file_or_stdin,
+    read_secret_stdin_all, read_stdin_all, try_write_stdout, wipe, write_bytes_or_hex,
+    write_private_key, write_secret_bytes_or_hex, write_stdout,
 };
 use bouncycastle::core::errors::PublicKeyEncryptionError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
@@ -50,8 +50,12 @@ pub(crate) fn sm2_encryption_cmd(
 ) {
     match action {
         SM2EncryptionAction::Keygen => {
-            let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
-            write_private_key(&sk, output_hex);
+            // `exit` runs no destructors, so the key is dropped before a failed write exits.
+            let written = {
+                let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+                write_private_key(&sk, output_hex)
+            };
+            finish_stdout(written);
         }
         SM2EncryptionAction::PkFromSk => {
             // A failed write exits, and `exit` runs no destructors, so the key is dropped first.
@@ -122,11 +126,11 @@ pub(crate) fn sm2_encryption_cmd(
                 })
             };
             let Some(c2) = message else { decryption_failed() };
-            write_secret_bytes_or_hex(c2, output_hex);
-            if output_hex {
-                write_stdout(b"\n");
-            }
+            let written = write_secret_bytes_or_hex(c2, output_hex)
+                .and_then(|()| if output_hex { try_write_stdout(b"\n") } else { Ok(()) });
+            // The message is wiped before a failed write exits.
             wipe(c2);
+            finish_stdout(written);
         }
     }
 }

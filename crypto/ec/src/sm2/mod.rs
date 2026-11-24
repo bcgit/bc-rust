@@ -92,7 +92,9 @@
 //!
 //! Encryption has a key pair of its own, with the same encodings. The detached pair works on
 //! the message where it lies and hands back `C1` (the sender's ephemeral point) and `C3` (a
-//! hash over the message and the shared point); the buffer then holds `C2`:
+//! hash over the message and the shared point); the buffer then holds `C2`. `C1` is 65 bytes:
+//! encryption writes it uncompressed, and decryption takes the uncompressed or the hybrid form
+//! and refuses the 33-byte compressed one (see [`encryption`]):
 //!
 //! ```
 //! use bouncycastle_rng::HashDRBG_SHA512;
@@ -135,7 +137,8 @@
 //! let len = sk.decrypt_c1c2c3_out(&ciphertext, &mut plaintext)?;
 //! assert_eq!(&plaintext[..len], message);
 //!
-//! // One error for every ciphertext that does not decrypt, and no plaintext left behind.
+//! // One error for every ciphertext of a valid length that does not decrypt, and no
+//! // plaintext left behind.
 //! assert_eq!(
 //!     sk.decrypt_out(&ciphertext, &mut plaintext),
 //!     Err(PublicKeyEncryptionError::DecryptionFailed)
@@ -212,10 +215,13 @@
 //!   exactly. Pad before encrypting if that matters.
 //! - **A ciphertext that does not decrypt is one error**,
 //!   [`DecryptionFailed`](bouncycastle_core::errors::PublicKeyEncryptionError::DecryptionFailed),
-//!   whether `C1` is not a point on the curve, the key stream is all zero, or `C3` does not
-//!   match. Decryption computes the message before it can check it, in the caller's buffer;
-//!   on any failure that buffer is zeroized before the call returns. The time taken does tell
-//!   a `C1` that is not a point from the other two.
+//!   whether `C1` is not a valid encoding of a point on the curve, the key stream is all
+//!   zero, or `C3` does not match. The all-zero and `C3` tests are combined, and decryption
+//!   branches once, on the combined result. Decryption computes the message before it can
+//!   check it, in the caller's buffer; on any failure that buffer is zeroized before the call
+//!   returns. The time taken does tell a `C1` that is not a valid point encoding from the
+//!   other two. A length no ciphertext or buffer can have is reported apart, as
+//!   `InvalidInputLength` or `OutputBufferTooSmall`, which depend only on the public lengths.
 //! - **Keep signing and encryption to separate key pairs.** The two key types have the same
 //!   encodings, and nothing stops the same bytes being loaded as both; the types are separate
 //!   so that it is not done by accident. This is this library's advice; GB/T 32918.4-2016
@@ -230,9 +236,11 @@
 //!   same `k` are encrypted under the same key stream.
 //! - **The private key `dB`, `k` and the shared point are handled branch-free**, by the
 //!   constant-time multipliers of [`crate::hazmat::sm2_comb`] and [`crate::hazmat::sm2_mul`],
-//!   and `C3` is compared in constant time. The exception is encryption's retry when the key
-//!   stream is all zero (step A5), a branch on a value derived from a `k` that is then
-//!   discarded; for a one-byte message it is taken once in 256 calls.
+//!   and `C3` is compared in constant time. There are two exceptions in encryption, each a
+//!   branch on a value derived from a `k` that is discarded when it is taken: the retry when
+//!   the key stream is all zero (step A5), taken about once in 256 calls for a one-byte
+//!   message, and a defensive test for the point at infinity among `[k]G` and `[k]PB`, which a
+//!   `k` in `[1, n-1]` and a valid public key never take.
 //! - **The stack the computation used is overwritten afterwards**, as well as the named
 //!   secrets being zeroized, since the arithmetic and SM3 leave copies in spilled registers
 //!   and temporaries: after encryption, decryption, key generation and `derive_pk`. The sizes

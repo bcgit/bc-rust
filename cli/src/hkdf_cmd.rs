@@ -3,8 +3,8 @@
 use std::process::exit;
 
 use crate::helpers::{
-    SecretBytes, decode_hex_arg, load_secret, read_input_file, write_secret_bytes_or_hex,
-    write_stdout,
+    SecretBytes, decode_hex_arg, finish_stdout, load_secret, read_input_file, try_write_stdout,
+    write_secret_bytes_or_hex,
 };
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -80,10 +80,13 @@ pub(crate) fn hkdf_cmd(
         exit(-1);
     }
 
-    write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
-    if output_hex {
-        write_stdout(b"\n");
-    }
+    let written = write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex)
+        .and_then(|()| if output_hex { try_write_stdout(b"\n") } else { Ok(()) });
+    // `exit` runs no destructors, so the secrets are dropped before a failed write exits.
+    drop(out_key);
+    drop(ikm);
+    drop(salt);
+    finish_stdout(written);
 }
 
 /// Extract then expand through `h`, into `out_key`.

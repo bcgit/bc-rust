@@ -11,13 +11,16 @@
 //! the name `C1 || C2 || C3`, the order of `draft-shen-sm2-ecdsa-02` and the default of Bouncy
 //! Castle Java's `SM2Engine`. Nothing in a ciphertext says which order it is in.
 //!
-//! The hash is SM3 and `C1` is uncompressed, always: a compressed or hybrid `C1`, the other
-//! forms of GB/T 32918.1-2016 Section 4.2.9 (4.2.8 in the English translation of GM/T
-//! 0003.1-2012, which numbers the conversions one lower), is refused. There is no ASN.1 form
-//! here. Decryption makes the standard's test for an all-zero key stream (step B4), so a
-//! ciphertext from a sender that does not make the matching retry of step A5 is refused when
-//! its key stream is all zero, about one one-byte message in 256; Bouncy Castle Java's
-//! `SM2Engine` makes no such test when it decrypts.
+//! The hash is SM3. Encryption writes `C1` uncompressed. Decryption also accepts the hybrid form
+//! `06 || x1 || y1` or `07 || x1 || y1`, the tag giving the parity of `y1`, which must match;
+//! both forms are in GB/T 32918.1-2016 Section 4.2.10 (4.2.9 in the English translation of
+//! GM/T 0003.1-2012, which numbers the conversions one lower). The compressed form, 33 bytes,
+//! is refused: `C1` here is 65 bytes in every API. There is no ASN.1 form here.
+//!
+//! Decryption makes the standard's test for an all-zero key stream (step B4), so a ciphertext
+//! from a sender that does not make the matching retry of step A5 is refused when its key
+//! stream is all zero, about one one-byte message in 256; Bouncy Castle Java's `SM2Engine`
+//! makes no such test when it decrypts.
 
 use crate::hazmat::sm2::Sm2FieldElement;
 use crate::hazmat::sm2_comb::comb_multiply_base_point;
@@ -35,7 +38,8 @@ use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::fmt;
 use core::fmt::{Display, Formatter};
 
-/// Length of `C1`: a point in the uncompressed form, `04 || x1 || y1`.
+/// Length of `C1`: a point in the uncompressed form, `04 || x1 || y1`, or on decryption the
+/// hybrid form, `06` or `07` for `04`.
 pub const C1_LEN: usize = encryption_core::C1_LEN;
 
 /// Length of `C3`: an SM3 hash value.
@@ -81,9 +85,9 @@ impl SM2EncryptionPublicKey {
     /// `(2^32 - 1) * 32` bytes or more; [`PublicKeyEncryptionError::RNGError`] if `rng` offers
     /// less than 128 bits of security strength or fails to deliver; and
     /// [`PublicKeyEncryptionError::EncryptionFailed`] if sixteen draws from `rng` in a row
-    /// each gave a key stream of all zeros, which for a one-byte message an RNG working as it
-    /// should does with probability `2^-128`. After any error `buf` holds the message as it
-    /// was given.
+    /// each gave a key stream of all zeros, which for a one-byte message has probability about
+    /// `2^-128`, estimated with SM3 as an ideal hash and the draws as independent. After any
+    /// error `buf` holds the message as it was given.
     pub fn encrypt_detached_inplace(
         &self,
         rng: &mut dyn RNG,
@@ -212,8 +216,9 @@ impl SM2EncryptionPrivateKey {
     /// before this returns.
     ///
     /// # Errors
-    /// [`PublicKeyEncryptionError::DecryptionFailed`] if `C1` is not the uncompressed encoding
-    /// of a point on the curve or the ciphertext does not verify, without saying which; and
+    /// [`PublicKeyEncryptionError::DecryptionFailed`] if `C1` is not the uncompressed or hybrid
+    /// encoding of a point on the curve or the ciphertext does not verify, without saying which;
+    /// and
     /// [`PublicKeyEncryptionError::InvalidInputLength`] for an empty `buf`, or one of
     /// `(2^32 - 1) * 32` bytes or more.
     pub fn decrypt_detached_inplace(

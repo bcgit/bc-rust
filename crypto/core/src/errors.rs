@@ -103,7 +103,7 @@ pub enum KeyTransportError {
     RNGError(RNGError),
 }
 
-/// Errors of public-key message encryption: a scheme that encrypts a message of the caller's
+/// Errors of public-key message encryption: a scheme that encrypts a message the caller supplies
 /// under a public key, such as SM2 encryption in `bouncycastle-ec`.
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -111,8 +111,8 @@ pub enum PublicKeyEncryptionError {
     /// The ciphertext did not decrypt, for whatever reason: the one error a recipient reports,
     /// so that the causes cannot be told apart.
     DecryptionFailed,
-    /// Encryption produced no ciphertext within the attempts the algorithm allows itself, which
-    /// an RNG that works as it should does not bring about.
+    /// Encryption produced no ciphertext within the attempts the algorithm allows itself. The
+    /// algorithm's docs say how likely that is.
     EncryptionFailed,
     /// The length of the message or ciphertext is outside the range the algorithm is defined
     /// on.

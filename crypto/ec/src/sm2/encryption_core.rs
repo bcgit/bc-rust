@@ -44,10 +44,10 @@ const KDF_BLOCK_LEN: usize = 32;
 const MAX_MESSAGE_LEN: u64 = (u32::MAX as u64) * (KDF_BLOCK_LEN as u64) - 1;
 
 /// How many values of `k` encryption tries before it gives up. Step A5 returns to A1 when `t`
-/// is all zero, which for a message of `len` bytes and a `k` drawn at random happens with
-/// probability `2^-(8 len)`: one draw in 256 for a one-byte message. Sixteen draws all doing so
-/// has probability at most `2^-128`, the strength of the algorithm, so reaching the bound means
-/// the RNG is not delivering what it claims.
+/// is all zero, which for a message of `len` bytes happens with probability about `2^-(8 len)`,
+/// taking SM3 as an ideal hash and the draws of `k` as independent: one draw in 256 for a
+/// one-byte message. Under the same model sixteen draws all doing so has probability at most
+/// `2^-128`, the strength of the algorithm.
 pub(in crate::sm2) const MAX_ENCRYPT_ATTEMPTS: usize = 16;
 
 /// Whether a message or `C2` of `len` bytes can be processed: it is not empty, and it is within
@@ -253,17 +253,17 @@ fn decrypt_with_d(
 /// call of `encrypt_out` and 4936 below one of `decrypt_out` with rustc 1.97 (nightly), and
 /// 5232 and 4784 with rustc 1.88, of which 500 to 800 bytes are the frames above the wiped
 /// region; with 4608 bytes wiped that harness finds the computation's residue with rustc 1.97,
-/// and with 3072 with either, and `dev_scripts/check_sm2_stack.sh` fails. On arm64 Linux, as
-/// review reported and not as measured here, encryption writes to between 5328 and 5552 bytes
-/// below the call, and the check fails with 4608 bytes wiped and passes with 5528. The rest is
-/// room for a compiler that lays the frames out less tightly.
+/// and with 3072 with either, and `dev_scripts/check_sm2_stack.sh` fails. Measured in review on
+/// arm64 Linux, encryption writes to between 5216 and 5440 bytes below the call, and the check
+/// fails with 4608 bytes wiped and passes with 5120. The rest is room for a compiler that lays
+/// the frames out less tightly.
 const WIPED_STACK_WORDS: usize = 1024;
 
 /// What [`wipe_stack_below`] overwrites after a key pair is generated or a public key derived,
 /// in 64-bit words: 4096 bytes. Measured as [`WIPED_STACK_WORDS`] was, `keygen` writes to 2568
 /// bytes below its call with rustc 1.97 (nightly) and 2544 with rustc 1.88, and `derive_pk` to
-/// 2504 and 2528; with 2304 bytes the check fails. On arm64 Linux, as review reported, it fails
-/// with 2048 bytes and passes with 3072.
+/// 2504 and 2528; with 2304 bytes the check fails. Measured in review on arm64 Linux, it fails
+/// with 2048 bytes and passes with 2560.
 pub(in crate::sm2) const KEY_WIPED_STACK_WORDS: usize = 512;
 
 /// [`wipe_stack_below`] when it is dropped: declared first in a function, after that
@@ -365,9 +365,9 @@ pub(in crate::sm2) fn decrypt_detached_inplace(
     }
 
     // B1: convert C1 to a point and check that it satisfies the curve equation, before the
-    // private key is used for anything. `decode_point` takes the uncompressed form only at this
-    // length, with both coordinates below p.
-    let Some(c1_point) = sm2_sec1::decode_point(c1) else {
+    // private key is used for anything. The uncompressed and hybrid forms are the two at this
+    // length; both coordinates are to be below p, and a hybrid tag is to match y's parity.
+    let Some(c1_point) = sm2_sec1::decode_point_uncompressed_or_hybrid(c1) else {
         wipe(buf);
         return Err(PublicKeyEncryptionError::DecryptionFailed);
     };

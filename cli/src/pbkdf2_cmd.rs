@@ -3,7 +3,8 @@
 //! stdin, never from the command line, which other users can read and the shell records.
 
 use crate::helpers::{
-    decode_hex_arg, read_input_file, read_secret_file_or_stdin, write_secret_bytes_or_hex,
+    decode_hex_arg, finish_stdout, read_input_file, read_secret_file_or_stdin,
+    write_secret_bytes_or_hex,
 };
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::digest::hmac::HMACParams;
@@ -11,6 +12,7 @@ use bouncycastle::digest::pbkdf2::PBKDF2;
 use bouncycastle::digest::sha2::{SHA224, SHA256, SHA384, SHA512};
 use bouncycastle::digest::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use clap::ValueEnum;
+use std::io;
 use std::num::NonZeroU32;
 use std::process::exit;
 
@@ -44,13 +46,14 @@ fn run<H: HMACParams>(
     iterations: NonZeroU32,
     len: usize,
     output_hex: bool,
-) {
+) -> io::Result<()> {
     let mut out_key = KeyMaterial::<MAX_OUT_LEN>::new();
     if let Err(e) = PBKDF2::<H>::derive_out(password, salt, iterations, len, &mut out_key) {
         eprintln!("Error: key derivation failed: {e:?}");
         exit(-1);
     }
-    write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
+    // A failed write is the caller's to act on, once it has dropped the password.
+    write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex)
 }
 
 pub(crate) fn pbkdf2_cmd(
@@ -82,7 +85,7 @@ pub(crate) fn pbkdf2_cmd(
         exit(-1);
     }
 
-    match prf {
+    let written = match prf {
         Pbkdf2Prf::HmacSha224 => run::<SHA224>(&password, &salt, iterations, len, output_hex),
         Pbkdf2Prf::HmacSha256 => run::<SHA256>(&password, &salt, iterations, len, output_hex),
         Pbkdf2Prf::HmacSha384 => run::<SHA384>(&password, &salt, iterations, len, output_hex),
@@ -91,5 +94,8 @@ pub(crate) fn pbkdf2_cmd(
         Pbkdf2Prf::HmacSha3_256 => run::<SHA3_256>(&password, &salt, iterations, len, output_hex),
         Pbkdf2Prf::HmacSha3_384 => run::<SHA3_384>(&password, &salt, iterations, len, output_hex),
         Pbkdf2Prf::HmacSha3_512 => run::<SHA3_512>(&password, &salt, iterations, len, output_hex),
-    }
+    };
+    // `exit` runs no destructors, so the password is dropped before a failed write exits.
+    drop(password);
+    finish_stdout(written);
 }
