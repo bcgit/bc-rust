@@ -69,7 +69,11 @@ fn g(v: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize, mx: u32, my: u32
 /// BLAKE3 spec s. 2.2: "A round consists of the following 8 operations ... That is, a round
 /// applies a G function to each column of the 4 x 4 state in parallel, and then to each of the
 /// diagonals in parallel." G_i takes message words m_{2i} and m_{2i+1}.
-#[inline]
+///
+/// Always inlined: as a call of its own it keeps the state in memory, and [`compress`]'s frame,
+/// which every operation that compresses overwrites afterwards, is then 296 bytes rather than 80
+/// (x86-64 release build).
+#[inline(always)]
 fn round(v: &mut [u32; 16], m: &[u32; 16]) {
     // G0(v0, v4, v8, v12)   G1(v1, v5, v9, v13)   G2(v2, v6, v10, v14)   G3(v3, v7, v11, v15)
     g(v, 0, 4, 8, 12, m[0], m[1]);
@@ -105,9 +109,10 @@ fn permute(m: &mut [u32; 16]) {
 /// often truncated to produce 256-bit chaining values" -- callers that want a chaining value take
 /// the first 8 words; the extendable output of s. 2.6 uses all 16.
 ///
-/// The working state and the permuted message copy are ordinary stack locals and are not
-/// zeroized, as in the other hash modules' compression functions; the output goes to the caller's
-/// buffer, a `Secret` at every call site.
+/// The working state and the permuted message copy are ordinary stack locals: every operation
+/// that compresses runs in a frame of its own whose stack is overwritten afterwards (see
+/// `WIPED_STACK_WORDS` in `blake3.rs`). The output goes to the caller's buffer, a `Secret` at
+/// every call site.
 pub(in crate::blake3) fn compress(
     h: &[u32; 8],
     m: &[u32; 16],

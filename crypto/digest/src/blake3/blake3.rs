@@ -9,6 +9,7 @@ use crate::blake3::compress::{
     BLOCK_LEN, CHUNK_END, CHUNK_LEN, CHUNK_START, DERIVE_KEY_CONTEXT, DERIVE_KEY_MATERIAL, IV,
     KEYED_HASH, PARENT, ROOT, compress, words_from_le_bytes,
 };
+use crate::stack_wipe::wipe_stack_below;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use bouncycastle_core::direction::{Decrypting, Encrypting};
@@ -35,6 +36,19 @@ const KEY_LEN: usize = 32;
 /// bytes, giving a maximum tree depth of 64 - 10 = 54. The CV stack thus requires 54 * 32 = 1728
 /// bytes."
 const MAX_DEPTH: usize = 54;
+
+/// How much stack [`wipe_stack_below`] overwrites after each operation that compresses, which runs
+/// in a frame of its own (the `*_in_own_frame` functions), in 64-bit words: more than the deepest
+/// of them uses (696 bytes with return addresses, `finish_out_in_own_frame`, in the x86-64
+/// release build), with room for a compiler that lays the frames out less tightly. What the
+/// compression function and its callers leave there (the working state, the message words, the
+/// chaining values) is the message, the key (keyed_hash) or the key material (derive_key). An
+/// unoptimised build's frames are not covered.
+const WIPED_STACK_WORDS: usize = 128;
+
+/// As [`WIPED_STACK_WORDS`], after a [`BLAKE3KeyedHashKey`] is read from key material
+/// (`read_key_words_in_own_frame` and the accessors it calls use under 100 bytes).
+const KEY_WIPED_STACK_WORDS: usize = 32;
 
 /// The first 8 words of a compression output: "The output of the compression function is most
 /// often truncated to produce 256-bit chaining values" (s. 2.2).
@@ -83,6 +97,17 @@ struct Output {
 }
 
 impl Output {
+    /// An all-zero `Output`, to be overwritten in place.
+    fn empty() -> Self {
+        Self {
+            input_chaining_value: Secret::new(),
+            block_words: Secret::new(),
+            counter: 0,
+            block_len: 0,
+            flags: 0,
+        }
+    }
+
     /// This node's chaining value, into `cv`: it is not the root, so ROOT is not set.
     fn chaining_value(&self, cv: &mut [u32; 8]) {
         let mut words = Secret::<[u32; 16]>::new();
@@ -120,6 +145,26 @@ impl Output {
             out,
         )
     }
+
+    /// Root output block `output_block_counter` encoded as 64 bytes into `buf`. s. 2.6: "Each
+    /// 16-word output is encoded as 64 bytes in little-endian order."
+    fn root_output_bytes(&self, output_block_counter: u64, buf: &mut [u8; BLOCK_LEN]) {
+        let mut words = Secret::<[u32; 16]>::new();
+        self.root_output_block(output_block_counter, &mut words);
+        for (i, word) in words.iter().enumerate() {
+            buf[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
+        }
+    }
+}
+
+/// [`Output::root_output_bytes`] in a frame of its own; the caller wipes below it.
+#[inline(never)]
+fn root_output_bytes_in_own_frame(
+    root: &Output,
+    output_block_counter: u64,
+    buf: &mut [u8; BLOCK_LEN],
+) {
+    root.root_output_bytes(output_block_counter, buf);
 }
 
 /// BLAKE3 spec s. 2.5: a parent node's single compression.
@@ -163,7 +208,9 @@ fn parent_output(
 /// parameters t and d."
 #[derive(Clone)]
 struct ChunkState {
-    /// The CV of the previous block; the key words before the first block is compressed.
+    /// The CV of the previous block, once a block has been compressed. Before that the chaining
+    /// value is the key words (s. 2.4), which are read from the core rather than copied here, so
+    /// that a keyed_hash worker holds no copy of the key; this is then zero.
     chaining_value: Secret<[u32; 8]>,
     /// t: "the chunk index, i.e., 0 for all blocks in the first chunk, 1 for all blocks in the
     /// second chunk, and so on" (s. 2.4).
@@ -180,13 +227,9 @@ struct ChunkState {
 }
 
 impl ChunkState {
-    fn new(key_words: &[u32; 8], chunk_counter: u64, flags: u32) -> Self {
-        let mut chaining_value = Secret::<[u32; 8]>::new();
-        // s. 2.4: "The input chaining value h0 ... h7 for the first block of each chunk is
-        // composed of the key words k0 ... k7."
-        chaining_value.copy_from_slice(key_words);
+    fn new(chunk_counter: u64, flags: u32) -> Self {
         Self {
-            chaining_value,
+            chaining_value: Secret::new(),
             chunk_counter,
             block: Secret::new(),
             block_len: 0,
@@ -198,6 +241,12 @@ impl ChunkState {
     /// Number of input bytes absorbed into this chunk so far.
     fn len(&self) -> usize {
         BLOCK_LEN * self.blocks_compressed as usize + self.block_len as usize
+    }
+
+    /// The input chaining value for the next block of this chunk: the key words for the first
+    /// block (s. 2.4), the previous block's CV after that.
+    fn input_chaining_value<'a>(&'a self, key_words: &'a [u32; 8]) -> &'a [u32; 8] {
+        if self.blocks_compressed == 0 { key_words } else { &self.chaining_value }
     }
 
     /// s. 2.4: "The first block of each chunk sets the CHUNK_START flag".
@@ -213,7 +262,7 @@ impl ChunkState {
     /// function. The output CV overwrites the previous CV, and the buffer is cleared. ... the
     /// chunk state waits to compress the next block until both the buffer is full and the caller
     /// has supplied more input."
-    fn update(&mut self, mut input: &[u8]) {
+    fn update(&mut self, key_words: &[u32; 8], mut input: &[u8]) {
         let mut block_words = Secret::<[u32; 16]>::new();
         let mut words = Secret::<[u32; 16]>::new();
         while !input.is_empty() {
@@ -224,7 +273,7 @@ impl ChunkState {
                 // m15 and compressed."
                 words_from_le_bytes(&*self.block, &mut block_words);
                 compress(
-                    &self.chaining_value,
+                    self.input_chaining_value(key_words),
                     &block_words,
                     // s. 2.4: "The counter t for each block is the chunk index"
                     self.chunk_counter,
@@ -255,7 +304,7 @@ impl ChunkState {
     }
 
     /// The chunk's last compression, held back as an [`Output`].
-    fn output(&self) -> Output {
+    fn output(&self, key_words: &[u32; 8]) -> Output {
         // s. 2.4: "The last block of the last chunk may be shorter, but not empty, unless the
         // entire input is empty. If necessary, the last block is padded with zeros to be 64
         // bytes."
@@ -266,7 +315,7 @@ impl ChunkState {
         words_from_le_bytes(&*padded, &mut block_words);
 
         let mut input_chaining_value = Secret::<[u32; 8]>::new();
-        input_chaining_value.copy_from_slice(&*self.chaining_value);
+        input_chaining_value.copy_from_slice(self.input_chaining_value(key_words));
 
         Output {
             input_chaining_value,
@@ -393,7 +442,7 @@ impl Blake3Core {
         if blocks_compressed != 0 {
             words_from_le_bytes(&input[0..32], &mut cs.chaining_value);
         }
-        // else: ChunkState::new already set the chaining value to the key words.
+        // else: the chunk's chaining value is still the key words, read from the core.
         cs.chunk_counter = chunk_counter;
         cs.block[..block_len as usize].copy_from_slice(&input[40..40 + block_len as usize]);
         cs.block_len = block_len;
@@ -410,7 +459,7 @@ impl Blake3Core {
 impl<K: KeyWords> Blake3Core<K> {
     fn with_key_words(key_words: K, flags: u32) -> Self {
         Self {
-            chunk_state: ChunkState::new(key_words.words(), 0, flags),
+            chunk_state: ChunkState::new(0, flags),
             key_words,
             cv_stack: Secret::new(),
             cv_stack_len: 0,
@@ -424,14 +473,45 @@ impl<K: KeyWords> Blake3Core<K> {
         assert!(!self.finished, "{}", INPUT_AFTER_FINISH);
     }
 
-    /// Ends the input: the root node's compression inputs, with the value marked finished.
+    /// Ends the input: `wrap` of a squeezer over the root node's compression inputs, with the
+    /// value marked finished. The root node is computed into a squeezer here, a clone of which is
+    /// handed to `wrap` (a public squeezer type's constructor) while the original is dropped
+    /// (wiped), so that no moved-from copy of it is left behind.
     ///
     /// # Panics
     /// If it was finished already.
-    fn finish(&mut self) -> Output {
+    fn finish<S>(&mut self, wrap: impl FnOnce(BLAKE3Squeezer) -> S) -> S {
         self.assert_not_finished();
         self.finished = true;
-        self.root_output()
+        let mut squeezer = BLAKE3Squeezer::new(Output::empty());
+        self.root_output_in_own_frame(&mut squeezer.root);
+        wipe_stack_below::<WIPED_STACK_WORDS>();
+        wrap(squeezer.clone())
+    }
+
+    /// [`Self::root_output`] into `root`, in a frame of its own: it compresses the parent nodes on
+    /// the way to the root.
+    #[inline(never)]
+    fn root_output_in_own_frame(&self, root: &mut Output) {
+        *root = self.root_output();
+    }
+
+    /// Ends the input and writes `output.len()` bytes of root output (s. 2.6), zeroizing `output`
+    /// first: [`Self::finish`] and a squeezer's first read in one frame, with one wipe.
+    ///
+    /// # Panics
+    /// If it was finished already.
+    fn finish_out(&mut self, output: &mut [u8]) -> usize {
+        self.assert_not_finished();
+        self.finished = true;
+        let written = self.finish_out_in_own_frame(output);
+        wipe_stack_below::<WIPED_STACK_WORDS>();
+        written
+    }
+
+    #[inline(never)]
+    fn finish_out_in_own_frame(&self, output: &mut [u8]) -> usize {
+        BLAKE3Squeezer::new(self.root_output()).squeeze_in_own_frame(output)
     }
 
     fn push_stack(&mut self, cv: &[u32; 8]) {
@@ -466,8 +546,23 @@ impl<K: KeyWords> Blake3Core<K> {
         self.push_stack(new_cv);
     }
 
-    fn update(&mut self, mut input: &[u8]) {
+    /// Absorbs `input`, in a frame of its own whose stack is overwritten afterwards whenever a
+    /// block may have been compressed.
+    fn update(&mut self, input: &[u8]) {
         self.assert_not_finished();
+        // Only to save the wipe. Mutants note: a mutant of the condition changes only whether the
+        // stack is overwritten, which no test observes.
+        let compresses = self.chunk_state.block_len as usize + input.len() > BLOCK_LEN;
+        self.update_in_own_frame(input);
+        if compresses {
+            wipe_stack_below::<WIPED_STACK_WORDS>();
+        }
+    }
+
+    /// The absorption of [`Self::update`]. A block is compressed only once it is full and more
+    /// input follows (s. 5.1.1), so input that fits in the buffered block compresses nothing.
+    #[inline(never)]
+    fn update_in_own_frame(&mut self, mut input: &[u8]) {
         let mut chunk_cv = Secret::<[u32; 8]>::new();
         while !input.is_empty() {
             // s. 5.1.1: "chunk CVs are added only after the caller supplies at least 1 byte for the
@@ -475,16 +570,15 @@ impl<K: KeyWords> Blake3Core<K> {
             // follow, and it is therefore not the root (s. 5.1.2: "we know that none of these
             // chunks or parent nodes is the root of the tree").
             if self.chunk_state.len() == CHUNK_LEN {
-                self.chunk_state.output().chaining_value(&mut chunk_cv);
+                self.chunk_state.output(self.key_words.words()).chaining_value(&mut chunk_cv);
                 let total_chunks = self.chunk_state.chunk_counter + 1;
                 self.add_chunk_chaining_value(&mut chunk_cv, total_chunks);
-                self.chunk_state =
-                    ChunkState::new(self.key_words.words(), total_chunks, self.flags);
+                self.chunk_state = ChunkState::new(total_chunks, self.flags);
             }
 
             // Absorb as much as fits in the current chunk.
             let take = *min(&(CHUNK_LEN - self.chunk_state.len()), &input.len());
-            self.chunk_state.update(&input[..take]);
+            self.chunk_state.update(self.key_words.words(), &input[..take]);
             input = &input[take..];
         }
     }
@@ -495,7 +589,7 @@ impl<K: KeyWords> Blake3Core<K> {
         self.assert_not_finished();
         output.fill(0);
         let n = *min(&output.len(), &OUT_LEN);
-        BLAKE3Squeezer::new(self.finish()).do_output_out(&mut output[..n])
+        self.finish_out(&mut output[..n])
     }
 
     /// The root node's held-back compression.
@@ -507,7 +601,7 @@ impl<K: KeyWords> Blake3Core<K> {
     /// no CVs in the stack, and thus no parents to merge, set the ROOT flag for chunk
     /// finalization instead." (ROOT itself is applied by [`Output::root_output_block`].)
     fn root_output(&self) -> Output {
-        let mut output = self.chunk_state.output();
+        let mut output = self.chunk_state.output(self.key_words.words());
         let mut parent_nodes_remaining = self.cv_stack_len as usize;
         let mut cv = Secret::<[u32; 8]>::new();
         while parent_nodes_remaining > 0 {
@@ -643,7 +737,7 @@ impl BLAKE3 {
     /// from this call on, any input, other final or [`Suspendable::suspend`] panics, in every
     /// build.
     pub fn finish_squeezer(&mut self, _token: &FinishToken) -> BLAKE3Squeezer {
-        BLAKE3Squeezer::new(self.core.finish())
+        self.core.finish(core::convert::identity)
     }
 }
 
@@ -710,12 +804,12 @@ impl Hash for BLAKE3 {
 impl XOF for BLAKE3 {
     type Squeezer = BLAKE3Squeezer;
 
-    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
-        self.finish_squeezer(token).do_output_final_out(output)
+    fn finish_xof_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
+        self.core.finish_out(output)
     }
 
     fn into_squeezer(mut self) -> Self::Squeezer {
-        BLAKE3Squeezer::new(self.core.finish())
+        self.core.finish(core::convert::identity)
     }
 
     /// Only `num_bits == 0` is accepted; see [`Hash::do_final_partial_bits`] on [`BLAKE3`].
@@ -810,23 +904,19 @@ impl BLAKE3Squeezer {
     fn new(root: Output) -> Self {
         Self { root, output_block_counter: 0, buf: Secret::new(), buf_pos: BLOCK_LEN as u8 }
     }
-}
 
-impl XOFSqueezer for BLAKE3Squeezer {
-    fn do_output_out(&mut self, output: &mut [u8]) -> usize {
+    /// The reading of [`XOFSqueezer::do_output_out`], in a frame of its own; the caller wipes
+    /// below it.
+    #[inline(never)]
+    fn squeeze_in_own_frame(&mut self, output: &mut [u8]) -> usize {
         // Zeroized first per the house rule, although every byte is then overwritten.
         output.fill(0);
         let mut written = 0;
-        let mut words = Secret::<[u32; 16]>::new();
         while written < output.len() {
             if self.buf_pos as usize == BLOCK_LEN {
                 // s. 2.6: "When building the output, BLAKE3 uses the full output of the
-                // compression function (cf. s. 2.2). Each 16-word output is encoded as 64 bytes in
-                // little-endian order."
-                self.root.root_output_block(self.output_block_counter, &mut words);
-                for (i, word) in words.iter().enumerate() {
-                    self.buf[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
-                }
+                // compression function (cf. s. 2.2)."
+                self.root.root_output_bytes(self.output_block_counter, &mut self.buf);
                 // "as long as more output bytes are needed, t is incremented by 1". This cannot
                 // overflow: the counter starts at most at MAX_OUTPUT_BLOCKS (from_suspended
                 // enforces it), and 2^64 - 2^58 further blocks would be far past ell < 2^64.
@@ -841,6 +931,14 @@ impl XOFSqueezer for BLAKE3Squeezer {
             self.buf_pos += take as u8;
             written += take;
         }
+        written
+    }
+}
+
+impl XOFSqueezer for BLAKE3Squeezer {
+    fn do_output_out(&mut self, output: &mut [u8]) -> usize {
+        let written = self.squeeze_in_own_frame(output);
+        wipe_stack_below::<WIPED_STACK_WORDS>();
         written
     }
 }
@@ -916,12 +1014,17 @@ impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
             return Err(SuspendableError::InvalidData);
         }
 
-        let mut input_chaining_value = Secret::<[u32; 8]>::new();
-        words_from_le_bytes(&input[0..32], &mut input_chaining_value);
-        let mut block_words = Secret::<[u32; 16]>::new();
-        words_from_le_bytes(&input[32..96], &mut block_words);
-        let root = Output { input_chaining_value, block_words, counter: 0, block_len, flags };
-        let mut buf = Secret::<[u8; BLOCK_LEN]>::new();
+        // The root and the buffer are written where they sit in `squeezer`, and a clone is
+        // returned: returning `squeezer` itself would move it, leaving the moved-from copy, while
+        // dropping it zeroizes it.
+        let mut squeezer = Self {
+            root: Output { block_len, flags, ..Output::empty() },
+            output_block_counter,
+            buf: Secret::new(),
+            buf_pos,
+        };
+        words_from_le_bytes(&input[0..32], &mut squeezer.root.input_chaining_value);
+        words_from_le_bytes(&input[32..96], &mut squeezer.root.block_words);
         // Mutants note: `<` -> `<=` survives. At position 64 the buffer is never read, so it only
         // adds a compression; for a fresh squeezer (counter 0) it would also underflow the
         // subtraction below, which panics only where overflow checks are on, and the mutants
@@ -929,14 +1032,15 @@ impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
         if (buf_pos as usize) < BLOCK_LEN {
             // The rest of block output_block_counter - 1 is still to be read (counter >= 1 here,
             // checked above), so compute it again rather than trust a stored copy.
-            let mut words = Secret::<[u32; 16]>::new();
-            root.root_output_block(output_block_counter - 1, &mut words);
-            for (i, word) in words.iter().enumerate() {
-                buf[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
-            }
+            root_output_bytes_in_own_frame(
+                &squeezer.root,
+                output_block_counter - 1,
+                &mut squeezer.buf,
+            );
+            wipe_stack_below::<WIPED_STACK_WORDS>();
         }
 
-        Ok(Self { root, output_block_counter, buf, buf_pos })
+        Ok(squeezer.clone())
     }
 }
 
@@ -992,8 +1096,8 @@ impl BLAKE3DeriveKey {
     /// Ends the input where the hasher sits and returns the squeezer [`XOF::into_squeezer`]
     /// would, without moving the hasher, which holds the key material's chaining values. As
     /// [`BLAKE3::finish_squeezer`]; the caller lets the hasher drop.
-    pub fn finish_squeezer(&mut self, token: &FinishToken) -> BLAKE3DeriveKeySqueezer {
-        BLAKE3DeriveKeySqueezer(self.0.finish_squeezer(token))
+    pub fn finish_squeezer(&mut self, _token: &FinishToken) -> BLAKE3DeriveKeySqueezer {
+        self.0.core.finish(BLAKE3DeriveKeySqueezer)
     }
 }
 
@@ -1031,11 +1135,11 @@ impl XOF for BLAKE3DeriveKey {
     type Squeezer = BLAKE3DeriveKeySqueezer;
 
     fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
-        self.finish_squeezer(token).do_output_final_out(output)
+        self.0.finish_xof_into(token, output)
     }
 
-    fn into_squeezer(self) -> Self::Squeezer {
-        BLAKE3DeriveKeySqueezer(self.0.into_squeezer())
+    fn into_squeezer(mut self) -> Self::Squeezer {
+        self.0.core.finish(BLAKE3DeriveKeySqueezer)
     }
 
     fn into_squeezer_partial_bits(
@@ -1075,10 +1179,25 @@ pub struct BLAKE3KeyedHashKey {
 }
 
 impl BLAKE3KeyedHashKey {
+    /// Reads the key words in a frame of its own whose stack is overwritten afterwards, into a
+    /// key that is then cloned into the result and dropped (wiped), so that neither the copies
+    /// reading the material made nor the key moved into the result are left behind.
     fn from_key_material_checked(
         key: &dyn KeyMaterialTrait,
         allow_weak_key: bool,
     ) -> Result<Self, MACError> {
+        let mut this = Self { key_words: Secret::new() };
+        let checked = Self::read_key_words_in_own_frame(key, allow_weak_key, &mut this.key_words);
+        wipe_stack_below::<KEY_WIPED_STACK_WORDS>();
+        checked.map(|()| this.clone())
+    }
+
+    #[inline(never)]
+    fn read_key_words_in_own_frame(
+        key: &dyn KeyMaterialTrait,
+        allow_weak_key: bool,
+        key_words: &mut [u32; 8],
+    ) -> Result<(), MACError> {
         // Same stance as HMAC and KMAC: an all-zero key is `Zeroized` rather than `MACKey`, and is
         // let through so callers are not forced to re-tag it.
         if !(key.key_type() == KeyType::MACKey || key.key_type() == KeyType::Zeroized) {
@@ -1097,9 +1216,8 @@ impl BLAKE3KeyedHashKey {
         if key.key_len() != KEY_LEN {
             return Err(MACError::InvalidLength("BLAKE3 keyed_hash requires a 32-byte key"));
         }
-        let mut key_words = Secret::<[u32; 8]>::new();
-        words_from_le_bytes(key.ref_to_bytes(), &mut key_words);
-        Ok(Self { key_words })
+        words_from_le_bytes(key.ref_to_bytes(), key_words);
+        Ok(())
     }
 }
 
@@ -1183,7 +1301,7 @@ impl BLAKE3KeyedHash<'_, Encrypting> {
     /// 32 bytes are the [`MACGenerator`] tag. No minimum length applies: choosing a safe output
     /// length is the caller's responsibility.
     pub fn into_squeezer(mut self) -> BLAKE3KeyedSqueezer {
-        BLAKE3KeyedSqueezer(BLAKE3Squeezer::new(self.core.finish()))
+        self.core.finish(BLAKE3KeyedSqueezer)
     }
 
     /// As [`Self::into_squeezer`], where the worker sits: the worker, whose chaining values are
@@ -1194,7 +1312,7 @@ impl BLAKE3KeyedHash<'_, Encrypting> {
     /// As [`BLAKE3::finish_squeezer`]: if the worker was finished already, and on any input or
     /// final after this.
     pub fn finish_squeezer(&mut self, _token: &FinishToken) -> BLAKE3KeyedSqueezer {
-        BLAKE3KeyedSqueezer(BLAKE3Squeezer::new(self.core.finish()))
+        self.core.finish(BLAKE3KeyedSqueezer)
     }
 }
 
@@ -1204,7 +1322,7 @@ impl MACGenerator<OUT_LEN> for BLAKE3KeyedHash<'_, Encrypting> {
     }
 
     fn finish_mac_into(&mut self, _token: &FinishToken, out: &mut [u8; OUT_LEN]) -> usize {
-        BLAKE3Squeezer::new(self.core.finish()).do_output_out(out)
+        self.core.finish_out(out)
     }
 }
 
@@ -1222,7 +1340,7 @@ impl MACVerifier<OUT_LEN> for BLAKE3KeyedHash<'_, Decrypting> {
         // The recomputed tag is the valid tag of whatever message was absorbed, so it is kept
         // off the stack's leftovers.
         let mut computed: Secret<[u8; OUT_LEN]> = Secret::new();
-        BLAKE3Squeezer::new(self.core.finish()).do_output_out(&mut *computed);
+        self.core.finish_out(&mut *computed);
         if ct::ct_eq_bytes(&*computed, mac) { Ok(()) } else { Err(MACError::VerificationFailed) }
     }
 }
