@@ -109,20 +109,19 @@ fn check_key_type(
 
 /// The permutation accepts only a `SymmetricCipherKey`, so a MAC mode's key -- already checked to
 /// be the `MACKey` the mode asks for -- is handed to it as a copy retagged at the same strength,
-/// used for nothing else. The strength check in the permutation's constructor still applies.
-/// `from_bytes_as_type` tags all-zero material `Zeroized` whatever type is asked for, so the type
-/// is set again inside the hazardous block: a MAC key deliberately made all zeros would otherwise
-/// be refused by the permutation.
+/// used for nothing else, and written into `cipher_key`, the caller's, so that no other copy is
+/// made on the way. The strength check in the permutation's constructor still applies. Inside the
+/// hazardous block all-zero material keeps the type asked for, so a MAC key deliberately made all
+/// zeros is not refused by the permutation as `Zeroized`.
 fn as_cipher_key<const N: usize>(
     key: &KeyMaterial<N>,
-) -> Result<KeyMaterial<N>, SymmetricCipherError> {
-    let mut cipher_key =
-        KeyMaterial::<N>::from_bytes_as_type(key.ref_to_bytes(), KeyType::SymmetricCipherKey)?;
-    do_hazardous_operations(&mut cipher_key, |k| {
-        k.set_key_type(KeyType::SymmetricCipherKey)?;
+    cipher_key: &mut KeyMaterial<N>,
+) -> Result<(), SymmetricCipherError> {
+    do_hazardous_operations(cipher_key, |k| {
+        k.set_bytes_as_type(key.ref_to_bytes(), KeyType::SymmetricCipherKey)?;
         k.set_security_strength(key.security_strength())
     })?;
-    Ok(cipher_key)
+    Ok(())
 }
 
 impl<P, M, const KEY_LEN: usize> FromKeyMaterial<KEY_LEN> for BlockCipherKey<P, M>
@@ -143,7 +142,11 @@ where
         check_key_type(key, M::KEY_TYPE)?;
         let perm = match M::KEY_TYPE {
             KeyType::SymmetricCipherKey => P::new(key)?,
-            _ => P::new(&as_cipher_key(key)?)?,
+            _ => {
+                let mut cipher_key = KeyMaterial::<KEY_LEN>::new();
+                as_cipher_key(key, &mut cipher_key)?;
+                P::new(&cipher_key)?
+            }
         };
         Ok(Self { state: M::key_state(perm) })
     }

@@ -33,6 +33,7 @@
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec, vec::Vec};
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::Secret;
 
 /// Return type for errors relating to Hex encoding and decoding.
 #[derive(Debug)]
@@ -133,7 +134,8 @@ pub fn decode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, Hex
 }
 
 fn decode_into(inref: &[u8], out: &mut [u8]) -> Result<usize, HexError> {
-    let mut b = 0u8;
+    // Half a decoded byte between digits, so wiped on every return, the error ones included.
+    let mut b = Secret::<u8>::new();
     let mut b_i = 0u8;
     let mut out_i = 0_usize;
     let mut i = 0_usize;
@@ -161,15 +163,15 @@ fn decode_into(inref: &[u8], out: &mut [u8]) -> Result<usize, HexError> {
 
         // parse two hex digits to form one output byte;
         // the first one is the upper 4 bits.
-        b |= match ct_hex_to_word(c) {
+        *b |= match ct_hex_to_word(c) {
             0xFF => return Err(HexError::InvalidHexCharacter(i)),
             c => c,
         } << (4 * (1 - b_i));
 
         if b_i == 1 {
-            out[out_i] = b;
+            out[out_i] = *b;
             out_i += 1;
-            b = 0;
+            *b = 0;
             b_i = 0;
         } else {
             b_i = 1;

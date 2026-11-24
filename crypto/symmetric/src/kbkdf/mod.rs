@@ -60,17 +60,17 @@
 //! The KDFs hold their parameters only: a derivation keys the PRF once, keeps its working
 //! blocks in [`Secret`]s on the stack and writes straight into the caller's buffer. Peak stack
 //! for 64 bytes from a 32-byte key, in bytes (x86-64, release, rustc 1.97.0-nightly, the deepest
-//! frame chain of `bench_kbkdf_mem_usage`):
+//! frame chain of `bench_kbkdf_mem_usage` with `main` calling that bench alone):
 //!
 //! | PRF | Counter | Feedback | Double-Pipeline |
 //! |---|---|---|---|
-//! | HMAC-SHA256 | 2920 | 2824 | 2872 |
-//! | HMAC-SHA512 | 4776 | 4696 | 4744 |
-//! | HMAC-SHA3-256 | 6952 | | |
-//! | CMAC-AES256 | 2480 | | |
+//! | HMAC-SHA256 | 1776 | 1760 | 1776 |
+//! | HMAC-SHA512 | 3072 | 3056 | 3056 |
+//! | HMAC-SHA3-256 | 5760 | | |
+//! | CMAC-AES256 | 1800 | | |
 //!
-//! [`KDF_KMAC128`] and [`KDF_KMAC256`]: 3944, of which [`MAX_KMAC_KDK_LEN`] bytes are the copy
-//! of the key-derivation key.
+//! [`KDF_KMAC128`] and [`KDF_KMAC256`]: 3344, of which [`MAX_KMAC_KDK_LEN`] bytes are the MAC
+//! key the key-derivation key is copied into.
 //!
 //! [`Secret`]: bouncycastle_utils::secret::Secret
 //!
@@ -124,7 +124,8 @@ pub use prf::{PRF_CMAC, PRF_CMAC_AES128, PRF_CMAC_AES192, PRF_CMAC_AES256, PRF_H
 
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::{do_hazardous_operations, label_kdf_output};
-use bouncycastle_core::key_material::KeyMaterialTrait;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_digest::sha3::{SHA3_256, SHA3_512};
@@ -320,6 +321,23 @@ pub(in crate::kbkdf) fn k_in_into<K: KeyMaterialTrait + ?Sized>(
         at += bytes.len();
     }
     at
+}
+
+/// The PRF's key, written in place: `fill` writes the key bytes into the front of the buffer it
+/// is handed and returns their length, and `key` is typed the [`KeyType::MACKey`] the PRF takes,
+/// at the strength that length gives. Built where it is kept, so that `K_IN` is not copied into
+/// a staging buffer on the way.
+pub(in crate::kbkdf) fn mac_key_in_place<const N: usize>(
+    key: &mut KeyMaterial<N>,
+    fill: impl FnOnce(&mut [u8]) -> usize,
+) -> Result<(), KDFError> {
+    do_hazardous_operations(key, |k| {
+        let len = fill(k.ref_to_bytes_mut()?);
+        k.set_key_len(len)?;
+        k.set_key_type(KeyType::MACKey)?;
+        k.set_security_strength(SecurityStrength::from_bytes(len))
+    })?;
+    Ok(())
 }
 
 /// The fixed input data as SP 800-108r1 Section 4 writes it, `Label || 0x00 || Context ||

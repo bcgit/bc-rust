@@ -9,12 +9,14 @@
 //! `[written, consumed)` is both already read and long enough for what this call can emit. That
 //! holds for a cipher that holds bytes back as well as for one that releases them at once. The
 //! price over a true in-place update is one memcpy of the data through `CHUNK` bytes of stack,
-//! and no second buffer the size of the message.
+//! wiped before returning, and no second buffer the size of the message. A cipher whose worker
+//! can work in place implements the in-place roles over that instead, with no copy at all.
 
 use crate::errors::SymmetricCipherError;
 use crate::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
+use bouncycastle_utils::secret::Secret;
 
 /// Bytes copied out per step. Four 16-byte blocks keeps a block-cipher mode on its wide path.
 const CHUNK: usize = 64;
@@ -108,7 +110,8 @@ where
     E: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     enc.do_update_aad(aad)?;
-    let mut tmp = [0u8; CHUNK];
+    // Plaintext, so wiped on every return, the error ones included.
+    let mut tmp = Secret::<[u8; CHUNK]>::new();
     let mut consumed = 0;
     let mut written = 0;
     while consumed < buf.len() {
@@ -194,7 +197,7 @@ where
     }
     dec.do_update_aad(aad)?;
     let written = dec.do_decrypt_out(ciphertext, plaintext)?;
-    let mut final_buf = [0u8; FINAL_LEN];
+    let mut final_buf = Secret::<[u8; FINAL_LEN]>::new();
     match dec.do_decrypt_final_detached_out(tag, &mut final_buf) {
         Ok(final_len) => {
             plaintext[written..written + final_len].copy_from_slice(&final_buf[..final_len]);
@@ -240,7 +243,8 @@ where
             consumed += n;
             written += dec.do_decrypt_out(&tmp[..n], &mut buf[written..consumed])?;
         }
-        let mut last = [0u8; FINAL_LEN];
+        // Plaintext, so wiped on every return, the error ones included.
+        let mut last = Secret::<[u8; FINAL_LEN]>::new();
         let last_len = dec.do_decrypt_final_detached_out(tag, &mut last)?;
         buf[written..written + last_len].copy_from_slice(&last[..last_len]);
         Ok(())

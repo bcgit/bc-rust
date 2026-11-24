@@ -106,14 +106,13 @@ use crate::poly1305::{Poly1305, Poly1305Key};
 use crate::stream::hazmat::stream_cipher_over;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::KeyStream;
+use bouncycastle_core::hazmat::{KeyStream, finish_token};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
     AeadDecryptionKey, AeadEncryptionKey, AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey,
     FromKeyMaterial,
 };
-use bouncycastle_core::symmetric_key::{decrypt_detached_inplace, encrypt_detached_inplace};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, MACGenerator, MACVerifier,
     RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
@@ -296,18 +295,35 @@ impl ChaCha20_Poly1305<'_, Encrypting> {
     }
 
     fn encrypt_bytes(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
-        // do_encrypt_out, the only caller, has already checked the length.
+        // Every caller has already checked the length.
         self.start_data();
         self.cipher.do_encrypt_inplace(data)?;
         self.mac.do_update(data);
         self.data_len += data.len() as u64;
         Ok(())
     }
+
+    /// A whole message encrypted where it lies, tag detached: the body of the key's
+    /// [`AeadInPlaceEncryptionKey`] methods, on a worker nothing has been fed to. On an error
+    /// `buf` is unchanged.
+    fn encrypt_message_inplace(
+        &mut self,
+        token: &FinishToken,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        self.absorb_aad(aad)?;
+        if !buf.is_empty() {
+            self.check_data_len(buf.len())?;
+            self.encrypt_bytes(buf)?;
+        }
+        Ok(self.finish_tag(token))
+    }
 }
 
 impl ChaCha20_Poly1305<'_, Decrypting> {
     fn decrypt_bytes(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
-        // Both callers have already checked the length, before copying anything.
+        // Every caller has already checked the length, before copying anything.
         self.start_data();
         self.mac.do_update(data);
         self.cipher.do_decrypt_inplace(data)?;
@@ -323,6 +339,29 @@ impl ChaCha20_Poly1305<'_, Decrypting> {
         self.finish_mac(token);
         // Poly1305's finish_mac_verify compares in constant time.
         self.mac.finish_mac_verify(token, tag).map_err(|_| SymmetricCipherError::AEADTagCheckFailed)
+    }
+
+    /// A whole message decrypted where it lies and checked against `tag`: the body of the key's
+    /// [`AeadInPlaceDecryptionKey`] method, on a worker nothing has been fed to. On any error
+    /// `buf` is zeroized, since it may hold plaintext the tag has not vouched for.
+    fn decrypt_message_inplace(
+        &mut self,
+        token: &FinishToken,
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        let result = self.absorb_aad(aad).and_then(|()| {
+            if !buf.is_empty() {
+                self.check_data_len(buf.len())?;
+                self.decrypt_bytes(buf)?;
+            }
+            self.verify_tag(token, tag)
+        });
+        if result.is_err() {
+            buf.fill(0);
+        }
+        result
     }
 }
 
@@ -543,8 +582,8 @@ impl AeadInPlaceEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305K
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        let (enc, nonce) = self.create_encryptor(rng)?;
-        let tag = encrypt_detached_inplace(enc, aad, buf)?;
+        let (mut enc, nonce) = self.create_encryptor(rng)?;
+        let tag = enc.encrypt_message_inplace(&finish_token(), aad, buf)?;
         Ok((nonce, tag))
     }
 
@@ -554,7 +593,7 @@ impl AeadInPlaceEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305K
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        encrypt_detached_inplace(self.create_encryptor_nonce(nonce), aad, buf)
+        self.create_encryptor_nonce(nonce).encrypt_message_inplace(&finish_token(), aad, buf)
     }
 }
 
@@ -566,7 +605,7 @@ impl AeadInPlaceDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305K
         buf: &mut [u8],
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
-        decrypt_detached_inplace(self.create_decryptor(nonce), aad, buf, tag)
+        self.create_decryptor(nonce).decrypt_message_inplace(&finish_token(), aad, buf, tag)
     }
 }
 

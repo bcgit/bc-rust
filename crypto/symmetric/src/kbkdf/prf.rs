@@ -6,20 +6,19 @@
 
 use crate::BlockCipherKey;
 use crate::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use crate::kbkdf::{k_in_into, k_in_len};
+use crate::kbkdf::{k_in_into, k_in_len, mac_key_in_place};
 use crate::modes::CMAC;
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::KeyExpansion;
 use bouncycastle_core::hazmat::Mode;
-use bouncycastle_core::hazmat::{do_hazardous_operations, finish_token};
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::hazmat::finish_token;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, FromKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{Algorithm, MACGenerator};
 use bouncycastle_digest::hmac::{
     HMACParams, HmacKey, LARGEST_HASHER_BLOCK_LEN, hazmat as hmac_hazmat,
 };
-use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 
 /// The largest PRF output, in bytes, the KDFs' block buffers hold: 64, HMAC-SHA512's. A PRF with
@@ -106,24 +105,22 @@ impl<H: HMACParams> sealed::PrfInternal for PRF_HMAC<H> {
         const { assert!(H::BLOCK_LEN <= LARGEST_HASHER_BLOCK_LEN) };
         const { assert!(H::OUTPUT_LEN <= MAX_PRF_OUTPUT_LEN) };
 
-        // [`HmacKey`] takes one `MACKey`, so K_IN is copied and re-typed as the MAC key it is
-        // here. RFC 2104 Section 3 replaces a key longer than a block by its hash, which is
-        // done over the keys in order when their concatenation is that long, so the copy keys
-        // HMAC exactly as the concatenation would and never outgrows a block.
-        let mut k_in = Secret::<[u8; LARGEST_HASHER_BLOCK_LEN]>::new();
-        let k_in_len = if k_in_len(keys) > H::BLOCK_LEN {
-            let mut hash = H::default();
-            for key in keys {
-                hash.do_update(key.ref_to_bytes());
+        // [`HmacKey`] takes one `MACKey`, so K_IN is concatenated into one, typed as the MAC
+        // key it is here. RFC 2104 Section 3 replaces a key longer than a block by its hash,
+        // which is done over the keys in order when their concatenation is that long, so HMAC
+        // is keyed exactly as by the concatenation, and the key never outgrows a block.
+        let mut mac_key = KeyMaterial::<LARGEST_HASHER_BLOCK_LEN>::new();
+        mac_key_in_place(&mut mac_key, |buf| {
+            if k_in_len(keys) > H::BLOCK_LEN {
+                let mut hash = H::default();
+                for key in keys {
+                    hash.do_update(key.ref_to_bytes());
+                }
+                hash.finish_into(&finish_token(), &mut buf[..H::OUTPUT_LEN])
+            } else {
+                k_in_into(keys, buf)
             }
-            hash.finish_into(&finish_token(), &mut k_in[..H::OUTPUT_LEN])
-        } else {
-            k_in_into(keys, &mut k_in[..])
-        };
-        let mac_key = KeyMaterial::<LARGEST_HASHER_BLOCK_LEN>::from_bytes_as_type(
-            &k_in[..k_in_len],
-            KeyType::MACKey,
-        )?;
+        })?;
         // A key-derivation key of any strength derives; what the output may claim is settled
         // by the KDF from the keys' own types, not here.
         Ok(HmacKey::<H>::from_key_material_allow_weak(&mac_key)?)
@@ -170,19 +167,12 @@ where
             "the key-derivation key must be the block cipher's key length",
         ));
     }
-    // The key object takes one `MACKey` of the cipher's length, so K_IN is copied and re-typed
-    // as the MAC key it is here; what the output may claim is settled by the KDF from the
-    // keys' own types.
-    let mut k_in = Secret::<[u8; KEY_LEN]>::new();
-    k_in_into(keys, &mut k_in[..]);
-    let mut mac_key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(&k_in[..], KeyType::MACKey)?;
-    // An all-zero K_IN comes back typed `Zeroized` with no strength, which the cipher's key
-    // object refuses; the `KDF` trait derives from such a key (and types the output `Unknown`),
-    // so the copy is typed as what a key of this length is.
-    do_hazardous_operations(&mut mac_key, |k| {
-        k.set_key_type(KeyType::MACKey)?;
-        k.set_security_strength(SecurityStrength::from_bytes(KEY_LEN))
-    })?;
+    // The key object takes one `MACKey` of the cipher's length, so K_IN is concatenated into
+    // one, typed as the MAC key it is here, whatever its bytes (the `KDF` trait derives from an
+    // all-zero key, and types the output `Unknown`); what the output may claim is settled by the
+    // KDF from the keys' own types.
+    let mut mac_key = KeyMaterial::<KEY_LEN>::new();
+    mac_key_in_place(&mut mac_key, |buf| k_in_into(keys, buf))?;
     // With the type, the length and the strength settled above, the key object has nothing
     // left to refuse.
     BlockCipherKey::<P, CMAC>::from_key_material(&mac_key)

@@ -106,6 +106,7 @@
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec, vec::Vec};
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::Secret;
 
 /// One-shot encode from bytes to a base64-encoded string using a constant-time implementation.
 ///
@@ -178,22 +179,28 @@ pub enum Base64Error {
     /// The input ended one symbol into a block: six bits, which encode no whole byte.
     TruncatedInput,
 
+    /// A [`Base64Decoder`] whose `do_update` or `do_update_out` failed for any reason other than
+    /// padding or a short output buffer decodes nothing more: every later call returns this
+    /// error. Make a new decoder.
+    DecoderFailed,
+
     /// The output buffer of an `_out` function is shorter than its `_out_len` function asks for.
     /// No input was processed; after a `do_update_out` the encoder or decoder is as it was before
     /// the call.
     InsufficientOutputBufferSize,
 }
 
-/// The stateful base64 encoder that supports streaming.
+/// The stateful base64 encoder that supports streaming. The bytes it holds between calls, the
+/// start of an incomplete block, are wiped when it is dropped.
 pub struct Base64Encoder {
-    buf: [u8; 3],
+    buf: Secret<[u8; 3]>,
     vals_in_buf: usize,
 }
 
 impl Base64Encoder {
     /// Create a new instance.
     pub fn new() -> Self {
-        Self { buf: [0; 3], vals_in_buf: 0 }
+        Self { buf: Secret::new(), vals_in_buf: 0 }
     }
 
     fn ct_bin_to_b64(c: u8) -> u8 {
@@ -252,7 +259,7 @@ impl Base64Encoder {
             self.vals_in_buf += 1;
 
             if self.vals_in_buf == 3 {
-                Self::encode_block(&self.buf, &mut out[written..written + 4]);
+                Self::encode_block(&self.buf[..], &mut out[written..written + 4]);
                 written += 4;
                 self.vals_in_buf = 0;
             }
@@ -304,7 +311,7 @@ impl Base64Encoder {
                 self.buf[2] = 0;
             }
             let block = &mut out[written..written + 4];
-            Self::encode_block(&self.buf, block);
+            Self::encode_block(&self.buf[..], block);
             if self.vals_in_buf <= 2 {
                 block[3] = b'=';
             }
@@ -336,17 +343,21 @@ impl Base64Encoder {
     }
 }
 
-/// The stateful base64 decoder that supports streaming.
+/// The stateful base64 decoder that supports streaming. The symbols it holds between calls, the
+/// start of an incomplete block, are wiped when it is dropped. Once a call has failed on input
+/// that is not base64, the decoder refuses every later call with [`Base64Error::DecoderFailed`],
+/// so output cannot silently resume part-way through a message.
 pub struct Base64Decoder {
-    buf: [u8; 4],
+    buf: Secret<[u8; 4]>,
     vals_in_buf: usize,
     skip_whitespace: bool,
+    failed: bool,
 }
 
 impl Base64Decoder {
     /// Create a new instance.
     pub fn new(skip_whitespace: bool) -> Self {
-        Base64Decoder { buf: [0; 4], vals_in_buf: 0, skip_whitespace }
+        Base64Decoder { buf: Secret::new(), vals_in_buf: 0, skip_whitespace, failed: false }
     }
 
     fn ct_b64_to_bin(b: u8) -> u8 {
@@ -411,13 +422,18 @@ impl Base64Decoder {
     /// least [`update_out_len`](Self::update_out_len)`(input.len())` long. Returns the number of
     /// bytes written. On an error `out` is left zeroized; on
     /// [`Base64Error::PaddingEncounteredDuringDoUpdate`] and
-    /// [`Base64Error::InsufficientOutputBufferSize`] the decoder is as it was before the call.
+    /// [`Base64Error::InsufficientOutputBufferSize`] the decoder is as it was before the call, and
+    /// on any other error it is wiped and fails: this and every later call returns
+    /// [`Base64Error::DecoderFailed`].
     pub fn do_update_out<T: AsRef<[u8]>>(
         &mut self,
         input: T,
         out: &mut [u8],
     ) -> Result<usize, Base64Error> {
         out.fill(0);
+        if self.failed {
+            return Err(Base64Error::DecoderFailed);
+        }
         let input = input.as_ref();
         if out.len() < self.update_out_len(input.len()) {
             return Err(Base64Error::InsufficientOutputBufferSize);
@@ -426,6 +442,14 @@ impl Base64Decoder {
             Ok((written, _)) => Ok(written),
             Err(e) => {
                 out.fill(0);
+                // The input is not base64, so the message cannot be decoded and the decoder
+                // refuses to go on, rather than resume part-way through it; padding rolled the
+                // state back for `do_final` to take over.
+                if !matches!(e, Base64Error::PaddingEncounteredDuringDoUpdate) {
+                    self.buf.zeroize();
+                    self.vals_in_buf = 0;
+                    self.failed = true;
+                }
                 Err(e)
             }
         }
@@ -447,7 +471,8 @@ impl Base64Decoder {
         out: &mut [u8],
     ) -> Result<(usize, Option<usize>), Base64Error> {
         // copy the current state so that we can restore it if we encounter a padding character.
-        let starting_state: [u8; 4] = self.buf;
+        let mut starting_state = Secret::<[u8; 4]>::new();
+        starting_state.copy_from_slice(&self.buf[..]);
         let starting_vals_in_block: usize = self.vals_in_buf;
 
         let mut written: usize = 0;
@@ -474,7 +499,7 @@ impl Base64Decoder {
                 // bytes the restored state is about to produce again. In `do_final` the padding
                 // simply ends the data, and the partial block is finished by the caller.
                 if rollback_if_padding {
-                    self.buf = starting_state;
+                    self.buf.copy_from_slice(&starting_state[..]);
                     self.vals_in_buf = starting_vals_in_block;
                     return Err(Base64Error::PaddingEncounteredDuringDoUpdate);
                 }
@@ -525,6 +550,9 @@ impl Base64Decoder {
         out: &mut [u8],
     ) -> Result<usize, Base64Error> {
         out.fill(0);
+        if self.failed {
+            return Err(Base64Error::DecoderFailed);
+        }
         let input = input.as_ref();
         if out.len() < self.final_out_len(input.len()) {
             return Err(Base64Error::InsufficientOutputBufferSize);

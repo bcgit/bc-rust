@@ -172,3 +172,22 @@ fn a_decoding_error_leaves_the_buffer_zeroized() {
     assert!(matches!(err, Base64Error::InvalidB64Character(4)));
     assert_eq!(out, [0; 16]);
 }
+
+#[test]
+fn a_decoding_error_in_do_update_out_wipes_the_decoder_and_fails_it() {
+    let mut decoder = Base64Decoder::new(false);
+    let mut out = [0xFFu8; 16];
+    // "Zm" is held as the start of a block; "9" joins it before the error.
+    assert_eq!(decoder.do_update_out(b"Zm", &mut out).unwrap(), 0);
+    let err = decoder.do_update_out(b"9!", &mut out).unwrap_err();
+    assert!(matches!(err, Base64Error::InvalidB64Character(1)));
+    assert_eq!(decoder.update_out_len(1), 0, "nothing is held");
+
+    // Valid input after the failure is refused, by do_update_out and by do_final_out alike.
+    out.fill(0xFF);
+    assert!(matches!(decoder.do_update_out(b"Zm9v", &mut out), Err(Base64Error::DecoderFailed)));
+    assert_eq!(out, [0u8; 16]);
+    out.fill(0xFF);
+    assert!(matches!(decoder.do_final_out(b"Zm9v", &mut out), Err(Base64Error::DecoderFailed)));
+    assert_eq!(out, [0u8; 16]);
+}

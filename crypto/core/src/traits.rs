@@ -774,9 +774,10 @@ pub trait KDF: AlgorithmInfo {
         if len > KDF_ONE_SHOT_MAX_LEN {
             return Err(KDFError::InvalidLength(ONE_SHOT_TOO_LONG));
         }
-        let mut output_key = KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new();
-        self.derive_key_out(ikm, fixed_info, len, &mut output_key)?;
-        Ok(Box::new(output_key))
+        // Derived into the box, so that no copy of the key is left where it was made.
+        let mut output_key = Box::new(KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new());
+        self.derive_key_out(ikm, fixed_info, len, &mut *output_key)?;
+        Ok(output_key)
     }
 
     /// One-shot over [`derive_key_from_multiple_out`](Self::derive_key_from_multiple_out). Only
@@ -794,9 +795,10 @@ pub trait KDF: AlgorithmInfo {
         if len > KDF_ONE_SHOT_MAX_LEN {
             return Err(KDFError::InvalidLength(ONE_SHOT_TOO_LONG));
         }
-        let mut output_key = KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new();
-        self.derive_key_from_multiple_out(ikms, fixed_info, len, &mut output_key)?;
-        Ok(Box::new(output_key))
+        // Derived into the box, as in `derive_key`.
+        let mut output_key = Box::new(KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new());
+        self.derive_key_from_multiple_out(ikms, fixed_info, len, &mut *output_key)?;
+        Ok(output_key)
     }
 }
 

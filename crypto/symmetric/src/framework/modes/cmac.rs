@@ -170,12 +170,12 @@ impl<P, const BLOCK_LEN: usize> CmacKeyState<P, BLOCK_LEN> {
         // in a `Secret`.
         let mut l: Secret<[u8; BLOCK_LEN]> = Secret::new();
         perm.encrypt_block(&mut l);
-        // Steps 2 and 3.
-        let mut k1: Secret<[u8; BLOCK_LEN]> = Secret::new();
-        Self::dbl(&l, &mut k1);
-        let mut k2: Secret<[u8; BLOCK_LEN]> = Secret::new();
-        Self::dbl(&k1, &mut k2);
-        Self { perm, k1, k2 }
+        // Steps 2 and 3, into the struct's own fields: a `Secret` moved out of a local is not
+        // dropped, so its bytes would stay behind in this frame.
+        let mut state = Self { perm, k1: Secret::new(), k2: Secret::new() };
+        Self::dbl(&l, &mut state.k1);
+        Self::dbl(&state.k1, &mut state.k2);
+        state
     }
 
     /// Sec 6.1 steps 2 and 3: `out = x << 1` if `MSB_1(x) = 0`, else `(x << 1) (+) R_b`. The
