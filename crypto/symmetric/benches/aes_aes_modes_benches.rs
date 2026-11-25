@@ -15,6 +15,11 @@
 //! come out ahead of CBC's. OFB is serial in both directions (Sec 6.4), so its one figure should
 //! match CFB *encryption*, not CTR.
 //!
+//! The `modes::cbc_cs::AES_128` group is CBC-CS3 (`CTS`) on 16 KiB and 5 bytes, so that the final
+//! steals. The three variants differ only in the order the final writes, so one is measured; its
+//! figures should be close to CBC's in each direction, though this group's one-shots write a
+//! separate buffer and the CBC group works in place.
+//!
 //! The `modes::gcm::AES_128` group is GCM against CTR: GCM is CTR plus GHASH over the ciphertext
 //! and AAD (SP 800-38D Sec 7.1), and its CTR half batches exactly as `modes::ctr::AES_128` does, so
 //! the difference between the two groups' 16 KiB encrypt figures is the cost of the table-free
@@ -47,8 +52,8 @@ use bouncycastle_symmetric::aes::{
 };
 use bouncycastle_symmetric::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_symmetric::modes::{
-    Blocks, CBC, CCM, CCM_Packet, CFB, CFB8, CMAC, CTR, Cfb, Cfb8, Ctr, GCM, GCM_NONCE_LEN, GMAC,
-    KW, KWP, OFB, Ofb,
+    Blocks, CBC, CBC_CS3, CCM, CCM_Packet, CFB, CFB8, CMAC, CTR, Cfb, Cfb8, Ctr, GCM,
+    GCM_NONCE_LEN, GMAC, KW, KWP, OFB, Ofb,
 };
 use bouncycastle_symmetric::{Decrypting, Encrypting};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
@@ -148,6 +153,31 @@ fn bench_aes128cbc(c: &mut Criterion) {
             },
             BatchSize::LargeInput,
         )
+    });
+
+    group.finish();
+}
+
+fn bench_cbc_cs_aes128(c: &mut Criterion) {
+    let key = AES128Key::<CBC_CS3>::from_key_material(&key::<16>()).unwrap();
+    let mut rng = iv_rng();
+    let plaintext: Vec<u8> = data().as_flattened().iter().copied().chain([1, 2, 3, 4, 5]).collect();
+    let len = plaintext.len();
+
+    let mut group = c.benchmark_group("modes::cbc_cs::AES_128");
+    group.throughput(Throughput::Bytes(len as u64));
+
+    let mut ciphertext = vec![0u8; len];
+    group.bench_function("16KiB+5 encrypt -- CBC-CS3, one-shot", |b| {
+        b.iter(|| {
+            black_box(key.encrypt_out(&mut rng, black_box(&plaintext), &mut ciphertext).unwrap())
+        })
+    });
+
+    let (_, iv) = key.encrypt_out(&mut rng, &plaintext, &mut ciphertext).unwrap();
+    let mut recovered = vec![0u8; len];
+    group.bench_function("16KiB+5 decrypt -- CBC-CS3, one-shot", |b| {
+        b.iter(|| black_box(key.decrypt_out(&iv, black_box(&ciphertext), &mut recovered).unwrap()))
     });
 
     group.finish();
@@ -763,9 +793,9 @@ fn bench_kw_aes128(c: &mut Criterion) {
 }
 
 criterion_group!(
-    benches, bench_aes128cbc, bench_cfb_aes128, bench_cfb8_aes128, bench_ctr_aes128,
-    bench_ofb_aes128, bench_ecb_aes128, bench_ccm_aes128, bench_ccm_one_shot_pair,
-    bench_gcm_aes128, bench_gcm_aes256, bench_gcm_siv, bench_init, bench_cmac, bench_gmac,
-    bench_kw_aes128
+    benches, bench_aes128cbc, bench_cbc_cs_aes128, bench_cfb_aes128, bench_cfb8_aes128,
+    bench_ctr_aes128, bench_ofb_aes128, bench_ecb_aes128, bench_ccm_aes128,
+    bench_ccm_one_shot_pair, bench_gcm_aes128, bench_gcm_aes256, bench_gcm_siv, bench_init,
+    bench_cmac, bench_gmac, bench_kw_aes128
 );
 criterion_main!(benches);

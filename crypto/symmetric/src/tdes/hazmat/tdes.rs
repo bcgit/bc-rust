@@ -228,10 +228,13 @@ impl BlockPermutation<BLOCK_LEN> for TDESInternal {
 }
 
 /// The cipher modes offered over TDEA (SP 800-38A Appendix E), CMAC through the generic
-/// `BlockCipherKey` (SP 800-38B Sec 5.3's TDEA instantiation) and TKW. No AEAD mode is, so
-/// those names are empty.
+/// `BlockCipherKey` (SP 800-38B Sec 5.3's TDEA instantiation) and TKW. No AEAD mode is, nor
+/// ciphertext stealing, which is implemented over 128-bit blocks only, so those names are empty.
 impl ModeNames for TDESInternal {
     const CBC_ALG_NAME: &'static str = "TDES_CBC";
+    const CBC_CS1_ALG_NAME: &'static str = "";
+    const CBC_CS2_ALG_NAME: &'static str = "";
+    const CBC_CS3_ALG_NAME: &'static str = "";
     const CCM_ALG_NAME: &'static str = "";
     const CFB_ALG_NAME: &'static str = "TDES_CFB";
     const CFB8_ALG_NAME: &'static str = "TDES_CFB8";

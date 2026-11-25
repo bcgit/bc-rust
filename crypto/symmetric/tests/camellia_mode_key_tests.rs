@@ -38,6 +38,20 @@ fn padded_keys_pass_the_symmetric_cipher_framework() {
 }
 
 #[test]
+fn stealing_mode_keys_pass_the_symmetric_cipher_framework() {
+    mode_keys::stealing_modes::<Camellia128Internal, 16>();
+    mode_keys::stealing_modes::<Camellia192Internal, 24>();
+    mode_keys::stealing_modes::<Camellia256Internal, 32>();
+}
+
+#[test]
+fn ciphertext_stealing_keys_agree_with_cbc() {
+    mode_keys::cbc_cs_agrees_with_cbc::<Camellia128Internal, 16>();
+    mode_keys::cbc_cs_agrees_with_cbc::<Camellia192Internal, 24>();
+    mode_keys::cbc_cs_agrees_with_cbc::<Camellia256Internal, 32>();
+}
+
+#[test]
 fn stream_mode_keys_pass_the_stream_cipher_framework() {
     mode_keys::stream_modes::<Camellia128Internal, 16>();
     mode_keys::stream_modes::<Camellia192Internal, 24>();

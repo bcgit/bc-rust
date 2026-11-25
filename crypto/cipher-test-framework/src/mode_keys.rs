@@ -31,7 +31,8 @@ use bouncycastle_symmetric::BlockCipherKey;
 use bouncycastle_symmetric::modes::hazmat::ecb::ECB;
 use bouncycastle_symmetric::modes::hazmat::gcm_siv::GcmSivPermutation;
 use bouncycastle_symmetric::modes::{
-    Blocks, CBC, CCM_Packet, CFB, CFB8, CMAC, CTR, GCM, GCM_SIV, GMAC, KW, KWP, OFB,
+    Blocks, CBC, CBC_CS_FINAL_LEN, CBC_CS1, CBC_CS2, CBC_CS3, CCM_Packet, CFB, CFB8, CMAC, CTR,
+    GCM, GCM_SIV, GMAC, KW, KWP, OFB,
 };
 use bouncycastle_symmetric::padding::{NoPadding, PKCS7};
 
@@ -56,6 +57,9 @@ pub fn construction<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     suite::<P, CBC<Blocks>, KEY_LEN>(P::CBC_ALG_NAME);
     suite::<P, CBC<PKCS7>, KEY_LEN>(P::CBC_ALG_NAME);
     suite::<P, CBC<NoPadding>, KEY_LEN>(P::CBC_ALG_NAME);
+    suite::<P, CBC_CS1, KEY_LEN>(P::CBC_CS1_ALG_NAME);
+    suite::<P, CBC_CS2, KEY_LEN>(P::CBC_CS2_ALG_NAME);
+    suite::<P, CBC_CS3, KEY_LEN>(P::CBC_CS3_ALG_NAME);
     suite::<P, ECB<Blocks>, KEY_LEN>(P::ECB_ALG_NAME);
     suite::<P, ECB<PKCS7>, KEY_LEN>(P::ECB_ALG_NAME);
     suite::<P, CFB, KEY_LEN>(P::CFB_ALG_NAME);
@@ -96,6 +100,64 @@ pub fn padded_modes<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     framework.required_alignment = 16;
     framework.test_key::<KEY_LEN, 16, 16, _>(&make_key::<P, CBC<NoPadding>, KEY_LEN>(), &mut rng());
     framework.test_key::<KEY_LEN, 0, 16, _>(&make_key::<P, ECB<NoPadding>, KEY_LEN>(), &mut rng());
+}
+
+/// The symmetric-cipher suite over the three ciphertext-stealing modes, which take a message of
+/// at least one block: every shorter one must be refused, in both directions.
+pub fn stealing_modes<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
+    let mut framework = TestFrameworkSymmetricCipher::new();
+    framework.min_message_len = 16;
+    framework.test_key::<KEY_LEN, 16, CBC_CS_FINAL_LEN, _>(
+        &make_key::<P, CBC_CS1, KEY_LEN>(),
+        &mut rng(),
+    );
+    framework.test_key::<KEY_LEN, 16, CBC_CS_FINAL_LEN, _>(
+        &make_key::<P, CBC_CS2, KEY_LEN>(),
+        &mut rng(),
+    );
+    framework.test_key::<KEY_LEN, 16, CBC_CS_FINAL_LEN, _>(
+        &make_key::<P, CBC_CS3, KEY_LEN>(),
+        &mut rng(),
+    );
+}
+
+/// Under a pinned IV, each ciphertext-stealing key is the `CBC<Blocks>` key over the same
+/// permutation, as the Addendum to NIST SP 800-38A defines the three variants: one block is its
+/// CBC encryption; a message of whole blocks is CBC under CBC-CS1 and CBC-CS2 and CBC with the last
+/// two blocks swapped under CBC-CS3; and with a partial last block of `d` bytes it is CBC over the
+/// zero-padded message with the second-to-last block cut to `d` bytes (Sec 2 steps 2 to 4), in
+/// CBC's order under CBC-CS1 and with the last two portions swapped under CBC-CS2 and CBC-CS3.
+pub fn cbc_cs_agrees_with_cbc<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
+    let iv = [0x5Au8; 16];
+    let cbc = make_key::<P, CBC<Blocks>, KEY_LEN>();
+    let cs1 = make_key::<P, CBC_CS1, KEY_LEN>();
+    let cs2 = make_key::<P, CBC_CS2, KEY_LEN>();
+    let cs3 = make_key::<P, CBC_CS3, KEY_LEN>();
+    for len in [16usize, 48, 49, 63] {
+        let msg: Vec<u8> = (0..len).map(|i| (i * 7 + 3) as u8).collect();
+        let mut c = msg.clone();
+        c.resize(len.next_multiple_of(16), 0);
+        cbc.encrypt_inplace_nonce(&iv, &mut c).unwrap();
+
+        let (n, d) = (len.div_ceil(16), len - (len.div_ceil(16) - 1) * 16);
+        let in_order = if n == 1 {
+            c.clone()
+        } else {
+            [&c[..(n - 2) * 16], &c[(n - 2) * 16..(n - 2) * 16 + d], &c[(n - 1) * 16..]].concat()
+        };
+        let swapped = if n == 1 {
+            c.clone()
+        } else {
+            [&c[..(n - 2) * 16], &c[(n - 1) * 16..], &c[(n - 2) * 16..(n - 2) * 16 + d]].concat()
+        };
+        let partial = d < 16;
+        assert_eq!(cs1.encrypt_nonce(&iv, &msg).unwrap(), in_order, "CBC-CS1, {len} bytes");
+        let cs2_expected = if partial { &swapped } else { &in_order };
+        assert_eq!(&cs2.encrypt_nonce(&iv, &msg).unwrap(), cs2_expected, "CBC-CS2, {len} bytes");
+        assert_eq!(cs3.encrypt_nonce(&iv, &msg).unwrap(), swapped, "CBC-CS3, {len} bytes");
+        assert_eq!(cs1.decrypt(&iv, &in_order).unwrap(), msg, "CBC-CS1 decrypts, {len} bytes");
+        assert_eq!(cs3.decrypt(&iv, &swapped).unwrap(), msg, "CBC-CS3 decrypts, {len} bytes");
+    }
 }
 
 /// The stream-cipher suite over CFB, CFB8, OFB and CTR.

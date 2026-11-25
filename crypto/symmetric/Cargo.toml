@@ -106,6 +106,10 @@ name = "modes_cbc_tests"
 path = "tests/modes/cbc_tests.rs"
 
 [[test]]
+name = "modes_cbc_cs_tests"
+path = "tests/modes/cbc_cs_tests.rs"
+
+[[test]]
 name = "modes_ccm_tests"
 path = "tests/modes/ccm_tests.rs"
 

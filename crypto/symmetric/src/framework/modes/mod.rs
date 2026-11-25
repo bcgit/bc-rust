@@ -12,6 +12,7 @@
 //! | Mode | Mod | Spec | Notes |
 //! |---|---|---|---|
 //! | CBC | [`cbc`] | SP 800-38A Sec 6.2 | Cipher Block Chaining |
+//! | CBC-CS1, CBC-CS2, CBC-CS3 | [`cbc_cs`] | SP 800-38A Addendum (October 2010) | CBC with ciphertext stealing: any length from one block up, the ciphertext as long as the plaintext; [`CTS`] is CBC-CS3 |
 //! | CCM | [`ccm`] | SP 800-38C | Counter with CBC-MAC. **Authenticated**: CTR plus CBC-MAC, with a tag and AAD |
 //! | CMAC | [`cmac`] | SP 800-38B | A MAC ([`MACGenerator`] / [`MACVerifier`]), not a cipher: 64- or 128-bit block ciphers, one block of tag |
 //! | CFB | [`cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`), i.e. CFB128 for AES |
@@ -27,10 +28,15 @@
 //! | TKW | [`tkw`] | SP 800-38F Sec 7 | TDEA Key Wrap: KW at 64-bit blocks and 32-bit semiblocks. **Legacy only** |
 //! | XTS | [`xts`] | SP 800-38E (IEEE Std 1619-2007) | XEX with ciphertext stealing, for storage: one data unit at a time under a tweak, no expansion |
 //!
-//! They divide three ways, plus the key-wrap trio and XTS.
+//! They divide three ways, plus ciphertext stealing, the key-wrap trio and XTS.
 //!
 //! **ECB and CBC are block ciphers** ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]): whole
 //! blocks in, whole blocks out, and arbitrary-length data needs the padding layer.
+//!
+//! **CBC-CS1, CBC-CS2 and CBC-CS3 are CBC with ciphertext stealing** ([`SymmetricCipherEncryptor`]
+//! / [`SymmetricCipherDecryptor`]): data of any length of at least one block, with no padding, so
+//! the ciphertext is exactly as long as the plaintext. The three differ only in the order of the
+//! last two portions of the ciphertext; see [`cbc_cs`].
 //!
 //! **CFB, CFB8, OFB and CTR are stream ciphers** ([`StreamCipherEncryptor`] /
 //! [`StreamCipherDecryptor`]): any length in, the same length out, no padding, no finalization --
@@ -53,14 +59,15 @@
 //! place under a tweak naming its position, and its ciphertext is no longer than the plaintext.
 //! It is unauthenticated and has no streaming API; see the [`xts`] security notes.
 //!
-//! CBC, CFB, CFB8, OFB and CTR all generate their own init data, or take the caller's through the
-//! key's `_nonce` forms: an IV for the first four, a nonce for CTR, which is shorter than a block
+//! CBC, CBC-CS, CFB, CFB8, OFB and CTR all generate their own init data, or take the caller's
+//! through the key's `_nonce` forms: an IV for the first five, a nonce for CTR, which is shorter than a block
 //! because the rest of the counter block is the counter. ECB has
 //! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block, which is
 //! why it lives under [`hazmat`] -- see [`hazmat::ecb::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
 //!
-//! Each mode is also a **mode type** -- [`CBC`], [`CCM`], [`CCM_Packet`], [`CFB`], [`CFB8`],
+//! Each mode is also a **mode type** -- [`CBC`], [`CBC_CS1`], [`CBC_CS2`], [`CBC_CS3`] (and its
+//! other name [`CTS`]), [`CCM`], [`CCM_Packet`], [`CFB`], [`CFB8`],
 //! [`CTR`], [`GCM`], [`GCM_SIV`], [`OFB`], [`hazmat::ecb::ECB`], the MACs [`CMAC`] and [`GMAC`], and the key
 //! wraps [`KW`], [`KWP`] and [`TKW`] -- the `M` a mode-bound key such as
 //! `bouncycastle_symmetric::aes::AES128Key<M>` is parameterised by. The mode type implements the hazmat mode
@@ -136,7 +143,7 @@
 //! # Choosing between the modes
 //!
 //! **For a new design, use [`gcm`].** It is authenticated, and an unauthenticated
-//! mode is almost never what a new protocol wants: the other six leave the ciphertext malleable in
+//! mode is almost never what a new protocol wants: the unauthenticated ones leave the ciphertext malleable in
 //! specific, exploitable ways. While it is possible to bolt a MAC on afterwards,
 //! this design has some subtleties that most people get wrong.
 //!
@@ -150,7 +157,7 @@
 //!
 //! ECB is not a candidate for data at all (below). Between the unauthenticated modes:
 //!
-//! The block cipher modes: [`cbc`], [`ctr`], [`cfb`], [`cfb8`] and [`ofb`], while they do provide
+//! The block cipher modes: [`cbc`], [`cbc_cs`], [`ctr`], [`cfb`], [`cfb8`] and [`ofb`], while they do provide
 //! reasonable confidentiality, do not provide ciphertext authentication, meaning that they do not
 //! protect against ciphertext malleability attacks where an active attacker will manipulate the
 //! ciphertext and then hand it to a decryption oracle to see how the oracle behaves. As such, these
@@ -182,6 +189,7 @@
 //! blocks start repeating.
 
 pub mod cbc;
+pub mod cbc_cs;
 pub mod ccm;
 pub mod cfb;
 pub mod cfb8;
@@ -208,6 +216,10 @@ pub mod xts;
 // otherwise inline them and document every one twice, here and in its own module.
 #[doc(no_inline)]
 pub use cbc::{CBC, Cbc};
+#[doc(no_inline)]
+pub use cbc_cs::{
+    CBC_CS, CBC_CS_FINAL_LEN, CBC_CS1, CBC_CS2, CBC_CS3, CS1, CS2, CS3, CTS, CbcCs, CsVariant,
+};
 #[doc(no_inline)]
 pub use ccm::{
     CCM, CCM_Packet, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor, CcmPacketEncryptor,
@@ -251,6 +263,12 @@ pub struct Blocks;
 pub trait ModeNames {
     /// Reported by [`Cbc`].
     const CBC_ALG_NAME: &'static str;
+    /// Reported by [`CbcCs`] under [`CBC_CS1`].
+    const CBC_CS1_ALG_NAME: &'static str;
+    /// Reported by [`CbcCs`] under [`CBC_CS2`].
+    const CBC_CS2_ALG_NAME: &'static str;
+    /// Reported by [`CbcCs`] under [`CBC_CS3`], and so under [`CTS`].
+    const CBC_CS3_ALG_NAME: &'static str;
     /// Reported by [`CcmPacketEncryptor`] and [`CcmPacketDecryptor`].
     const CCM_ALG_NAME: &'static str;
     /// Reported by [`Cfb`].

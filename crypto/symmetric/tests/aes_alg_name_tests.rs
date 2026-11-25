@@ -20,8 +20,13 @@ use bouncycastle_symmetric::aes::{
     AES_KWP_192, AES_KWP_256, AES_OFB_128, AES_OFB_192, AES_OFB_256, AES128Key, CCM_NONCE_LEN,
     CCM_TAG_LEN,
 };
+use bouncycastle_symmetric::aes::{
+    AES_CBC_CS1_128, AES_CBC_CS1_192, AES_CBC_CS1_256, AES_CBC_CS2_128, AES_CBC_CS2_192,
+    AES_CBC_CS2_256, AES_CBC_CS3_128, AES_CBC_CS3_192, AES_CBC_CS3_256, AES_CTS_128, AES_CTS_192,
+    AES_CTS_256,
+};
 use bouncycastle_symmetric::modes::hazmat::ecb::{ECB, Ecb};
-use bouncycastle_symmetric::modes::{CBC, Cbc, Gcm, OFB, Ofb};
+use bouncycastle_symmetric::modes::{CBC, CBC_CS1, CBC_CS2, CBC_CS3, CTS, Cbc, Gcm, OFB, Ofb};
 use bouncycastle_symmetric::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
@@ -267,4 +272,81 @@ fn keys_report_their_algorithm() {
     assert_eq!(<AES128Key<GCM> as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
     assert_eq!(<AES192Key<GCM> as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
     assert_eq!(<AES256Key<GCM_SIV> as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
+}
+
+/// Each variant reports its NIST name at each key length, and `CTS`, which is CBC-CS3, reports
+/// CBC-CS3's, through the worker aliases and the keys alike.
+#[test]
+fn cbc_cs() {
+    use SecurityStrength::*;
+    check::<AES_CBC_CS1_128<'_, Encrypting>, AES_CBC_CS1_128<'_, Decrypting>>(
+        "AES_CBC_CS1_128", _128bit,
+    );
+    check::<AES_CBC_CS1_192<'_, Encrypting>, AES_CBC_CS1_192<'_, Decrypting>>(
+        "AES_CBC_CS1_192", _192bit,
+    );
+    check::<AES_CBC_CS1_256<'_, Encrypting>, AES_CBC_CS1_256<'_, Decrypting>>(
+        "AES_CBC_CS1_256", _256bit,
+    );
+    check::<AES_CBC_CS2_128<'_, Encrypting>, AES_CBC_CS2_128<'_, Decrypting>>(
+        "AES_CBC_CS2_128", _128bit,
+    );
+    check::<AES_CBC_CS2_192<'_, Encrypting>, AES_CBC_CS2_192<'_, Decrypting>>(
+        "AES_CBC_CS2_192", _192bit,
+    );
+    check::<AES_CBC_CS2_256<'_, Encrypting>, AES_CBC_CS2_256<'_, Decrypting>>(
+        "AES_CBC_CS2_256", _256bit,
+    );
+    check::<AES_CBC_CS3_128<'_, Encrypting>, AES_CBC_CS3_128<'_, Decrypting>>(
+        "AES_CBC_CS3_128", _128bit,
+    );
+    check::<AES_CBC_CS3_192<'_, Encrypting>, AES_CBC_CS3_192<'_, Decrypting>>(
+        "AES_CBC_CS3_192", _192bit,
+    );
+    check::<AES_CBC_CS3_256<'_, Encrypting>, AES_CBC_CS3_256<'_, Decrypting>>(
+        "AES_CBC_CS3_256", _256bit,
+    );
+    check::<AES_CTS_128<'_, Encrypting>, AES_CTS_128<'_, Decrypting>>("AES_CBC_CS3_128", _128bit);
+    check::<AES_CTS_192<'_, Encrypting>, AES_CTS_192<'_, Decrypting>>("AES_CBC_CS3_192", _192bit);
+    check::<AES_CTS_256<'_, Encrypting>, AES_CTS_256<'_, Decrypting>>("AES_CBC_CS3_256", _256bit);
+
+    use bouncycastle_symmetric::aes::{AES192Key, AES256Key};
+    assert_eq!(<AES128Key<CBC_CS1> as Algorithm>::ALG_NAME, "AES_CBC_CS1_128");
+    assert_eq!(<AES192Key<CBC_CS2> as Algorithm>::ALG_NAME, "AES_CBC_CS2_192");
+    assert_eq!(<AES256Key<CBC_CS3> as Algorithm>::ALG_NAME, "AES_CBC_CS3_256");
+    assert_eq!(<AES128Key<CTS> as Algorithm>::ALG_NAME, "AES_CBC_CS3_128");
+    assert_eq!(<CBC_CS1 as Mode<AES128Internal>>::KEY_TYPE, KeyType::SymmetricCipherKey);
+    assert_eq!(<CTS as Mode<AES128Internal>>::ALG_NAME, "AES_CBC_CS3_128");
+}
+
+/// `CTS` is not a fourth mode but CBC-CS3 under another name: one type at the mode type, the key and
+/// the worker alias, and the keys hand out exactly the aliased workers.
+#[test]
+fn cts_is_cbc_cs3() {
+    use core::marker::PhantomData;
+    fn same<T>(_: PhantomData<T>, _: PhantomData<T>) {}
+    same(PhantomData::<CTS>, PhantomData::<CBC_CS3>);
+    same(PhantomData::<AES128Key<CTS>>, PhantomData::<AES128Key<CBC_CS3>>);
+    same(
+        PhantomData::<AES_CTS_128<'static, Encrypting>>,
+        PhantomData::<AES_CBC_CS3_128<'static, Encrypting>>,
+    );
+    same(
+        PhantomData::<AES_CTS_256<'static, Decrypting>>,
+        PhantomData::<AES_CBC_CS3_256<'static, Decrypting>>,
+    );
+
+    let mut rng = HashDRBG_SHA512::new_from_os();
+    let key = key_for::<CTS>();
+    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let _: AES_CBC_CS3_128<'_, Encrypting> = enc;
+    let _: AES_CTS_128<'_, Decrypting> = key.create_decryptor(&iv);
+    let key = key_for::<CBC_CS1>();
+    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let _: AES_CBC_CS1_128<'_, Encrypting> = enc;
+    let _: AES_CBC_CS1_128<'_, Decrypting> = key.create_decryptor(&iv);
+    let key = key_for::<CBC_CS2>();
+    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let _: AES_CBC_CS2_128<'_, Encrypting> = enc;
+    let _: AES_CBC_CS2_128<'_, Decrypting> = key.create_decryptor(&iv);
 }

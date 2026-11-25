@@ -11,8 +11,9 @@ use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_symmetric::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_symmetric::modes::{
-    Blocks, CBC, CCM, CCM_Packet, CFB, CFB8, CTR, Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb,
-    Cfb8, Cmac, Ctr, Gcm, Gmac, Kw, Kwp, ModeNames, OFB, Ofb,
+    Blocks, CBC, CBC_CS1, CBC_CS2, CBC_CS3, CCM, CCM_Packet, CFB, CFB8, CS1, CS2, CS3, CTR, CTS,
+    Cbc, CbcCs, CcmPacketDecryptor, CcmPacketEncryptor, Cfb, Cfb8, Cmac, Ctr, Gcm, Gmac, Kw, Kwp,
+    ModeNames, OFB, Ofb,
 };
 use bouncycastle_symmetric::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
@@ -30,6 +31,9 @@ fn the_toy_names_every_mode_differently() {
     let names = [
         Toy::ALG_NAME,
         Toy::CBC_ALG_NAME,
+        Toy::CBC_CS1_ALG_NAME,
+        Toy::CBC_CS2_ALG_NAME,
+        Toy::CBC_CS3_ALG_NAME,
         Toy::CCM_ALG_NAME,
         Toy::CFB_ALG_NAME,
         Toy::CFB8_ALG_NAME,
@@ -53,6 +57,12 @@ fn the_toy_names_every_mode_differently() {
 fn each_mode_reports_its_own_name() {
     check::<Cbc<'_, Toy, Encrypting, 16>>(Toy::CBC_ALG_NAME);
     check::<Cbc<'_, Toy, Decrypting, 16>>(Toy::CBC_ALG_NAME);
+    check::<CbcCs<'_, Toy, Encrypting, CS1>>(Toy::CBC_CS1_ALG_NAME);
+    check::<CbcCs<'_, Toy, Decrypting, CS1>>(Toy::CBC_CS1_ALG_NAME);
+    check::<CbcCs<'_, Toy, Encrypting, CS2>>(Toy::CBC_CS2_ALG_NAME);
+    check::<CbcCs<'_, Toy, Decrypting, CS2>>(Toy::CBC_CS2_ALG_NAME);
+    check::<CbcCs<'_, Toy, Encrypting, CS3>>(Toy::CBC_CS3_ALG_NAME);
+    check::<CbcCs<'_, Toy, Decrypting, CS3>>(Toy::CBC_CS3_ALG_NAME);
     check::<Ecb<'_, Toy, Encrypting, 16>>(Toy::ECB_ALG_NAME);
     check::<Ecb<'_, Toy, Decrypting, 16>>(Toy::ECB_ALG_NAME);
     check::<Cfb<'_, Toy, Encrypting, 16>>(Toy::CFB_ALG_NAME);
@@ -101,6 +111,9 @@ fn each_mode_type_asks_for_a_cipher_key() {
         assert_eq!(M::KEY_TYPE, KeyType::SymmetricCipherKey, "{name}");
     }
     check::<CBC<Blocks>>(Toy::CBC_ALG_NAME);
+    check::<CBC_CS1>(Toy::CBC_CS1_ALG_NAME);
+    check::<CBC_CS2>(Toy::CBC_CS2_ALG_NAME);
+    check::<CBC_CS3>(Toy::CBC_CS3_ALG_NAME);
     check::<CBC<PKCS7>>(Toy::CBC_ALG_NAME);
     check::<CBC<NoPadding>>(Toy::CBC_ALG_NAME);
     check::<ECB<Blocks>>(Toy::ECB_ALG_NAME);
@@ -112,4 +125,14 @@ fn each_mode_type_asks_for_a_cipher_key() {
     check::<OFB>(Toy::OFB_ALG_NAME);
     check::<CCM<12, 16>>(Toy::CCM_ALG_NAME);
     check::<CCM_Packet<12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
+}
+
+/// Each ciphertext-stealing mode type carries its variant's name, and `CTS`, which is `CBC_CS3`,
+/// CBC-CS3's.
+#[test]
+fn each_cbc_cs_mode_type_reports_its_variant() {
+    assert_eq!(<CBC_CS1 as Mode<Toy>>::ALG_NAME, Toy::CBC_CS1_ALG_NAME);
+    assert_eq!(<CBC_CS2 as Mode<Toy>>::ALG_NAME, Toy::CBC_CS2_ALG_NAME);
+    assert_eq!(<CBC_CS3 as Mode<Toy>>::ALG_NAME, Toy::CBC_CS3_ALG_NAME);
+    assert_eq!(<CTS as Mode<Toy>>::ALG_NAME, Toy::CBC_CS3_ALG_NAME);
 }

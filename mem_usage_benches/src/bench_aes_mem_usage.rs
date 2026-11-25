@@ -61,14 +61,25 @@
 //! A function's frame is its largest `.cfi_def_cfa_offset`, and the v0 names tell the generic
 //! instances apart. Off Linux the link step fails for want of a Linux linker, after the `.s` files
 //! are written to `target/x86_64-unknown-linux-gnu/release/deps/`.
+//!
+//! # CBC-CS
+//!
+//! The `cbc_cs_*` benches measure the one-shots of the `CBC_CS1`, `CBC_CS2` and `CBC_CS3` keys
+//! (`CTS` is `CBC_CS3`), whose figures are in the docs of `AES_CBC_CS1_128`. They are read the same
+//! way as the XTS ones, with `main` calling `cbc_cs_all`.
 
 #![allow(dead_code)]
 
 use bouncycastle::core::hazmat::BlockPermutation;
-use bouncycastle::core::symmetric_key::FromKeyMaterial;
+use bouncycastle::core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
+};
 use bouncycastle::symmetric::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::symmetric::aes::{XTS_AES_128, XTS_AES_256};
-use bouncycastle::symmetric::modes::XTSKey;
+use bouncycastle::symmetric::aes::{
+    AES_CBC_CS1_128, AES_CBC_CS3_256, AES128Key, AES192Key, AES256Key, XTS_AES_128, XTS_AES_256,
+};
+use bouncycastle::symmetric::modes::{CBC_CS_FINAL_LEN, CBC_CS1, CBC_CS2, CBC_CS3, XTSKey};
+use bouncycastle::symmetric::{Decrypting, Encrypting};
 
 use mem_usage_benches::block_cipher_mem_usage as bench;
 
@@ -110,6 +121,8 @@ fn print_struct_sizes() {
     bench::print_struct_size::<AES256Internal>("AES256Internal");
     bench::print_struct_size::<XTS_AES_128>("XTS_AES_128");
     bench::print_struct_size::<XTS_AES_256>("XTS_AES_256");
+    bench::print_struct_size::<AES_CBC_CS1_128<'static, Encrypting>>("AES_CBC_CS1_128 encryptor");
+    bench::print_struct_size::<AES_CBC_CS3_256<'static, Decrypting>>("AES_CBC_CS3_256 decryptor");
 }
 
 /// The XTS key, built out of line so that its frame is a sibling of the operation's.
@@ -173,6 +186,70 @@ fn xts_all() {
     xts_decrypt::<AES256Internal, 64>("XTS_AES_256", &XTS_KEY_256);
 }
 
+/// The message the CBC-CS benches process: seven whole blocks and seven bytes. Encryption runs
+/// CBC over the six blocks it releases and steals in the final; decryption releases them through
+/// CBC's four- and two-block paths and then undoes the stealing a block at a time. The message and
+/// the output are the caller's buffers, so beyond which of those paths run, the call's stack does
+/// not depend on the length.
+const CBC_CS_MESSAGE_LEN: usize = 119;
+const CBC_CS_IV: [u8; 16] = [0xa5; 16];
+
+/// A CBC-CS key, built out of line so that its frame is a sibling of the operation's.
+#[inline(never)]
+fn cbc_cs_load<K: FromKeyMaterial<N>, const N: usize>(bytes: &[u8; N]) -> K {
+    K::from_key_material(&bench::key(bytes)).unwrap()
+}
+
+// As for XTS, `black_box` holds the result inside `measure`, and the output, which is the caller's
+// buffer, is printed after, so that the closure's frame is the call's and nothing else.
+
+/// CBC-CS `encrypt_nonce_out` of one [`CBC_CS_MESSAGE_LEN`]-byte message.
+fn cbc_cs_encrypt<K, const N: usize>(name: &str, bytes: &[u8; N])
+where
+    K: FromKeyMaterial<N> + SymmetricEncryptionKey<N, 16, CBC_CS_FINAL_LEN>,
+{
+    eprintln!("{name}::encrypt_nonce_out, {CBC_CS_MESSAGE_LEN} B");
+    let key: K = cbc_cs_load(bytes);
+    let plaintext = [0x11u8; CBC_CS_MESSAGE_LEN];
+    let mut ciphertext = [0u8; CBC_CS_MESSAGE_LEN];
+    bench::measure(|| {
+        core::hint::black_box(
+            key.encrypt_nonce_out(&CBC_CS_IV, &plaintext, &mut ciphertext).unwrap(),
+        );
+    });
+    print!("{ciphertext:x?}");
+}
+
+/// CBC-CS `decrypt_out` of one [`CBC_CS_MESSAGE_LEN`]-byte ciphertext.
+fn cbc_cs_decrypt<K, const N: usize>(name: &str, bytes: &[u8; N])
+where
+    K: FromKeyMaterial<N> + SymmetricDecryptionKey<N, 16, CBC_CS_FINAL_LEN>,
+{
+    eprintln!("{name}::decrypt_out, {CBC_CS_MESSAGE_LEN} B");
+    let key: K = cbc_cs_load(bytes);
+    let ciphertext = [0x11u8; CBC_CS_MESSAGE_LEN];
+    let mut plaintext = [0u8; CBC_CS_MESSAGE_LEN];
+    bench::measure(|| {
+        core::hint::black_box(key.decrypt_out(&CBC_CS_IV, &ciphertext, &mut plaintext).unwrap());
+    });
+    print!("{plaintext:x?}");
+}
+
+/// Every CBC-CS bench, so that a build with `main` calling this keeps all of them for the
+/// frame-layout reading.
+fn cbc_cs_all() {
+    cbc_cs_encrypt::<AES128Key<CBC_CS1>, 16>("AES128Key<CBC_CS1>", &KEY_128);
+    cbc_cs_decrypt::<AES128Key<CBC_CS1>, 16>("AES128Key<CBC_CS1>", &KEY_128);
+    cbc_cs_encrypt::<AES128Key<CBC_CS2>, 16>("AES128Key<CBC_CS2>", &KEY_128);
+    cbc_cs_decrypt::<AES128Key<CBC_CS2>, 16>("AES128Key<CBC_CS2>", &KEY_128);
+    cbc_cs_encrypt::<AES128Key<CBC_CS3>, 16>("AES128Key<CBC_CS3>", &KEY_128);
+    cbc_cs_decrypt::<AES128Key<CBC_CS3>, 16>("AES128Key<CBC_CS3>", &KEY_128);
+    cbc_cs_encrypt::<AES192Key<CBC_CS3>, 24>("AES192Key<CBC_CS3>", &KEY_192);
+    cbc_cs_decrypt::<AES192Key<CBC_CS3>, 24>("AES192Key<CBC_CS3>", &KEY_192);
+    cbc_cs_encrypt::<AES256Key<CBC_CS3>, 32>("AES256Key<CBC_CS3>", &KEY_256);
+    cbc_cs_decrypt::<AES256Key<CBC_CS3>, 32>("AES256Key<CBC_CS3>", &KEY_256);
+}
+
 fn main() {
     print_struct_sizes()
     // bench::do_nothing()
@@ -207,4 +284,7 @@ fn main() {
     // xts_key_construction::<XTS_AES_256, 64>("XTS_AES_256", &XTS_KEY_256)
     // xts_encrypt::<AES256Internal, 64>("XTS_AES_256", &XTS_KEY_256)
     // xts_decrypt::<AES256Internal, 64>("XTS_AES_256", &XTS_KEY_256)
+    // cbc_cs_all()
+    // cbc_cs_encrypt::<AES128Key<CBC_CS3>, 16>("AES128Key<CBC_CS3>", &KEY_128)
+    // cbc_cs_decrypt::<AES128Key<CBC_CS3>, 16>("AES128Key<CBC_CS3>", &KEY_128)
 }

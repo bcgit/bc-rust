@@ -36,6 +36,20 @@ fn padded_keys_pass_the_symmetric_cipher_framework() {
 }
 
 #[test]
+fn stealing_mode_keys_pass_the_symmetric_cipher_framework() {
+    mode_keys::stealing_modes::<ARIA128Internal, 16>();
+    mode_keys::stealing_modes::<ARIA192Internal, 24>();
+    mode_keys::stealing_modes::<ARIA256Internal, 32>();
+}
+
+#[test]
+fn ciphertext_stealing_keys_agree_with_cbc() {
+    mode_keys::cbc_cs_agrees_with_cbc::<ARIA128Internal, 16>();
+    mode_keys::cbc_cs_agrees_with_cbc::<ARIA192Internal, 24>();
+    mode_keys::cbc_cs_agrees_with_cbc::<ARIA256Internal, 32>();
+}
+
+#[test]
 fn stream_mode_keys_pass_the_stream_cipher_framework() {
     mode_keys::stream_modes::<ARIA128Internal, 16>();
     mode_keys::stream_modes::<ARIA192Internal, 24>();
