@@ -27,12 +27,20 @@ pub struct TestFrameworkSymmetricCipher {
     /// every other length while a stream of it is refused, and the test also checks that one byte
     /// more is refused at the update and one byte fewer at the final, on both sides.
     pub fixed_message_len: Option<usize>,
+    /// For [`test_key`](Self::test_key): the shortest message the pair accepts. 0 (the default)
+    /// means every length, the empty message included. A cipher defined only on messages of at
+    /// least one block -- CBC with ciphertext stealing -- sets the block length here: every
+    /// shorter length must then be refused with `InvalidInputLength`, by `encrypt_out` and the
+    /// streaming `do_encrypt_final` and, as a ciphertext, by `decrypt_out` and the streaming
+    /// `do_decrypt_final`, each one-shot leaving its buffer zeroized, which the test asserts in
+    /// place of a round trip.
+    pub min_message_len: usize,
 }
 
 impl TestFrameworkSymmetricCipher {
     ///
     pub fn new() -> Self {
-        Self { required_alignment: 1, fixed_message_len: None }
+        Self { required_alignment: 1, fixed_message_len: None, min_message_len: 0 }
     }
 
     /// The [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] form of
@@ -66,6 +74,52 @@ impl TestFrameworkSymmetricCipher {
         // one-shot round trip, every (accepted) length; every other length must be refused
         for len in 0..=max_len {
             let msg = &DUMMY_SEED[..len];
+            if len < self.min_message_len {
+                // too short to encrypt, through the one-shot and the stream; the one-shot's buffer
+                // comes back zeroized rather than with its stale contents
+                let mut ct = vec![0xA5u8; encrypt_out_len(len) + FINAL_LEN];
+                match key.encrypt_out(rng, msg, &mut ct) {
+                    Err(SymmetricCipherError::InvalidInputLength(_)) => assert!(
+                        ct.iter().all(|&b| b == 0),
+                        "len {len}: encrypt_out must zeroize its buffer when it refuses the length"
+                    ),
+                    other => {
+                        panic!("len {len} is below the minimum and must be refused, got {other:?}")
+                    }
+                }
+                let (mut enc, init_data) = key.create_encryptor(rng).unwrap();
+                let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
+                enc.do_encrypt_out(msg, &mut buf).unwrap();
+                assert!(
+                    matches!(
+                        enc.do_encrypt_final(),
+                        Err(SymmetricCipherError::InvalidInputLength(_))
+                    ),
+                    "len {len}: streaming do_encrypt_final must refuse a message below the minimum"
+                );
+                // ... and so is a ciphertext of that length, which no encryption produces
+                let mut pt = vec![0xA5u8; decrypt_out_len(len) + FINAL_LEN];
+                match key.decrypt_out(&init_data, msg, &mut pt) {
+                    Err(SymmetricCipherError::InvalidInputLength(_)) => assert!(
+                        pt.iter().all(|&b| b == 0),
+                        "len {len}: decrypt_out must zeroize its buffer when it refuses the length"
+                    ),
+                    other => panic!(
+                        "len {len}: a ciphertext below the minimum must be refused, got {other:?}"
+                    ),
+                }
+                let mut dec = key.create_decryptor(&init_data);
+                let mut buf = vec![0u8; dec.do_decrypt_out_len(len)];
+                dec.do_decrypt_out(msg, &mut buf).unwrap();
+                assert!(
+                    matches!(
+                        dec.do_decrypt_final(),
+                        Err(SymmetricCipherError::InvalidInputLength(_))
+                    ),
+                    "len {len}: streaming do_decrypt_final must refuse a ciphertext below the minimum"
+                );
+                continue;
+            }
             if !len.is_multiple_of(align) {
                 let mut ct = vec![0u8; encrypt_out_len(len) + FINAL_LEN];
                 match key.encrypt_out(rng, msg, &mut ct) {
