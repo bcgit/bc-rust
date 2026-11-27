@@ -1,0 +1,31 @@
+name: Symmetric Stack Wipe
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: symmetric-stack-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  symmetric-stack:
+    if: github.repository == 'bcgit/bc-rust'
+    name: symmetric-stack (${{ matrix.runner }})
+    # The wipes are sized by measurement, and the two targets lay their frames out differently.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Search the stack HMAC, HKDF, BLAKE3 and AES-GCM-SIV used for what they handled
+        run: ./dev_scripts/check_symmetric_stack.sh

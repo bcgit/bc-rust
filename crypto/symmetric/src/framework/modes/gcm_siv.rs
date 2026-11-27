@@ -60,6 +60,7 @@
 use crate::modes::hazmat::gcm_siv::GcmSivPermutation;
 use crate::modes::iv::random_iv;
 use crate::modes::polyval::Polyval;
+use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadInPlaceDecryptMode, AeadInPlaceEncryptMode, BlockPermutation, ElectronicCodeBook, Mode,
@@ -83,6 +84,14 @@ pub const GCM_SIV_TAG_LEN: usize = 16;
 
 /// RFC 8452 Section 6: "P_MAX is 2^36, A_MAX is 2^36", in bytes.
 const MAX_LEN: u64 = 1 << 36;
+
+/// How much stack an encryption or decryption overwrites when it returns, in 64-bit words: what
+/// it leaves below its frame is the derived keys, the second key schedule, POLYVAL's state and
+/// the key stream. In the x86-64 release build 176 words clear both key lengths (160 leave a
+/// word of POLYVAL's key under AES-256), on rustc 1.88 and 1.97-nightly, by
+/// `dev_scripts/check_symmetric_stack.sh`; the rest is room for a compiler that lays the frames
+/// out less tightly. An unoptimised build's frames are not covered.
+const WIPED_STACK_WORDS: usize = 224;
 
 /// The AES-GCM-SIV mode type: the `M` of a mode-bound key such as
 /// `bouncycastle_symmetric::aes::AES256Key<GCM_SIV>`, which then carries [`AeadInPlaceEncryptionKey`] and
@@ -138,7 +147,7 @@ where
     ) -> Result<([u8; GCM_SIV_NONCE_LEN], [u8; GCM_SIV_TAG_LEN]), SymmetricCipherError> {
         check_lengths(aad.len(), buf.len())?;
         let nonce = random_iv::<GCM_SIV_NONCE_LEN>(rng)?;
-        let tag = encrypt(state, &nonce, aad, buf)?;
+        let tag = in_wiped_frame::<WIPED_STACK_WORDS, _>(|| encrypt(state, &nonce, aad, buf))?;
         Ok((nonce, tag))
     }
 
@@ -149,7 +158,7 @@ where
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<[u8; GCM_SIV_TAG_LEN], SymmetricCipherError> {
-        encrypt(state, nonce, aad, buf)
+        in_wiped_frame::<WIPED_STACK_WORDS, _>(|| encrypt(state, nonce, aad, buf))
     }
 }
 
@@ -166,7 +175,7 @@ where
         buf: &mut [u8],
         tag: &[u8; GCM_SIV_TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
-        decrypt(state, nonce, aad, buf, tag)
+        in_wiped_frame::<WIPED_STACK_WORDS, _>(|| decrypt(state, nonce, aad, buf, tag))
     }
 }
 

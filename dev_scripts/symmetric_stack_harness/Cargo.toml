@@ -1,0 +1,21 @@
+# HMAC, HKDF, PBKDF2 and BLAKE3 (bouncycastle-digest) and AES-GCM-SIV (bouncycastle-symmetric),
+# each run over a painted stack that is then searched for what the operation handled, for
+# `../check_symmetric_stack.sh`. Its own workspace, so the root `cargo build --workspace` never
+# builds it.
+[package]
+name = "symmetric_stack_harness"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bouncycastle-core = { path = "../../crypto/core" }
+bouncycastle-digest = { path = "../../crypto/digest" }
+bouncycastle-symmetric = { path = "../../crypto/symmetric" }
+
+# The root workspace's release profile: the wipes are sized for the frames it lays out.
+[profile.release]
+lto = "thin"
+strip = "debuginfo"
+
+[workspace]

@@ -126,7 +126,7 @@
 
 pub mod hazmat;
 
-use crate::stack_wipe::wipe_stack_below;
+use crate::stack_wipe::{in_wiped_frame, wipe_stack_below};
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError};
 use bouncycastle_core::hazmat::{WithoutCollisionResistance, do_hazardous_operations};
@@ -301,14 +301,16 @@ impl<HASH: HMACParams> HmacKey<HASH> {
     ///
     /// The pad states are key-equivalent (RFC 2104 Section 4). They are built, and the result
     /// made, in [`Self::checked_in_own_frame`], which leaves copies of them in its frame and its
-    /// callees'; that stack is overwritten here before the result is handed on.
+    /// callees'; that stack is overwritten here. The result is written straight to the
+    /// caller's, not held in this frame across the wipe, which would leave a copy of both pad
+    /// states above the stack the wipe reaches.
     fn from_key_material_checked(
         key: &dyn KeyMaterialTrait,
         allow_weak_keys: bool,
     ) -> Result<Self, MACError> {
-        let result = Self::checked_in_own_frame(key, allow_weak_keys);
-        wipe_stack_below::<KEY_WIPED_STACK_WORDS>();
-        result
+        in_wiped_frame::<KEY_WIPED_STACK_WORDS, _>(|| {
+            Self::checked_in_own_frame(key, allow_weak_keys)
+        })
     }
 
     /// [`Self::from_key_material_checked`] without its wipe, for HKDF, whose operations each run

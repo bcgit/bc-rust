@@ -102,16 +102,16 @@ use bouncycastle_core::symmetric_key::{AeadInPlaceDecryptionKey, AeadInPlaceEncr
 /// Each call derives that message's keys from the nonce and expands a second schedule on its own
 /// stack, which is wiped when the call returns. Measured as the deepest frame chain below each
 /// call in the release build on x86-64 (return addresses included, the caller's buffer not), over
-/// `mem_usage_benches/src/bench_gcm_siv_mem_usage.rs`:
+/// `mem_usage_benches/src/bench_gcm_siv_mem_usage.rs`, on rustc 1.97 nightly:
 ///
 /// | Call | AES-128 | AES-256 |
 /// |---|---|---|
 /// | `from_key_material` | 528 B | 672 B |
-/// | `encrypt_detached_inplace_nonce` | 880 B | 1 104 B |
-/// | `decrypt_detached_inplace` | 880 B | 1 104 B |
+/// | `encrypt_detached_inplace_nonce` | 1 912 B | 1 912 B |
+/// | `decrypt_detached_inplace` | 1 928 B | 1 928 B |
 ///
-/// The peak is inside the per-message key expansion, 144 B (AES-128) and 240 B (AES-256) deeper
-/// than the next chain, POLYVAL's; the second schedule itself is 176 B or 240 B of the figure.
+/// The peak of a call is the wipe's own frame, 1 816 B, the same for both key lengths, which
+/// reaches below everything the encryption or decryption wrote.
 ///
 /// # 🚨 Security Considerations 🚨
 ///
