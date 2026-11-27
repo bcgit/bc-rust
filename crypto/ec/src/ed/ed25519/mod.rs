@@ -99,19 +99,21 @@
 //!
 //! | Entry point                          | Stack  |
 //! |--------------------------------------|--------|
-//! | `keygen`                             | 2680 B |
-//! | `keygen_out`                         | 2488 B |
-//! | `Ed25519PrivateKey::from_bytes`      | 2680 B |
-//! | `Ed25519PrivateKey::from_bytes_out`  | 2344 B |
+//! | `keygen`                             | 4360 B |
+//! | `keygen_out`                         | 3624 B |
+//! | `Ed25519PrivateKey::from_bytes`      | 3896 B |
+//! | `Ed25519PrivateKey::from_bytes_out`  | 3480 B |
 //! | `Ed25519PublicKey::from_bytes`       | 4376 B |
 //! | `Ed25519PrivateKey::pk`              | 1944 B |
-//! | Ed25519 sign                         | 3096 B |
+//! | Ed25519 sign                         | 4232 B |
 //! | Ed25519 verify                       | 5896 B |
-//! | Ed25519ph sign                       | 4184 B |
+//! | Ed25519ph sign                       | 5320 B |
 //! | Ed25519ph verify                     | 7080 B |
 //!
-//! The key generation figures leave out the RNG. The Ed25519ph figures are for the streaming
-//! signer and verifier, and include the worker: a SHA-512 state and the context.
+//! Key generation, decoding a private key and signing peak in the 3 KiB stack wipe that follows the
+//! fixed-base multiplication. The key generation figures leave out the RNG. The Ed25519ph figures
+//! are for the streaming signer and verifier, and include the worker: a SHA-512 state and the
+//! context.
 //!
 //! # 🚨 Security Considerations 🚨
 //!

@@ -104,19 +104,20 @@
 //!
 //! | Entry point                        | Stack   |
 //! |------------------------------------|---------|
-//! | `keygen`                           | 4192 B  |
-//! | `keygen_out`                       | 3728 B  |
-//! | `Ed448PrivateKey::from_bytes`      | 4064 B  |
-//! | `Ed448PrivateKey::from_bytes_out`  | 3392 B  |
+//! | `keygen`                           | 6472 B  |
+//! | `keygen_out`                       | 5144 B  |
+//! | `Ed448PrivateKey::from_bytes`      | 5512 B  |
+//! | `Ed448PrivateKey::from_bytes_out`  | 4808 B  |
 //! | `Ed448PublicKey::from_bytes`       | 7232 B  |
 //! | `Ed448PrivateKey::pk`              | 3136 B  |
-//! | Ed448 sign                         | 4144 B  |
+//! | Ed448 sign                         | 5560 B  |
 //! | Ed448 verify                       | 10320 B |
-//! | Ed448ph sign                       | 5888 B  |
+//! | Ed448ph sign                       | 7304 B  |
 //! | Ed448ph verify                     | 12352 B |
 //!
-//! The key generation figures leave out the RNG. The Ed448ph figures are for the streaming
-//! signer and verifier, and include the worker: a SHAKE256 state and the context.
+//! Key generation, decoding a private key and signing peak in the 4 KiB stack wipe that follows the
+//! fixed-base multiplication. The key generation figures leave out the RNG. The Ed448ph figures are
+//! for the streaming signer and verifier, and include the worker: a SHAKE256 state and the context.
 //!
 //! # 🚨 Security Considerations 🚨
 //!

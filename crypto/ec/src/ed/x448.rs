@@ -116,13 +116,13 @@
 //!
 //! | Entry point                       | Stack  |
 //! |-----------------------------------|--------|
-//! | `keygen_from_seed`                | 2936 B |
+//! | `keygen_from_seed`                | 3352 B |
 //! | `keygen_out`                      | 2728 B |
-//! | `X448PrivateKey::from_bytes`      | 2872 B |
+//! | `X448PrivateKey::from_bytes`      | 3064 B |
 //! | `X448PrivateKey::from_bytes_out`  | 2728 B |
 //! | `agree` on the private key        | 2856 B |
-//! | `encaps` on the public key        | 5768 B |
-//! | `decaps` on the private key       | 5208 B |
+//! | `encaps` on the public key        | 5720 B |
+//! | `decaps` on the private key       | 5224 B |
 //!
 //! The first five each run one Montgomery ladder plus the field inversion, which use 1800 B
 //! below the entry point's own frame; the peak is the 2584 B frame that then overwrites that
