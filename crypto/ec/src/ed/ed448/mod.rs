@@ -104,19 +104,20 @@
 //!
 //! | Entry point                        | Stack   |
 //! |------------------------------------|---------|
-//! | `keygen`                           | 4192 B  |
-//! | `keygen_out`                       | 3728 B  |
-//! | `Ed448PrivateKey::from_bytes`      | 4064 B  |
-//! | `Ed448PrivateKey::from_bytes_out`  | 3392 B  |
+//! | `keygen`                           | 6472 B  |
+//! | `keygen_out`                       | 5144 B  |
+//! | `Ed448PrivateKey::from_bytes`      | 5512 B  |
+//! | `Ed448PrivateKey::from_bytes_out`  | 4808 B  |
 //! | `Ed448PublicKey::from_bytes`       | 7232 B  |
 //! | `Ed448PrivateKey::pk`              | 3136 B  |
-//! | Ed448 sign                         | 4144 B  |
+//! | Ed448 sign                         | 5560 B  |
 //! | Ed448 verify                       | 10320 B |
-//! | Ed448ph sign                       | 5888 B  |
+//! | Ed448ph sign                       | 7304 B  |
 //! | Ed448ph verify                     | 12352 B |
 //!
-//! The key generation figures leave out the RNG. The Ed448ph figures are for the streaming
-//! signer and verifier, and include the worker: a SHAKE256 state and the context.
+//! Key generation, decoding a private key and signing peak in the 4 KiB stack wipe that follows the
+//! fixed-base multiplication. The key generation figures leave out the RNG. The Ed448ph figures are
+//! for the streaming signer and verifier, and include the worker: a SHAKE256 state and the context.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -173,11 +174,15 @@
 //! not wipe its source: that holds for the key pair of [`keygen`], for the trait's `from_bytes`,
 //! for `clone` and for the array `encode` returns. Use [`keygen_out`],
 //! [`Ed448PrivateKey::from_bytes_out`], `clone_from` and `encode_out` into a key or buffer you
-//! own where that matters.
+//! own where that matters. [`keygen`], `from_bytes` and `clone` build the key in a frame of their
+//! own whose stack is overwritten afterwards, so the copies left are those of the caller's
+//! moves, not of theirs.
 //!
-//! Two computations would leave secrets on the stack that no `Secret` reaches. One is the last
-//! step of signing, where the compiler spills limbs of the scalar it held in registers: it
-//! runs in a frame of its own whose stack is overwritten afterwards. The other is every
+//! Three computations would leave secrets on the stack that no `Secret` reaches. One is the last
+//! step of signing, where the compiler spills limbs of the scalar it held in registers, and
+//! another each fixed-base multiplication (key expansion's `[s]B`, signing's `[r]B`), which
+//! spills limbs of the point's coordinates and of the inversion that normalizes them: each runs
+//! in a frame of its own whose stack is overwritten afterwards. The third is every
 //! SHAKE256 over the private key or the prefix: a sponge that is moved to be squeezed leaves
 //! the private key and whole Keccak states of the prefix's hash behind, so each is finished
 //! where it sits, and `bouncycastle_digest::sha3` overwrites the frame of each Keccak permutation,
@@ -185,8 +190,8 @@
 //! after each operation finds none of the private key, the scalar, the prefix, the digests,
 //! the nonce `r`, `r + k s` or those Keccak states after `keygen_out`, `from_bytes_out`,
 //! `clone_from`, `encode_out`, `pk`, `==`, `keypair_consistency_check` and every form of
-//! signing, in the release build for x86-64 Linux (rustc 1.97.0-nightly), the one build
-//! scanned. The by-value forms leave what a move leaves, as above.
+//! signing, in release builds for x86-64 Linux (rustc 1.97.0-nightly) and arm64 Linux (rustc
+//! 1.100). The by-value forms leave what a move leaves, as above.
 //!
 //! Each fixed-base multiplication checks that its result is a point of the curve before
 //! anything is released, and a failure is reported as an error; no input causes one.

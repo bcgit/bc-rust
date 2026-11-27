@@ -314,6 +314,10 @@ impl SecretScalar for Bp384r1Scalar {
         Bp384r1Scalar::from_borrowed_limbs(limbs)
     }
 
+    fn from_borrowed_limbs_into(limbs: &[u64; 6], out: &mut Self) {
+        reduce_once_into(limbs, &mut out.0);
+    }
+
     fn from_be_bytes(bytes: &[u8; 48]) -> Self {
         Bp384r1Scalar::from_be_bytes(bytes)
     }

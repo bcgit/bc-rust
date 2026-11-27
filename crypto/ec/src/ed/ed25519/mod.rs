@@ -99,19 +99,21 @@
 //!
 //! | Entry point                          | Stack  |
 //! |--------------------------------------|--------|
-//! | `keygen`                             | 2680 B |
-//! | `keygen_out`                         | 2488 B |
-//! | `Ed25519PrivateKey::from_bytes`      | 2680 B |
-//! | `Ed25519PrivateKey::from_bytes_out`  | 2344 B |
+//! | `keygen`                             | 4360 B |
+//! | `keygen_out`                         | 3624 B |
+//! | `Ed25519PrivateKey::from_bytes`      | 3896 B |
+//! | `Ed25519PrivateKey::from_bytes_out`  | 3480 B |
 //! | `Ed25519PublicKey::from_bytes`       | 4376 B |
 //! | `Ed25519PrivateKey::pk`              | 1944 B |
-//! | Ed25519 sign                         | 3096 B |
+//! | Ed25519 sign                         | 4232 B |
 //! | Ed25519 verify                       | 5896 B |
-//! | Ed25519ph sign                       | 4184 B |
+//! | Ed25519ph sign                       | 5320 B |
 //! | Ed25519ph verify                     | 7080 B |
 //!
-//! The key generation figures leave out the RNG. The Ed25519ph figures are for the streaming
-//! signer and verifier, and include the worker: a SHA-512 state and the context.
+//! Key generation, decoding a private key and signing peak in the 3 KiB stack wipe that follows the
+//! fixed-base multiplication. The key generation figures leave out the RNG. The Ed25519ph figures
+//! are for the streaming signer and verifier, and include the worker: a SHA-512 state and the
+//! context.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -163,11 +165,15 @@
 //! not wipe its source: that holds for the key pair of [`keygen`], for the trait's `from_bytes`,
 //! for `clone` and for the array `encode` returns. Use [`keygen_out`],
 //! [`Ed25519PrivateKey::from_bytes_out`], `clone_from` and `encode_out` into a key or buffer you
-//! own where that matters. Signing also overwrites the stack its last step used, where the
-//! compiler otherwise leaves limbs of the scalar it held in registers; a scan of the dead stack
-//! after each signing call finds none of the key in release builds for x86-64 and arm64, the
-//! two scanned. SHA-512 is outside that: its load of the block that holds the private key can
-//! leave words of it on the stack, seen as one word after `from_bytes_out` in the arm64 build.
+//! own where that matters. [`keygen`], `from_bytes` and `clone` build the key in a frame of their
+//! own whose stack is overwritten afterwards, so the copies left are those of the caller's
+//! moves, not of theirs. Signing also overwrites the stack its last step used, where the
+//! compiler otherwise leaves limbs of the scalar it held in registers, and each fixed-base
+//! multiplication (key expansion's `[s]B`, signing's `[r]B`) the stack it used, where it leaves
+//! limbs of the point's coordinates and of the inversion that normalizes them.
+//! `dev_scripts/check_ecdsa_stack.sh` finds none of the key after key generation, decoding and
+//! every form of signing in release builds for x86-64 (rustc 1.97 and 1.88) and arm64 (rustc
+//! 1.100), the wipes being sized on x86-64.
 //!
 //! Each fixed-base multiplication checks that its result is a point of the curve before
 //! anything is released, and a failure is reported as an error; no input causes one.

@@ -1,6 +1,7 @@
 //! What ECDSA signing and the handling of its private keys (bouncycastle_ec::ecdsa), ECC CDH's
-//! private keys and agreement (bouncycastle_ec::eccdh), and DHKEM over the NIST curves, X448 and
-//! X25519 with its labeled HKDF steps (bouncycastle_ec::dhkem) leave on the dead stack, for
+//! private keys and agreement (bouncycastle_ec::eccdh), DHKEM over the NIST curves, X448 and
+//! X25519 with its labeled HKDF steps (bouncycastle_ec::dhkem), and Ed25519, Ed448, X25519 and
+//! X448 with their keys (bouncycastle_ec::ed, in [`ed`]) leave on the dead stack, for
 //! `../check_ecdsa_stack.sh`. For each operation the stack below the call is painted, the
 //! operation run with its results going to the heap or to a live frame above, the dead stack
 //! copied out, and the copy searched for the 8-byte words of every secret the operation handled:
@@ -14,12 +15,18 @@
 //! for the random operations two draws of the RNG), and the two copies compared: but for what the
 //! operation hands out and the registers the call's first frames saved, they must be the same.
 //!
+//! Each operation runs with the callee-saved registers zero ([`scrubbed`]): a word of a secret
+//! this program computed with, waiting in one of them, would otherwise be saved to the stack by
+//! the operation's first frames and found there, as on arm64 it was. With `STACK_DETAIL` set,
+//! each finding is also printed with how far below the call it lies (negative above it, in this
+//! program's frames), which is what a wipe is sized from.
+//!
 //! Controls: nothing run must leave nothing, and the same stack twice; a copy of `d` left in a
 //! frame must be found, and copies of two keys must differ.
 //!
-//! Reported and not failed: DHKEM over X25519, whose scalar multiplication leaves part of its
-//! field inversion (`bouncycastle_ec::ed::x25519`'s Security Considerations), lines marked
-//! `left`.
+//! Reported and not failed: DHKEM over X25519, and the comparison of two runs of every X25519
+//! operation that multiplies by the scalar, whose scalar multiplication leaves part of its field
+//! inversion (`bouncycastle_ec::ed::x25519`'s Security Considerations), lines marked `left`.
 //!
 //!   target/release/ecdsa_stack_harness
 //!
@@ -55,10 +62,15 @@ use bouncycastle_ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 use bouncycastle_ec::ecdsa::keys_common::{DerivePublicKey, SignatureKeyPair};
 use bouncycastle_ec::ed::x448::{self, X448PrivateKey, X448PublicKey};
 use bouncycastle_ec::ed::x25519::{self, X25519PrivateKey, X25519PublicKey};
+use bouncycastle_ec::ed::{ed448, ed25519};
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 use std::collections::HashSet;
 use std::hint::black_box;
+
+mod ed;
+#[path = "../../stack_scrubbed_call.rs"]
+mod scrubbed;
 
 /// How far below the call the stack is painted and searched. The deepest operation here uses
 /// under 16 KiB.
@@ -66,11 +78,13 @@ const DEPTH: usize = 256 * 1024;
 /// The gap between the frame that takes the copy and the operation's first frame.
 const PAD: usize = 16 * 1024;
 const PAINT: u8 = 0xA5;
-/// How far below the call a difference between two runs is put down to the registers the
-/// call's first frames saved, and not counted: this program's loop index and heap addresses,
-/// which the frames above the wiped ones save. The furthest seen is 408 bytes, below the
-/// deterministic signer's final, whose frame holds the message hash.
-const SAVED_REGISTERS: usize = 512;
+/// How far below the call a difference between two runs is put down to the operation's first
+/// frames, above its wiped ones, and not counted: the registers they save, which
+/// [`Scan::run`] has zeroed, and values handed out on the way to the caller's slot. With this
+/// at 0, the furthest seen is 208 bytes on arm64 (rustc 1.100: Ed25519's `sign`, staging the
+/// signature it returns), 136 on arm64 with rustc 1.97 and 128 on x86-64 (rustc 1.100, 1.97
+/// and 1.88).
+const SAVED_REGISTERS: usize = 256;
 
 /// The fixed RNG's seed: one draw at its start. Every operation here draws once.
 const SEED_LEN: usize = 128;
@@ -160,9 +174,18 @@ impl Scan {
         Self { buf: vec![0u8; DEPTH], before: vec![0u8; DEPTH], failures: 0, report_only: false }
     }
 
-    /// Paints, runs `f` and copies the stack out. What `f` returns comes back by value.
+    /// Paints, runs `f` and copies the stack out. What `f` returns comes back by value. Run with
+    /// the callee-saved registers zero ([`scrubbed`]), and painted from that frame down as well
+    /// as from [`measure`]'s, so that the slots `measure`'s own frame leaves unwritten hold the
+    /// paint and not what an earlier call of this program's left there.
     fn run<T>(&mut self, f: impl FnOnce() -> T) -> T {
-        measure(&mut self.buf, f)
+        let mut result = None;
+        let buf = &mut self.buf;
+        scrubbed::call(|| {
+            paint();
+            result = Some(measure(buf, f));
+        });
+        result.unwrap()
     }
 
     /// The bytes of stack the last run used, and for each of `values`, how many of its words
@@ -198,6 +221,9 @@ impl Scan {
             .filter(|(_, hits, _)| *hits > 0)
             .map(|(name, hits, words)| format!("{name}: {hits} of {words} words"))
             .collect();
+        if detail() {
+            self.where_found(values);
+        }
         if found.is_empty() {
             println!("ok   {operation}: none of its secrets in the {used} bytes of stack it used");
         } else {
@@ -207,6 +233,19 @@ impl Scan {
                 found.join(", ")
             );
             self.fail();
+        }
+    }
+
+    /// With `STACK_DETAIL` set: how far below the call each word of `values` that was found lies,
+    /// negative for a word above it, in the frames of this program that run the operation.
+    fn where_found(&self, values: &Values) {
+        for (name, image) in values {
+            for word in image.chunks_exact(8).filter(|w| w.iter().any(|b| *b != w[0])) {
+                for at in (0..DEPTH - 7).filter(|at| self.buf[*at..at + 8] == *word) {
+                    let below = (DEPTH - PAD) as isize - at as isize;
+                    println!("       {name}: a word {below} bytes below the call");
+                }
+            }
         }
     }
 
@@ -256,22 +295,61 @@ impl Scan {
             while end < DEPTH && self.before[end] != self.buf[end] {
                 end += 1;
             }
-            let len = end - i;
-            let explained = (0..public.len().saturating_sub(len - 1)).any(|at| {
-                public_before[at..at + len] == self.before[i..end]
-                    && public[at..at + len] == self.buf[i..end]
-            });
+            let explained = self.public_run(i, end, public_before, public);
             // The first frames of a call save the registers they go on to use, and what those
             // held is this program's own: a loop's pointer, a length. Only the bytes of the run
             // within SAVED_REGISTERS of the call are put down to that.
             let deep_end = end.min((DEPTH - PAD).saturating_sub(SAVED_REGISTERS));
             if !explained && deep_end > i {
+                if detail() {
+                    println!(
+                        "       {} bytes differ {} bytes below the call",
+                        deep_end - i,
+                        (DEPTH - i).saturating_sub(PAD)
+                    );
+                }
                 count += deep_end - i;
                 furthest = furthest.max((DEPTH - i).saturating_sub(PAD));
             }
             i = end;
         }
         (count, furthest)
+    }
+
+    /// Whether the bytes `i..end`, in which the two runs differ, are pieces of `public_before` in
+    /// the kept run and the same pieces of `public` in the last, one after another: two public
+    /// values can lie side by side, in any order, and a value returned by value can be staged in
+    /// chunks out of order (Ed448's signature, on x86-64 with rustc 1.100, as bytes 23..39 then
+    /// 0..7). Each piece is at least four bytes, which both runs match by chance at a given place
+    /// in the image with odds of 2^-64, but for the whole run when it is shorter, and for a last
+    /// piece that carries on where the one before it ended in the image.
+    fn public_run(&self, i: usize, end: usize, public_before: &[u8], public: &[u8]) -> bool {
+        // How many bytes from `p` match the image from `at`, in both runs.
+        let matching = |p: usize, at: usize| {
+            (0..(end - p).min(public.len() - at))
+                .take_while(|l| {
+                    public_before[at + l] == self.before[p + l] && public[at + l] == self.buf[p + l]
+                })
+                .count()
+        };
+        let mut p = i;
+        // Where in the image the last piece ended.
+        let mut after: Option<usize> = None;
+        while p < end {
+            let (len, at) =
+                (0..public.len()).map(|at| (matching(p, at), at)).max().unwrap_or((0, 0));
+            if len >= 4 {
+                p += len;
+                after = Some(at + len);
+                continue;
+            }
+            let rest = end - p;
+            return match after {
+                None => len == rest,
+                Some(at) => at < public.len() && matching(p, at) == rest,
+            };
+        }
+        true
     }
 
     /// After the same operation run twice, at the same addresses, over different secrets: the
@@ -305,6 +383,11 @@ impl Scan {
             self.failures += 1;
         }
     }
+}
+
+/// Whether `STACK_DETAIL` is set: then where each finding lies is printed too, for sizing a wipe.
+fn detail() -> bool {
+    std::env::var_os("STACK_DETAIL").is_some()
 }
 
 /// `len` bytes of SHA-512 in counter mode over `label`: the harness's own source of distinct,
@@ -456,6 +539,12 @@ fn main() {
         x25519::keygen,
     );
     scan.report_only = false;
+
+    ed::eddsa::<ed25519::Ed25519PrivateKey, 32, 32, 64>(&mut scan);
+    ed::eddsa::<ed448::Ed448PrivateKey, 57, 57, 114>(&mut scan);
+    ed::xdh::<X448PrivateKey, 56>(&mut scan, false);
+    // X25519's scalar multiplication leaves part of its inversion, by decision: reported.
+    ed::xdh::<X25519PrivateKey, 32>(&mut scan, true);
 
     std::process::exit(if scan.failures == 0 { 0 } else { 1 });
 }

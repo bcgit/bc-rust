@@ -40,8 +40,8 @@ pub(in crate::sm2) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
 /// taken out, `dev_scripts/sm2_stack_harness` reports the stack written to 2664 bytes below a
 /// call of `from_bytes` and 2968 below one of [`keygen`] with rustc 1.97 (nightly), and 2384 and
 /// 2688 with rustc 1.88; with 2816 bytes wiped `dev_scripts/check_sm2_stack.sh` fails with rustc
-/// 1.88, and with 2560 with either. The rest is room for a compiler that lays the frames out
-/// less tightly; it has not been measured on arm64.
+/// 1.88, and with 2560 with either. On arm64 Linux with rustc 1.100 the harness reports 2760 and
+/// 3064 bytes. The rest is room for a compiler that lays the frames out less tightly.
 const WIPED_STACK_WORDS: usize = 640;
 
 /// An SM2 private key: `dA` in `[1, n-2]` (GB/T 32918.1-2016 §6.1 a); the draft states no range),

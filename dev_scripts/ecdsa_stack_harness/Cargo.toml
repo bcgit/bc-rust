@@ -1,7 +1,8 @@
 # ECDSA signing and the handling of its private keys (bouncycastle_ec::ecdsa), ECC CDH's private
-# keys and agreement (bouncycastle_ec::eccdh) and DHKEM (bouncycastle_ec::dhkem), each run over a
-# painted stack that is then searched for what the operation handled, for `../check_ecdsa_stack.sh`. Its own workspace,
-# so the root `cargo build --workspace` never builds it.
+# keys and agreement (bouncycastle_ec::eccdh), DHKEM (bouncycastle_ec::dhkem) and Ed25519, Ed448,
+# X25519 and X448 (bouncycastle_ec::ed), each run over a painted stack that is then searched for
+# what the operation handled, for `../check_ecdsa_stack.sh`. Its own workspace, so the root
+# `cargo build --workspace` never builds it.
 [package]
 name = "ecdsa_stack_harness"
 version = "0.0.0"

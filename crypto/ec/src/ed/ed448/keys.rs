@@ -5,6 +5,7 @@ use super::point::PublicPoint;
 use super::scheme::{
     self, CONTEXT_MAX_LEN, ExpandedKey, PREHASH_LEN, PRIVATE_KEY_LEN, PUBLIC_KEY_LEN, SIGNATURE_LEN,
 };
+use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::{KeyDecodingError, KeyMaterialError, RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
@@ -75,6 +76,16 @@ impl Algorithm for Ed448ph {
 
 impl SignatureAlgorithm for Ed448ph {}
 
+/// What the stack wipe overwrites, in 64-bit words, after the trait's `from_bytes` and `clone`
+/// build a key in a frame of their own, which the move out of it would otherwise leave holding
+/// a copy: 768 bytes. `dev_scripts/ecdsa_stack_harness` passes with 256 bytes wiped and fails
+/// with 192 (x86-64 release builds, rustc 1.97 and 1.88).
+const BY_VALUE_STACK_WORDS: usize = 96;
+
+/// The same after [`keygen`], whose frame holds the key pair: 1536 bytes. The harness passes
+/// with 768 bytes wiped and fails with 640 (640 and 512 with 1.88), measured the same way.
+const KEYGEN_STACK_WORDS: usize = 192;
+
 /// Generates a key pair from `rng`, which must offer the 192 bits Ed448 is classed at: the 57
 /// octets it draws are the private key (RFC 8032 Section 5.2.5).
 ///
@@ -86,14 +97,13 @@ impl SignatureAlgorithm for Ed448ph {}
 /// [`SignatureError::ComputationFault`] if the computed public key fails its check, which no input
 /// causes; [`SignatureError::KeyGenError`] if the octets drawn are a private key this module
 /// refuses ([`Ed448PrivateKey`]), which is not known to happen. The generation is not retried.
-// Inlined so that the key is built in the caller's frame and moved into the pair once; out of
-// line, LLVM stages a further copy of it, which the stack harness's keygen rows show.
-#[inline(always)]
 pub fn keygen(rng: &mut dyn RNG) -> Result<(Ed448PublicKey, Ed448PrivateKey), SignatureError> {
-    let mut sk = Ed448PrivateKey::zeroized();
-    keygen_out(rng, &mut sk)?;
-    let pk = sk.pk()?;
-    Ok((pk, sk))
+    in_wiped_frame::<u64, 0, KEYGEN_STACK_WORDS, _>(|| {
+        let mut sk = Ed448PrivateKey::zeroized();
+        keygen_out(rng, &mut sk)?;
+        let pk = sk.pk()?;
+        Ok((pk, sk))
+    })
 }
 
 /// Generates a private key into `sk`, a key you hold: the RNG, which must offer the 192 bits
@@ -272,9 +282,11 @@ impl PrivateKey<PRIVATE_KEY_LEN> for Ed448PrivateKey {
     /// (see the type), which no known octets are; or if the computed public key fails its
     /// check, which no input causes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
-        let mut sk = Self::zeroized();
-        Self::from_bytes_out(bytes, &mut sk)?;
-        Ok(sk)
+        in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+            let mut sk = Self::zeroized();
+            Self::from_bytes_out(bytes, &mut sk)?;
+            Ok(sk)
+        })
     }
 }
 
@@ -282,9 +294,11 @@ impl PrivateKey<PRIVATE_KEY_LEN> for Ed448PrivateKey {
 /// Considerations); `clone_from` copies field by field into a key you hold.
 impl Clone for Ed448PrivateKey {
     fn clone(&self) -> Self {
-        let mut sk = Self::zeroized();
-        sk.clone_from(self);
-        sk
+        in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+            let mut sk = Self::zeroized();
+            sk.clone_from(self);
+            sk
+        })
     }
 
     fn clone_from(&mut self, source: &Self) {

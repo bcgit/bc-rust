@@ -5,6 +5,7 @@ use super::point::PublicPoint;
 use super::scheme::{
     self, CONTEXT_MAX_LEN, ExpandedKey, PREHASH_LEN, PRIVATE_KEY_LEN, PUBLIC_KEY_LEN, SIGNATURE_LEN,
 };
+use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::{KeyDecodingError, KeyMaterialError, RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
@@ -71,6 +72,16 @@ impl Algorithm for Ed25519ph {
 
 impl SignatureAlgorithm for Ed25519ph {}
 
+/// What the stack wipe overwrites, in 64-bit words, after the trait's `from_bytes` and `clone`
+/// build a key in a frame of their own, which the move out of it would otherwise leave holding
+/// a copy: 512 bytes. `dev_scripts/ecdsa_stack_harness` passes with 192 bytes wiped and fails
+/// with 128 (x86-64 release builds, rustc 1.97 and 1.88).
+const BY_VALUE_STACK_WORDS: usize = 64;
+
+/// The same after [`keygen`], whose frame holds the key pair: 1024 bytes. The harness passes
+/// with 384 bytes wiped and fails with 320, measured the same way.
+const KEYGEN_STACK_WORDS: usize = 128;
+
 /// Generates a key pair from `rng`, which must offer Ed25519's 128 bits: the 32 octets it
 /// draws are the private key (RFC 8032 Section 5.1.5).
 ///
@@ -81,14 +92,13 @@ impl SignatureAlgorithm for Ed25519ph {}
 /// [`SignatureError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver;
 /// [`SignatureError::ComputationFault`] if the computed public key fails its check, which no input
 /// causes.
-// Inlined so that the key is built in the caller's frame and moved into the pair once; out of
-// line, LLVM stages a further copy of it, which the stack harness's keygen rows show.
-#[inline(always)]
 pub fn keygen(rng: &mut dyn RNG) -> Result<(Ed25519PublicKey, Ed25519PrivateKey), SignatureError> {
-    let mut sk = Ed25519PrivateKey::zeroized();
-    keygen_out(rng, &mut sk)?;
-    let pk = sk.pk()?;
-    Ok((pk, sk))
+    in_wiped_frame::<u64, 0, KEYGEN_STACK_WORDS, _>(|| {
+        let mut sk = Ed25519PrivateKey::zeroized();
+        keygen_out(rng, &mut sk)?;
+        let pk = sk.pk()?;
+        Ok((pk, sk))
+    })
 }
 
 /// Generates a private key into `sk`, a key you hold: the RNG, which must offer Ed25519's 128
@@ -255,9 +265,11 @@ impl PrivateKey<PRIVATE_KEY_LEN> for Ed25519PrivateKey {
     /// [`KeyDecodingError`] if `bytes` is not 32 octets, or if the computed public key fails
     /// its check, which no input causes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
-        let mut sk = Self::zeroized();
-        Self::from_bytes_out(bytes, &mut sk)?;
-        Ok(sk)
+        in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+            let mut sk = Self::zeroized();
+            Self::from_bytes_out(bytes, &mut sk)?;
+            Ok(sk)
+        })
     }
 }
 
@@ -265,9 +277,11 @@ impl PrivateKey<PRIVATE_KEY_LEN> for Ed25519PrivateKey {
 /// Considerations); `clone_from` copies field by field into a key you hold.
 impl Clone for Ed25519PrivateKey {
     fn clone(&self) -> Self {
-        let mut sk = Self::zeroized();
-        sk.clone_from(self);
-        sk
+        in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+            let mut sk = Self::zeroized();
+            sk.clone_from(self);
+            sk
+        })
     }
 
     fn clone_from(&mut self, source: &Self) {

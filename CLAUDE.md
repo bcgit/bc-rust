@@ -549,12 +549,17 @@ Twelve workflows under `.github/workflows/`, all triggered by pull requests:
 - `ecdsa-stack.yml`: `dev_scripts/check_ecdsa_stack.sh`, the same shape and matrix over
   `dev_scripts/ecdsa_stack_harness`, which runs ECDSA's and ECC CDH's key decoding, encoding, generation and
   `derive_pk`, the drawing of `k`, the one-shots and the signers' finals, on all seven curves, ECC CDH's agreement
-  (raw and through its KDFs), and DHKEM over the NIST curves and X448 with its labeled HKDF steps (X25519's DHKEM
-  is reported, not failed), searching for the keys, `k`, the RNG's output, the DH products and the derived secrets
-  and comparing two runs over different keys. Its wipes scale with the curve's limb count: re-measure
-  `DECODE_STACK_*`, `ENCODE_STACK_*`, `DERIVE_STACK_*`, `AGREE_STACK_*` and `KEYGEN_STACK_*` in
+  (raw and through its KDFs), DHKEM over the NIST curves and X448 with its labeled HKDF steps, and, in its `ed`
+  module, Ed25519's and Ed448's key generation, decoding, copies, encodings and every form of signing and X25519's
+  and X448's keys and agreement (X25519's DHKEM, and the comparison of its scalar multiplications, are reported,
+  not failed), searching for the keys, `k` or EdDSA's `r` and prefix, the RNG's output, the DH products and the
+  derived secrets and comparing two runs over different keys. Its wipes scale with the curve's limb count:
+  re-measure `DECODE_STACK_*`, `ENCODE_STACK_*`, `DERIVE_STACK_*`, `AGREE_STACK_*` and `KEYGEN_STACK_*` in
   `crypto/ec/src/curve.rs`, `SIGN_STACK_*` in `crypto/ec/src/ecdsa/ecdsa.rs`, and the fixed
-  `LABELED_STACK_WORDS` and `DERIVE_KEY_PAIR_STACK_WORDS` in `crypto/ec/src/dhkem/`.
+  `LABELED_STACK_WORDS` and `DERIVE_KEY_PAIR_STACK_WORDS` in `crypto/ec/src/dhkem/`, `WIPED_STACK_WORDS` in
+  `crypto/ec/src/ed/{ed25519,ed448}/{point,scalar}.rs` and `x448.rs`, `BY_VALUE_STACK_WORDS` in
+  `crypto/ec/src/ed/{ed25519,ed448}/keys.rs`, `x25519.rs` and `x448.rs`, and `KEYGEN_STACK_WORDS` in the two
+  `keys.rs`.
 - `symmetric-stack.yml`: `dev_scripts/check_symmetric_stack.sh`, the same shape and matrix over
   `dev_scripts/symmetric_stack_harness`, which runs HMAC's key construction, one-shots and streaming
   workers (SHA-256, SHA-512, SHA3-256, SM3, RIPEMD-160), HKDF's extract, expand and `KDF` derivation,
@@ -577,7 +582,10 @@ A stack check's pass on x86-64 does not carry to another target: a wipe takes a 
 over the stack below its caller, but never clears the registers that frame saves or the padding
 above its array, and the size of both, like the depth of the frames it wipes, is the target's.
 That is why the SM2, ECDSA and symmetric stack checks run on arm64 as well, and why a target
-they do not run on is not covered by them.
+they do not run on is not covered by them. The SM2 and ECDSA harnesses run each operation with
+the callee-saved registers zeroed (`dev_scripts/stack_scrubbed_call.rs`): arm64 has ten, and the harness's own
+copies of a key otherwise reached the stack through a library frame's register saves. Their
+`STACK_DETAIL=1` prints how far below the call each finding lies.
 
 `cargo test --all` is the workspace run, so a failing test does block a PR; what CI does not run is
 `cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.

@@ -3,7 +3,7 @@
 
 use crate::curve::{
     Curve, DECODE_STACK_FIXED, DECODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, ENCODE_STACK_PER_LIMB,
-    KEYGEN_STACK_FIXED, KEYGEN_STACK_PER_LIMB, SecretScalar, private_scalar_from_be_bytes,
+    KEYGEN_STACK_FIXED, KEYGEN_STACK_PER_LIMB, SecretScalar, private_key_from_be_bytes,
     public_point_wiped,
 };
 use crate::eccdh::keys_common::{AgreementKeyPair, DerivePublicKey};
@@ -63,9 +63,8 @@ where
 
     /// `d` must be in `[1, n-1]` (SP 800-56A Rev. 3 Section 5.6.2.1.2), checked on the raw
     /// big-endian value before any reduction, so that `d = n + 1` is refused rather than loaded
-    /// as `d = 1`; the check and the load are
-    /// [`private_scalar_from_be_bytes`],
-    /// which stages the candidate in a `Secret` and reveals only whether the key loaded.
+    /// as `d = 1`. The check and the load stage the candidate in a `Secret`, wipe the scalar it
+    /// is reduced into, and reveal only whether the key loaded.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         let bytes: &[u8; SK_LEN] = bytes
             .try_into()
@@ -73,9 +72,11 @@ where
         // The key is built in the wiped frame, `Result` and all: the temporaries of the
         // conversion would otherwise hold a copy of `d` in this frame.
         in_wiped_frame::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
-            private_scalar_from_be_bytes::<C>(bytes)
-                .map(Self)
-                .ok_or(KeyDecodingError("ECC CDH private key must be in [1, n-1]"))
+            private_key_from_be_bytes::<C, _>(
+                bytes,
+                |d| Ok(Self(d.clone())),
+                || Err(KeyDecodingError("ECC CDH private key must be in [1, n-1]")),
+            )
         })
     }
 }

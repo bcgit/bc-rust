@@ -29,5 +29,5 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
 
-      - name: Search the stack ECDSA signing and EC key handling used for what they handled
+      - name: Search the stack ECDSA, ECC CDH, DHKEM and EdDSA/XDH used for what they handled
         run: ./dev_scripts/check_ecdsa_stack.sh
