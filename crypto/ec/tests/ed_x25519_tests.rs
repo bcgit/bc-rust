@@ -9,9 +9,9 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KDF, KeyAgreement, PrivateKey, PublicKey};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreement;
+use bouncycastle_digest::hkdf::HKDF_SHA256;
 use bouncycastle_digest::hkdf::HkdfDescription;
 use bouncycastle_digest::sha2::SHA256;
-use bouncycastle_digest::sha2::hkdf::HKDF_SHA256;
 use bouncycastle_ec::ed::x25519::{
     HKDF_SHA256_MAX_LEN, POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen,
     keygen_from_seed,

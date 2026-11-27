@@ -13,9 +13,9 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrai
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, KDF, KeyAgreement};
 use bouncycastle_core_test_framework::DUMMY_SEED;
+use bouncycastle_digest::hkdf::HKDF_SHA256;
 use bouncycastle_digest::hkdf::HkdfDescription;
 use bouncycastle_digest::sha2::SHA256;
-use bouncycastle_digest::sha2::hkdf::HKDF_SHA256;
 use bouncycastle_ec::P256;
 use bouncycastle_ec::eccdh::eccdh::ECCDH_HKDF_SHA256;
 use bouncycastle_ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};

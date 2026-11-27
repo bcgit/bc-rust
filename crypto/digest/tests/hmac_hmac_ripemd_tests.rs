@@ -18,9 +18,9 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, AlgorithmOID, HashAlgParams, MACGenerator,
 };
 use bouncycastle_core_test_framework::DUMMY_SEED;
+use bouncycastle_digest::hmac::*;
 use bouncycastle_digest::hmac::{HMACParams, HmacKey};
 use bouncycastle_digest::ripemd::RIPEMD160;
-use bouncycastle_digest::ripemd::hmac::*;
 use bouncycastle_rng::HashDRBG_SHA256;
 use common::{arr, test_hmac};
 

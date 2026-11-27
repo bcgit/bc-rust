@@ -2,7 +2,7 @@ use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
 };
 use bouncycastle_core::traits::RNG;
-use bouncycastle_digest::sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
+use bouncycastle_digest::hkdf::{HKDF_SHA256, HKDF_SHA512};
 use bouncycastle_rng as rng;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;

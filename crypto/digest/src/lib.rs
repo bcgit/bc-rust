@@ -4,13 +4,13 @@
 //! |---------------|-----------------------------------------------------------------------|
 //! | [`blake2`]    | BLAKE2b-512 and BLAKE2s-256 (RFC 7693), unkeyed and keyed             |
 //! | [`blake3`]    | BLAKE3: hash, keyed hash, key derivation and XOF                      |
-//! | [`ripemd`]    | RIPEMD-128, -160, -256 and -320, and HMAC over RIPEMD-160             |
+//! | [`ripemd`]    | RIPEMD-128, -160, -256 and -320                                       |
 //! | [`sha1`]      | SHA-1 (FIPS 180-4), for existing protocols only                       |
-//! | [`sha2`]      | SHA-2 (FIPS 180-4), with HMAC and HKDF over it                        |
+//! | [`sha2`]      | SHA-2 (FIPS 180-4)                                                    |
 //! | [`sha3`]      | SHA-3 and SHAKE (FIPS 202), cSHAKE, KMAC, TupleHash and ParallelHash  |
-//! | [`sm3`]       | SM3 (GB/T 32905-2016), with HMAC and HKDF over it                     |
-//! | [`hmac`]      | HMAC (RFC 2104), generic over the hash                                |
-//! | [`hkdf`]      | HKDF (RFC 5869), generic over the hash                                |
+//! | [`sm3`]       | SM3 (GB/T 32905-2016)                                                 |
+//! | [`hmac`]      | HMAC (RFC 2104) and its instantiations over the hashes above          |
+//! | [`hkdf`]      | HKDF (RFC 5869) and its instantiations over the hashes above          |
 //! | [`pbkdf2`]    | PBKDF2 (RFC 8018 Section 5.2) over HMAC                               |
 //! | [`scrypt`]    | scrypt (RFC 7914)                                                     |
 //! | [`concatkdf`] | The NIST concatenation KDF (SP 800-56C Rev. 2 Section 4.1)            |

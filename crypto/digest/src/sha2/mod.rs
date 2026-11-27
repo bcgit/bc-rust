@@ -3,8 +3,8 @@
 //! This module provides the following primitives:
 //!
 //! * SHA2 [`Hash`] functions.
-//! * HMAC_SHA2* MACs, as [`MACGenerator`] / [`MACVerifier`] workers from an `HmacKey`.
-//! * HKDF-SHA2* [`KDF`] functions.
+//!
+//! HMAC and HKDF over these hashes are in [`crate::hmac`] and [`crate::hkdf`].
 //!
 //! # Usage Examples
 //! ## Hash
@@ -54,13 +54,6 @@
 //! sha2.do_update(&data[..16]);
 //! let output: Vec<u8> = sha2.do_final_partial_bits(data[16], 3).expect("num_partial_bits is in 0..=7");
 //! ```
-//! ## HMAC
-//! See [hmac].
-//!
-//! ## HKDF
-//!
-//! See [hkdf]
-//!
 //! # SHA512t
 //!
 //! See [`SHA512t`] for documentation around defining a custom truncation length of SHA512 other
@@ -121,7 +114,7 @@
 //!   `SecurityStrength::None`. Pick `T` for the security level you need, not for the digest size
 //!   you would like.
 //! * SHA-2 is a Merkle–Damgård construction and is therefore subject to length-extension:
-//!   `H(k || m)` is not a secure MAC. Use HMAC ([`sha2::hmac`](crate::sha2::hmac)) for keyed hashing.
+//!   `H(k || m)` is not a secure MAC. Use HMAC ([`crate::hmac`]) for keyed hashing.
 //! * SHA-224, SHA-384, SHA-512/224 and SHA-512/256 are truncations of SHA-256 or SHA-512 with
 //!   distinct initial values, and are not vulnerable to length extension in the same direct way, but
 //!   should still not be used as `H(k || m)` MACs.
@@ -137,9 +130,6 @@
 mod sha256;
 mod sha512;
 
-pub mod hkdf;
-pub mod hmac;
-
 pub use self::sha256::SHA256Internal;
 use self::sha256::{SHA224_H0, SHA256_H0};
 pub use self::sha512::SHA512Internal;
@@ -149,7 +139,7 @@ use bouncycastle_core::traits::{Algorithm, AlgorithmOID, CollisionResistantHash,
 
 /*** Imports needed for docs ***/
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, KDF, MACGenerator, MACVerifier, Suspendable};
+use bouncycastle_core::traits::{Hash, Suspendable};
 /*** end of doc-only imports ***/
 
 /*** String constants ***/

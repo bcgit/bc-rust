@@ -3,21 +3,146 @@
 //! extraction-then-expansion key-derivation procedure using HMAC for both the extraction and
 //! expansion steps".
 //!
-//! This is a utility module and is not intended to be used directly. It provides [`HKDF`] -- the
-//! construction, generic over any hash that implements [`HKDFParams`], which names the HKDF over
-//! a hash that already has an HMAC ([`HMACParams`]).
-//! The library provides the following concrete instantiations of HKDF:
+//! It provides [`HKDF`] -- the construction, generic over any hash that implements
+//! [`HKDFParams`], which names the HKDF over a hash that already has an HMAC ([`HMACParams`]) --
+//! and its instantiations over the library's hashes:
 //!
-//! | Hash family | Instantiations                                                                   |
-//! |-------------|----------------------------------------------------------------------------------|
-//! | SHA-2       | `bouncycastle_digest::sha2::hkdf` -- `HKDF_SHA256`, `HKDF_SHA384`, `HKDF_SHA512` |
-//! | SM3         | `bouncycastle_digest::sm3::hkdf` -- `HKDF_SM3`                                   |
-//! | RIPEMD      | `bouncycastle_digest::ripemd::hkdf` -- `HKDF_RIPEMD160`                          |
+//! | Hash family | Instantiations                                      |
+//! |-------------|-----------------------------------------------------|
+//! | SHA-2       | [`HKDF_SHA256`], [`HKDF_SHA384`], [`HKDF_SHA512`]   |
+//! | SM3         | [`HKDF_SM3`]                                        |
+//! | RIPEMD      | [`HKDF_RIPEMD160`]                                  |
+//!
+//! The CLI exposes HKDF-SHA256 and HKDF-SHA512.
 //!
 //! An algorithm that derives its output through HKDF (a KEM such as ML-KEM-512-HKDF-SHA256) is
 //! made from an [`HkdfDescription`], the hash and the salt as readable fields, as the KDF of a
 //! `bouncycastle_core::kdf_params::KdfParams`; the pairing builds an instance keyed with the
 //! salt from it for each derivation, and a key held in a token reads the fields instead.
+//!
+//! # Usage
+//!
+//! Since HKDF uses HMAC as its underlying primitive, most of what is said in the [`crate::hmac`]
+//! module docs about key material applies here as well. Unlike HMAC, an HKDF object is created
+//! without an initial key, and will self-initialize the internal HMAC object as part of the
+//! [`HKDF::extract`] phase.
+//!
+//! # Usage Examples
+//!
+//! ## Deriving a key via the [`KDF`] trait
+//!
+//! Being a Key Derivation Function (KDF), the objective of HKDF is to take input key material which is not
+//! directly usable for its intended purpose and transform into a suitable output key.
+//! Typically, this takes one or both of the following forms:
+//!
+//! * Starting with a seed and mixing in additional input to diversify the output key (ie make it unique). An example of this would be starting with a secret seed and mixing in a public ID or URL to generate keys which are unique per URL.
+//! * Starting with a full-entropy seed which is at the correct security level for the application, but which is not long enough. An example could be starting with a 128-bit seed and mixing it with the strings "read" and "write" to produce one AES-128 key for each of the two directions of a communication channel.
+//!
+//! The simplest usage is via the one-shot functions provided by the [`KDF`] trait.
+//!
+//! ```
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::KDF;
+//! use bouncycastle_digest::hkdf::HKDF_SHA256;
+//!
+//! let key = KeyMaterial256::from_bytes_as_type(
+//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+//!             KeyType::Seed).unwrap();
+//!
+//! let hkdf = HKDF_SHA256::new();
+//! let key = hkdf.derive_key(&key, b"extra input", 32).unwrap();
+//! ```
+//!
+//! [`KDF::derive_key`] takes the length to produce, up to `255 * HashLen` (RFC 5869 Section 2.3);
+//! [`KDF::derive_key_out`] writes it into a buffer of the caller's. An instance from
+//! [`HKDF::new_with_salt`] runs the extract phase with that salt, one from [`HKDF::new`] with the
+//! absent salt.
+//!
+//! As with other uses of [`KeyMaterialTrait`], the [`KDF::derive_key`] function will track the entropy of the input
+//! key material, and will set the entropy of the output key material accordingly.
+//!
+//! The [`KDF`] trait also provides the [`KDF::derive_key_from_multiple`] and [`KDF::derive_key_from_multiple_out`]
+//! functions, which allows for multiple inputs to be mixed into a single output key, and which allows
+//! for some advanced control of the underlying HKDF primitive.
+//!
+//! ## HKDF Extract-and-Expand
+//!
+//! The HKDF algorithm defined in RFC 5869 and SP 800-56Cr2 is a two-step KDF, broken into an Extract step
+//! which essentially absorbs entropy from the input key material,
+//! and an Expand step which produces the output key material of any requested size.
+//! This interface is essentially a pre-cursor to the [`XOF`] API which was introduced with SHA3; the main
+//! difference being that HKDF-Expand needs to be told up-front how much output to produce, whereas XOFs
+//! can stream output as needed.
+//!
+//! Naturally, the full two-step HKDF-Extract and HKDF-Expand interface is provided by the [`HKDF`] struct,
+//! and exposes additional HKDF-specific parameters beyond what is exposed by the functions of the [`KDF`] trait.
+//!
+//! The usage pattern here is flexible, but generally follows the pattern of first calling [`HKDF::extract`]
+//! with a `salt` and an input key material `ikm`, which produces a pseudorandom key `prk`.
+//! The `prk` will have a [`KeyType`] and [`SecurityStrength`] that results from combining the two provided input keys,
+//! The `prk` may be used directly as a full-entropy cryptographic key.
+//!
+//! Since the extract step may be called with any number of input keys, a streaming interface is provided
+//! whereby streaming mode in initialized with a call to [`HKDF::do_extract_init`], and then
+//! repeated calls to [`HKDF::do_extract_update_key`] and [`HKDF::do_extract_update_bytes`] may be made.
+//! Entropy from the inputs keys provided via [`HKDF::do_extract_update_key`] are credited towards the output key,
+//! while bytes provided via [`HKDF::do_extract_update_bytes`] are not.
+//! One restriction here is that once you start provided un-credited bytes via [`HKDF::do_extract_update_bytes`],
+//! no more calls to [`HKDF::do_extract_update_key`] may be made.
+//! The streaming API is completed with a call to either [`HKDF::do_extract_final`] or [`HKDF::do_extract_final_out`].
+//!
+//! The second stage, [`HKDF::expand_out`] stretches the `prk` into a longer output key, typed
+//! [`KeyType::CryptographicRandom`] when the PRK was credited and at the PRK's [`SecurityStrength`].
+//!
+//! A typical flow looks like this:
+//!
+//! ```
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
+//! use bouncycastle_digest::hkdf::HKDF_SHA256;
+//!
+//! // setup variables
+//! let salt = KeyMaterial256::from_bytes_as_type(
+//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+//!             KeyType::MACKey).unwrap();
+//!
+//!  let ikm = KeyMaterial256::from_bytes_as_type(
+//!             b"\x0f\x0e\x0d\x0c\x0b\x0a\x09\x08\x07\x06\x05\x04\x03\x02\x01\x00",
+//!             KeyType::MACKey).unwrap();
+//!
+//! let info = b"some extra context info";
+//!
+//!  // Use the streaming API to derive an output key of length 200 bytes.
+//!  let mut okm = KeyMaterial::<200>::new();
+//!  let mut hkdf = HKDF_SHA256::default();
+//!  hkdf.do_extract_init(&salt).unwrap();
+//!  hkdf.do_extract_update_bytes(ikm.ref_to_bytes()).unwrap();
+//!  let prk = hkdf.do_extract_final().unwrap();
+//!  HKDF_SHA256::expand_out(&prk, info, 200, &mut okm).unwrap();
+//! ```
+//!
+//! Various convenience wrapper functions are provided which can reduce the amount of boilerplate code
+//! for common cases.
+//! For example, the above code can be condensed to:
+//!
+//! ```
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyType};
+//! use bouncycastle_digest::hkdf::HKDF_SHA256;
+//!
+//! // setup variables
+//! let salt = KeyMaterial256::from_bytes_as_type(
+//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+//!             KeyType::MACKey).unwrap();
+//!
+//!  let ikm = KeyMaterial256::from_bytes_as_type(
+//!             b"\x0f\x0e\x0d\x0c\x0b\x0a\x09\x08\x07\x06\x05\x04\x03\x02\x01\x00",
+//!             KeyType::MACKey).unwrap();
+//!
+//! let info = b"some extra context info";
+//!
+//! // Use the one-shot API to derive an output key of length 200 bytes.
+//! let mut okm = KeyMaterial::<200>::new();
+//! let _bytes_written = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, info, 200, &mut okm).unwrap();
+//! ```
 //!
 //! # Instantiating HKDF over a hash
 //!
@@ -33,9 +158,8 @@
 //!
 //! ## Worked example
 //!
-//! As an example, the [`sha2`](crate::sha2) module instantiates HKDF-SHA256, HKDF-SHA384 and
-//! HKDF-SHA512 this way. The library does not ship an HKDF-SHA224 alias, so that makes a good
-//! illustration of adding one:
+//! This module instantiates HKDF-SHA256, HKDF-SHA384 and HKDF-SHA512 this way. The library does
+//! not ship an HKDF-SHA224 alias, so that makes a good illustration of adding one:
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
@@ -56,14 +180,23 @@
 //! # Memory Usage
 //!
 //! The [`HKDF`] object uses no heap memory, and the `*_out` methods allocate nothing; the
-//! `Box<dyn KeyMaterialTrait>`-returning one-shots of the `KDF` trait allocate their output. The
-//! object's size depends on the hash and is tabulated with the instantiations: see the Memory
-//! Usage sections of [`crate::sha2::hkdf`], [`crate::sm3::hkdf`] and [`crate::ripemd::hkdf`].
+//! `Box<dyn KeyMaterialTrait>`-returning one-shots of the `KDF` trait allocate their output.
+//!
+//! | Object           | Size (bytes) |
+//! |------------------|--------------|
+//! | `HKDF_SHA256`    | 368          |
+//! | `HKDF_SHA384`    | 656          |
+//! | `HKDF_SHA512`    | 656          |
+//! | `HKDF_SM3`       | 368          |
+//! | `HKDF_RIPEMD160` | 344          |
+//!
+//! The object is an `Option` of the extract phase's two halves, the salt key (two hash states,
+//! the pads) and the inner hash absorbing the IKM -- three hash states, 336 bytes for SHA-256,
+//! 624 for SHA-384 and SHA-512 -- plus the bookkeeping (the entropy counter, the accumulated
+//! security strength, the state-machine tag and the absorbed flag, with padding); the `Option`
+//! is niche-filled for SHA-256 and not for the larger pair, hence the uneven step.
 //!
 //! # 🚨 Security Considerations 🚨
-//!
-//! These apply to every instantiation; `bouncycastle_digest::sha2::hkdf` repeats the ones that matter most in
-//! day-to-day use.
 //!
 //! * Entropy is credited only for input supplied via [`HKDF::do_extract_update_key`], and for a
 //!   salt typed [`KeyType::MACKey`], which is how a caller marks it as the secret salt of SP
@@ -160,41 +293,69 @@ pub trait HKDFParams: HMACParams {
     const HKDF_ALG_NAME: &'static str;
 }
 
+/*** Instantiations ***/
+
+/// The name of HKDF over SHA-224, for `HKDFParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA224_NAME: &str = "HKDF-SHA224";
+/// The name of HKDF over SHA-256, for `HKDFParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA256_NAME: &str = "HKDF-SHA256";
+/// The name of HKDF over SHA-384, for `HKDFParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA384_NAME: &str = "HKDF-SHA384";
+/// The name of HKDF over SHA-512, for `HKDFParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA512_NAME: &str = "HKDF-SHA512";
+/// The name of HKDF over SHA-512/224, for `HKDFParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA512_224_NAME: &str = "HKDF-SHA512/224";
+/// The name of HKDF over SHA-512/256, for `HKDFParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA512_256_NAME: &str = "HKDF-SHA512/256";
+
+/// The name of HKDF over SHA3-224, for `HKDFParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA3_224_NAME: &str = "HKDF-SHA3-224";
+/// The name of HKDF over SHA3-256, for `HKDFParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA3_256_NAME: &str = "HKDF-SHA3-256";
+/// The name of HKDF over SHA3-384, for `HKDFParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA3_384_NAME: &str = "HKDF-SHA3-384";
+/// The name of HKDF over SHA3-512, for `HKDFParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA3_512_NAME: &str = "HKDF-SHA3-512";
+/// The name of HKDF over SM3, for `HKDFParams::HKDF_ALG_NAME`.
+pub const HKDF_SM3_NAME: &str = "HKDF-SM3";
+/// The name of HKDF over RIPEMD-160, for `HKDFParams::HKDF_ALG_NAME`.
+pub const HKDF_RIPEMD160_NAME: &str = "HKDF-RIPEMD160";
+
 impl HKDFParams for SHA224 {
-    const HKDF_ALG_NAME: &'static str = crate::sha2::hkdf::HKDF_SHA224_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SHA224_NAME;
 }
 impl HKDFParams for SHA256 {
-    const HKDF_ALG_NAME: &'static str = crate::sha2::hkdf::HKDF_SHA256_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SHA256_NAME;
 }
 impl HKDFParams for SHA384 {
-    const HKDF_ALG_NAME: &'static str = crate::sha2::hkdf::HKDF_SHA384_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SHA384_NAME;
 }
 impl HKDFParams for SHA512 {
-    const HKDF_ALG_NAME: &'static str = crate::sha2::hkdf::HKDF_SHA512_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SHA512_NAME;
 }
 impl HKDFParams for SHA512_224 {
-    const HKDF_ALG_NAME: &'static str = crate::sha2::hkdf::HKDF_SHA512_224_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SHA512_224_NAME;
 }
 impl HKDFParams for SHA512_256 {
-    const HKDF_ALG_NAME: &'static str = crate::sha2::hkdf::HKDF_SHA512_256_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SHA512_256_NAME;
 }
 impl HKDFParams for SHA3_224 {
-    const HKDF_ALG_NAME: &'static str = crate::sha3::hmac::HKDF_SHA3_224_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SHA3_224_NAME;
 }
 impl HKDFParams for SHA3_256 {
-    const HKDF_ALG_NAME: &'static str = crate::sha3::hmac::HKDF_SHA3_256_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SHA3_256_NAME;
 }
 impl HKDFParams for SHA3_384 {
-    const HKDF_ALG_NAME: &'static str = crate::sha3::hmac::HKDF_SHA3_384_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SHA3_384_NAME;
 }
 impl HKDFParams for SHA3_512 {
-    const HKDF_ALG_NAME: &'static str = crate::sha3::hmac::HKDF_SHA3_512_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SHA3_512_NAME;
 }
 impl HKDFParams for SM3 {
-    const HKDF_ALG_NAME: &'static str = crate::sm3::hkdf::HKDF_SM3_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SM3_NAME;
 }
 impl HKDFParams for RIPEMD160 {
-    const HKDF_ALG_NAME: &'static str = crate::ripemd::hkdf::HKDF_RIPEMD160_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_RIPEMD160_NAME;
 }
 
 /// HKDF over [`WithoutCollisionResistance<H>`] is HKDF over `H`, as its HMAC is.
@@ -202,13 +363,28 @@ impl<H: HKDFParams> HKDFParams for WithoutCollisionResistance<H> {
     const HKDF_ALG_NAME: &'static str = H::HKDF_ALG_NAME;
 }
 
+/// Public type for HKDF using SHA256.
+#[allow(non_camel_case_types)]
+pub type HKDF_SHA256 = HKDF<SHA256>;
+/// Public type for HKDF using SHA384.
+#[allow(non_camel_case_types)]
+pub type HKDF_SHA384 = HKDF<SHA384>;
+/// Public type for HKDF using SHA512.
+#[allow(non_camel_case_types)]
+pub type HKDF_SHA512 = HKDF<SHA512>;
+/// Public type for HKDF using SM3.
+#[allow(non_camel_case_types)]
+pub type HKDF_SM3 = HKDF<SM3>;
+/// Public type for HKDF using RIPEMD-160.
+#[allow(non_camel_case_types)]
+pub type HKDF_RIPEMD160 = HKDF<RIPEMD160>;
+
 /*** Types ***/
 /// The generic HKDF construction (RFC 5869).
 ///
 /// Can be instantiated with hash functions other than the ones provided by this library (even custom
-/// ones). The concrete instantiations over the library's own hashes, along with their name constants,
-/// live in the hash modules -- see `bouncycastle_digest::sha2::hkdf::HKDF_SHA256` and
-/// `bouncycastle_digest::sha2::hkdf::HKDF_SHA512`.
+/// ones). The instantiations over the library's own hashes are the aliases in this module, such as
+/// [`HKDF_SHA256`].
 ///
 /// Not `Clone`: mid-extract it holds the salt key's pad states and an inner hash that has
 /// absorbed the IKM, and keyed workers do not clone. A second derivation comes from the salt.

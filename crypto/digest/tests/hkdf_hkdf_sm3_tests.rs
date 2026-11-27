@@ -14,7 +14,7 @@ mod hkdf_sm3_tests {
     use bouncycastle_core::traits::{Algorithm, AlgorithmInfo};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
-    use bouncycastle_digest::sm3::hkdf::{HKDF_SM3, HKDF_SM3_NAME};
+    use bouncycastle_digest::hkdf::{HKDF_SM3, HKDF_SM3_NAME};
 
     /// Key material of any length and content, including empty or all-zero, as the RFC 5869
     /// vectors need.
@@ -31,7 +31,7 @@ mod hkdf_sm3_tests {
     fn algorithm() {
         assert_eq!(HKDF_SM3::ALG_NAME, HKDF_SM3_NAME);
         assert_eq!(HKDF_SM3_NAME, "HKDF-SM3");
-        assert_eq!(bouncycastle_digest::sm3::hmac::HMAC_SM3_NAME, "HMAC-SM3");
+        assert_eq!(bouncycastle_digest::hmac::HMAC_SM3_NAME, "HMAC-SM3");
         assert_eq!(HKDF_SM3::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
         assert_eq!(HKDF_SM3::new().alg_name(), "HKDF-SM3");
     }

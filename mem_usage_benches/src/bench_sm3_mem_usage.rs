@@ -27,9 +27,9 @@ use bouncycastle::core::errors::{KDFError, MACError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::{Hash, HashOneShot, Suspendable};
+use bouncycastle::digest::hkdf::HKDF_SM3;
+use bouncycastle::digest::hmac::HMAC_SM3;
 use bouncycastle::digest::hmac::HmacKey;
-use bouncycastle::digest::sm3::hkdf::HKDF_SM3;
-use bouncycastle::digest::sm3::hmac::HMAC_SM3;
 use bouncycastle::digest::sm3::{SM3, SUSPENDED_SM3_STATE_LEN};
 
 /// Two full 64-byte blocks and a partial one.

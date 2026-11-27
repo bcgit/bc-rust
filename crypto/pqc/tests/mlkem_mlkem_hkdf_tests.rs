@@ -14,7 +14,7 @@ mod mlkem_hkdf_tests {
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kem::TestFrameworkKEM;
     use bouncycastle_digest::hkdf::HkdfDescription;
-    use bouncycastle_digest::sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
+    use bouncycastle_digest::hkdf::{HKDF_SHA256, HKDF_SHA512};
     use bouncycastle_digest::sha2::{SHA256, SHA512};
     use bouncycastle_pqc::mlkem::{
         KdfParams, KeyLen, MLKEM512, MLKEM512_CT_LEN, MLKEM512_HKDF_SHA256,

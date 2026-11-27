@@ -42,9 +42,9 @@ fn hkdf_sha256_variant() {
     use bouncycastle_core::traits::Algorithm;
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreement;
+    use bouncycastle_digest::hkdf::HKDF_SHA256;
     use bouncycastle_digest::hkdf::HkdfDescription;
     use bouncycastle_digest::sha2::SHA256;
-    use bouncycastle_digest::sha2::hkdf::HKDF_SHA256;
     use bouncycastle_ec::eccdh::eccdh::ECCDH_HKDF_SHA256;
     use bouncycastle_ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
     use bouncycastle_rng::DefaultRNG;

@@ -48,11 +48,7 @@
 //! let output: Vec<u8> = sm3.do_final_partial_bits(data[16], 3).expect("num_partial_bits is in 0..=7");
 //! ```
 //!
-//! ## HMAC
-//! See [hmac].
-//!
-//! ## HKDF
-//! See [hkdf].
+//! HMAC and HKDF over SM3 are in [`crate::hmac`] and [`crate::hkdf`].
 //!
 //! # Memory Usage
 //!
@@ -84,7 +80,7 @@
 //!
 //! * SM3 offers 128 bits of collision resistance and 256 bits of preimage resistance.
 //! * SM3 is a Merkle–Damgård construction and is therefore subject to length-extension:
-//!   `H(k || m)` is not a secure MAC. Use HMAC ([`sm3::hmac`](crate::sm3::hmac)) for keyed hashing.
+//!   `H(k || m)` is not a secure MAC. Use HMAC ([`crate::hmac`]) for keyed hashing.
 //! * The chaining value and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
 //!   zeroized on drop. The compression function runs in a frame of its own, and the stack it used,
 //!   where the message schedule and working variables are spilled, is overwritten after it returns
@@ -119,9 +115,6 @@
 //! ```
 
 mod sm3;
-
-pub mod hkdf;
-pub mod hmac;
 
 pub use self::sm3::{SM3, SUSPENDED_SM3_STATE_LEN};
 use bouncycastle_core::security_strength::SecurityStrength;

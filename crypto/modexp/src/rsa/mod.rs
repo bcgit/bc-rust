@@ -196,7 +196,7 @@
 //!
 //! // Z is a shared secret, not a key: derive the key actually used, here with HKDF-SHA-256
 //! // (SP 800-56C Rev. 2's two-step method), binding in whatever context the protocol defines.
-//! let key = bouncycastle_digest::sha2::hkdf::HKDF_SHA256::default()
+//! let key = bouncycastle_digest::hkdf::HKDF_SHA256::default()
 //!     .derive_key(&z, b"example protocol v1", 32)
 //!     .expect("HKDF accepts any non-empty input key");
 //! assert_eq!(key.key_len(), 32);

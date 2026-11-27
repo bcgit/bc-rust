@@ -1,8 +1,8 @@
 //! The HMAC and HKDF names over SHA-2, spelled out: the constants are what callers and
 //! registries match on, and a test against the constant itself would not see one respelled.
 
-use bouncycastle_digest::sha2::hkdf::{HKDF_SHA256_NAME, HKDF_SHA384_NAME, HKDF_SHA512_NAME};
-use bouncycastle_digest::sha2::hmac::{
+use bouncycastle_digest::hkdf::{HKDF_SHA256_NAME, HKDF_SHA384_NAME, HKDF_SHA512_NAME};
+use bouncycastle_digest::hmac::{
     HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME, HMAC_SHA512_NAME,
 };
 

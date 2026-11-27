@@ -16,11 +16,9 @@ mod hkdf_tests {
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_digest::hkdf::{HKDF, HKDFParams, HkdfDescription};
+    use bouncycastle_digest::hkdf::{HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA512, HKDF_SHA512_NAME};
     use bouncycastle_digest::hmac::HmacKey;
     use bouncycastle_digest::hmac::hazmat as hmac_hazmat;
-    use bouncycastle_digest::sha2::hkdf::{
-        HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA512, HKDF_SHA512_NAME,
-    };
     use bouncycastle_digest::sha2::{SHA256, SHA512};
     use bouncycastle_utils::ct;
 

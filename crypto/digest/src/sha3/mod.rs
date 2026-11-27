@@ -4,9 +4,8 @@
 //!
 //! * SHA3 [`Hash`] functions.
 //! * SHAKE [`XOF`] functions.
-//! * HMAC_SHA3_* MACs, as [`MACGenerator`] / [`MACVerifier`] workers from an `HmacKey`.
-//! * The SP 800-185 functions: cSHAKE ([`XOF`]), KMAC (the same two worker traits, from a
-//!   `KMAC128Key` / `KMAC256Key`), TupleHash and ParallelHash
+//! * The SP 800-185 functions: cSHAKE ([`XOF`]), KMAC ([`MACGenerator`] / [`MACVerifier`]
+//!   workers, from a `KMAC128Key` / `KMAC256Key`), TupleHash and ParallelHash
 //!   ([`Hash`]), and their arbitrary-output-length forms KMACXOF, TupleHashXOF and
 //!   ParallelHashXOF ([`XOF`]).
 //!
@@ -105,7 +104,7 @@
 //! [`HashOneShot::hash`] does the same.
 //!
 //! ## HMAC
-//! See [hmac].
+//! HMAC over these hashes is in [`crate::hmac`].
 //!
 //! ## KMAC, TupleHash and ParallelHash
 //! The SP 800-185 defines "SHA-3 Derived Functions" KMAC, ParallelHash, and TupleHash, which are
@@ -218,7 +217,7 @@
 //! * A customization string is not a key: for any `N` and `S`, cSHAKE has exactly SHAKE's
 //!   security (Sec 8.2.1). It separates instances; it does not strengthen them.
 //! * A suspended KMAC or KMACXOF state inverts to the key, as a suspended HMAC-SHA3 state does
-//!   (see [hmac]): store it as securely as the key.
+//!   (see [`crate::hmac`]): store it as securely as the key.
 
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, AlgorithmOID, CollisionResistantHash, HashAlgParams};
@@ -234,7 +233,6 @@ use bouncycastle_core::traits::{
 };
 // end of doc-only imports
 
-pub mod hmac;
 pub mod kmac;
 pub mod parallelhash;
 pub mod tuplehash;

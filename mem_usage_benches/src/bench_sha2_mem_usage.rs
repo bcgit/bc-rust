@@ -30,7 +30,7 @@ use bouncycastle::core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::{Hash, HashOneShot, Suspendable};
 use bouncycastle::digest::hmac::HmacKey;
-use bouncycastle::digest::sha2::hmac::{HMAC_SHA256, HMAC_SHA512};
+use bouncycastle::digest::hmac::{HMAC_SHA256, HMAC_SHA512};
 use bouncycastle::digest::sha2::{
     SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256, SUSPENDED_SHA256_STATE_LEN,
     SUSPENDED_SHA512_STATE_LEN,

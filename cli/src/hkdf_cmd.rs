@@ -10,9 +10,7 @@ use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::digest::hkdf;
 use bouncycastle::digest::hkdf::{HKDF, HKDFParams};
-use bouncycastle::digest::ripemd::hkdf::HKDF_RIPEMD160;
-use bouncycastle::digest::sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
-use bouncycastle::digest::sm3::hkdf::HKDF_SM3;
+use bouncycastle::digest::hkdf::{HKDF_RIPEMD160, HKDF_SHA256, HKDF_SHA384, HKDF_SHA512, HKDF_SM3};
 
 #[allow(non_camel_case_types)]
 pub(crate) enum HKDFVariant {

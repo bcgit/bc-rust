@@ -1,23 +1,38 @@
-//! The generic Hash-Based Message Authentication Code (HMAC) construction, as specified in RFC 2104,
-//! taking into account NIST Implementation Guidance in FIPS 140-3 IG C.L.
+//! The Hash-Based Message Authentication Code (HMAC), as specified in RFC 2104, taking into account
+//! NIST Implementation Guidance in FIPS 140-3 IG C.L, generic over the hash, and its instantiations
+//! over the library's hashes.
 //!
-//! This is a utility module and is not intended to be used directly. It provides [`HmacKey`] -- the
-//! key object, which holds the two precomputed pad states RFC 2104 Section 4 describes and hands
-//! out workers -- and [`HMAC`] -- the worker, one per message, which borrows the key it came from
-//! and generates (`HMAC<'k, H, Encrypting>`) or verifies (`HMAC<'k, H, Decrypting>`) a tag.
-//! Both are generic over any struct that implements [`Hash`] and [`HMACParams`], the extension
-//! point through which a hash declares the metadata from which the HMAC instance is built. The
-//! library provides the following concrete instantiations of HMAC:
+//! [`HmacKey`] is the key object, which holds the two precomputed pad states RFC 2104 Section 4
+//! describes and hands out workers; [`HMAC`] is the worker, one per message, which borrows the key
+//! it came from and generates (`HMAC<'k, H, Encrypting>`) or verifies (`HMAC<'k, H, Decrypting>`) a
+//! tag. Both are generic over any struct that implements [`Hash`] and [`HMACParams`], the extension
+//! point through which a hash declares the metadata from which the HMAC instance is built. This
+//! module implements [`HMACParams`] for the library's hashes and names the instantiations:
 //!
-//! | Hash family | Instantiations                                                               |
-//! |-------------|------------------------------------------------------------------------------|
-//! | SHA-2       | `bouncycastle_digest::sha2::hmac` -- `HMAC_SHA224`, `HMAC_SHA256`, `HMAC_SHA384`, `HMAC_SHA512`, `HMAC_SHA512_224`, `HMAC_SHA512_256` |
-//! | SHA-3       | `bouncycastle_digest::sha3::hmac` -- `HMAC_SHA3_224`, `HMAC_SHA3_256`, `HMAC_SHA3_384`, `HMAC_SHA3_512` |
-//! | SM3         | `bouncycastle_digest::sm3::hmac` -- `HMAC_SM3`                                       |
-//! | RIPEMD      | `bouncycastle_digest::ripemd::hmac` -- `HMAC_RIPEMD160`                              |
+//! | Hash family | Instantiations                                                                                 |
+//! |-------------|------------------------------------------------------------------------------------------------|
+//! | SHA-2       | [`HMAC_SHA224`], [`HMAC_SHA256`], [`HMAC_SHA384`], [`HMAC_SHA512`], [`HMAC_SHA512_224`], [`HMAC_SHA512_256`] |
+//! | SHA-3       | [`HMAC_SHA3_224`], [`HMAC_SHA3_256`], [`HMAC_SHA3_384`], [`HMAC_SHA3_512`]                     |
+//! | SM3         | [`HMAC_SM3`]                                                                                   |
+//! | RIPEMD      | [`HMAC_RIPEMD160`]                                                                             |
 //!
-//! Although users are free to implement [`Hash`] and [`HMACParams`] for a a hash function not included with the library,
-//! and will then be able to instantiate [`HMAC`] for it as well.
+//! Users are free to implement [`Hash`] and [`HMACParams`] for a hash function not included with
+//! the library, and will then be able to instantiate [`HMAC`] for it as well.
+//!
+//! A key of any length is accepted: per RFC 2104, a key longer than the hash's block
+//! (for SHA-3 the sponge *rate*, FIPS 202 Table 3's "Input block sizes for HMAC") is pre-hashed to
+//! the output length. The key's two pad states are computed once, when the [`HmacKey`] is built.
+//!
+//! # Usage
+//!
+//! * [`FromAnyKeyMaterial::from_key_material`] checks that the material is a [`KeyType::MACKey`]
+//!   tagged at the security strength of the chosen hash; [`FromAnyKeyMaterial::generate`] draws a
+//!   key of the hash's output length. Where a protocol calls for a weak key (an all-zero salt,
+//!   say), [`FromAnyKeyMaterial::from_key_material_allow_weak`] skips the strength check.
+//! * [`MacGenerationKey::create_generator`] / [`MacVerificationKey::create_verifier`] start a
+//!   worker, whose `do_update` takes the content in chunks and whose `do_final` /
+//!   [`MACVerifier::do_verify_final`] finish it. The key's own [`MacGenerationKey::mac`] and
+//!   [`MacVerificationKey::verify`] are the one-shots.
 //!
 //! # Usage Examples
 //!
@@ -44,6 +59,27 @@
 //! assert!(key.verify(b"part onepart two", &tag).is_ok());   // one-shot, same path underneath
 //! ```
 //!
+//! The aliases name a worker's type, and a key built from known material verifies a known tag:
+//!
+//! ```
+//! use bouncycastle_core::direction::Decrypting;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacVerificationKey};
+//! use bouncycastle_core::traits::MACVerifier;
+//! use bouncycastle_digest::hmac::{HMAC_SHA256, HmacKey};
+//! use bouncycastle_digest::sha2::SHA256;
+//!
+//! let key_material = KeyMaterial256::from_bytes_as_type(
+//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+//!             KeyType::MACKey).unwrap();
+//! let key = HmacKey::<SHA256>::from_key_material(&key_material).unwrap();
+//!
+//! let mut hmac: HMAC_SHA256<Decrypting> = key.create_verifier();
+//! hmac.do_update(b"Hello,");
+//! hmac.do_update(b" world!");
+//! assert!(hmac.do_verify_final(b"\xa2\xd1\x2e\xcf\xfc\x41\xba\xf1\x23\xd6\x3e\x44\xfc\x27\x88\x90\x47\xcd\x08\xe7\x05\xd7\x0f\xa3\xb8\xaa\x8a\x5c\x18\x7c\x6c\xa9").is_ok());
+//! ```
+//!
 //! # Instantiating HMAC over a Hash
 //!
 //! HMAC works with any hash: [`HMAC<HASH>`](HMAC) needs only [`Hash`]. What HMAC cannot
@@ -61,11 +97,12 @@
 //!    [`HmacKey::keygen_from_rng`] returns, which is also what fixes the tag length of the MAC
 //!    roles. This allows this module to provide blanket [`Algorithm`], [`AlgorithmOID`] and role
 //!    impls.
-//! 3. Publish a type alias for the instantiation, `HMAC<SHA256, Dir>`.
+//! 3. Publish a type alias for the instantiation, `HMAC<'k, SHA256, Dir>`.
 //!
 //! ## Worked example
 //!
-//! As an example, the [`sha2`](crate::sha2) module follows exactly the recipe above; its entry for SHA-256 reduces to:
+//! This module follows exactly the recipe above for the library's hashes; its entry for SHA-256
+//! reduces to:
 //!
 //! ```rust,ignore
 //! pub type HMAC_SHA256<'k, Dir> = HMAC<'k, SHA256, Dir>;
@@ -86,14 +123,23 @@
 //!
 //! # Memory Usage
 //!
-//! HMAC allocates nothing. The sizes of a key and of a worker depend on the hash, and are tabulated
-//! with the instantiations: see the Memory Usage sections of [`crate::sha2::hmac`] and
-//! [`crate::sha3::hmac`].
+//! HMAC allocates nothing: the tag is a fixed-length array.
+//!
+//! | Object                                                   | Size (bytes) |
+//! |----------------------------------------------------------|--------------|
+//! | `HmacKey` for `HMAC_SHA224`, `HMAC_SHA256`               | 224          |
+//! | `HmacKey` for `HMAC_SHA384`, `HMAC_SHA512`               | 416          |
+//! | `HmacKey` for `HMAC_SHA3_224` .. `HMAC_SHA3_512`         | 848          |
+//! | `HMAC_SHA224`, `HMAC_SHA256` worker                      | 128          |
+//! | `HMAC_SHA384`, `HMAC_SHA512` worker                      | 224          |
+//! | `HMAC_SHA3_224` .. `HMAC_SHA3_512` worker                | 440          |
+//!
+//! The key is two of the underlying hash object (see the hash modules' Memory Usage sections): the
+//! inner and the outer pad state, 2 x 112 = 224 for the SHA-256 family, 2 x 208 = 416 for the
+//! SHA-512 family, 2 x 424 = 848 for the Keccak-f\[1600\] sponge. The worker is the inner hash
+//! plus a reference to the key it borrows and a flag.
 //!
 //! # 🚨 Security Considerations 🚨
-//!
-//! These apply to every instantiation; the hash modules' `hmac` modules repeat the ones that matter
-//! most in day-to-day use.
 //!
 //! * [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`] is a claim that
 //!   [`FromAnyKeyMaterial::from_key_material`] enforces against the key's tagged strength, and
@@ -119,6 +165,16 @@
 //!   prints them. The padded key block they are built from is a [`Secret`] scratch, zeroized when
 //!   construction returns, and the stack a worker uses to take the inner state and to finish a
 //!   tag is overwritten before it returns.
+//! * A key longer than the hash's block is pre-hashed down to the output length (RFC 2104
+//!   Section 2), so very long keys add no strength beyond that point.
+//! * SHA-3 is a sponge and is not vulnerable to the length-extension attack that motivates HMAC for
+//!   Merkle-Damgard hashes, so a plain `SHA3(k || m)` is not broken the way `SHA256(k || m)` is.
+//!   HMAC-SHA3 remains the right choice for interoperability and for FIPS 198-1 conformance, and
+//!   KMAC (NIST SP 800-185) is the SHA-3-native alternative.
+//! * [`HMAC_RIPEMD160`] is a legacy construction: it reports [`SecurityStrength::None`], as the
+//!   hash does (see [`crate::ripemd`]). [`FromAnyKeyMaterial::from_key_material`] still refuses
+//!   a key that carries no security strength, such as RFC 2286's 4-byte key; a protocol that
+//!   needs one uses [`FromAnyKeyMaterial::from_key_material_allow_weak`].
 //!
 //! [`Secret`]: bouncycastle_utils::secret::Secret
 //! [`MacVerificationKey::verify`]: bouncycastle_core::symmetric_key::MacVerificationKey::verify
@@ -141,6 +197,11 @@ use bouncycastle_utils::{ct, secret::Secret};
 use core::fmt::{Debug, Display, Formatter};
 use core::marker::PhantomData;
 
+use crate::ripemd::RIPEMD160;
+use crate::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use crate::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+use crate::sm3::SM3;
+
 /*** Parameters ***/
 
 /// The HMAC-specific parameters for one underlying hash function.
@@ -151,9 +212,8 @@ use core::marker::PhantomData;
 /// [`HmacKey::keygen_from_rng`] can be impl'd generically rather than being written out once
 /// per hash.
 ///
-/// Each hash module is expected to implement this trait for its own hash types and publishes the
-/// resulting type alias. For example,`HMAC_SHA256` lives in `bouncycastle_digest::sha2::hmac` and
-/// `HMAC_SHA3_256` in `bouncycastle_digest::sha3::hmac`.
+/// This module implements it for the library's hashes and names the instantiations, such as
+/// [`HMAC_SHA256`] and [`HMAC_SHA3_256`].
 ///
 /// The block length and the generated-key length do not need to be restated here since they are already
 /// carried by the hash itself as [`HashAlgParams::BLOCK_LEN`] and [`HashAlgParams::OUTPUT_LEN`].
@@ -200,6 +260,203 @@ impl<HASH: HMACParams, Dir> Algorithm for HMAC<'_, HASH, Dir> {
 impl<HASH: HMACParams, Dir> AlgorithmOID for HMAC<'_, HASH, Dir> {
     const OID: &'static [u32] = HASH::HMAC_OID;
     const OID_DER: &'static [u8] = HASH::HMAC_OID_DER;
+}
+
+/*** Instantiations ***/
+
+// SHA-2
+
+/// Algorithm name string for HMAC over SHA-224.
+pub const HMAC_SHA224_NAME: &str = "HMAC-SHA224";
+/// Algorithm name string for HMAC over SHA-256.
+pub const HMAC_SHA256_NAME: &str = "HMAC-SHA256";
+/// Algorithm name string for HMAC over SHA-384.
+pub const HMAC_SHA384_NAME: &str = "HMAC-SHA384";
+/// Algorithm name string for HMAC over SHA-512.
+pub const HMAC_SHA512_NAME: &str = "HMAC-SHA512";
+/// Algorithm name string for HMAC over SHA-512/224.
+pub const HMAC_SHA512_224_NAME: &str = "HMAC-SHA512/224";
+/// Algorithm name string for HMAC over SHA-512/256.
+pub const HMAC_SHA512_256_NAME: &str = "HMAC-SHA512/256";
+
+/// Public type for HMAC using SHA224.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA224<'k, Dir> = HMAC<'k, SHA224, Dir>;
+impl HMACParams for SHA224 {
+    type MACKey = KeyMaterial<{ <SHA224 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SHA224_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
+    /// Defined in RFC 4231: id-hmacWithSHA224 { digestAlgorithm 8 }
+    const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 8];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x08];
+}
+
+/// Public type for HMAC using SHA256.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA256<'k, Dir> = HMAC<'k, SHA256, Dir>;
+impl HMACParams for SHA256 {
+    type MACKey = KeyMaterial<{ <SHA256 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SHA256_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    /// Defined in RFC 4231: id-hmacWithSHA256 { digestAlgorithm 9 }
+    const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 9];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x09];
+}
+
+/// Public type for HMAC using SHA384.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA384<'k, Dir> = HMAC<'k, SHA384, Dir>;
+impl HMACParams for SHA384 {
+    type MACKey = KeyMaterial<{ <SHA384 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SHA384_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
+    /// Defined in RFC 4231: id-hmacWithSHA384 { digestAlgorithm 10 }
+    const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 10];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0a];
+}
+
+/// Public type for HMAC using SHA512.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA512<'k, Dir> = HMAC<'k, SHA512, Dir>;
+impl HMACParams for SHA512 {
+    type MACKey = KeyMaterial<{ <SHA512 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SHA512_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+    /// Defined in RFC 4231: id-hmacWithSHA512 { digestAlgorithm 11 }
+    const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 11];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0b];
+}
+
+/// Public type for HMAC using SHA512/224.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA512_224<'k, Dir> = HMAC<'k, SHA512_224, Dir>;
+impl HMACParams for SHA512_224 {
+    type MACKey = KeyMaterial<{ <SHA512_224 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SHA512_224_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
+    /// Defined in RFC 8018 Appendix B.1.2: id-hmacWithSHA512-224 { digestAlgorithm 12 }
+    const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 12];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0c];
+}
+
+/// Public type for HMAC using SHA512/256.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA512_256<'k, Dir> = HMAC<'k, SHA512_256, Dir>;
+impl HMACParams for SHA512_256 {
+    type MACKey = KeyMaterial<{ <SHA512_256 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SHA512_256_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    /// Defined in RFC 8018 Appendix B.1.2: id-hmacWithSHA512-256 { digestAlgorithm 13 }
+    const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 13];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0d];
+}
+
+// SHA-3
+
+/// The name of HMAC over SHA3-224.
+pub const HMAC_SHA3_224_NAME: &str = "HMAC-SHA3-224";
+/// The name of HMAC over SHA3-256.
+pub const HMAC_SHA3_256_NAME: &str = "HMAC-SHA3-256";
+/// The name of HMAC over SHA3-384.
+pub const HMAC_SHA3_384_NAME: &str = "HMAC-SHA3-384";
+/// The name of HMAC over SHA3-512.
+pub const HMAC_SHA3_512_NAME: &str = "HMAC-SHA3-512";
+
+/// Public type for HMAC using SHA3_224.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA3_224<'k, Dir> = HMAC<'k, SHA3_224, Dir>;
+impl HMACParams for SHA3_224 {
+    type MACKey = KeyMaterial<{ <SHA3_224 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SHA3_224_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
+    /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-224 { hashAlgs 13 }
+    const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 13];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0d];
+}
+
+/// Public type for HMAC using SHA3_256.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA3_256<'k, Dir> = HMAC<'k, SHA3_256, Dir>;
+impl HMACParams for SHA3_256 {
+    type MACKey = KeyMaterial<{ <SHA3_256 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SHA3_256_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-256 { hashAlgs 14 }
+    const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 14];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0e];
+}
+
+/// Public type for HMAC using SHA3_384.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA3_384<'k, Dir> = HMAC<'k, SHA3_384, Dir>;
+impl HMACParams for SHA3_384 {
+    type MACKey = KeyMaterial<{ <SHA3_384 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SHA3_384_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
+    /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-384 { hashAlgs 15 }
+    const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 15];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0f];
+}
+
+/// Public type for HMAC using SHA3_512.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA3_512<'k, Dir> = HMAC<'k, SHA3_512, Dir>;
+impl HMACParams for SHA3_512 {
+    type MACKey = KeyMaterial<{ <SHA3_512 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SHA3_512_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+    /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-512 { hashAlgs 16 }
+    const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 16];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x10];
+}
+
+// SM3
+
+/// Algorithm name string for HMAC over SM3.
+pub const HMAC_SM3_NAME: &str = "HMAC-SM3";
+
+/// Public type for HMAC using SM3.
+#[allow(non_camel_case_types)]
+pub type HMAC_SM3<'k, Dir> = HMAC<'k, SM3, Dir>;
+impl HMACParams for SM3 {
+    type MACKey = KeyMaterial<{ <SM3 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SM3_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    /// Assigned by the Chinese OSCCA (GM/T 0006): hmac-sm3 { sm3 2 } = 1.2.156.10197.1.401.2
+    const HMAC_OID: &'static [u32] = &[1, 2, 156, 10197, 1, 401, 2];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x83, 0x11, 0x02];
+}
+
+// RIPEMD
+
+/// Algorithm name string for HMAC over RIPEMD-160.
+pub const HMAC_RIPEMD160_NAME: &str = "HMAC-RIPEMD160";
+
+/// Public type for HMAC using RIPEMD-160.
+#[allow(non_camel_case_types)]
+pub type HMAC_RIPEMD160<'k, Dir> = HMAC<'k, RIPEMD160, Dir>;
+impl HMACParams for RIPEMD160 {
+    type MACKey = KeyMaterial<{ <RIPEMD160 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_RIPEMD160_NAME;
+    // Half the hash's output length in bits (160 / 2 = 80), which below 112 bits is `None`.
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength =
+        SecurityStrength::from_bits(<RIPEMD160 as HashAlgParams>::OUTPUT_LEN * 8 / 2);
+    /// Assigned by IANA in the registry "SMI Security for Mechanism isakmpOakley Codes":
+    /// HMAC-RIPEMD160 { 1 3 6 1 5 5 8 1 4 }
+    const HMAC_OID: &'static [u32] = &[1, 3, 6, 1, 5, 5, 8, 1, 4];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x08, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x08, 0x01, 0x04];
 }
 
 /// The largest block length, in bytes, of any hash HMAC is instantiated with (SHA3-224's 144).

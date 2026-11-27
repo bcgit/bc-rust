@@ -52,11 +52,7 @@
 //! let output: Vec<u8> = ripemd.do_final_partial_bits(data[16], 3).expect("num_partial_bits is in 0..=7");
 //! ```
 //!
-//! ## HMAC
-//! See [hmac].
-//!
-//! ## HKDF
-//! See [hkdf].
+//! HMAC and HKDF over RIPEMD-160 are in [`crate::hmac`] and [`crate::hkdf`].
 //!
 //! # Memory Usage
 //!
@@ -99,7 +95,7 @@
 //!   caller who must make such a signature names the hash as
 //!   [`WithoutCollisionResistance<RIPEMD160>`](bouncycastle_core::hazmat::WithoutCollisionResistance).
 //! * All four are Merkle-Damgard constructions and so are subject to length extension:
-//!   `H(k || m)` is not a secure MAC. Use HMAC ([`ripemd::hmac`](crate::ripemd::hmac)) for keyed hashing.
+//!   `H(k || m)` is not a secure MAC. Use HMAC ([`crate::hmac`]) for keyed hashing.
 //! * The chaining variable and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
 //!   zeroized on drop. The compression function runs in a frame of its own, and the stack it used,
 //!   where the line variables and message words are spilled, is overwritten after it returns (in
@@ -131,9 +127,6 @@
 mod common;
 mod ripemd128;
 mod ripemd160;
-
-pub mod hkdf;
-pub mod hmac;
 
 use self::common::BLOCK_LEN;
 pub use self::common::RIPEMDInternal;

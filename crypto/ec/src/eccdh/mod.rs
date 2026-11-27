@@ -55,7 +55,7 @@
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_digest::hkdf::HkdfDescription;
 //! use bouncycastle_digest::sha2::SHA256;
-//! use bouncycastle_digest::sha2::hkdf::HKDF_SHA256;
+//! use bouncycastle_digest::hkdf::HKDF_SHA256;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let (pk_a, sk_a) = P256::generate_agreement_key_pair(&mut rng)?;

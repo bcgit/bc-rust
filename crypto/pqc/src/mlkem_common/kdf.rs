@@ -39,7 +39,7 @@ use bouncycastle_core::traits::{
     Algorithm, HashAlgParams, KDF, KEMDecapsulator, KEMEncapsulator, RNG,
 };
 use bouncycastle_digest::hkdf::HkdfDescription;
-use bouncycastle_digest::sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
+use bouncycastle_digest::hkdf::{HKDF_SHA256, HKDF_SHA512};
 use bouncycastle_digest::sha2::{SHA256, SHA512};
 use core::marker::PhantomData;
 

@@ -14,9 +14,9 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, HashAlgParams, KDF};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
+use bouncycastle_digest::hkdf::HKDF_RIPEMD160;
 use bouncycastle_digest::hkdf::HkdfDescription;
 use bouncycastle_digest::ripemd::RIPEMD160;
-use bouncycastle_digest::ripemd::hkdf::HKDF_RIPEMD160;
 
 /// Key material of any length and content, including empty or all-zero, as the RFC 5869
 /// inputs need.

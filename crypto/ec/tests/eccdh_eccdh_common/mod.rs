@@ -15,7 +15,7 @@ use bouncycastle_core_test_framework::key_agreement::{
     TestFrameworkKeyAgreement, TestFrameworkKeyAgreementKeys,
 };
 use bouncycastle_digest::concatkdf::ConcatKDF;
-use bouncycastle_digest::sha2::hkdf::HKDF_SHA256;
+use bouncycastle_digest::hkdf::HKDF_SHA256;
 use bouncycastle_digest::x963kdf::X963KDF;
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ec::eccdh::eccdh::{ECCDH, ECCDH_ConcatKDF, ECCDH_X963KDF, MatchedHash};

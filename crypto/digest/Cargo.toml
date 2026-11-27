@@ -78,7 +78,7 @@ name = "pbkdf2_pbkdf2_benches"
 harness = false
 
 [[bench]]
-name = "ripemd_hmac_ripemd_benches"
+name = "hmac_hmac_ripemd_benches"
 harness = false
 
 [[bench]]
@@ -90,15 +90,15 @@ name = "scrypt_scrypt_benches"
 harness = false
 
 [[bench]]
-name = "sm3_hkdf_sm3_benches"
+name = "hkdf_hkdf_sm3_benches"
 harness = false
 
 [[bench]]
-name = "ripemd_hkdf_ripemd160_benches"
+name = "hkdf_hkdf_ripemd160_benches"
 harness = false
 
 [[bench]]
-name = "sm3_hmac_sm3_benches"
+name = "hmac_hmac_sm3_benches"
 harness = false
 
 [[bench]]
@@ -122,11 +122,11 @@ name = "sha2_sha2_benches"
 harness = false
 
 [[bench]]
-name = "sha2_hkdf_sha2_benches"
+name = "hkdf_hkdf_sha2_benches"
 harness = false
 
 [[bench]]
-name = "sha2_hmac_sha2_benches"
+name = "hmac_hmac_sha2_benches"
 harness = false
 
 [[bench]]
@@ -135,5 +135,5 @@ harness = false
 required-features = ["alloc"]
 
 [[bench]]
-name = "sha3_hmac_sha3_benches"
+name = "hmac_hmac_sha3_benches"
 harness = false
