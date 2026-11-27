@@ -14,6 +14,12 @@
 //! copies compared: but for the ciphertext and the registers the call's first frames saved,
 //! they must be the same.
 //!
+//! Each operation runs with the callee-saved registers zero ([`scrubbed`]): a word of a secret
+//! this program computed with, waiting in one of them, would otherwise be saved to the stack by
+//! the operation's first frames and found there, as on arm64 it was. With `STACK_DETAIL` set,
+//! each finding is also printed with how far below the call it lies (negative above it, in this
+//! program's frames), which is what a wipe is sized from.
+//!
 //! Controls: nothing run must leave nothing, and the same stack twice; a copy of `dB` left in a
 //! frame must be found, and copies of two keys must differ.
 //!
@@ -39,6 +45,8 @@ use bouncycastle_ec::sm2::keys::{self, SM2PrivateKey, SM2PublicKey};
 use bouncycastle_ec::sm2::sm2::SIG_LEN;
 use std::collections::HashSet;
 use std::hint::black_box;
+
+mod scrubbed;
 
 /// How far below the call the stack is painted and searched. The deepest operation here uses
 /// under 8 KiB.
@@ -256,9 +264,18 @@ impl Scan {
         Self { buf: vec![0u8; DEPTH], before: vec![0u8; DEPTH], failures: 0 }
     }
 
-    /// Paints, runs `f` and copies the stack out. What `f` returns comes back by value.
+    /// Paints, runs `f` and copies the stack out. What `f` returns comes back by value. Run with
+    /// the callee-saved registers zero ([`scrubbed`]), and painted from that frame down as well
+    /// as from [`measure`]'s, so that the slots `measure`'s own frame leaves unwritten hold the
+    /// paint and not what an earlier call of this program's left there.
     fn run<T>(&mut self, f: impl FnOnce() -> T) -> T {
-        measure(&mut self.buf, f)
+        let mut result = None;
+        let buf = &mut self.buf;
+        scrubbed::call(|| {
+            paint();
+            result = Some(measure(buf, f));
+        });
+        result.unwrap()
     }
 
     /// The bytes of stack the last run used, and for each of `values`, how many of its words
@@ -294,6 +311,9 @@ impl Scan {
             .filter(|(_, hits, _)| *hits > 0)
             .map(|(name, hits, words)| format!("{name}: {hits} of {words} words"))
             .collect();
+        if detail() {
+            self.where_found(values);
+        }
         if found.is_empty() {
             println!("ok   {operation}: none of its secrets in the {used} bytes of stack it used");
         } else {
@@ -302,6 +322,19 @@ impl Scan {
                 found.join(", ")
             );
             self.failures += 1;
+        }
+    }
+
+    /// With `STACK_DETAIL` set: how far below the call each word of `values` that was found lies,
+    /// negative for a word above it, in the frames of this program that run the operation.
+    fn where_found(&self, values: &Values) {
+        for (name, image) in values {
+            for word in image.chunks_exact(8).filter(|w| w.iter().any(|b| *b != w[0])) {
+                for at in (0..DEPTH - 7).filter(|at| self.buf[*at..at + 8] == *word) {
+                    let below = (DEPTH - PAD) as isize - at as isize;
+                    println!("       {name}: a word {below} bytes below the call");
+                }
+            }
         }
     }
 
@@ -349,6 +382,12 @@ impl Scan {
             // held is this program's own: a loop's pointer, a length.
             let below_the_call = (DEPTH - end).saturating_sub(PAD);
             if !explained && below_the_call >= SAVED_REGISTERS {
+                if detail() {
+                    println!(
+                        "       {len} bytes differ {} bytes below the call",
+                        (DEPTH - i).saturating_sub(PAD)
+                    );
+                }
                 count += len;
                 furthest = furthest.max((DEPTH - i).saturating_sub(PAD));
             }
@@ -387,6 +426,11 @@ impl Scan {
             self.failures += 1;
         }
     }
+}
+
+/// Whether `STACK_DETAIL` is set: then where each finding lies is printed too, for sizing a wipe.
+fn detail() -> bool {
+    std::env::var_os("STACK_DETAIL").is_some()
 }
 
 /// A message of `len` bytes with no 8-byte word of one repeated byte.

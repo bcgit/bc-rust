@@ -15,6 +15,12 @@
 //! for the random operations two draws of the RNG), and the two copies compared: but for what the
 //! operation hands out and the registers the call's first frames saved, they must be the same.
 //!
+//! Each operation runs with the callee-saved registers zero ([`scrubbed`]): a word of a secret
+//! this program computed with, waiting in one of them, would otherwise be saved to the stack by
+//! the operation's first frames and found there, as on arm64 it was. With `STACK_DETAIL` set,
+//! each finding is also printed with how far below the call it lies (negative above it, in this
+//! program's frames), which is what a wipe is sized from.
+//!
 //! Controls: nothing run must leave nothing, and the same stack twice; a copy of `d` left in a
 //! frame must be found, and copies of two keys must differ.
 //!
@@ -63,6 +69,7 @@ use std::collections::HashSet;
 use std::hint::black_box;
 
 mod ed;
+mod scrubbed;
 
 /// How far below the call the stack is painted and searched. The deepest operation here uses
 /// under 16 KiB.
@@ -164,9 +171,18 @@ impl Scan {
         Self { buf: vec![0u8; DEPTH], before: vec![0u8; DEPTH], failures: 0, report_only: false }
     }
 
-    /// Paints, runs `f` and copies the stack out. What `f` returns comes back by value.
+    /// Paints, runs `f` and copies the stack out. What `f` returns comes back by value. Run with
+    /// the callee-saved registers zero ([`scrubbed`]), and painted from that frame down as well
+    /// as from [`measure`]'s, so that the slots `measure`'s own frame leaves unwritten hold the
+    /// paint and not what an earlier call of this program's left there.
     fn run<T>(&mut self, f: impl FnOnce() -> T) -> T {
-        measure(&mut self.buf, f)
+        let mut result = None;
+        let buf = &mut self.buf;
+        scrubbed::call(|| {
+            paint();
+            result = Some(measure(buf, f));
+        });
+        result.unwrap()
     }
 
     /// The bytes of stack the last run used, and for each of `values`, how many of its words
@@ -202,6 +218,9 @@ impl Scan {
             .filter(|(_, hits, _)| *hits > 0)
             .map(|(name, hits, words)| format!("{name}: {hits} of {words} words"))
             .collect();
+        if detail() {
+            self.where_found(values);
+        }
         if found.is_empty() {
             println!("ok   {operation}: none of its secrets in the {used} bytes of stack it used");
         } else {
@@ -211,6 +230,19 @@ impl Scan {
                 found.join(", ")
             );
             self.fail();
+        }
+    }
+
+    /// With `STACK_DETAIL` set: how far below the call each word of `values` that was found lies,
+    /// negative for a word above it, in the frames of this program that run the operation.
+    fn where_found(&self, values: &Values) {
+        for (name, image) in values {
+            for word in image.chunks_exact(8).filter(|w| w.iter().any(|b| *b != w[0])) {
+                for at in (0..DEPTH - 7).filter(|at| self.buf[*at..at + 8] == *word) {
+                    let below = (DEPTH - PAD) as isize - at as isize;
+                    println!("       {name}: a word {below} bytes below the call");
+                }
+            }
         }
     }
 
@@ -270,6 +302,13 @@ impl Scan {
             // within SAVED_REGISTERS of the call are put down to that.
             let deep_end = end.min((DEPTH - PAD).saturating_sub(SAVED_REGISTERS));
             if !explained && deep_end > i {
+                if detail() {
+                    println!(
+                        "       {} bytes differ {} bytes below the call",
+                        deep_end - i,
+                        (DEPTH - i).saturating_sub(PAD)
+                    );
+                }
                 count += deep_end - i;
                 furthest = furthest.max((DEPTH - i).saturating_sub(PAD));
             }
@@ -309,6 +348,11 @@ impl Scan {
             self.failures += 1;
         }
     }
+}
+
+/// Whether `STACK_DETAIL` is set: then where each finding lies is printed too, for sizing a wipe.
+fn detail() -> bool {
+    std::env::var_os("STACK_DETAIL").is_some()
 }
 
 /// `len` bytes of SHA-512 in counter mode over `label`: the harness's own source of distinct,
