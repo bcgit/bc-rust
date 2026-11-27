@@ -292,11 +292,7 @@ impl Scan {
             while end < DEPTH && self.before[end] != self.buf[end] {
                 end += 1;
             }
-            let len = end - i;
-            let explained = (0..public.len().saturating_sub(len - 1)).any(|at| {
-                public_before[at..at + len] == self.before[i..end]
-                    && public[at..at + len] == self.buf[i..end]
-            });
+            let explained = self.public_run(i, end, public_before, public);
             // The first frames of a call save the registers they go on to use, and what those
             // held is this program's own: a loop's pointer, a length. Only the bytes of the run
             // within SAVED_REGISTERS of the call are put down to that.
@@ -315,6 +311,31 @@ impl Scan {
             i = end;
         }
         (count, furthest)
+    }
+
+    /// Whether the bytes `i..end`, in which the two runs differ, are pieces of `public_before` in
+    /// the kept run and the same pieces of `public` in the last, one after another: two public
+    /// values can lie side by side, in any order. Each piece but the last is at least a word.
+    fn public_run(&self, i: usize, end: usize, public_before: &[u8], public: &[u8]) -> bool {
+        let mut p = i;
+        while p < end {
+            let piece = (0..public.len())
+                .map(|at| {
+                    (0..(end - p).min(public.len() - at))
+                        .take_while(|l| {
+                            public_before[at + l] == self.before[p + l]
+                                && public[at + l] == self.buf[p + l]
+                        })
+                        .count()
+                })
+                .max()
+                .unwrap_or(0);
+            if piece < 8.min(end - p) {
+                return false;
+            }
+            p += piece;
+        }
+        true
     }
 
     /// After the same operation run twice, at the same addresses, over different secrets: the
