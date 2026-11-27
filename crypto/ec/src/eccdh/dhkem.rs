@@ -42,7 +42,7 @@
 
 use crate::curve::{
     AGREE_STACK_FIXED, AGREE_STACK_PER_LIMB, Curve, DECODE_STACK_FIXED, DECODE_STACK_PER_LIMB,
-    JacobianPoint, private_scalar_from_be_bytes, public_point_wiped,
+    JacobianPoint, private_key_from_be_bytes, public_point_wiped,
 };
 use crate::dhkem::{
     AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEM, DHKEMParams, DeriveKeyPairForm, HpkeKem,
@@ -352,7 +352,11 @@ where
     // The key is built in a wiped frame, as the private key's `from_bytes` builds it.
     fn private_key_from_bytes(sk: &[u8; N_SK]) -> Option<ECCDHPrivateKey<C>> {
         in_wiped_frame::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
-            private_scalar_from_be_bytes::<C>(sk).map(ECCDHPrivateKey::from_scalar)
+            private_key_from_be_bytes::<C, _>(
+                sk,
+                |d| Some(ECCDHPrivateKey::from_scalar(d)),
+                || None,
+            )
         })
     }
 

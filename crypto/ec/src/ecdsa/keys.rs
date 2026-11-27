@@ -7,7 +7,7 @@
 
 use crate::curve::{
     Curve, DECODE_STACK_FIXED, DECODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, ENCODE_STACK_PER_LIMB,
-    KEYGEN_STACK_FIXED, KEYGEN_STACK_PER_LIMB, SecretScalar, private_scalar_from_be_bytes,
+    KEYGEN_STACK_FIXED, KEYGEN_STACK_PER_LIMB, SecretScalar, private_key_from_be_bytes,
     public_point_wiped,
 };
 use crate::ecdsa::ecdsa::EcdsaHash;
@@ -76,9 +76,11 @@ where
 
     /// FIPS 186-5 Section 6.2: `d` is in `[1, n-1]`, checked on the raw big-endian value before
     /// any reduction, so that `d = n + 1` is refused rather than loaded as `d = 1` (one key would
-    /// otherwise have unboundedly many encodings); the check and the load are
+    /// otherwise have unboundedly many encodings); the check and the load are those of
     /// [`private_scalar_from_be_bytes`], which stages the candidate in a `Secret` and reveals only
     /// whether the key loaded.
+    ///
+    /// [`private_scalar_from_be_bytes`]: crate::curve::private_scalar_from_be_bytes
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         let bytes: &[u8; SK_LEN] = bytes
             .try_into()
@@ -86,9 +88,11 @@ where
         // The key is built in the wiped frame, `Result` and all: the temporaries of the
         // conversion would otherwise hold a copy of `d` in this frame.
         in_wiped_frame::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
-            private_scalar_from_be_bytes::<C>(bytes)
-                .map(|d| Self { d, _hash: PhantomData })
-                .ok_or(KeyDecodingError("ECDSA private key must be in [1, n-1]"))
+            private_key_from_be_bytes::<C, _>(
+                bytes,
+                |d| Ok(Self { d, _hash: PhantomData }),
+                || Err(KeyDecodingError("ECDSA private key must be in [1, n-1]")),
+            )
         })
     }
 }

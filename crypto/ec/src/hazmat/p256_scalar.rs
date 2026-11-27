@@ -507,6 +507,10 @@ impl SecretScalar for P256Scalar {
         P256Scalar::from_borrowed_limbs(limbs)
     }
 
+    fn from_borrowed_limbs_into(limbs: &[u64; 4], out: &mut Self) {
+        reduce_once_into(limbs, &mut out.0);
+    }
+
     fn from_be_bytes(bytes: &[u8; 32]) -> Self {
         P256Scalar::from_be_bytes(bytes)
     }

@@ -122,6 +122,9 @@ pub trait SecretScalar: Clone + Debug + PartialEq + Eq + 'static {
     fn from_limbs(limbs: Self::Limbs) -> Self;
     /// From borrowed limbs, reduced mod `n`, leaving the caller's copy to the caller.
     fn from_borrowed_limbs(limbs: &Self::Limbs) -> Self;
+    /// As [`from_borrowed_limbs`](Self::from_borrowed_limbs), reduced into `out`, which is
+    /// wiped when it is dropped, rather than into a scalar that is returned by a move.
+    fn from_borrowed_limbs_into(limbs: &Self::Limbs, out: &mut Self);
     /// From the big-endian encoding, reduced mod `n`.
     fn from_be_bytes(bytes: &Self::Bytes) -> Self;
     /// The big-endian encoding, as a plain array the caller asked for.
@@ -329,6 +332,27 @@ pub fn private_scalar_from_be_bytes<C: Curve>(bytes: &C::ScalarBytes) -> Option<
         return None;
     }
     Some(C::Scalar::from_borrowed_limbs(&limbs))
+}
+
+/// [`private_scalar_from_be_bytes`] for a key's decoding in a wiped frame: `key` of the scalar,
+/// or `refused()`. The scalar is reduced into a local that is wiped when it is dropped, and `key`
+/// is given a copy of it. Returned by a move, as [`SecretScalar::from_borrowed_limbs`] returns
+/// it, the scalar would leave the memory it was reduced into unwiped in the frame of the closure
+/// that runs this, at the top, which the wipe after that frame does not reach (on aarch64 its
+/// own saved registers and padding lie over those slots).
+pub(crate) fn private_key_from_be_bytes<C: Curve, R>(
+    bytes: &C::ScalarBytes,
+    key: impl FnOnce(C::Scalar) -> R,
+    refused: impl FnOnce() -> R,
+) -> R {
+    let mut limbs = Secret::<C::Limbs>::new();
+    C::limbs_from_be_bytes_into(bytes, &mut limbs);
+    if !C::scalar_in_range(&limbs).to_bool() {
+        return refused();
+    }
+    let mut d = C::Scalar::from_limbs(C::Limbs::ZEROED);
+    C::Scalar::from_borrowed_limbs_into(&limbs, &mut d);
+    key(d.clone())
 }
 
 /// What the stack wipe overwrites after an ECDSA or ECC CDH private key is decoded: this many of

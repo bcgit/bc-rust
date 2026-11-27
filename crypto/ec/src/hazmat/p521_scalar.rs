@@ -551,6 +551,10 @@ impl SecretScalar for P521Scalar {
         P521Scalar::from_borrowed_limbs(limbs)
     }
 
+    fn from_borrowed_limbs_into(limbs: &[u64; 9], out: &mut Self) {
+        reduce_wide_into(limbs, &mut out.0);
+    }
+
     fn from_be_bytes(bytes: &[u8; 66]) -> Self {
         P521Scalar::from_be_bytes(bytes)
     }
