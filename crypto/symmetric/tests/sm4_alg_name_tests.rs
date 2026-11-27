@@ -141,19 +141,19 @@ fn the_aliases_name_the_expected_types() {
         KeyMaterial::<KEY_LEN>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
     let mut rng = HashDRBG_SHA512::new_from_os();
     let key = SM4Key::<CBC<PKCS7>>::from_key_material(&material).unwrap();
-    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let (iv, enc) = key.create_encryptor(&mut rng).unwrap();
     let _: SM4_CBC<'_, Encrypting, PKCS7> = enc;
     let _: SM4_CBC<'_, Decrypting, PKCS7> = key.create_decryptor(&iv);
     let key = SM4Key::<CFB>::from_key_material(&material).unwrap();
-    let _: SM4_CFB<'_, Encrypting> = key.create_encryptor(&mut rng).unwrap().0;
+    let _: SM4_CFB<'_, Encrypting> = key.create_encryptor(&mut rng).unwrap().1;
     let key = SM4Key::<CFB8>::from_key_material(&material).unwrap();
-    let _: SM4_CFB8<'_, Encrypting> = key.create_encryptor(&mut rng).unwrap().0;
+    let _: SM4_CFB8<'_, Encrypting> = key.create_encryptor(&mut rng).unwrap().1;
     let key = SM4Key::<CTR>::from_key_material(&material).unwrap();
-    let (enc, nonce) = key.create_encryptor(&mut rng).unwrap();
+    let (nonce, enc) = key.create_encryptor(&mut rng).unwrap();
     let _: SM4_CTR<'_, Encrypting> = enc;
     let _: SM4_CTR<'_, Decrypting> = key.create_decryptor(&nonce);
     let key = SM4Key::<OFB>::from_key_material(&material).unwrap();
-    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let (iv, enc) = key.create_encryptor(&mut rng).unwrap();
     let _: SM4_OFB<'_, Encrypting> = enc;
     let _: SM4_OFB<'_, Decrypting> = key.create_decryptor(&iv);
 }

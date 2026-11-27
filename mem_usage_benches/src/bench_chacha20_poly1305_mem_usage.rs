@@ -115,7 +115,7 @@ fn message<const N: usize>(fill: u8) -> [u8; N] {
 
 #[inline(never)]
 fn encryptor() -> Enc {
-    key().create_encryptor(&mut FixedNonce).unwrap().0
+    key().create_encryptor(&mut FixedNonce).unwrap().1
 }
 
 /// An encryptor that has taken the AAD and the message, so the final pads both.
@@ -181,9 +181,9 @@ fn bench_create_encryptor() {
     measure(|| {
         let op = black_box(
             <Key as AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::create_encryptor
-                as fn(&'static Key, &mut dyn RNG) -> Result<(Enc, [u8; NONCE_LEN]), CipherErr>,
+                as fn(&'static Key, &mut dyn RNG) -> Result<([u8; NONCE_LEN], Enc), CipherErr>,
         );
-        let (enc, nonce) = op(k, &mut FixedNonce).unwrap();
+        let (nonce, enc) = op(k, &mut FixedNonce).unwrap();
         black_box(&enc);
         print!("{nonce:x?}");
     });
@@ -268,9 +268,9 @@ fn bench_encrypt_oneshot() {
                     &[u8],
                     &[u8],
                     &mut [u8],
-                ) -> Result<(usize, [u8; NONCE_LEN]), CipherErr>,
+                ) -> Result<([u8; NONCE_LEN], usize), CipherErr>,
         );
-        let (n, _) = op(k, &mut FixedNonce, &aad, &pt, &mut ct).unwrap();
+        let (_, n) = op(k, &mut FixedNonce, &aad, &pt, &mut ct).unwrap();
         print!("{:x?}", &ct[..n]);
     });
 }

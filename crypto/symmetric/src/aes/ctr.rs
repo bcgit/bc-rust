@@ -58,7 +58,7 @@ pub const CTR_NONCE_LEN: usize = 12;
 ///
 /// // Encryption works in place. The nonce is drawn from `rng` and returned.
 /// let mut data = plaintext;
-/// let (_, nonce) = key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
+/// let (nonce, _) = key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
 ///
 /// key.decrypt_inplace(&nonce, &mut data).expect("decryption");
 /// assert_eq!(data, plaintext);
@@ -86,7 +86,7 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// let plaintext = [0x5Au8; 50];
 ///
 /// // Encrypt in 7-byte pieces, each in place.
-/// let (mut encryptor, nonce) = key.create_encryptor(&mut rng).expect("nonce draw");
+/// let (nonce, mut encryptor) = key.create_encryptor(&mut rng).expect("nonce draw");
 /// let mut ciphertext = plaintext;
 /// for piece in ciphertext.chunks_mut(7) {
 ///     encryptor.do_encrypt_inplace(piece).expect("encryption");

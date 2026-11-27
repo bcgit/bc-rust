@@ -57,7 +57,7 @@ use bouncycastle_core::traits::{Algorithm, RNG};
 ///
 /// ```text
 /// let key = AES256Key::<GCM>::from_key_material(&material)?;   // once
-/// let (mut enc, nonce) = key.create_encryptor(&mut rng)?;      // per message
+/// let (nonce, mut enc) = key.create_encryptor(&mut rng)?;      // per message
 /// ```
 ///
 /// # Memory Usage
@@ -174,7 +174,7 @@ where
     fn create_encryptor<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
     }
 
@@ -225,7 +225,7 @@ where
         rng: &mut dyn RNG,
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng, aad_len, payload_len)
     }
 
@@ -321,7 +321,7 @@ where
     fn create_encryptor<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; INIT_DATA_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
     }
 
@@ -361,7 +361,7 @@ where
     fn create_encryptor<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; INIT_DATA_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
     }
 
@@ -459,7 +459,7 @@ where
     fn create_generator<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Generator<'k>, [u8; NONCE_LEN]), MACError> {
+    ) -> Result<([u8; NONCE_LEN], Self::Generator<'k>), MACError> {
         M::generate_init(&self.state, rng)
     }
 

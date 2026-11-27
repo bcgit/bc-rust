@@ -69,7 +69,7 @@
 //!
 //! // Data can be handed to the encryptor as it arrives, in pieces of any length, but a block is
 //! // only written out once it is complete. Here, 7-byte pieces.
-//! let (mut encryptor, no_iv) = key.create_encryptor(&mut rng).expect("nothing is drawn");
+//! let (no_iv, mut encryptor) = key.create_encryptor(&mut rng).expect("nothing is drawn");
 //!
 //! let mut ciphertext = Vec::new();
 //! for piece in plaintext.chunks(7) {
@@ -117,7 +117,7 @@
 //!
 //! // A whole block is fine, and comes out the same length.
 //! let mut out = [0u8; 16];
-//! let (written, _no_iv) = key.encrypt_out(&mut rng, &[0u8; 16], &mut out).expect("aligned");
+//! let (_no_iv, written) = key.encrypt_out(&mut rng, &[0u8; 16], &mut out).expect("aligned");
 //! assert_eq!(written, 16);
 //!
 //! // Five bytes is not, and is refused rather than padded.
@@ -144,7 +144,7 @@
 //!     .expect("a valid AES-128 key");
 //!
 //! // Built from a NoPadding key, annotated as PKCS7: mismatched types.
-//! let (enc, _no_iv) =
+//! let (_no_iv, enc) =
 //!     key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).expect("no IV to draw");
 //! let _mismatched: AES_ECB_128<Encrypting, PKCS7> = enc;
 //! ```

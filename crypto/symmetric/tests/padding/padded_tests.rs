@@ -84,7 +84,7 @@ fn one_shot_roundtrip_all_lengths() {
     for len in 0..=3 * B + 1 {
         let pt = msg(len);
         let mut ct = vec![0u8; Enc::encrypt_out_len(len)];
-        let (n, iv) = key.encrypt_out(&mut os_rng(), &pt, &mut ct).unwrap();
+        let (iv, n) = key.encrypt_out(&mut os_rng(), &pt, &mut ct).unwrap();
         assert_eq!(n, ct.len());
         assert_eq!(n, (len / B + 1) * B, "always one extra padding block");
 
@@ -102,7 +102,7 @@ fn streaming_matches_one_shot_for_every_chunking() {
 
     for chunk in [1usize, 2, 3, 7, 8, 9, 15, 16, 17, len] {
         // encrypt in chunks
-        let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
+        let (iv, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
         let mut ct = Vec::new();
         for piece in pt.chunks(chunk) {
             let expect = enc.do_encrypt_out_len(piece.len());
@@ -142,7 +142,7 @@ fn decryptor_lags_by_exactly_one_block() {
     let key = key();
     let (iv, ct) = {
         let mut ct = vec![0u8; Enc::encrypt_out_len(2 * B)];
-        let (_, iv) = key.encrypt_out(&mut os_rng(), &msg(2 * B), &mut ct).unwrap();
+        let (iv, _) = key.encrypt_out(&mut os_rng(), &msg(2 * B), &mut ct).unwrap();
         (iv, ct)
     };
     assert_eq!(ct.len(), 3 * B);
@@ -165,7 +165,7 @@ fn decryptor_lags_by_exactly_one_block() {
 #[test]
 fn final_out_variants() {
     let key = key();
-    let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
+    let (iv, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
     let mut ct = [0u8; 2 * B];
     let n = enc.do_encrypt_out(&msg(B + 2), &mut ct).unwrap();
     assert_eq!(n, B);
@@ -189,7 +189,7 @@ fn tampered_final_block_is_rejected() {
     let key = key();
     for len in [0, 1, B - 1, B, B + 5] {
         let mut ct = vec![0u8; Enc::encrypt_out_len(len)];
-        let (n, iv) = key.encrypt_out(&mut os_rng(), &msg(len), &mut ct).unwrap();
+        let (iv, n) = key.encrypt_out(&mut os_rng(), &msg(len), &mut ct).unwrap();
         // flipping the low bit of the final byte corrupts the PKCS7 length byte
         ct[n - 1] ^= 0x01;
         // Pre-filled with a non-zero byte, so a buffer the decryptor never wrote is not mistaken
@@ -277,7 +277,7 @@ fn output_buffer_too_small_reports_required_length() {
         other => panic!("{other:?}"),
     }
 
-    let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
+    let (iv, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
     let mut tiny = [0u8; B - 1];
     match enc.do_encrypt_out(&pt, &mut tiny) {
         Err(SymmetricCipherError::OutputBufferTooSmall(need)) => assert_eq!(need, 2 * B),
@@ -319,13 +319,13 @@ fn no_padding_adds_nothing_to_aligned_data() {
         assert_eq!(DecNP::decrypt_out_len(len), len);
 
         let mut ct = vec![0u8; len];
-        let (n, iv) = key_np.encrypt_out(&mut os_rng(), &pt, &mut ct).unwrap();
+        let (iv, n) = key_np.encrypt_out(&mut os_rng(), &pt, &mut ct).unwrap();
         assert_eq!(n, len, "{blocks} blocks: output length equals input length");
 
         // Byte for byte the bare cipher's output under the same IV.
         let mut bare = pt.clone();
         let key = key_for::<CBC<Blocks>>();
-        let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
+        let (_, mut enc) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
         let (blocks_mut, _) = bare.as_chunks_mut::<B>();
         enc.do_encrypt_blocks_inplace(blocks_mut).unwrap();
         assert_eq!(ct, bare, "{blocks} blocks: the adapter must not alter the ciphertext");
@@ -335,7 +335,7 @@ fn no_padding_adds_nothing_to_aligned_data() {
         assert_eq!(&out[..m], &pt[..], "{blocks} blocks: round trip");
 
         // Streaming: do_encrypt_final reports zero output bytes.
-        let (mut enc, _) = key_np.create_encryptor(&mut os_rng()).unwrap();
+        let (_, mut enc) = key_np.create_encryptor(&mut os_rng()).unwrap();
         let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
         assert_eq!(enc.do_encrypt_out(&pt, &mut buf).unwrap(), len);
         let (_, last_len) = enc.do_encrypt_final().unwrap();
@@ -359,7 +359,7 @@ fn no_padding_refuses_unaligned_data() {
             "len {len}: one-shot must refuse an unaligned message"
         );
 
-        let (mut enc, _) = key_np.create_encryptor(&mut os_rng()).unwrap();
+        let (_, mut enc) = key_np.create_encryptor(&mut os_rng()).unwrap();
         let whole = len / B * B;
         let mut buf = vec![0u8; whole];
         assert_eq!(enc.do_encrypt_out(&pt, &mut buf).unwrap(), whole, "whole blocks still stream");
@@ -404,7 +404,7 @@ fn a_boxed_decryptor_finishes_into_the_callers_buffer() {
     let key = key();
     let len = 2 * B + 3;
     let mut ct = vec![0u8; Enc::encrypt_out_len(len)];
-    let (n, iv) = key.encrypt_out(&mut os_rng(), &msg(len), &mut ct).unwrap();
+    let (iv, n) = key.encrypt_out(&mut os_rng(), &msg(len), &mut ct).unwrap();
     let mut dec: Box<dyn SymmetricCipherDecryptor<B, B> + '_> = Box::new(key.create_decryptor(&iv));
     let mut rec = vec![0u8; dec.do_decrypt_out_len(n)];
     let w = dec.do_decrypt_out(&ct[..n], &mut rec).unwrap();

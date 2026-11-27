@@ -159,14 +159,14 @@ where
     fn encrypt_init<'k>(
         state: &'k Self::KeyState,
         _rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; 0]), SymmetricCipherError> {
+    ) -> Result<([u8; 0], Self::Encryptor<'k>), SymmetricCipherError> {
         const {
             assert!(
                 !P::DECRYPT_ONLY,
                 "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
             )
         };
-        Ok((PaddedBlockCipherEncryptor::from_inner(Ecb::from_perm(state)), []))
+        Ok(([], PaddedBlockCipherEncryptor::from_inner(Ecb::from_perm(state))))
     }
 
     fn encrypt_init_nonce<'k>(state: &'k Self::KeyState, _: &[u8; 0]) -> Self::Encryptor<'k> {

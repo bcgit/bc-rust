@@ -44,13 +44,13 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// // 47 bytes: a stream cipher does not need a whole number of blocks.
 /// let message = [0u8; 47];
 /// let mut data = message;
-/// let (_, iv) = key.encrypt_inplace(&mut rng, &mut data).unwrap();
+/// let (iv, _) = key.encrypt_inplace(&mut rng, &mut data).unwrap();
 /// assert_ne!(data, message);
 /// key.decrypt_inplace(&iv, &mut data).unwrap();
 /// assert_eq!(data, message);
 ///
 /// // Streaming, at any byte boundary:
-/// let (mut enc, iv) = key.create_encryptor(&mut rng).unwrap();
+/// let (iv, mut enc) = key.create_encryptor(&mut rng).unwrap();
 /// let mut first = [0u8; 5];
 /// let mut rest = [1u8; 30];
 /// enc.do_encrypt_inplace(&mut first).unwrap();

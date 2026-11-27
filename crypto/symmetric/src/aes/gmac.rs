@@ -37,7 +37,7 @@ use crate::aes::AES128Key;
 /// let key = AES256Key::<GMAC>::from_key_material(&material).expect("a valid AES-256 MAC key");
 ///
 /// // The nonce is drawn from `rng` and returned; the Result is for that draw only.
-/// let (mut generator, nonce) = key.create_generator(&mut rng).expect("nonce draw");
+/// let (nonce, mut generator) = key.create_generator(&mut rng).expect("nonce draw");
 /// generator.do_update(b"a message that arrives ");
 /// generator.do_update(b"in pieces");
 /// let tag = generator.do_final();

@@ -148,7 +148,7 @@ fn the_mode_matches_the_spec_equations() {
     // ...and ECB is not CBC: CBC computes CIPH_K(P1 XOR IV), ECB computes CIPH_K(P1).
     let iv: [u8; TOY_LEN] = core::array::from_fn(|i| 0xF0 ^ (i as u8));
     let cbc_key = BlockCipherKey::<Toy, CBC<Blocks>>::from_key_material(&toy_key()).unwrap();
-    let (mut cbc, _) = cbc_key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
+    let (_, mut cbc) = cbc_key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
     let mut first = plaintext[0];
     cbc.do_encrypt_blocks_inplace(first.as_chunks_mut().0).unwrap();
     assert_ne!(first, ct[0], "ECB must not agree with CBC");
@@ -371,7 +371,7 @@ fn the_padding_layer_round_trips_every_length() {
     for len in 0..=(3 * TOY_LEN + 1) {
         let plaintext: Vec<u8> = (0..len).map(|i| (i * 5 + 3) as u8).collect();
         let mut ciphertext = vec![0u8; Enc::encrypt_out_len(len)];
-        let (written, init) = key
+        let (init, written) = key
             .encrypt_out(&mut FixedSeedRNG::new([]), &plaintext, &mut ciphertext)
             .expect("padded encryption draws nothing from the RNG");
         assert_eq!(init, [0u8; 0]);

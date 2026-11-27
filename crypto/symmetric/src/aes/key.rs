@@ -32,7 +32,7 @@ use crate::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 /// let key = AES256Key::<GCM>::from_key_material(&material).expect("a valid AES-256 key");
 ///
 /// // Streaming: the nonce is drawn from `rng` and returned; the Result is for that draw only.
-/// let (mut enc, nonce) = key.create_encryptor(&mut rng).expect("nonce draw");
+/// let (nonce, mut enc) = key.create_encryptor(&mut rng).expect("nonce draw");
 /// enc.do_update_aad(b"header").expect("aad");
 /// let mut ciphertext = [0u8; 14];
 /// enc.do_encrypt_out(b"attack at dawn", &mut ciphertext).expect("encryption");
@@ -44,7 +44,7 @@ use crate::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 /// // ... feed `ciphertext`, then check `tag` with `do_decrypt_final_detached_out`.
 ///
 /// // One-shots take the same path.
-/// let (n, nonce) = key
+/// let (nonce, n) = key
 ///     .encrypt_with_aad_out(&mut rng, b"header", b"attack at dawn", &mut [0u8; 30])
 ///     .expect("one-shot");
 /// assert_eq!(n, 14 + 16);

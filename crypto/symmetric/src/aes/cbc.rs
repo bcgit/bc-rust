@@ -84,7 +84,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// // Data can be handed to the encryptor as it arrives, in pieces of any length, but a block is
 /// // only written out once it is complete. Here, 7-byte pieces.
-/// let (mut encryptor, iv) = key.create_encryptor(&mut rng).expect("IV draw");
+/// let (iv, mut encryptor) = key.create_encryptor(&mut rng).expect("IV draw");
 ///
 /// let mut ciphertext = Vec::new();
 /// for piece in plaintext.chunks(7) {
@@ -132,7 +132,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// // A whole block is fine, and comes out the same length.
 /// let mut out = [0u8; 16];
-/// let (written, _iv) = key.encrypt_out(&mut rng, &[0u8; 16], &mut out).expect("aligned");
+/// let (_iv, written) = key.encrypt_out(&mut rng, &[0u8; 16], &mut out).expect("aligned");
 /// assert_eq!(written, 16);
 ///
 /// // Five bytes is not, and is refused rather than padded.
@@ -158,7 +158,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///     .expect("a valid AES-128 key");
 ///
 /// // Built from a NoPadding key, annotated as PKCS7: mismatched types.
-/// let (enc, _iv) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).expect("an IV");
+/// let (_iv, enc) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).expect("an IV");
 /// let _mismatched: AES_CBC_128<Encrypting, PKCS7> = enc;
 /// ```
 ///

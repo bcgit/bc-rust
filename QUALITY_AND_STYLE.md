@@ -148,6 +148,9 @@ holds even when the count is fully determined by the input -- a fixed-length `[u
 exactly `LEN` -- so that callers never have to remember which output-buffer methods report their length and which
 don't.
 
+A function that returns a nonce, IV or other init data together with anything else returns it first, the rest keeping
+their order: `(nonce, encryptor)`, `(iv, written)`, `(nonce, written, tag)`, `(nonce, ciphertext, tag)`.
+
 ### fn prefixes and suffixes
 
 Function prefixes and suffixes are used consistently across the library.

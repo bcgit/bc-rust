@@ -194,7 +194,7 @@ fn message<const N: usize>(fill: u8) -> [u8; N] {
 
 #[inline(never)]
 fn encryptor() -> Enc {
-    aead_key().create_encryptor(&mut FixedNonce).unwrap().0
+    aead_key().create_encryptor(&mut FixedNonce).unwrap().1
 }
 
 /// An encryptor that has taken the AAD and the message, so the final pads a partial block.
@@ -307,9 +307,9 @@ fn bench_aead_encrypt_init() {
                 as fn(
                     &AsconAEAD128Key,
                     &mut dyn RNG,
-                ) -> Result<(Enc, [u8; ASCON_AEAD128_NONCE_LEN]), CipherErr>,
+                ) -> Result<([u8; ASCON_AEAD128_NONCE_LEN], Enc), CipherErr>,
         );
-        let (enc, nonce) = op(&k, &mut FixedNonce).unwrap();
+        let (nonce, enc) = op(&k, &mut FixedNonce).unwrap();
         black_box(&enc);
         print!("{nonce:x?}");
     });
@@ -410,9 +410,9 @@ fn bench_aead_encrypt_oneshot() {
                     &[u8],
                     &[u8],
                     &mut [u8],
-                ) -> Result<(usize, [u8; ASCON_AEAD128_NONCE_LEN]), CipherErr>,
+                ) -> Result<([u8; ASCON_AEAD128_NONCE_LEN], usize), CipherErr>,
         );
-        let (n, _) = op(&k, &mut FixedNonce, &aad, &pt, &mut ct).unwrap();
+        let (_, n) = op(&k, &mut FixedNonce, &aad, &pt, &mut ct).unwrap();
         print!("{:x?}", &ct[..n]);
     });
 }

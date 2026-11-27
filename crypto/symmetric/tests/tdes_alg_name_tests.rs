@@ -207,15 +207,15 @@ fn the_aliases_name_the_expected_types() {
     // ...and the key hands out exactly those types.
     let mut rng = HashDRBG_SHA512::new_from_os();
     let key = key_for::<CBC<PKCS7>>();
-    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let (iv, enc) = key.create_encryptor(&mut rng).unwrap();
     let _: TDES_CBC<'_, Encrypting, PKCS7> = enc;
     let _: TDES_CBC<'_, Decrypting, PKCS7> = key.create_decryptor(&iv);
     let key = key_for::<ECB<PKCS7>>();
-    let (enc, no_iv) = key.create_encryptor(&mut rng).unwrap();
+    let (no_iv, enc) = key.create_encryptor(&mut rng).unwrap();
     let _: TDES_ECB<'_, Encrypting, PKCS7> = enc;
     let _: TDES_ECB<'_, Decrypting, PKCS7> = key.create_decryptor(&no_iv);
     let key = key_for::<OFB>();
-    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let (iv, enc) = key.create_encryptor(&mut rng).unwrap();
     let _: TDES_OFB<'_, Encrypting> = enc;
     let _: TDES_OFB<'_, Decrypting> = key.create_decryptor(&iv);
 }

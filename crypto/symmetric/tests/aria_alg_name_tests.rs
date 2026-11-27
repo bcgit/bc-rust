@@ -184,19 +184,19 @@ fn the_aliases_name_the_expected_types() {
         KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
     let mut rng = HashDRBG_SHA512::new_from_os();
     let key = ARIA128Key::<CBC<PKCS7>>::from_key_material(&material).unwrap();
-    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let (iv, enc) = key.create_encryptor(&mut rng).unwrap();
     let _: ARIA_CBC_128<'_, Encrypting, PKCS7> = enc;
     let _: ARIA_CBC_128<'_, Decrypting, PKCS7> = key.create_decryptor(&iv);
     let key = ARIA128Key::<CFB>::from_key_material(&material).unwrap();
-    let _: ARIA_CFB_128<'_, Encrypting> = key.create_encryptor(&mut rng).unwrap().0;
+    let _: ARIA_CFB_128<'_, Encrypting> = key.create_encryptor(&mut rng).unwrap().1;
     let key = ARIA128Key::<CFB8>::from_key_material(&material).unwrap();
-    let _: ARIA_CFB8_128<'_, Encrypting> = key.create_encryptor(&mut rng).unwrap().0;
+    let _: ARIA_CFB8_128<'_, Encrypting> = key.create_encryptor(&mut rng).unwrap().1;
     let key = ARIA128Key::<CTR>::from_key_material(&material).unwrap();
-    let (enc, nonce) = key.create_encryptor(&mut rng).unwrap();
+    let (nonce, enc) = key.create_encryptor(&mut rng).unwrap();
     let _: ARIA_CTR_128<'_, Encrypting> = enc;
     let _: ARIA_CTR_128<'_, Decrypting> = key.create_decryptor(&nonce);
     let key = ARIA128Key::<OFB>::from_key_material(&material).unwrap();
-    let (enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let (iv, enc) = key.create_encryptor(&mut rng).unwrap();
     let _: ARIA_OFB_128<'_, Encrypting> = enc;
     let _: ARIA_OFB_128<'_, Decrypting> = key.create_decryptor(&iv);
 }

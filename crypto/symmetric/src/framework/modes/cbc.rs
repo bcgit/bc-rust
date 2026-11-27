@@ -48,7 +48,7 @@
 //!
 //! // In place, under a freshly drawn IV, which is returned.
 //! let mut data = plaintext;
-//! let (mut enc, iv) = CBC::<Blocks>::encrypt_init(&state, &mut rng).expect("iv draw");
+//! let (iv, mut enc) = CBC::<Blocks>::encrypt_init(&state, &mut rng).expect("iv draw");
 //! enc.do_encrypt_blocks_inplace(&mut data).expect("encryption");
 //! assert_ne!(data, plaintext);
 //!
@@ -72,7 +72,7 @@
 //!     .expect("a 16-byte symmetric cipher key");
 //! let state = <CBC<Blocks> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 //!
-//! let (mut encryptor, iv) =
+//! let (iv, mut encryptor) =
 //!     CBC::<Blocks>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("iv draw");
 //! let mut first = [[0xAAu8; 16]];
 //! let mut rest = [[0xBBu8; 16]; 2];
@@ -148,7 +148,7 @@ where
     fn encrypt_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; BLOCK_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         const {
             assert!(
                 !P::DECRYPT_ONLY,
@@ -156,7 +156,7 @@ where
             )
         };
         let iv = random_iv::<BLOCK_LEN>(rng)?;
-        Ok((PaddedBlockCipherEncryptor::from_inner(Cbc::from_perm(state, iv)), iv))
+        Ok((iv, PaddedBlockCipherEncryptor::from_inner(Cbc::from_perm(state, iv))))
     }
 
     fn encrypt_init_nonce<'k>(
@@ -205,7 +205,7 @@ where
     fn encrypt_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; BLOCK_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         const {
             assert!(
                 !P::DECRYPT_ONLY,
@@ -213,7 +213,7 @@ where
             )
         };
         let iv = random_iv::<BLOCK_LEN>(rng)?;
-        Ok((Cbc::from_perm(state, iv), iv))
+        Ok((iv, Cbc::from_perm(state, iv)))
     }
 
     fn encrypt_init_nonce<'k>(

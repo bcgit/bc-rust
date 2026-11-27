@@ -57,14 +57,14 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// // 47 bytes: a stream cipher does not need a whole number of blocks.
 /// let message = [0u8; 47];
 /// let mut data = message;
-/// let (_, nonce) = key.encrypt_inplace(&mut rng, &mut data).unwrap();
+/// let (nonce, _) = key.encrypt_inplace(&mut rng, &mut data).unwrap();
 /// assert_eq!(nonce.len(), 12);
 /// assert_ne!(data, message);
 /// key.decrypt_inplace(&nonce, &mut data).unwrap();
 /// assert_eq!(data, message);
 ///
 /// // Streaming, at any byte boundary:
-/// let (mut enc, nonce) = key.create_encryptor(&mut rng).unwrap();
+/// let (nonce, mut enc) = key.create_encryptor(&mut rng).unwrap();
 /// let mut first = [0u8; 5];
 /// let mut rest = [1u8; 30];
 /// enc.do_encrypt_inplace(&mut first).unwrap();

@@ -110,7 +110,7 @@ fn message<const N: usize>(fill: u8) -> [u8; N] {
 
 #[inline(never)]
 fn encryptor() -> Enc {
-    key().create_encryptor(&mut FixedNonce).unwrap().0
+    key().create_encryptor(&mut FixedNonce).unwrap().1
 }
 
 #[inline(never)]
@@ -144,9 +144,9 @@ fn bench_create_encryptor() {
                 as fn(
                     &'static ChaCha20Key,
                     &mut dyn RNG,
-                ) -> Result<(Enc, [u8; NONCE_LEN]), CipherErr>,
+                ) -> Result<([u8; NONCE_LEN], Enc), CipherErr>,
         );
-        let (enc, nonce) = op(k, &mut FixedNonce).unwrap();
+        let (nonce, enc) = op(k, &mut FixedNonce).unwrap();
         black_box(&enc);
         print!("{nonce:x?}");
     });
@@ -214,9 +214,9 @@ fn bench_encrypt_oneshot() {
                     &'static ChaCha20Key,
                     &mut dyn RNG,
                     &mut [u8],
-                ) -> Result<(usize, [u8; NONCE_LEN]), CipherErr>,
+                ) -> Result<([u8; NONCE_LEN], usize), CipherErr>,
         );
-        let (n, _) = op(k, &mut FixedNonce, &mut data).unwrap();
+        let (_, n) = op(k, &mut FixedNonce, &mut data).unwrap();
         print!("{:x?}", &data[..n]);
     });
 }

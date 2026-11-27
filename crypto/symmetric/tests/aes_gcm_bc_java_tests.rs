@@ -210,7 +210,7 @@ where
 
     let key = K::from_key_material(&key).expect("a valid key");
     let mut data = vec![0u8; pt.len()];
-    let (_, got_iv, tag) = key
+    let (got_iv, _, tag) = key
         .encrypt_detached_out(&mut FixedSeedRNG::new(iv), &aad, &pt, &mut data)
         .expect("encrypt");
     assert_eq!(got_iv, iv, "{}: the pinned RNG should reproduce the vector's IV", case.name);

@@ -72,7 +72,7 @@ impl TestFrameworkSymmetricCipher {
                     Err(SymmetricCipherError::DataNotBlockAligned) => {}
                     other => panic!("len {len} is not aligned and must be refused, got {other:?}"),
                 }
-                let (mut enc, _) = key.create_encryptor(rng).unwrap();
+                let (_, mut enc) = key.create_encryptor(rng).unwrap();
                 let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
                 enc.do_encrypt_out(msg, &mut buf).unwrap();
                 assert!(
@@ -94,7 +94,7 @@ impl TestFrameworkSymmetricCipher {
                     key.encrypt_out(rng, msg, &mut ct).is_err(),
                     "fixed length: a {len}-byte one-shot must be refused"
                 );
-                let (mut enc, _) = key.create_encryptor(rng).unwrap();
+                let (_, mut enc) = key.create_encryptor(rng).unwrap();
                 let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
                 assert!(
                     enc.do_encrypt_out(msg, &mut buf).is_err() || enc.do_encrypt_final().is_err(),
@@ -103,7 +103,7 @@ impl TestFrameworkSymmetricCipher {
                 continue;
             }
             let mut ct = vec![0u8; encrypt_out_len(len)];
-            let (ct_len, init_data) = key.encrypt_out(rng, msg, &mut ct).unwrap();
+            let (init_data, ct_len) = key.encrypt_out(rng, msg, &mut ct).unwrap();
             assert_eq!(ct_len, ct.len(), "encrypt_out must write exactly encrypt_out_len bytes");
 
             // the _out rule holds on the error path: when the init data cannot be drawn, the
@@ -147,7 +147,7 @@ impl TestFrameworkSymmetricCipher {
         {
             let len = self.fixed_message_len.unwrap_or(max_len);
             let msg = &DUMMY_SEED[..len];
-            let (enc, init_data) = key.create_encryptor(rng).unwrap();
+            let (init_data, enc) = key.create_encryptor(rng).unwrap();
             let mut enc: Box<dyn SymmetricCipherEncryptor<INIT_DATA_LEN, FINAL_LEN> + '_> =
                 Box::new(enc);
             let mut ct = vec![0u8; enc.do_encrypt_out_len(len)];
@@ -174,7 +174,7 @@ impl TestFrameworkSymmetricCipher {
             [1, 2, 3, 7, FINAL_LEN.max(1), FINAL_LEN + 1, 2 * FINAL_LEN + 3, len.max(1)];
         for chunk in chunkings {
             // encrypt in chunks, checking update_out_len is exact each time
-            let (mut enc, init_data) = key.create_encryptor(rng).unwrap();
+            let (init_data, mut enc) = key.create_encryptor(rng).unwrap();
             let mut ct = Vec::new();
             for piece in msg.chunks(chunk) {
                 let expect = enc.do_encrypt_out_len(piece.len());
@@ -234,7 +234,7 @@ impl TestFrameworkSymmetricCipher {
         // a fixed message length is enforced on both sides: one byte more is refused at the
         // update, consuming nothing, and one byte fewer is refused at the final.
         if let Some(fixed) = self.fixed_message_len {
-            let (mut enc, init_data) = key.create_encryptor(rng).unwrap();
+            let (init_data, mut enc) = key.create_encryptor(rng).unwrap();
             let mut ct = vec![0u8; enc.do_encrypt_out_len(fixed)];
             let n = enc.do_encrypt_out(msg, &mut ct).unwrap();
             ct.truncate(n);
@@ -250,7 +250,7 @@ impl TestFrameworkSymmetricCipher {
             assert_eq!(&pt[..m], msg, "fixed length: a refused update must not disturb the state");
 
             if fixed > 0 {
-                let (mut enc, _) = key.create_encryptor(rng).unwrap();
+                let (_, mut enc) = key.create_encryptor(rng).unwrap();
                 let mut buf = vec![0u8; enc.do_encrypt_out_len(fixed - 1)];
                 enc.do_encrypt_out(&msg[..fixed - 1], &mut buf).unwrap();
                 assert!(
@@ -285,7 +285,7 @@ impl TestFrameworkSymmetricCipher {
         if INIT_DATA_LEN > 0 {
             // a driven RNG reproduces its init data, and determines the ciphertext
             let seed: [u8; INIT_DATA_LEN] = core::array::from_fn(|i| DUMMY_SEED[100 + i]);
-            let (mut enc, init_data) = key.create_encryptor(&mut FixedSeedRNG::new(seed)).unwrap();
+            let (init_data, mut enc) = key.create_encryptor(&mut FixedSeedRNG::new(seed)).unwrap();
             assert_eq!(init_data, seed, "a fixed RNG must yield its stream as the init data");
             let mut streamed = vec![0u8; enc.do_encrypt_out_len(len)];
             let n = enc.do_encrypt_out(msg, &mut streamed).unwrap();
@@ -293,7 +293,7 @@ impl TestFrameworkSymmetricCipher {
             let (last, last_len) = enc.do_encrypt_final().unwrap();
             streamed.extend_from_slice(&last[..last_len]);
             let mut one_shot = vec![0u8; encrypt_out_len(len)];
-            let (n2, init_data2) =
+            let (init_data2, n2) =
                 key.encrypt_out(&mut FixedSeedRNG::new(seed), msg, &mut one_shot).unwrap();
             assert_eq!(init_data2, seed);
             assert_eq!(
@@ -327,14 +327,14 @@ impl TestFrameworkSymmetricCipher {
             }
 
             // ...and two draws from a real RNG differ
-            let (_, a) = key.create_encryptor(rng).unwrap();
-            let (_, b) = key.create_encryptor(rng).unwrap();
+            let (a, _) = key.create_encryptor(rng).unwrap();
+            let (b, _) = key.create_encryptor(rng).unwrap();
             assert_ne!(a, b, "two encryptions must not share init data");
         }
 
         // corrupting the ciphertext does not give back the plaintext (or fails to decrypt)
         let mut ct = vec![0u8; encrypt_out_len(len)];
-        let (ct_len, init_data) = key.encrypt_out(rng, msg, &mut ct).unwrap();
+        let (init_data, ct_len) = key.encrypt_out(rng, msg, &mut ct).unwrap();
         assert!(ct_len > 0, "the test message is non-empty, so its ciphertext must be");
         for flip in [0usize, ct_len / 2, ct_len - 1] {
             let mut bad = ct[..ct_len].to_vec();
@@ -368,12 +368,12 @@ impl TestFrameworkSymmetricCipher {
         }
         // ...and ones with room to spare are accepted
         let mut roomy = vec![0u8; encrypt_out_len(len) + 3];
-        let (n, _) = key.encrypt_out(rng, msg, &mut roomy).unwrap();
+        let (_, n) = key.encrypt_out(rng, msg, &mut roomy).unwrap();
         assert_eq!(n, encrypt_out_len(len), "encrypt_out into a roomy buffer");
         let mut roomy = vec![0u8; need + 3];
         let n = key.decrypt_out(&init_data, &ct[..ct_len], &mut roomy).unwrap();
         assert_eq!(&roomy[..n], msg, "decrypt_out into a roomy buffer");
-        let (mut enc, _) = key.create_encryptor(rng).unwrap();
+        let (_, mut enc) = key.create_encryptor(rng).unwrap();
         let need = enc.do_encrypt_out_len(len);
         if need > 0 {
             let mut short = vec![0u8; need - 1];
@@ -402,7 +402,7 @@ impl TestFrameworkSymmetricCipher {
 
         let need = encrypt_out_len(len);
         let mut ct = vec![SENTINEL; need + EXTRA];
-        let (ct_len, init_data) = key.encrypt_out(rng, msg, &mut ct).unwrap();
+        let (init_data, ct_len) = key.encrypt_out(rng, msg, &mut ct).unwrap();
         assert_eq!(ct_len, need, "encrypt_out into an oversized buffer must write encrypt_out_len");
         assert_tail_zeroed(&ct, ct_len, "encrypt_out");
         ct.truncate(ct_len);
@@ -418,7 +418,7 @@ impl TestFrameworkSymmetricCipher {
         // length, which a running total would overshoot.
         let cuts = |total: usize| [0, 1.min(total), (FINAL_LEN + 2).min(total), total];
         let c = cuts(len);
-        let (mut enc, init_data) = key.create_encryptor(rng).unwrap();
+        let (init_data, mut enc) = key.create_encryptor(rng).unwrap();
         let mut streamed = Vec::new();
         for w in c.windows(2) {
             let piece = &msg[w[0]..w[1]];
@@ -503,7 +503,7 @@ impl TestFrameworkStreamCipher {
 
         // one-shot, in place: must round-trip, and report every byte as written.
         let mut buf = *DUMMY_SEED;
-        let (n, iv) = key.encrypt_inplace(rng, &mut buf).unwrap();
+        let (iv, n) = key.encrypt_inplace(rng, &mut buf).unwrap();
         assert_eq!(n, buf.len(), "encrypt must report the number of bytes written");
         let reference_ct = buf;
         assert_ne!(&reference_ct[..], &DUMMY_SEED[..], "encryption must change the data");
@@ -516,7 +516,7 @@ impl TestFrameworkStreamCipher {
         let chunkings: &[usize] = &[1, 3, 7, 16, 63, 64, 65, 250, DUMMY_SEED.len()];
         for &enc_chunk in chunkings {
             let mut buf = *DUMMY_SEED;
-            let (mut encryptor, iv2) = key.create_encryptor(rng).unwrap();
+            let (iv2, mut encryptor) = key.create_encryptor(rng).unwrap();
             encryptor.do_encrypt_inplace(&mut []).unwrap();
             for chunk in buf.chunks_mut(enc_chunk) {
                 encryptor.do_encrypt_inplace(chunk).unwrap();
@@ -559,7 +559,7 @@ impl TestFrameworkStreamCipher {
                 DUMMY_SEED.len(),
             );
         let mut out = vec![0u8; out_len];
-        let (n, iv3) = key.encrypt_out(rng, DUMMY_SEED, &mut out).unwrap();
+        let (iv3, n) = key.encrypt_out(rng, DUMMY_SEED, &mut out).unwrap();
         assert_eq!(n, DUMMY_SEED.len(), "a stream cipher never changes the length");
         let mut back = out.clone();
         key.decrypt_inplace(&iv3, &mut back).unwrap();
@@ -574,16 +574,16 @@ impl TestFrameworkStreamCipher {
         // and the same init data; a driven RNG determines the ciphertext.
         let pinned = [0xA5u8; INIT_DATA_LEN];
         let mut expected = *DUMMY_SEED;
-        let (mut streamed, iv_streamed) =
+        let (iv_streamed, mut streamed) =
             key.create_encryptor(&mut FixedSeedRNG::new(pinned)).unwrap();
         streamed.do_encrypt_inplace(&mut expected).unwrap();
         let mut buf = *DUMMY_SEED;
-        let (n, iv) = key.encrypt_inplace(&mut FixedSeedRNG::new(pinned), &mut buf).unwrap();
+        let (iv, n) = key.encrypt_inplace(&mut FixedSeedRNG::new(pinned), &mut buf).unwrap();
         assert_eq!(n, buf.len(), "encrypt_inplace must report the number of bytes written");
         assert_eq!(iv, iv_streamed);
         assert_eq!(&buf[..], &expected[..]);
         let mut buf2 = *DUMMY_SEED;
-        let (_, iv_again) = key.encrypt_inplace(&mut FixedSeedRNG::new(pinned), &mut buf2).unwrap();
+        let (iv_again, _) = key.encrypt_inplace(&mut FixedSeedRNG::new(pinned), &mut buf2).unwrap();
         assert_eq!(iv, iv_again);
         assert_eq!(&buf[..], &buf2[..]);
 
@@ -598,13 +598,13 @@ impl TestFrameworkStreamCipher {
 
         // the init data is random: not the same on two runs, and different init data under the
         // same key gives different ciphertext
-        let (_encryptor, iv1) = key.create_encryptor(rng).unwrap();
-        let (_encryptor, iv2) = key.create_encryptor(rng).unwrap();
+        let (iv1, _encryptor) = key.create_encryptor(rng).unwrap();
+        let (iv2, _encryptor) = key.create_encryptor(rng).unwrap();
         assert_ne!(iv1, iv2);
         let mut a = *DUMMY_SEED;
         let mut b = *DUMMY_SEED;
-        let (_, iv_a) = key.encrypt_inplace(rng, &mut a).unwrap();
-        let (_, iv_b) = key.encrypt_inplace(rng, &mut b).unwrap();
+        let (iv_a, _) = key.encrypt_inplace(rng, &mut a).unwrap();
+        let (iv_b, _) = key.encrypt_inplace(rng, &mut b).unwrap();
         assert_ne!(iv_a, iv_b);
         assert_ne!(&a[..], &b[..]);
     }

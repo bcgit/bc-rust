@@ -165,7 +165,7 @@ fn bench_streaming_encrypt() {
     let plaintext = message();
     let plaintext = core::hint::black_box(&plaintext);
     let mut ciphertext = [0u8; MESSAGE_LEN];
-    let (mut enc, _nonce) = k.create_encryptor(&mut rng).unwrap();
+    let (_nonce, mut enc) = k.create_encryptor(&mut rng).unwrap();
     let mut written = 0;
     for chunk in plaintext.chunks(1024) {
         written += enc.do_encrypt_out(chunk, &mut ciphertext[written..]).unwrap();

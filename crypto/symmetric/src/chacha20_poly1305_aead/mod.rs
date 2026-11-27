@@ -27,7 +27,7 @@
 //! let key = ChaCha20Poly1305Key::from_key_material(&material).unwrap();
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let mut ciphertext = [0u8; 7];
-//! let (n, nonce, tag) = key.encrypt_detached_out(&mut rng, b"header", b"message", &mut ciphertext).unwrap();
+//! let (nonce, n, tag) = key.encrypt_detached_out(&mut rng, b"header", b"message", &mut ciphertext).unwrap();
 //! let mut plaintext = [0u8; 7];
 //! key.decrypt_detached_out(&nonce, b"header", &ciphertext[..n], &tag, &mut plaintext).unwrap();
 //! assert_eq!(&plaintext, b"message");
@@ -46,7 +46,7 @@
 //!
 //! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
 //! let key = ChaCha20Poly1305Key::from_key_material(&material).unwrap();
-//! let (mut enc, nonce) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (nonce, mut enc) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! enc.do_update_aad(b"header").unwrap();
 //! let mut sealed = Vec::new();
 //! for piece in [&b"first part, "[..], &b"second part"[..]] {
@@ -553,9 +553,9 @@ impl AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20Poly130
     fn create_encryptor<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         let nonce = rng.next_array::<NONCE_LEN>()?;
-        Ok((ChaCha20_Poly1305::new(keystream_at(&self.key, &nonce, 0)), nonce))
+        Ok((nonce, ChaCha20_Poly1305::new(keystream_at(&self.key, &nonce, 0))))
     }
 
     /// Under a nonce the caller supplies, who takes on the obligation that it never repeat under
@@ -583,7 +583,7 @@ impl AeadInPlaceEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305K
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        let (mut enc, nonce) = self.create_encryptor(rng)?;
+        let (nonce, mut enc) = self.create_encryptor(rng)?;
         let tag = enc.encrypt_message_inplace(&finish_token(), aad, buf)?;
         Ok((nonce, tag))
     }

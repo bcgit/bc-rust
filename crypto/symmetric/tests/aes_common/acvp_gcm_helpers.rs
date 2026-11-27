@@ -71,7 +71,7 @@ fn run_encrypt<K, const KEY_LEN: usize, const TAG_LEN: usize>(
 {
     let key = K::from_key_material(key).expect("a valid key");
     let mut ct = vec![0u8; data.len()];
-    let (written, got_iv, tag) =
+    let (got_iv, written, tag) =
         key.encrypt_detached_out(&mut FixedSeedRNG::new(iv), aad, data, &mut ct).expect("encrypt");
     assert_eq!(got_iv, iv, "the pinned RNG should reproduce the vector's IV");
     assert_eq!(written, data.len(), "GCM ciphertext is as long as the plaintext");

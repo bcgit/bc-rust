@@ -130,7 +130,7 @@ impl TestFrameworkMAC {
         assert_eq!(out, *expected_output);
         assert_eq!(key.mac(&mut rng(), input).unwrap(), (*nonce, *expected_output));
         let mut out = [0xA5u8; MAC_LEN];
-        assert_eq!(key.mac_out(&mut rng(), input, &mut out).unwrap(), (MAC_LEN, *nonce));
+        assert_eq!(key.mac_out(&mut rng(), input, &mut out).unwrap(), (*nonce, MAC_LEN));
         assert_eq!(out, *expected_output);
         // the _out rule holds on the error path: when the nonce cannot be drawn, the buffer
         // comes back zeroized rather than with its stale contents
@@ -169,7 +169,7 @@ impl TestFrameworkMAC {
         );
 
         // the workers' streaming methods, from both generator constructors
-        let (mut generator, drawn) = key.create_generator(&mut rng()).unwrap();
+        let (drawn, mut generator) = key.create_generator(&mut rng()).unwrap();
         assert_eq!(drawn, *nonce);
         generator.do_update(input);
         assert_eq!(generator.do_final(), *expected_output);

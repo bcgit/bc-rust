@@ -234,13 +234,13 @@ fn load_init_data<const INIT_DATA_LEN: usize>(
 /// caller's to carry.
 pub(crate) fn start_encryptor<E, const INIT_DATA_LEN: usize>(
     iv: Option<[u8; INIT_DATA_LEN]>,
-    create: impl FnOnce(&mut dyn RNG) -> Result<(E, [u8; INIT_DATA_LEN]), SymmetricCipherError>,
+    create: impl FnOnce(&mut dyn RNG) -> Result<([u8; INIT_DATA_LEN], E), SymmetricCipherError>,
     create_nonce: impl FnOnce(&[u8; INIT_DATA_LEN]) -> E,
 ) -> (E, Option<[u8; INIT_DATA_LEN]>) {
     match iv {
         Some(iv) => (create_nonce(&iv), None),
         None => create(&mut HashDRBG_SHA512::new_from_os())
-            .map(|(enc, iv)| (enc, Some(iv)))
+            .map(|(iv, enc)| (enc, Some(iv)))
             .unwrap_or_else(|e| {
                 eprintln!("Error: couldn't start encryption: {e:?}");
                 exit(-1);

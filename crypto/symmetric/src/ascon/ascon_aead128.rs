@@ -83,7 +83,7 @@ enum Phase {
 /// let key = AsconAEAD128Key::from_key_material(&material).expect("a valid key");
 ///
 /// let message = b"hello";
-/// let (mut enc, nonce) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+/// let (nonce, mut enc) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 /// let mut ciphertext = [0u8; 5 + 16]; // Enc::encrypt_out_len(5): ciphertext || tag
 /// let written = enc.do_encrypt_out(message, &mut ciphertext).expect("encryption");
 /// let (tag, tag_len) = enc.do_encrypt_final().expect("the tag");
@@ -723,9 +723,9 @@ impl
     fn create_encryptor<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; ASCON_AEAD128_NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; ASCON_AEAD128_NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         let nonce = rng.next_array::<ASCON_AEAD128_NONCE_LEN>()?;
-        Ok((Ascon_AEAD128::from_key_words(&self.key, &nonce), nonce))
+        Ok((nonce, Ascon_AEAD128::from_key_words(&self.key, &nonce)))
     }
 
     /// Under a nonce the caller supplies, who takes on the obligation that it never repeat
@@ -769,7 +769,7 @@ impl AeadInPlaceEncryptionKey<ASCON_AEAD128_KEY_LEN, ASCON_AEAD128_NONCE_LEN, AS
         buf: &mut [u8],
     ) -> Result<([u8; ASCON_AEAD128_NONCE_LEN], [u8; ASCON_AEAD128_TAG_LEN]), SymmetricCipherError>
     {
-        let (mut enc, nonce) = self.create_encryptor(rng)?;
+        let (nonce, mut enc) = self.create_encryptor(rng)?;
         let tag = enc.encrypt_message_inplace(&finish_token(), aad, buf)?;
         Ok((nonce, tag))
     }

@@ -31,7 +31,7 @@ pub fn run_key_object_case(
             let tag: [u8; $tlen] = tag.try_into().expect("tag length matches TAG_LEN");
             assert_eq!(key.verify(&nonce, msg, &tag).is_ok(), valid, "key object verify");
             if valid {
-                let (mut gen_, got) = key.create_generator(&mut FixedSeedRNG::new(nonce)).unwrap();
+                let (got, mut gen_) = key.create_generator(&mut FixedSeedRNG::new(nonce)).unwrap();
                 assert_eq!(got, nonce, "the pinned RNG should give the vector's IV");
                 gen_.do_update(msg);
                 assert_eq!(gen_.do_final(), tag, "key object generate");

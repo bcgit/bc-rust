@@ -126,7 +126,7 @@ pub const CCM_TAG_LEN: usize = 16;
 /// assert_eq!(&plaintext[..], &frame[..]);
 ///
 /// // The streaming methods: exactly one frame, released as it is processed.
-/// let (mut enc, nonce) = key.create_encryptor(&mut rng).expect("nonce draw");
+/// let (nonce, mut enc) = key.create_encryptor(&mut rng).expect("nonce draw");
 /// enc.do_update_aad(b"header").expect("aad");
 /// let mut sealed = vec![0u8; 2048];
 /// let n = enc.do_encrypt_out(&frame, &mut sealed).expect("the whole frame comes out");

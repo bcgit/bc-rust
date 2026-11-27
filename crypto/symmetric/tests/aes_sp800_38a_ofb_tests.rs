@@ -131,7 +131,7 @@ fn check<K, const KEY_LEN: usize>(
         assert_eq!(data, ct, "{section} Encrypt, supplied IV, {chunk}-byte calls");
 
         let mut data = pt.clone();
-        let (mut enc, drawn) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
+        let (drawn, mut enc) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
         assert_eq!(drawn, iv, "{section}: the RNG emits the vector's IV");
         data.chunks_mut(chunk).for_each(|p| _ = enc.do_encrypt_inplace(p).unwrap());
         assert_eq!(data, ct, "{section} Encrypt, drawn IV, {chunk}-byte calls");

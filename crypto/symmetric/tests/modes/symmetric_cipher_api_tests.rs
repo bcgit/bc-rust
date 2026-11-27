@@ -74,7 +74,7 @@ fn the_two_apis_agree_byte_for_byte() {
             let plaintext: Vec<u8> = (0..len).map(|i| (i * 7 + 1) as u8).collect();
 
             // The in-place API, which the mode implements directly.
-            let (mut enc, init) = key.create_encryptor(&mut os_rng()).unwrap();
+            let (init, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
             let mut in_place = plaintext.clone();
             enc.do_encrypt_inplace(&mut in_place).unwrap();
 
@@ -106,7 +106,7 @@ fn the_input_buffer_is_not_modified() {
 
     let key = key_for::<CFB>();
 
-    let (mut enc, _init) = key.create_encryptor(&mut os_rng()).unwrap();
+    let (_init, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
     let mut ciphertext = vec![0u8; plaintext.len()];
     enc.do_encrypt_out(&plaintext, &mut ciphertext).unwrap();
 
@@ -130,7 +130,7 @@ fn the_length_predictions_are_exact() {
             "decrypt_out_len is exact, not an upper bound"
         );
 
-        let (enc, _) = key.create_encryptor(&mut os_rng()).unwrap();
+        let (_, enc) = key.create_encryptor(&mut os_rng()).unwrap();
         assert_eq!(enc.do_encrypt_out_len(len), len, "update_out_len is the identity");
     }
 }
@@ -144,7 +144,7 @@ fn a_short_output_buffer_is_refused_without_consuming_anything() {
     let key = key_for::<CFB>();
     let plaintext: Vec<u8> = (0..32u8).collect();
 
-    let (mut enc, init) = key.create_encryptor(&mut os_rng()).unwrap();
+    let (init, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
 
     let mut too_small = vec![0u8; plaintext.len() - 1];
     match enc.do_encrypt_out(&plaintext, &mut too_small) {
@@ -159,7 +159,7 @@ fn a_short_output_buffer_is_refused_without_consuming_anything() {
     let mut big_enough = vec![0u8; plaintext.len()];
     enc.do_encrypt_out(&plaintext, &mut big_enough).unwrap();
 
-    let (mut fresh, _) =
+    let (_, mut fresh) =
         key.create_encryptor(&mut bouncycastle_core::hazmat::FixedSeedRNG::new(init)).unwrap();
     let mut reference = plaintext.clone();
     fresh.do_encrypt_inplace(&mut reference).unwrap();
@@ -179,7 +179,7 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
     let plaintext: Vec<u8> = (0..32u8).collect();
 
     // Encrypt normally, then try to decrypt into a buffer one byte too small.
-    let (mut enc, init) = key.create_encryptor(&mut os_rng()).unwrap();
+    let (init, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
     let mut ciphertext = plaintext.clone();
     enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 

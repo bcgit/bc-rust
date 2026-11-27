@@ -82,7 +82,7 @@
 //! let key = AsconAEAD128Key::from_key_material(&material).unwrap();
 //!
 //! let plaintext = b"secret message!!";
-//! let (mut enc, nonce) = key.create_encryptor(&mut rng).unwrap();
+//! let (nonce, mut enc) = key.create_encryptor(&mut rng).unwrap();
 //! enc.do_update_aad(b"associated data").unwrap();
 //! let mut ciphertext = [0u8; 16];
 //! enc.do_encrypt_out(plaintext, &mut ciphertext).unwrap();
@@ -115,7 +115,7 @@
 //! let plaintext = b"secret message!!";
 //!
 //! let mut inline = [0u8; 32]; // plaintext.len() + 16
-//! let (len, nonce) = key.encrypt_with_aad_out(&mut rng, b"aad", plaintext, &mut inline).unwrap();
+//! let (nonce, len) = key.encrypt_with_aad_out(&mut rng, b"aad", plaintext, &mut inline).unwrap();
 //! assert_eq!(len, plaintext.len() + 16); // ciphertext || tag
 //! let mut recovered = [0u8; 16];
 //! let n = key.decrypt_with_aad_out(&nonce, b"aad", &inline[..len], &mut recovered).unwrap();

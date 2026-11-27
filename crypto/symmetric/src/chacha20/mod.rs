@@ -20,7 +20,7 @@
 //! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
 //! let key = ChaCha20Key::from_key_material(&material).unwrap();
 //! let mut message = *b"message";
-//! let (_, nonce) = key.encrypt_inplace(&mut HashDRBG_SHA512::new_from_os(), &mut message).unwrap();
+//! let (nonce, _) = key.encrypt_inplace(&mut HashDRBG_SHA512::new_from_os(), &mut message).unwrap();
 //! key.decrypt_inplace(&nonce, &mut message).unwrap();
 //! assert_eq!(&message, b"message");
 //! ```
@@ -36,7 +36,7 @@
 //! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
 //! let key = ChaCha20Key::from_key_material(&material).unwrap();
 //! let mut data = [0x5au8; 100];
-//! let (mut enc, nonce) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (nonce, mut enc) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! for piece in data.chunks_mut(7) {
 //!     enc.do_encrypt_inplace(piece).unwrap();
 //! }
@@ -148,9 +148,9 @@ impl SymmetricEncryptionKey<KEY_LEN, NONCE_LEN, 0> for ChaCha20Key {
     fn create_encryptor<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         let nonce = rng.next_array::<NONCE_LEN>()?;
-        Ok((stream_cipher_over(ChaCha20KeyStream::start_at(&self.state, &nonce, 0)), nonce))
+        Ok((nonce, stream_cipher_over(ChaCha20KeyStream::start_at(&self.state, &nonce, 0))))
     }
 
     /// Under a nonce the caller supplies, for the protocols RFC 8439 Sec 2.4 has in mind ("In some

@@ -84,7 +84,7 @@ pub fn encrypt_aead<
     let mut enc = match nonce {
         Some(nonce) => key.create_encryptor_nonce(&nonce),
         None => {
-            let (enc, nonce) = key
+            let (nonce, enc) = key
                 .create_encryptor(&mut bouncycastle::rng::HashDRBG_SHA512::new_from_os())
                 .unwrap_or_else(|e| {
                     eprintln!("Error: couldn't start encryption: {e:?}");

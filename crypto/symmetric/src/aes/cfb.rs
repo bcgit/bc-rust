@@ -49,7 +49,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// // Encryption works in place. The IV is drawn from `rng` and returned.
 /// let mut data = plaintext;
-/// let (_, iv) = key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
+/// let (iv, _) = key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
 ///
 /// key.decrypt_inplace(&iv, &mut data).expect("decryption");
 /// assert_eq!(data, plaintext);
@@ -77,7 +77,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// let plaintext = [0x5Au8; 50];
 ///
 /// // Encrypt in 7-byte pieces, each in place.
-/// let (mut encryptor, iv) = key.create_encryptor(&mut rng).expect("IV draw");
+/// let (iv, mut encryptor) = key.create_encryptor(&mut rng).expect("IV draw");
 /// let mut ciphertext = plaintext;
 /// for piece in ciphertext.chunks_mut(7) {
 ///     encryptor.do_encrypt_inplace(piece).expect("encryption");

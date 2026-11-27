@@ -53,7 +53,7 @@
 //! let mut data = *plaintext;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
-//! let (mut enc, iv) = OFB::encrypt_init(&state, &mut rng).expect("iv draw");
+//! let (iv, mut enc) = OFB::encrypt_init(&state, &mut rng).expect("iv draw");
 //! let bytes_written = enc.do_encrypt_inplace(&mut data).expect("encryption");
 //! assert_eq!(bytes_written, plaintext.len());
 //!
@@ -149,10 +149,10 @@ where
     fn encrypt_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; BLOCK_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         // `I1 = IV`. A decrypt-only permutation is refused by `StreamCipher::from_keystream`.
         let iv = random_iv::<BLOCK_LEN>(rng)?;
-        Ok((StreamCipher::from_keystream(OfbKeyStream::from_perm(state, iv)), iv))
+        Ok((iv, StreamCipher::from_keystream(OfbKeyStream::from_perm(state, iv))))
     }
 
     fn encrypt_init_nonce<'k>(

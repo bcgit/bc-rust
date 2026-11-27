@@ -119,7 +119,7 @@ impl TestFrameworkAEADCipher {
                     key.encrypt_with_aad_out(rng, aad, msg, &mut inline).is_err(),
                     "fixed length: a {len}-byte inline one-shot must be refused"
                 );
-                let (mut enc, _) = key.create_encryptor(rng).unwrap();
+                let (_, mut enc) = key.create_encryptor(rng).unwrap();
                 enc.do_update_aad(aad).unwrap();
                 let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
                 assert!(
@@ -129,7 +129,7 @@ impl TestFrameworkAEADCipher {
                 continue;
             }
             let mut ct = vec![0u8; encrypt_detached_out_len(len)];
-            let (ct_len, nonce, tag) = key.encrypt_detached_out(rng, aad, msg, &mut ct).unwrap();
+            let (nonce, ct_len, tag) = key.encrypt_detached_out(rng, aad, msg, &mut ct).unwrap();
 
             // the _out rule holds on the error path: when the nonce cannot be drawn, both
             // one-shots leave the buffer zeroized rather than with its stale contents
@@ -179,14 +179,14 @@ impl TestFrameworkAEADCipher {
             // ciphertext with the tag appended -- the same bytes under the same nonce -- and both
             // the one-shot and the streaming finalizer must round trip it.
             let mut detached = vec![0u8; encrypt_detached_out_len(len)];
-            let (detached_len, pinned_nonce, detached_tag) =
+            let (pinned_nonce, detached_len, detached_tag) =
                 key.encrypt_detached_out(&mut fixed_rng(), aad, msg, &mut detached).unwrap();
             assert_eq!(pinned_nonce, pinned, "a fixed RNG must yield its stream as the nonce");
             detached.truncate(detached_len);
             detached.extend_from_slice(&detached_tag);
 
             let mut inline = vec![0u8; encrypt_out_len(len)];
-            let (inline_len, inline_nonce) =
+            let (inline_nonce, inline_len) =
                 key.encrypt_with_aad_out(rng, aad, msg, &mut inline).unwrap();
             assert_eq!(
                 inline_len,
@@ -204,7 +204,7 @@ impl TestFrameworkAEADCipher {
             // message would write past the ciphertext, and the exact one catches the off-by-one
             // in the other direction.
             let mut inline_rng = vec![0u8; encrypt_out_len(len) + 3];
-            let (rng_len, rng_nonce) =
+            let (rng_nonce, rng_len) =
                 key.encrypt_with_aad_out(&mut fixed_rng(), aad, msg, &mut inline_rng).unwrap();
             assert_eq!(rng_nonce, pinned_nonce, "the same RNG stream must give the same nonce");
             assert_eq!(
@@ -213,7 +213,7 @@ impl TestFrameworkAEADCipher {
                 "len {len}: the inline layout must be the detached ciphertext and its tag"
             );
             let mut exact = vec![0u8; encrypt_out_len(len)];
-            let (exact_len, _) =
+            let (_, exact_len) =
                 key.encrypt_with_aad_out(&mut fixed_rng(), aad, msg, &mut exact).unwrap();
             assert_eq!(&exact[..exact_len], &detached[..], "len {len}: exact-size buffer");
 
@@ -285,7 +285,7 @@ impl TestFrameworkAEADCipher {
 
             // the streaming constructor under the pinned RNG draws the pinned nonce, and the
             // inline stream decrypts
-            let (mut enc5, nonce5) = key.create_encryptor(&mut fixed_rng()).unwrap();
+            let (nonce5, mut enc5) = key.create_encryptor(&mut fixed_rng()).unwrap();
             assert_eq!(nonce5, pinned_nonce, "the same RNG stream must give the same nonce");
             enc5.do_update_aad(aad).unwrap();
             let mut inline5 = vec![0u8; enc5.do_encrypt_out_len(len)];
@@ -334,7 +334,7 @@ impl TestFrameworkAEADCipher {
                     other => panic!("encrypt_detached_out into a short buffer: {other:?}"),
                 }
                 let mut roomy = vec![0u8; need + 3];
-                let (n, _, _) = key.encrypt_detached_out(rng, aad, msg, &mut roomy).unwrap();
+                let (_, n, _) = key.encrypt_detached_out(rng, aad, msg, &mut roomy).unwrap();
                 assert_eq!(n, need, "encrypt_detached_out into a roomy buffer");
             }
             let need = encrypt_out_len(len);
@@ -364,12 +364,12 @@ impl TestFrameworkAEADCipher {
         // streaming in every chunking agrees with the one-shot, for both the AAD and the data.
         let msg = &DUMMY_SEED[..self.fixed_message_len.unwrap_or(max_len.max(17))];
         let mut ct_ref = vec![0u8; encrypt_detached_out_len(msg.len())];
-        let (ct_ref_len, nonce_ref, tag_ref) =
+        let (nonce_ref, ct_ref_len, tag_ref) =
             key.encrypt_detached_out(&mut fixed_rng(), aad, msg, &mut ct_ref).unwrap();
         ct_ref.truncate(ct_ref_len);
 
         for chunk in [1usize, 2, 3, 7, TAG_LEN.max(1), TAG_LEN + 1, msg.len().max(1)] {
-            let (mut enc, nonce) = key.create_encryptor(&mut fixed_rng()).unwrap();
+            let (nonce, mut enc) = key.create_encryptor(&mut fixed_rng()).unwrap();
             assert_eq!(nonce, nonce_ref, "the same RNG stream must give the same nonce");
             for piece in aad.chunks(chunk) {
                 enc.do_update_aad(piece).unwrap();
@@ -415,7 +415,7 @@ impl TestFrameworkAEADCipher {
         // a generic caller may forward an empty buffer without closing the phase.
         {
             let (first, second) = aad.split_at(aad.len() / 2);
-            let (mut enc, nonce) = key.create_encryptor(&mut fixed_rng()).unwrap();
+            let (nonce, mut enc) = key.create_encryptor(&mut fixed_rng()).unwrap();
             enc.do_update_aad(first).unwrap();
             assert_eq!(enc.do_encrypt_out(&[], &mut []).unwrap(), 0);
             enc.do_update_aad(second).unwrap();
@@ -459,7 +459,7 @@ impl TestFrameworkAEADCipher {
         assert!(last.iter().all(|&b| b == 0), "a failed detached final must leave zeros");
 
         // the array-returning detached finals agree with the `_out` ones the chunked loop used
-        let (mut enc, nonce) = key.create_encryptor(&mut fixed_rng()).unwrap();
+        let (nonce, mut enc) = key.create_encryptor(&mut fixed_rng()).unwrap();
         enc.do_update_aad(aad).unwrap();
         let mut ct = vec![0u8; enc.do_encrypt_out_len(msg.len())];
         let n = enc.do_encrypt_out(msg, &mut ct).unwrap();
@@ -496,18 +496,18 @@ impl TestFrameworkAEADCipher {
         // an empty AAD is a no-op: it must give exactly what absorbing no AAD at all gives, and
         // the inline layout with an empty AAD is the no-AAD symmetric contract
         let mut with_empty = vec![0u8; encrypt_detached_out_len(msg.len())];
-        let (len_empty, nonce_empty, tag_empty) =
+        let (nonce_empty, len_empty, tag_empty) =
             key.encrypt_detached_out(&mut fixed_rng(), b"", msg, &mut with_empty).unwrap();
         with_empty.truncate(len_empty);
         let mut without = vec![0u8; encrypt_detached_out_len(msg.len())];
-        let (len_none, nonce_none, tag_none) =
+        let (nonce_none, len_none, tag_none) =
             key.encrypt_detached_out(&mut fixed_rng(), &[], msg, &mut without).unwrap();
         without.truncate(len_none);
         assert_eq!(nonce_empty, nonce_none);
         assert_eq!(tag_empty, tag_none, "an empty AAD must be a no-op");
         assert_eq!(with_empty, without, "an empty AAD must be a no-op");
         let mut plain = vec![0u8; encrypt_out_len(msg.len())];
-        let (len_plain, nonce_plain) =
+        let (nonce_plain, len_plain) =
             key.encrypt_with_aad_out(&mut fixed_rng(), &[], msg, &mut plain).unwrap();
         assert_eq!(nonce_plain, nonce_none);
         assert_eq!(&plain[..len_plain - TAG_LEN], &without[..], "no-AAD inline ciphertext");
@@ -515,7 +515,7 @@ impl TestFrameworkAEADCipher {
 
         // a message with no data at all still authenticates its AAD
         if self.fixed_message_len.is_none_or(|fixed| fixed == 0) {
-            let (_ct_len, nonce, tag) = key.encrypt_detached_out(rng, aad, &[], &mut []).unwrap();
+            let (nonce, _ct_len, tag) = key.encrypt_detached_out(rng, aad, &[], &mut []).unwrap();
             key.decrypt_detached_out(&nonce, aad, &[], &tag, &mut []).unwrap();
             match key.decrypt_detached_out(&nonce, b"different associated data", &[], &tag, &mut [])
             {
@@ -527,7 +527,7 @@ impl TestFrameworkAEADCipher {
         // the AAD phase is over once data has been fed in -- on both sides, and on the decrypting
         // side even when all of it is still being held back as a possible tag.
         if !msg.is_empty() {
-            let (mut enc, nonce) = key.create_encryptor(rng).unwrap();
+            let (nonce, mut enc) = key.create_encryptor(rng).unwrap();
             let mut ct = vec![0u8; enc.do_encrypt_out_len(msg.len())];
             enc.do_encrypt_out(msg, &mut ct).unwrap();
             match enc.do_update_aad(aad) {
@@ -563,7 +563,7 @@ impl TestFrameworkAEADCipher {
         // have a byte 3 to flip, unless the pair's fixed length says otherwise.
         let msg = &DUMMY_SEED[..self.fixed_message_len.unwrap_or(max_len.max(17))];
         let mut ct = vec![0u8; encrypt_detached_out_len(msg.len())];
-        let (ct_len, nonce, tag) = key.encrypt_detached_out(rng, aad, msg, &mut ct).unwrap();
+        let (nonce, ct_len, tag) = key.encrypt_detached_out(rng, aad, msg, &mut ct).unwrap();
         ct.truncate(ct_len);
 
         if ct.len() > 3 {
@@ -635,8 +635,8 @@ impl TestFrameworkAEADCipher {
             assert!(buf.iter().all(|&b| b == 0), "a modified nonce must leave the buffer zeroized");
 
             // two encryptions under the same key must not reuse a nonce
-            let (_enc1, nonce1) = key.create_encryptor(rng).unwrap();
-            let (_enc2, nonce2) = key.create_encryptor(rng).unwrap();
+            let (nonce1, _enc1) = key.create_encryptor(rng).unwrap();
+            let (nonce2, _enc2) = key.create_encryptor(rng).unwrap();
             assert_ne!(nonce1, nonce2);
         }
 
@@ -660,7 +660,7 @@ impl TestFrameworkAEADCipher {
 
         let need = encrypt_detached_out_len(len);
         let mut ct = vec![SENTINEL; need + EXTRA];
-        let (n, nonce, tag) = key.encrypt_detached_out(rng, aad, msg, &mut ct).unwrap();
+        let (nonce, n, tag) = key.encrypt_detached_out(rng, aad, msg, &mut ct).unwrap();
         assert_eq!(n, need, "encrypt_detached_out into an oversized buffer");
         assert_tail_zeroed(&ct, n, "encrypt_detached_out");
         ct.truncate(n);
@@ -671,7 +671,7 @@ impl TestFrameworkAEADCipher {
 
         let need = encrypt_out_len(len);
         let mut sealed = vec![SENTINEL; need + EXTRA];
-        let (n, nonce) = key.encrypt_with_aad_out(rng, aad, msg, &mut sealed).unwrap();
+        let (nonce, n) = key.encrypt_with_aad_out(rng, aad, msg, &mut sealed).unwrap();
         assert_eq!(n, need, "encrypt_with_aad_out into an oversized buffer");
         assert_tail_zeroed(&sealed, n, "encrypt_with_aad_out");
         sealed.truncate(n);
@@ -681,7 +681,7 @@ impl TestFrameworkAEADCipher {
         assert_tail_zeroed(&pt, n, "decrypt_with_aad_out");
 
         // the detached finals: each reports only what it wrote itself
-        let (mut enc, nonce) = key.create_encryptor(rng).unwrap();
+        let (nonce, mut enc) = key.create_encryptor(rng).unwrap();
         enc.do_update_aad(aad).unwrap();
         let mut ct = vec![0u8; enc.do_encrypt_out_len(len)];
         let written = enc.do_encrypt_out(msg, &mut ct).unwrap();
@@ -715,7 +715,7 @@ impl TestFrameworkAEADCipher {
         let len = self.fixed_message_len.unwrap_or(max_len);
         let msg = &DUMMY_SEED[..len];
         let mut boxed_encryptor = || {
-            let (enc, nonce) = key.create_encryptor(rng).unwrap();
+            let (nonce, enc) = key.create_encryptor(rng).unwrap();
             let mut enc: Box<dyn AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN> + '_> =
                 Box::new(enc);
             enc.do_update_aad(aad).unwrap();
@@ -796,7 +796,7 @@ impl TestFrameworkAEADCipher {
         let chunkings: [usize; 6] =
             [1, 3, TAG_LEN.max(1), TAG_LEN + 1, 2 * TAG_LEN + 3, len.max(1)];
         for chunk in chunkings {
-            let (mut enc, nonce) = key.create_encryptor(rng).unwrap();
+            let (nonce, mut enc) = key.create_encryptor(rng).unwrap();
             let mut ct = Vec::new();
             for piece in msg.chunks(chunk) {
                 let expect = enc.do_encrypt_out_len(piece.len());
@@ -830,7 +830,7 @@ impl TestFrameworkAEADCipher {
         }
 
         // a too-short streaming buffer is refused with the required length, before any work
-        let (mut enc, _) = key.create_encryptor(rng).unwrap();
+        let (_, mut enc) = key.create_encryptor(rng).unwrap();
         let need = enc.do_encrypt_out_len(len);
         if need > 0 {
             let mut short = vec![0u8; need - 1];
@@ -861,7 +861,7 @@ impl TestFrameworkAEADCipher {
         };
         let cuts = |total: usize| [0, 1.min(total), (FINAL_LEN + 2).min(total), total];
         let c = cuts(len);
-        let (mut enc, nonce) = key.create_encryptor(rng).unwrap();
+        let (nonce, mut enc) = key.create_encryptor(rng).unwrap();
         let mut streamed = Vec::new();
         for w in c.windows(2) {
             let piece = &msg[w[0]..w[1]];
@@ -1175,7 +1175,7 @@ impl TestFrameworkAEADTaggedLayout {
         // Encrypts `msg` into the inline layout with the one-shot, under the pinned nonce.
         let tagged_ct = |msg: &[u8]| -> (Vec<u8>, [u8; NONCE_LEN]) {
             let mut ct = vec![0u8; encrypt_out_len(msg.len())];
-            let (written, nonce) =
+            let (nonce, written) =
                 key.encrypt_with_aad_out(&mut Self::rng::<NONCE_LEN>(), AAD, msg, &mut ct).unwrap();
             assert_eq!(written, msg.len() + TAG_LEN, "inline layout is ciphertext || tag");
             ct.truncate(written);
@@ -1193,7 +1193,7 @@ impl TestFrameworkAEADTaggedLayout {
 
             // The detached layout is the same ciphertext with the tag split off.
             let mut detached = vec![0u8; encrypt_detached_out_len(len)];
-            let (d_len, d_nonce, d_tag) = key
+            let (d_nonce, d_len, d_tag) = key
                 .encrypt_detached_out(&mut Self::rng::<NONCE_LEN>(), AAD, msg, &mut detached)
                 .unwrap();
             assert_eq!(d_nonce, nonce, "len {len}: the pinned RNG must give the same nonce");
@@ -1201,7 +1201,7 @@ impl TestFrameworkAEADTaggedLayout {
             assert_eq!(&d_tag[..], &ct[len..], "len {len}: detached tag");
 
             for chunk in [1usize, 2, 3, TAG_LEN.max(1), len.max(1)] {
-                let (mut enc, stream_nonce) =
+                let (stream_nonce, mut enc) =
                     key.create_encryptor(&mut Self::rng::<NONCE_LEN>()).unwrap();
                 assert_eq!(stream_nonce, nonce, "len {len}: streaming init draws the same nonce");
                 enc.do_update_aad(AAD).unwrap();

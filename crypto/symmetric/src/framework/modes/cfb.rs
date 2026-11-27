@@ -77,7 +77,7 @@
 //! let plaintext = b"the quick brown fox!!";
 //! let mut data = *plaintext;
 //!
-//! let (mut enc, iv) = CFB::encrypt_init(&state, &mut rng).expect("iv draw");
+//! let (iv, mut enc) = CFB::encrypt_init(&state, &mut rng).expect("iv draw");
 //! let bytes_written = enc.do_encrypt_inplace(&mut data).expect("encryption");
 //! assert_eq!(bytes_written, plaintext.len());
 //!
@@ -185,7 +185,7 @@ where
     fn encrypt_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; BLOCK_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         const {
             assert!(
                 !P::DECRYPT_ONLY,
@@ -194,7 +194,7 @@ where
         };
         // `I1 = IV`.
         let iv = random_iv::<BLOCK_LEN>(rng)?;
-        Ok((Cfb::start(state, iv), iv))
+        Ok((iv, Cfb::start(state, iv)))
     }
 
     fn encrypt_init_nonce<'k>(

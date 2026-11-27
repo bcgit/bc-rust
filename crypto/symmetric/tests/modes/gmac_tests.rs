@@ -65,14 +65,14 @@ fn every_route_gives_gcm_s_aad_only_tag() {
     let state = key_state();
     for len in [0, 1, 15, 16, 17, 32, 33, 100] {
         let msg = message(len);
-        let (_, gcm_nonce, expected) = BlockCipherKey::<Toy, GCM>::from_key_material(&toy_key())
+        let (gcm_nonce, _, expected) = BlockCipherKey::<Toy, GCM>::from_key_material(&toy_key())
             .unwrap()
             .encrypt_detached_out(&mut rng(), &msg, &[], &mut [])
             .unwrap();
         assert_eq!(gcm_nonce, NONCE);
 
         let key = gmac_key::<16>();
-        let (gen_, nonce) = key.create_generator(&mut rng()).unwrap();
+        let (nonce, gen_) = key.create_generator(&mut rng()).unwrap();
         assert_eq!(nonce, NONCE, "len {len}");
         assert_eq!(tag_of(gen_, &msg), expected, "key.create_generator, len {len}");
         assert_eq!(key.mac_nonce(&NONCE, &msg), expected, "key.mac_nonce, len {len}");
@@ -81,7 +81,7 @@ fn every_route_gives_gcm_s_aad_only_tag() {
 
         type Full = GMAC<16>;
         type Short = GMAC<12>;
-        let (gen_, nonce) =
+        let (nonce, gen_) =
             <Full as NonceMacMode<Toy, GCM_NONCE_LEN, 16>>::generate_init(&state, &mut rng())
                 .unwrap();
         assert_eq!(nonce, NONCE, "len {len}");
@@ -168,15 +168,15 @@ fn rejects_changed_tag_nonce_or_message() {
 fn a_fresh_nonce_per_generator() {
     let key = gmac_key::<16>();
     let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 64, _>(|i| i as u8));
-    let (g1, n1) = key.create_generator(&mut rng).unwrap();
-    let (g2, n2) = key.create_generator(&mut rng).unwrap();
+    let (n1, g1) = key.create_generator(&mut rng).unwrap();
+    let (n2, g2) = key.create_generator(&mut rng).unwrap();
     assert_ne!(n1, n2);
     assert_ne!(tag_of(g1, b"m"), tag_of(g2, b"m"));
 
     let (n3, t3) = key.mac(&mut rng, b"m").unwrap();
     assert_eq!(t3, key.mac_nonce(&n3, b"m"));
     let mut out = [0u8; 16];
-    let (written, n4) = key.mac_out(&mut rng, b"m", &mut out).unwrap();
+    let (n4, written) = key.mac_out(&mut rng, b"m", &mut out).unwrap();
     assert_eq!(written, 16);
     assert_ne!(n4, n3);
     assert_eq!(out, key.mac_nonce(&n4, b"m"));

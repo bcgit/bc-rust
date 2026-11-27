@@ -86,7 +86,7 @@ where
     let chunk = grouping.chunk_len(data.len());
 
     if encrypt {
-        let (mut enc, got_iv) =
+        let (got_iv, mut enc) =
             key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("encrypt init");
         assert_eq!(got_iv, iv, "the pinned RNG should reproduce the vector's IV");
         for piece in data.chunks_mut(chunk) {

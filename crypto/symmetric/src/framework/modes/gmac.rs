@@ -38,7 +38,7 @@
 //! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::MACKey).unwrap();
 //! let key = BlockCipherKey::<ToyBlockCipher, GMAC>::from_key_material(&material).unwrap();
 //!
-//! let (mut generator, nonce) = key.create_generator(&mut rng).unwrap();
+//! let (nonce, mut generator) = key.create_generator(&mut rng).unwrap();
 //! generator.do_update(b"a message ");
 //! generator.do_update(b"in two parts");
 //! let tag: [u8; 16] = generator.do_final();
@@ -105,7 +105,7 @@ where
     fn generate_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Generator<'k>, [u8; GCM_NONCE_LEN]), MACError> {
+    ) -> Result<([u8; GCM_NONCE_LEN], Self::Generator<'k>), MACError> {
         Gmac::<P, Encrypting, TAG_LEN>::from_key_state(state, rng)
     }
 
@@ -158,11 +158,11 @@ where
     pub(in crate::framework::modes) fn from_key_state(
         state: &'k GcmKeyState<P>,
         rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; GCM_NONCE_LEN]), MACError> {
+    ) -> Result<([u8; GCM_NONCE_LEN], Self), MACError> {
         // The draw is `Gcm`'s (SP 800-38A Appendix C's "random data block"), under this mode's
         // error type.
         let nonce = crate::modes::iv::random_iv::<GCM_NONCE_LEN>(rng)?;
-        Ok((Self::from_key_state_nonce(state, &nonce), nonce))
+        Ok((nonce, Self::from_key_state_nonce(state, &nonce)))
     }
 
     /// As [`from_key_state`](Self::from_key_state) under a nonce the caller supplies, who takes

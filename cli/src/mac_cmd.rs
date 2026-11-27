@@ -267,7 +267,7 @@ fn gmac_run<K>(
                 Some(iv) => (key.create_generator_nonce(&iv), None),
                 None => key
                     .create_generator(&mut HashDRBG_SHA512::new_from_os())
-                    .map(|(mac, nonce)| (mac, Some(nonce)))
+                    .map(|(nonce, mac)| (mac, Some(nonce)))
                     .unwrap_or_else(|e| {
                         eprintln!("Error: couldn't draw the nonce: {e:?}");
                         exit(-1);

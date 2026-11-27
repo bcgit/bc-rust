@@ -534,7 +534,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
         let pinned = [0x11u8; 16];
 
         // detached tag, streamed
-        let (mut direct_enc, direct_nonce) =
+        let (direct_nonce, mut direct_enc) =
             km.create_encryptor(&mut FixedSeedRNG::new(pinned)).unwrap();
         direct_enc.do_update_aad(aad).unwrap();
         let mut direct_ct = vec![0u8; pt.len()];
@@ -546,7 +546,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
         direct_inline.extend_from_slice(&direct_tag);
 
         // inline tag, streamed
-        let (mut tagged_enc, tagged_nonce) =
+        let (tagged_nonce, mut tagged_enc) =
             km.create_encryptor(&mut FixedSeedRNG::new(pinned)).unwrap();
         tagged_enc.do_update_aad(aad).unwrap();
         let mut tagged_out = vec![0u8; Ascon_AEAD128::<Encrypting>::encrypt_out_len(pt.len())];
@@ -562,7 +562,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
         // inline tag, one-shot: its own generated nonce, so what must match is the round trip
         // and the length, not the bytes.
         let mut one_shot = vec![0u8; Ascon_AEAD128::<Encrypting>::encrypt_out_len(pt.len())];
-        let (one_len, one_nonce) = km
+        let (one_nonce, one_len) = km
             .encrypt_with_aad_out(&mut HashDRBG_SHA512::new_from_os(), aad, &pt, &mut one_shot)
             .unwrap();
         assert_eq!(one_len, tagged_out.len(), "pt_len {pt_len}: one-shot writes the same length");
@@ -617,7 +617,7 @@ fn aead128_no_aad_one_shots_match_kat() {
         assert!(dh(ad_hex).is_empty());
 
         let mut ct = vec![0u8; Ascon_AEAD128::<Encrypting>::encrypt_out_len(pt.len())];
-        let (n, nonce) =
+        let (nonce, n) =
             km.encrypt_with_aad_out(&mut FixedSeedRNG::new(kat_nonce), &[], &pt, &mut ct).unwrap();
         assert_eq!(nonce, kat_nonce);
         assert_eq!(&ct[..n], &expected[..], "pt {pt_hex}: inline one-shot vs KAT");

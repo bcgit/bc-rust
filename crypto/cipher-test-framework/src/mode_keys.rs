@@ -214,7 +214,7 @@ pub fn gcm_draws_a_fresh_nonce<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() 
     let mut seen = std::collections::BTreeSet::new();
     for _ in 0..16 {
         let mut ct = [0u8; 46];
-        let (_, nonce, tag) = key.encrypt_detached_out(&mut rng, b"aad", &data, &mut ct).unwrap();
+        let (nonce, _, tag) = key.encrypt_detached_out(&mut rng, b"aad", &data, &mut ct).unwrap();
         assert!(seen.insert(nonce), "nonce repeated across encryptions");
         let mut pt = [0u8; 46];
         key.decrypt_detached_out(&nonce, b"aad", &ct, &tag, &mut pt).unwrap();
@@ -237,9 +237,9 @@ pub fn ecb_takes_no_init_data<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     let padded_key = make_key::<P, ECB<PKCS7>, KEY_LEN>();
     let mut out = [0u8; 16];
     // A seedless RNG panics on any draw, so finishing is the proof that none is made.
-    let (written, init): (usize, [u8; 0]) =
+    let (init, written): ([u8; 0], usize) =
         padded_key.encrypt_out(&mut FixedSeedRNG::new([]), b"hello", &mut out).unwrap();
-    assert_eq!((written, init), (16, []));
+    assert_eq!((init, written), ([], 16));
     assert_eq!(out, padded_hello, "PKCS7 over ECB is ECB of the padded block");
     assert_eq!(padded_key.decrypt(&init, &out).unwrap(), b"hello");
 }
@@ -342,7 +342,7 @@ pub fn cmac_round_trip<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
 /// payload.
 pub fn gmac_round_trip<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     let key = BlockCipherKey::<P, GMAC>::from_key_material(&mac_material::<KEY_LEN>()).unwrap();
-    let (mut generator, nonce) = key.create_generator(&mut rng()).unwrap();
+    let (nonce, mut generator) = key.create_generator(&mut rng()).unwrap();
     generator.do_update(b"a message that arrives ");
     generator.do_update(b"in pieces");
     let tag: [u8; 16] = generator.do_final();
@@ -353,11 +353,11 @@ pub fn gmac_round_trip<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
         b"a message that arrives in pieces",
         &tag,
     );
-    let (_, second_nonce) = key.create_generator(&mut rng()).unwrap();
+    let (second_nonce, _) = key.create_generator(&mut rng()).unwrap();
     assert_ne!(second_nonce, nonce, "each generator draws its own nonce");
 
     const MSG: &[u8] = b"The quick brown fox jumps over the lazy dog";
-    let (_, nonce, from_gcm) =
+    let (nonce, _, from_gcm) =
         make_key::<P, GCM, KEY_LEN>().encrypt_detached_out(&mut rng(), MSG, &[], &mut []).unwrap();
     let as_mac = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
         material::<KEY_LEN>().ref_to_bytes(),

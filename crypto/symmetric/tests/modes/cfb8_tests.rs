@@ -91,7 +91,7 @@ fn pinned_rng(iv: [u8; TOY_LEN]) -> FixedSeedRNG<[u8; TOY_LEN]> {
 }
 
 fn pinned_encryptor(iv: [u8; TOY_LEN]) -> ToyCfb8<'static, Encrypting> {
-    let (enc, got) = KEY.create_encryptor(&mut pinned_rng(iv)).expect("encrypt init");
+    let (got, enc) = KEY.create_encryptor(&mut pinned_rng(iv)).expect("encrypt init");
     assert_eq!(got, iv, "the pinned RNG should reproduce the IV");
     enc
 }
@@ -228,7 +228,7 @@ fn cfb8_is_not_cfb128() {
     let cfb8 = enc(&mut pinned_encryptor(iv), &plaintext);
 
     let cfb128_key = BlockCipherKey::<Toy, CFB>::from_key_material(&toy_key()).unwrap();
-    let (mut cfb, got) = cfb128_key.create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let (got, mut cfb) = cfb128_key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     assert_eq!(got, iv);
     let mut cfb128 = plaintext.clone();
     cfb.do_encrypt_inplace(&mut cfb128).unwrap();
@@ -283,7 +283,7 @@ fn neither_direction_uses_the_inverse_cipher() {
 
     let key = forward_only_key();
 
-    let (mut e, _) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let (_, mut e) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     let ct = enc(&mut e, &plaintext);
 
     // One call: four fours, then a pair, then a single byte.
@@ -393,7 +393,7 @@ fn chunking_matches_a_single_call_at_every_batch_remainder() {
         let plaintext: Vec<u8> = (0..171).map(|i| (i * 7 + i / 16) as u8).collect();
 
         let encryptor = || {
-            let (enc, got) =
+            let (got, enc) =
                 key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("encrypt init");
             assert_eq!(got, iv, "{name}: the pinned RNG should reproduce the IV");
             enc
@@ -455,7 +455,7 @@ fn the_pair_path_is_really_used() {
 
     // The swapped-pair toy encrypts identically -- CFB8 encryption is serial and never batches.
     let key = swapped_key();
-    let (mut e, _) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let (_, mut e) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     assert_eq!(enc(&mut e, &plaintext), ct, "CFB8 encryption must not use the pair path");
 
     // ...but decrypting two bytes together must now be wrong, because the pair path is used.
@@ -485,7 +485,7 @@ fn the_four_byte_path_is_really_used() {
 
     // The rotated-four toy encrypts identically: CFB8 encryption is serial and never batches.
     let key = swapped_four_key();
-    let (mut e, _) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let (_, mut e) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     assert_eq!(enc(&mut e, &plaintext), ct, "CFB8 encryption must not use the four path");
 
     // ...but five bytes together must now be wrong, because the first four go through
@@ -517,7 +517,7 @@ fn one_shots_agree_with_the_streaming_api() {
         let streamed = enc(&mut pinned_encryptor(iv), &plaintext);
 
         let mut buf = plaintext.clone();
-        let (_, iv_b) = key.encrypt_inplace(&mut pinned_rng(iv), &mut buf).unwrap();
+        let (iv_b, _) = key.encrypt_inplace(&mut pinned_rng(iv), &mut buf).unwrap();
         assert_eq!(iv_b, iv);
         assert_eq!(buf, streamed, "len {len}: one-shot must equal streaming");
         key.decrypt_inplace(&iv, &mut buf).unwrap();
@@ -527,7 +527,7 @@ fn one_shots_agree_with_the_streaming_api() {
         // is only worth asserting once the message is long enough that coinciding with the
         // keystream by chance is negligible -- see `every_length_round_trips_without_padding`.
         let mut buf = plaintext.clone();
-        let (_, iv_fresh) = key.encrypt_inplace(&mut os_rng(), &mut buf).unwrap();
+        let (iv_fresh, _) = key.encrypt_inplace(&mut os_rng(), &mut buf).unwrap();
         if len >= 8 {
             assert_ne!(buf, plaintext);
         }
@@ -636,7 +636,7 @@ fn each_encryption_gets_a_fresh_iv() {
     let key = cfb8_key();
     let mut seen = std::collections::BTreeSet::new();
     for _ in 0..64 {
-        let (_, iv) = key.create_encryptor(&mut os_rng()).unwrap();
+        let (iv, _) = key.create_encryptor(&mut os_rng()).unwrap();
         assert!(seen.insert(iv), "IV repeated across encryptions: {iv:02x?}");
     }
 }
@@ -683,7 +683,7 @@ fn every_length_round_trips_without_padding() {
     for len in 0..=(2 * TOY_LEN + 1) {
         let plaintext = message(len);
         let mut data = plaintext.clone();
-        let (n, iv) = key.encrypt_inplace(&mut os_rng(), &mut data).expect("encryption");
+        let (iv, n) = key.encrypt_inplace(&mut os_rng(), &mut data).expect("encryption");
         assert_eq!(n, len, "len {len}: encrypt must report the number of bytes written");
         assert_eq!(data.len(), len, "len {len}: the ciphertext is as long as the plaintext");
         // Only meaningful once the message is long enough that agreeing with the keystream by

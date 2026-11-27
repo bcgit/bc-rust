@@ -80,7 +80,7 @@
 //! // 50 bytes, and the ciphertext is 50 bytes: no padding anywhere.
 //! let plaintext = [0x5Au8; 50];
 //! let mut data = plaintext;
-//! let (_, nonce) = key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
+//! let (nonce, _) = key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
 //! assert_ne!(data, plaintext);
 //!
 //! key.decrypt_inplace(&nonce, &mut data).expect("decryption");

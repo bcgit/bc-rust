@@ -41,7 +41,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// // 5 bytes: CFB8's segment is one byte, so any length at all is fine.
 /// let message = *b"hello";
 /// let mut data = message;
-/// let (_, iv) = cfb8_key.encrypt_inplace(&mut rng, &mut data).unwrap();
+/// let (iv, _) = cfb8_key.encrypt_inplace(&mut rng, &mut data).unwrap();
 /// assert_ne!(data, message);
 /// cfb8_key.decrypt_inplace(&iv, &mut data).unwrap();
 /// assert_eq!(data, message);
@@ -49,7 +49,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// // CFB8 and CFB128 are not interchangeable: same key material, same IV, different ciphertext.
 /// let cfb_key = ARIA128Key::<CFB>::from_key_material(&material).unwrap();
 /// let mut as_cfb8 = message;
-/// let (_, iv) = cfb8_key.encrypt_inplace(&mut rng, &mut as_cfb8).unwrap();
+/// let (iv, _) = cfb8_key.encrypt_inplace(&mut rng, &mut as_cfb8).unwrap();
 /// let mut as_cfb128 = as_cfb8;
 /// cfb_key.decrypt_inplace(&iv, &mut as_cfb128).unwrap();
 /// assert_ne!(as_cfb128, message);

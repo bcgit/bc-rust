@@ -41,12 +41,12 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// // One-shot, in place, at any length. The IV is drawn from `rng` and returned.
 /// let plaintext = [0x5Au8; 47];
 /// let mut data = plaintext;
-/// let (_, iv) = key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
+/// let (iv, _) = key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
 /// key.decrypt_inplace(&iv, &mut data).expect("decryption");
 /// assert_eq!(data, plaintext);
 ///
 /// // Streaming, in pieces of any length.
-/// let (mut encryptor, iv) = key.create_encryptor(&mut rng).expect("IV draw");
+/// let (iv, mut encryptor) = key.create_encryptor(&mut rng).expect("IV draw");
 /// let mut ciphertext = plaintext;
 /// for piece in ciphertext.chunks_mut(7) {
 ///     encryptor.do_encrypt_inplace(piece).expect("encryption");

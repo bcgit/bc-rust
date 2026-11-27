@@ -82,7 +82,7 @@ fn bench_encrypt_packets(c: &mut Criterion) {
             || [0u8; PACKET_LEN],
             |out| {
                 let per_packet = Key::from_key_material(black_box(&km)).unwrap();
-                let (enc, nonce) = per_packet.create_encryptor(&mut rng).unwrap();
+                let (nonce, enc) = per_packet.create_encryptor(&mut rng).unwrap();
                 black_box((nonce, encrypt_packet(enc, black_box(&packet), out)))
             },
             BatchSize::LargeInput,
@@ -92,7 +92,7 @@ fn bench_encrypt_packets(c: &mut Criterion) {
         b.iter_batched_ref(
             || [0u8; PACKET_LEN],
             |out| {
-                let (enc, nonce) = black_box(&key).create_encryptor(&mut rng).unwrap();
+                let (nonce, enc) = black_box(&key).create_encryptor(&mut rng).unwrap();
                 black_box((nonce, encrypt_packet(enc, black_box(&packet), out)))
             },
             BatchSize::LargeInput,
@@ -106,7 +106,7 @@ fn bench_encrypt_packets(c: &mut Criterion) {
                 |out| {
                     let mut os_rng = HashDRBG_SHA512::new_from_os();
                     let per_packet = Key::from_key_material(black_box(&km)).unwrap();
-                    let (enc, nonce) = per_packet.create_encryptor(&mut os_rng).unwrap();
+                    let (nonce, enc) = per_packet.create_encryptor(&mut os_rng).unwrap();
                     black_box((nonce, encrypt_packet(enc, black_box(&packet), out)))
                 },
                 BatchSize::LargeInput,
@@ -118,7 +118,7 @@ fn bench_encrypt_packets(c: &mut Criterion) {
             || [0u8; PACKET_LEN],
             |out| {
                 let mut os_rng = HashDRBG_SHA512::new_from_os();
-                let (enc, nonce) = black_box(&key).create_encryptor(&mut os_rng).unwrap();
+                let (nonce, enc) = black_box(&key).create_encryptor(&mut os_rng).unwrap();
                 black_box((nonce, encrypt_packet(enc, black_box(&packet), out)))
             },
             BatchSize::LargeInput,
@@ -135,7 +135,7 @@ fn bench_decrypt_packets(c: &mut Criterion) {
 
     // One valid packet to decrypt, made outside the timing.
     let mut ct = [0u8; PACKET_LEN];
-    let (enc, nonce) = key.create_encryptor(&mut rng()).unwrap();
+    let (nonce, enc) = key.create_encryptor(&mut rng()).unwrap();
     let tag = encrypt_packet(enc, &packet, &mut ct);
 
     let mut group = c.benchmark_group("gcm::AES_256 16KiB packet decrypt");
@@ -183,7 +183,7 @@ fn bench_init(c: &mut Criterion) {
         |b| {
             b.iter(|| {
                 let per_packet = Key::from_key_material(black_box(&km)).unwrap();
-                let (enc, nonce) = per_packet.create_encryptor(&mut rng).unwrap();
+                let (nonce, enc) = per_packet.create_encryptor(&mut rng).unwrap();
                 // The worker borrows the key, so what a per-packet key costs is what it takes
                 // to make the worker and finish it.
                 black_box((nonce, enc.do_encrypt_final().unwrap()))
@@ -212,7 +212,7 @@ fn bench_init(c: &mut Criterion) {
             b.iter(|| {
                 let mut os_rng = HashDRBG_SHA512::new_from_os();
                 let per_packet = Key::from_key_material(black_box(&km)).unwrap();
-                let (enc, nonce) = per_packet.create_encryptor(&mut os_rng).unwrap();
+                let (nonce, enc) = per_packet.create_encryptor(&mut os_rng).unwrap();
                 black_box((nonce, enc.do_encrypt_final().unwrap()))
             })
         },

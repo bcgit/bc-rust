@@ -99,7 +99,7 @@ fn pinned_rng(iv: [u8; TOY_LEN]) -> FixedSeedRNG<[u8; TOY_LEN]> {
 }
 
 fn pinned_encryptor(iv: [u8; TOY_LEN]) -> ToyOfb<'static, Encrypting> {
-    let (enc, got) = KEY.create_encryptor(&mut pinned_rng(iv)).expect("encrypt init");
+    let (got, enc) = KEY.create_encryptor(&mut pinned_rng(iv)).expect("encrypt init");
     assert_eq!(got, iv, "the pinned RNG should reproduce the IV");
     enc
 }
@@ -203,7 +203,7 @@ fn ofb_agrees_with_cfb_on_the_first_block_only() {
     let ofb_ct = enc(&mut pinned_encryptor(iv), &plaintext);
 
     let cfb_key = BlockCipherKey::<Toy, CFB>::from_key_material(&toy_key()).unwrap();
-    let (mut cfb, _): (Cfb<'_, Toy, Encrypting, TOY_LEN>, _) =
+    let (_, mut cfb): (_, Cfb<'_, Toy, Encrypting, TOY_LEN>) =
         cfb_key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     let cfb_ct = enc(&mut cfb, &plaintext);
 
@@ -229,7 +229,7 @@ fn neither_direction_uses_the_inverse_cipher() {
     let plaintext = message(11 * TOY_LEN + 5);
 
     let key = forward_only_key();
-    let (mut e, _) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let (_, mut e) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     let ct = enc(&mut e, &plaintext);
     assert_eq!(ct, enc(&mut pinned_encryptor(iv), &plaintext), "the two toys must agree");
 
@@ -248,12 +248,12 @@ fn no_batch_path_is_used_in_either_direction() {
     let ct = enc(&mut pinned_encryptor(iv), &plaintext);
 
     let key = swapped_key();
-    let (mut e, _) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let (_, mut e) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     assert_eq!(enc(&mut e, &plaintext), ct, "encryption must not use encrypt_2blocks");
     assert_eq!(dec(&mut key.create_decryptor(&iv), &ct), plaintext, "nor decryption");
 
     let key = swapped_four_key();
-    let (mut e, _) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let (_, mut e) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     assert_eq!(enc(&mut e, &plaintext), ct, "encryption must not use encrypt_4blocks");
     assert_eq!(dec(&mut key.create_decryptor(&iv), &ct), plaintext, "nor decryption");
 }
@@ -338,7 +338,7 @@ fn each_encryption_gets_a_fresh_iv() {
     let key = ofb_key();
     let mut seen = std::collections::BTreeSet::new();
     for _ in 0..64 {
-        let (_, iv) = key.create_encryptor(&mut os_rng()).unwrap();
+        let (iv, _) = key.create_encryptor(&mut os_rng()).unwrap();
         assert!(seen.insert(iv), "IV repeated across encryptions: {iv:02x?}");
     }
 }
@@ -378,7 +378,7 @@ fn every_length_round_trips_without_padding() {
     for len in 0..=(4 * TOY_LEN) {
         let plaintext = message(len);
         let mut data = plaintext.clone();
-        let (n, iv) = key.encrypt_inplace(&mut os_rng(), &mut data).expect("encryption");
+        let (iv, n) = key.encrypt_inplace(&mut os_rng(), &mut data).expect("encryption");
         assert_eq!(n, len, "len {len}: encrypt must report the number of bytes written");
         // A short message can coincide with its ciphertext by chance; at 8 bytes the odds are
         // 2^-64.

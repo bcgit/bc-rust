@@ -935,7 +935,7 @@ where
 /// let header = b"frame 7";
 /// let frame = [0x5Au8; 40];
 ///
-/// let (mut enc, nonce) = Frame::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("nonce draw");
+/// let (nonce, mut enc) = Frame::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("nonce draw");
 /// enc.do_update_aad(header).expect("within AAD_LEN");
 /// let mut ct = [0u8; 40];
 /// // Every byte comes straight out; the chunking is the caller's business.
@@ -1118,10 +1118,10 @@ where
     pub(in crate::framework::modes) fn from_perm(
         perm: &'k P,
         rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; NONCE_LEN], Self), SymmetricCipherError> {
         Self::check_random_nonce();
         let nonce = random_iv::<NONCE_LEN>(rng)?;
-        Ok((Self::from_perm_nonce(perm, &nonce), nonce))
+        Ok((nonce, Self::from_perm_nonce(perm, &nonce)))
     }
 
     /// As [`Self::from_perm`] under a nonce the caller supplies, at any A.1 length: the
@@ -1727,9 +1727,9 @@ where
         rng: &mut dyn RNG,
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         let nonce = Ccm::<P, Encrypting, 16, NONCE_LEN, TAG_LEN>::random_nonce(rng)?;
-        Ok((Self::encrypt_init_nonce(state, &nonce, aad_len, payload_len)?, nonce))
+        Ok((nonce, Self::encrypt_init_nonce(state, &nonce, aad_len, payload_len)?))
     }
 
     fn encrypt_init_nonce<'k>(
@@ -1780,7 +1780,7 @@ where
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        let (enc, nonce) = <Self as AeadDeclaredEncryptMode<
+        let (nonce, enc) = <Self as AeadDeclaredEncryptMode<
             P,
             KEY_LEN,
             NONCE_LEN,
@@ -1880,7 +1880,7 @@ where
     fn encrypt_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         CcmPacketEncryptor::from_perm(state, rng)
     }
 
@@ -1934,7 +1934,7 @@ where
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        let (enc, nonce) =
+        let (nonce, enc) =
             CcmPacketEncryptor::<P, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::from_perm(
                 state, rng,
             )?;

@@ -66,7 +66,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// // A whole block is fine, and comes out the same length.
 /// let mut out = [0u8; 8];
-/// let (written, _iv) = key.encrypt_out(&mut rng, &[0u8; 8], &mut out).expect("aligned");
+/// let (_iv, written) = key.encrypt_out(&mut rng, &[0u8; 8], &mut out).expect("aligned");
 /// assert_eq!(written, 8);
 ///
 /// // Five bytes is not, and is refused rather than padded.
@@ -92,7 +92,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// let key = TDES3Key::<CBC<NoPadding>>::from_key_material(&material).unwrap();
 ///
 /// // Built from a NoPadding key, annotated as PKCS7: mismatched types.
-/// let (enc, _iv) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+/// let (_iv, enc) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 /// let _mismatched: TDES_CBC<Encrypting, PKCS7> = enc;
 /// ```
 ///

@@ -157,7 +157,7 @@ where
     fn create_encryptor<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; INIT_DATA_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
     }
 
@@ -199,7 +199,7 @@ where
     fn create_encryptor<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; INIT_DATA_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
     }
 

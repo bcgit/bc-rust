@@ -29,7 +29,7 @@ where
     for len in [0usize, 1, 15, 16, 17, 64, 257] {
         let plaintext = filler(len, len as u32);
         let mut data = plaintext.clone();
-        let (_, init) = key.encrypt_inplace(&mut rng(), &mut data).expect("encryption");
+        let (init, _) = key.encrypt_inplace(&mut rng(), &mut data).expect("encryption");
         assert_eq!(data.len(), len, "{name}, len {len}: no padding is added");
         assert_eq!(init.len(), INIT_DATA_LEN, "{name}: init data length");
         key.decrypt_inplace(&init, &mut data).expect("decryption");
@@ -56,7 +56,7 @@ where
 {
     let plaintext = filler(100, 99);
     let mut whole = plaintext.clone();
-    let (_, init) = key.encrypt_inplace(&mut rng(), &mut whole).expect("encryption");
+    let (init, _) = key.encrypt_inplace(&mut rng(), &mut whole).expect("encryption");
     for chunk in [1usize, 3, 7, 16, 33] {
         let mut dec = key.create_decryptor(&init);
         let mut data = whole.clone();
@@ -89,7 +89,7 @@ where
     let mut seen = std::collections::BTreeSet::new();
     for _ in 0..16 {
         let mut data = plaintext;
-        let (_, init) = key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
+        let (init, _) = key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
         assert!(seen.insert(init.to_vec()), "{name}: init data repeated across encryptions");
         key.decrypt_inplace(&init, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "{name}: round trip");
@@ -133,12 +133,12 @@ pub fn ctr_is_not_cfb<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     let plaintext = filler(32, 999);
 
     let mut as_ctr = plaintext.clone();
-    let (_, nonce) = key::<P, CTR, KEY_LEN>().encrypt_inplace(&mut rng(), &mut as_ctr).unwrap();
+    let (nonce, _) = key::<P, CTR, KEY_LEN>().encrypt_inplace(&mut rng(), &mut as_ctr).unwrap();
     assert_eq!(nonce.len(), CTR_NONCE_LEN);
 
     let cfb_key = key::<P, CFB, KEY_LEN>();
     let mut as_cfb = plaintext.clone();
-    let (_, iv) = cfb_key.encrypt_inplace(&mut rng(), &mut as_cfb).unwrap();
+    let (iv, _) = cfb_key.encrypt_inplace(&mut rng(), &mut as_cfb).unwrap();
     assert_eq!(iv.len(), BLOCK_LEN);
 
     // A CFB decryptor handed a CTR ciphertext cannot recover the plaintext.

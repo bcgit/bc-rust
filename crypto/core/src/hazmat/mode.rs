@@ -87,7 +87,7 @@ pub trait AeadEncryptMode<
     fn encrypt_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError>;
+    ) -> Result<([u8; NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError>;
 
     /// Begins an encryption from `state` under a nonce the caller supplies. Infallible, as
     /// [`AeadDecryptMode::decrypt_init`] is: the state is keyed and the nonce length is in the
@@ -145,7 +145,7 @@ pub trait AeadDeclaredEncryptMode<
         rng: &mut dyn RNG,
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError>;
+    ) -> Result<([u8; NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError>;
 
     /// As [`encrypt_init`](Self::encrypt_init) under a nonce the caller supplies, who takes on
     /// the obligation that it never repeat under this key.
@@ -273,7 +273,7 @@ pub trait SymmetricEncryptMode<
     fn encrypt_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+    ) -> Result<([u8; INIT_DATA_LEN], Self::Encryptor<'k>), SymmetricCipherError>;
 
     /// Begins an encryption from `state` under init data the caller supplies. Infallible, as
     /// [`SymmetricDecryptMode::decrypt_init`] is; the obligation on the value is the caller's,
@@ -326,7 +326,7 @@ pub trait BlockEncryptMode<
     fn encrypt_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+    ) -> Result<([u8; INIT_DATA_LEN], Self::Encryptor<'k>), SymmetricCipherError>;
 
     /// Begins an encryption from `state` under init data the caller supplies. Infallible, as
     /// [`BlockDecryptMode::decrypt_init`] is.
@@ -457,7 +457,7 @@ pub trait NonceMacMode<P, const NONCE_LEN: usize, const MAC_LEN: usize>: Mode<P>
     fn generate_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Generator<'k>, [u8; NONCE_LEN]), MACError>;
+    ) -> Result<([u8; NONCE_LEN], Self::Generator<'k>), MACError>;
 
     /// Begins a tag from `state` under a nonce the caller supplies, who takes on the obligation
     /// that it never repeat under this key.

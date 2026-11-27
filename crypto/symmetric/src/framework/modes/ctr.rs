@@ -55,7 +55,7 @@
 //! let plaintext = b"the quick brown fox!!";
 //! let mut data = *plaintext;
 //!
-//! let (mut encryptor, nonce) =
+//! let (nonce, mut encryptor) =
 //!     CTR::<12, 16>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("nonce draw");
 //! let bytes_written = encryptor.do_encrypt_inplace(&mut data).expect("encryption");
 //! assert_eq!(bytes_written, plaintext.len());
@@ -80,7 +80,7 @@
 //! let state = <CTR<12, 16> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 //! let mut data = [0x5Au8; 40];
 //!
-//! let (mut encryptor, nonce) =
+//! let (nonce, mut encryptor) =
 //!     CTR::<12, 16>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("nonce draw");
 //!
 //! // Just to prove that this can handle arbitrary sizes, we'll feed in
@@ -163,7 +163,7 @@ where
     fn encrypt_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         const {
             assert!(
                 !P::DECRYPT_ONLY,
@@ -171,7 +171,7 @@ where
             )
         };
         let nonce = random_iv::<NONCE_LEN>(rng)?;
-        Ok((StreamCipher::from_keystream(CtrKeyStream::from_perm(state, nonce)), nonce))
+        Ok((nonce, StreamCipher::from_keystream(CtrKeyStream::from_perm(state, nonce))))
     }
 
     fn encrypt_init_nonce<'k>(

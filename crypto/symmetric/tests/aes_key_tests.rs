@@ -38,7 +38,7 @@ fn encrypt_via_key<const N: usize, K>(key: &K) -> ([u8; 12], Vec<u8>, [u8; 16])
 where
     K: AeadEncryptionKey<N, 12, 16, 16>,
 {
-    let (mut enc, nonce) = key.create_encryptor(&mut rng()).expect("nonce draw");
+    let (nonce, mut enc) = key.create_encryptor(&mut rng()).expect("nonce draw");
     enc.do_update_aad(AAD).unwrap();
     let mut ct = vec![0u8; MSG.len()];
     enc.do_encrypt_out(MSG, &mut ct).unwrap();
@@ -101,10 +101,10 @@ fn create_encryptor_matches_the_key_state_route() {
     let key = AES256Key::<GCM>::from_key_material(&km).expect("a valid key");
     let state = <GCM as Mode<AES256Internal>>::key_state(AES256Internal::new(&km).unwrap());
 
-    let (mut enc_state, nonce_state) =
+    let (nonce_state, mut enc_state) =
         <GCM as AeadEncryptMode<AES256Internal, 32, 12, 16, 16>>::encrypt_init(&state, &mut rng())
             .expect("key-state init");
-    let (mut enc_key, nonce_key) = key.create_encryptor(&mut rng()).expect("key-side init");
+    let (nonce_key, mut enc_key) = key.create_encryptor(&mut rng()).expect("key-side init");
     assert_eq!(nonce_state, nonce_key);
 
     let mut ct_state = vec![0u8; MSG.len()];
@@ -152,7 +152,7 @@ fn key_one_shots_match_the_streaming_methods() {
 
     // Inline tag.
     let mut ct_key = vec![0u8; E::encrypt_out_len(MSG.len())];
-    let (n_k, nonce_k) = key.encrypt_with_aad_out(&mut rng(), AAD, MSG, &mut ct_key).unwrap();
+    let (nonce_k, n_k) = key.encrypt_with_aad_out(&mut rng(), AAD, MSG, &mut ct_key).unwrap();
     assert_eq!((nonce_s, inline_s.len()), (nonce_k, n_k));
     assert_eq!(inline_s, ct_key);
 
@@ -201,7 +201,7 @@ fn the_key_and_the_key_state_route_interoperate_at_every_key_length() {
     {
         let state = <GCM as Mode<P>>::key_state(P::new(&material::<N>()).unwrap());
 
-        let (mut enc, nonce) =
+        let (nonce, mut enc) =
             <GCM as AeadEncryptMode<P, N, 12, 16, 16>>::encrypt_init(&state, &mut rng()).unwrap();
         enc.do_update_aad(AAD).unwrap();
         let mut ct = vec![0u8; MSG.len()];
@@ -241,12 +241,12 @@ fn a_shorter_tag_is_a_different_key_type_over_the_same_material() {
     let key12 = AES128Key::<GCM<12>>::from_key_material(&km).expect("a valid key");
     let key16 = AES128Key::<GCM>::from_key_material(&km).expect("a valid key");
 
-    let (mut enc, nonce) = key12.create_encryptor(&mut rng()).unwrap();
+    let (nonce, mut enc) = key12.create_encryptor(&mut rng()).unwrap();
     let mut ct = vec![0u8; MSG.len()];
     enc.do_encrypt_out(MSG, &mut ct).unwrap();
     let (_, _, tag): (_, _, [u8; 12]) = enc.do_encrypt_final_detached().unwrap();
 
-    let (mut enc16, _) = key16.create_encryptor(&mut rng()).unwrap();
+    let (_, mut enc16) = key16.create_encryptor(&mut rng()).unwrap();
     let mut ct16 = vec![0u8; MSG.len()];
     enc16.do_encrypt_out(MSG, &mut ct16).unwrap();
     let (_, _, tag16) = enc16.do_encrypt_final_detached().unwrap();

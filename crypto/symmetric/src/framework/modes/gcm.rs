@@ -40,7 +40,7 @@
 //! let key = BlockCipherKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
 //! let plaintext: [u8; 16] = *b"attack at dawn!!";
 //!
-//! let (mut enc, nonce) =
+//! let (nonce, mut enc) =
 //!     key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).expect("nonce draw");
 //! let mut ciphertext = vec![0u8; 16 + 16];
 //! let n = enc.do_encrypt_out(&plaintext, &mut ciphertext).expect("encrypt");
@@ -88,7 +88,7 @@
 //! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
-//! let (mut enc, nonce) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (nonce, mut enc) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! enc.do_update_aad(aad).unwrap();
 //! let mut ct = vec![0u8; message.len()];
 //! enc.do_encrypt_out(message, &mut ct).unwrap();
@@ -125,7 +125,7 @@
 //! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
-//! let (mut enc, nonce) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (nonce, mut enc) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! enc.do_update_aad(aad).unwrap();
 //! let mut ct = vec![0u8; message.len()];
 //! enc.do_encrypt_out(message, &mut ct).unwrap();
@@ -246,7 +246,7 @@ where
     fn encrypt_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; GCM_NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         Gcm::<P, Encrypting, TAG_LEN>::from_key_state(state, rng)
     }
 
@@ -287,7 +287,7 @@ where
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<([u8; GCM_NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        let (enc, nonce) = Gcm::<P, Encrypting, TAG_LEN>::from_key_state(state, rng)?;
+        let (nonce, enc) = Gcm::<P, Encrypting, TAG_LEN>::from_key_state(state, rng)?;
         let tag = encrypt_detached_inplace(enc, aad, buf)?;
         Ok((nonce, tag))
     }
@@ -561,10 +561,10 @@ where
     pub(in crate::framework::modes) fn from_key_state(
         state: &'k GcmKeyState<P>,
         rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; GCM_NONCE_LEN], Self), SymmetricCipherError> {
         Self::check_shape();
         let nonce = crate::modes::iv::random_iv::<GCM_NONCE_LEN>(rng)?;
-        Ok((Self::setup_from_state(state, nonce), nonce))
+        Ok((nonce, Self::setup_from_state(state, nonce)))
     }
 
     /// As [`Self::from_key_state`] under a nonce the caller supplies: the constructor [`GCM`]'s

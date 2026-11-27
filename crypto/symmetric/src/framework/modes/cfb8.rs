@@ -93,7 +93,7 @@ where
     fn encrypt_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; BLOCK_LEN], Self::Encryptor<'k>), SymmetricCipherError> {
         const {
             assert!(
                 !P::DECRYPT_ONLY,
@@ -102,7 +102,7 @@ where
         };
         // `I1 = IV`.
         let iv = random_iv::<BLOCK_LEN>(rng)?;
-        Ok((Cfb8 { perm: state, chain: iv, _dir: PhantomData }, iv))
+        Ok((iv, Cfb8 { perm: state, chain: iv, _dir: PhantomData }))
     }
 
     fn encrypt_init_nonce<'k>(

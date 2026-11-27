@@ -41,7 +41,7 @@ fn the_key_and_the_other_routes_agree_at_every_key_length() {
         ($key:ty, $alias:ident, $klen:literal, $fill:literal) => {{
             let mac_key = material::<$klen>($fill, KeyType::MACKey);
             let key = <$key>::from_key_material(&mac_key).unwrap();
-            let (gen_, nonce) = key.create_generator(&mut rng()).unwrap();
+            let (nonce, gen_) = key.create_generator(&mut rng()).unwrap();
             assert_eq!(nonce, NONCE);
             let tag = tag_of(gen_, MSG);
             assert_eq!(key.mac_nonce(&NONCE, MSG), tag, "{} supplied nonce", $klen);
@@ -55,7 +55,7 @@ fn the_key_and_the_other_routes_agree_at_every_key_length() {
     agree!(AES256Key<GMAC>, AES_GMAC_256, 32, 0x33);
 
     // And GCM over the same bytes as a cipher key, with the message as AAD and no payload.
-    let (_, nonce, from_gcm) =
+    let (nonce, _, from_gcm) =
         AES128Key::<GCM>::from_key_material(&material::<16>(0x11, KeyType::SymmetricCipherKey))
             .unwrap()
             .encrypt_detached_out(&mut rng(), MSG, &[], &mut [])
@@ -99,8 +99,8 @@ fn several_workers_from_one_key_are_independent_and_the_key_is_unchanged() {
 fn a_fresh_nonce_per_generator() {
     let key = AES128Key::<GMAC>::from_key_material(&material::<16>(0x66, KeyType::MACKey)).unwrap();
     let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 64, _>(|i| i as u8));
-    let (g1, n1) = key.create_generator(&mut rng).unwrap();
-    let (g2, n2) = key.create_generator(&mut rng).unwrap();
+    let (n1, g1) = key.create_generator(&mut rng).unwrap();
+    let (n2, g2) = key.create_generator(&mut rng).unwrap();
     assert_ne!(n1, n2);
     assert_ne!(tag_of(g1, MSG), tag_of(g2, MSG));
 }

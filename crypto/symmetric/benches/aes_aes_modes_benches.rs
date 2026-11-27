@@ -119,7 +119,7 @@ fn bench_aes128cbc(c: &mut Criterion) {
         b.iter_batched(
             || blocks.clone(),
             |mut scratch| {
-                let (mut enc, _) = key.create_encryptor(&mut rng).unwrap();
+                let (_, mut enc) = key.create_encryptor(&mut rng).unwrap();
                 for chunk in scratch.chunks_exact_mut(8) {
                     enc.do_encrypt_blocks_inplace(chunk).unwrap();
                 }
@@ -130,7 +130,7 @@ fn bench_aes128cbc(c: &mut Criterion) {
     });
 
     // ---- decryption: parallel, uses decrypt_4blocks for every four ----
-    let (mut enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let (iv, mut enc) = key.create_encryptor(&mut rng).unwrap();
     let mut ciphertext = blocks.clone();
     for chunk in ciphertext.chunks_exact_mut(8) {
         enc.do_encrypt_blocks_inplace(chunk).unwrap();
@@ -192,7 +192,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
         b.iter_batched(
             || flat.clone(),
             |mut scratch| {
-                let (enc, _): (Aes128Cfb<Encrypting>, _) = key.create_encryptor(&mut rng).unwrap();
+                let (_, enc): (_, Aes128Cfb<Encrypting>) = key.create_encryptor(&mut rng).unwrap();
                 stream_encrypt_in_calls(enc, &mut scratch, 8 * BLOCK_LEN);
                 black_box(&scratch);
             },
@@ -202,7 +202,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
 
     // ---- decryption: parallel, and uses `encrypt_4blocks` / `encrypt_2blocks` -- the FORWARD
     // batch methods ----
-    let (mut enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let (iv, mut enc) = key.create_encryptor(&mut rng).unwrap();
     let mut ciphertext = flat.clone();
     enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
@@ -239,7 +239,7 @@ fn bench_cfb8_aes128(c: &mut Criterion) {
         b.iter_batched(
             || flat.clone(),
             |mut scratch| {
-                let (enc, _): (Aes128Cfb8<Encrypting>, _) = key.create_encryptor(&mut rng).unwrap();
+                let (_, enc): (_, Aes128Cfb8<Encrypting>) = key.create_encryptor(&mut rng).unwrap();
                 stream_encrypt_in_calls(enc, &mut scratch, DATA_LEN);
                 black_box(&scratch);
             },
@@ -247,7 +247,7 @@ fn bench_cfb8_aes128(c: &mut Criterion) {
         )
     });
 
-    let (mut enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let (iv, mut enc) = key.create_encryptor(&mut rng).unwrap();
     let mut ciphertext = flat.clone();
     enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
@@ -282,7 +282,7 @@ fn bench_ctr_aes128(c: &mut Criterion) {
         b.iter_batched(
             || flat.clone(),
             |mut scratch| {
-                let (enc, _): (Aes128Ctr<Encrypting>, _) = key.create_encryptor(&mut rng).unwrap();
+                let (_, enc): (_, Aes128Ctr<Encrypting>) = key.create_encryptor(&mut rng).unwrap();
                 stream_encrypt_in_calls(enc, &mut scratch, 8 * BLOCK_LEN);
                 black_box(&scratch);
             },
@@ -307,7 +307,7 @@ fn bench_ofb_aes128(c: &mut Criterion) {
         b.iter_batched(
             || flat.clone(),
             |mut scratch| {
-                let (enc, _): (Aes128Ofb<Encrypting>, _) = key.create_encryptor(&mut rng).unwrap();
+                let (_, enc): (_, Aes128Ofb<Encrypting>) = key.create_encryptor(&mut rng).unwrap();
                 stream_encrypt_in_calls(enc, &mut scratch, DATA_LEN);
                 black_box(&scratch);
             },
@@ -366,7 +366,7 @@ fn bench_init(c: &mut Criterion) {
         b.iter(|| black_box(AES256Key::<CBC<Blocks>>::from_key_material(black_box(&k256)).unwrap()))
     });
     group.bench_function("AES_128 create_encryptor, CBC (borrow + IV draw)", |b| {
-        b.iter(|| black_box(black_box(&cbc128).create_encryptor(&mut rng).unwrap().1))
+        b.iter(|| black_box(black_box(&cbc128).create_encryptor(&mut rng).unwrap().0))
     });
     group.bench_function("AES_128 create_decryptor, CBC (borrow)", |b| {
         b.iter(|| black_box(black_box(&cbc128).create_decryptor(&iv)))
@@ -379,7 +379,7 @@ fn bench_init(c: &mut Criterion) {
         b.iter(|| black_box(AES128Key::<CFB>::from_key_material(black_box(&k128)).unwrap()))
     });
     group.bench_function("AES_128 create_encryptor, CFB (borrow + IV draw)", |b| {
-        b.iter(|| black_box(black_box(&cfb128).create_encryptor(&mut rng).unwrap().1))
+        b.iter(|| black_box(black_box(&cfb128).create_encryptor(&mut rng).unwrap().0))
     });
     group.bench_function("AES_128 create_decryptor, CFB (borrow)", |b| {
         b.iter(|| black_box(black_box(&cfb128).create_decryptor(&iv)))
@@ -686,7 +686,7 @@ fn bench_gmac(c: &mut Criterion) {
     let key_object_128 = AES128Key::<GMAC>::from_key_material(&key128).unwrap();
     group.bench_function("AES_128 key object 16KiB", |b| {
         b.iter(|| {
-            let (mut gen_, _) = key_object_128.create_generator(&mut rng).unwrap();
+            let (_, mut gen_) = key_object_128.create_generator(&mut rng).unwrap();
             gen_.do_update(black_box(&data));
             black_box(gen_.do_final())
         })
@@ -695,7 +695,7 @@ fn bench_gmac(c: &mut Criterion) {
     let key_object_256 = AES256Key::<GMAC>::from_key_material(&key256).unwrap();
     group.bench_function("AES_256 key object 16KiB", |b| {
         b.iter(|| {
-            let (mut gen_, _) = key_object_256.create_generator(&mut rng).unwrap();
+            let (_, mut gen_) = key_object_256.create_generator(&mut rng).unwrap();
             gen_.do_update(black_box(&data));
             black_box(gen_.do_final())
         })

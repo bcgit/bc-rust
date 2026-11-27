@@ -123,7 +123,7 @@ use bouncycastle_core::traits::{
 ///
 /// // Encrypt in 7-byte pieces. A piece is encrypted as soon as it is given, so each call writes
 /// // exactly as many bytes as it was handed.
-/// let (mut encryptor, nonce) = key.create_encryptor(&mut rng).expect("nonce draw");
+/// let (nonce, mut encryptor) = key.create_encryptor(&mut rng).expect("nonce draw");
 /// encryptor.do_update_aad(aad).expect("aad");
 /// let mut ciphertext = Vec::new();
 /// for piece in plaintext.chunks(7) {

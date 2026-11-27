@@ -33,18 +33,18 @@ impl TestFrameworkBlockCipher {
         key: &K,
         rng: &mut dyn RNG,
     ) {
-        let (mut encryptor, iv) = key.create_encryptor(rng).unwrap();
+        let (iv, mut encryptor) = key.create_encryptor(rng).unwrap();
         let mut decryptor = key.create_decryptor(&iv);
         Self::round_trip_blocks(&mut encryptor, &mut decryptor);
 
-        let (mut encryptor, iv) = key.create_encryptor(rng).unwrap();
+        let (iv, mut encryptor) = key.create_encryptor(rng).unwrap();
         let mut decryptor = key.create_decryptor(&iv);
         Self::round_trip_pairs(&mut encryptor, &mut decryptor);
 
         // one-shot API: a block-aligned byte array, in place
         let one_block: &[u8; BLOCK_LEN] = &DUMMY_SEED.as_chunks::<BLOCK_LEN>().0[0];
         let mut buf = *one_block;
-        let (n, iv) = key.encrypt_inplace(rng, &mut buf).unwrap();
+        let (iv, n) = key.encrypt_inplace(rng, &mut buf).unwrap();
         assert_eq!(n, BLOCK_LEN, "encrypt must report the number of bytes written");
         let ct = buf;
         let n = key.decrypt_inplace(&iv, &mut buf).unwrap();
@@ -58,11 +58,11 @@ impl TestFrameworkBlockCipher {
         // the RNG-driven one-shot must give the streaming API's answer for the same RNG stream
         let pinned = [0xA5u8; INIT_DATA_LEN];
         let mut expected = *one_block;
-        let (mut streamed, iv_streamed) =
+        let (iv_streamed, mut streamed) =
             key.create_encryptor(&mut FixedSeedRNG::new(pinned)).unwrap();
         streamed.do_encrypt_blocks_inplace(core::slice::from_mut(&mut expected)).unwrap();
         let mut buf = *one_block;
-        let (n, iv) = key.encrypt_inplace(&mut FixedSeedRNG::new(pinned), &mut buf).unwrap();
+        let (iv, n) = key.encrypt_inplace(&mut FixedSeedRNG::new(pinned), &mut buf).unwrap();
         assert_eq!(n, BLOCK_LEN, "encrypt_inplace must report the number of bytes written");
         assert_eq!(iv, iv_streamed);
         assert_eq!(buf, expected);
@@ -98,8 +98,8 @@ impl TestFrameworkBlockCipher {
         }
 
         // the iv is random: not the same on two runs
-        let (_encryptor, iv1) = key.create_encryptor(rng).unwrap();
-        let (_encryptor, iv2) = key.create_encryptor(rng).unwrap();
+        let (iv1, _encryptor) = key.create_encryptor(rng).unwrap();
+        let (iv2, _encryptor) = key.create_encryptor(rng).unwrap();
         assert_ne!(iv1, iv2);
     }
 

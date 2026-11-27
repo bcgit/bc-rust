@@ -87,12 +87,12 @@ fn call_grouping_does_not_change_the_result() {
     let pinned_rng = || bouncycastle_core::hazmat::FixedSeedRNG::new(iv);
 
     // Reference: all eight blocks in one call (two fours).
-    let (mut enc, got_iv) = key.create_encryptor(&mut pinned_rng()).unwrap();
+    let (got_iv, mut enc) = key.create_encryptor(&mut pinned_rng()).unwrap();
     assert_eq!(got_iv, iv, "the pinned RNG should reproduce the IV");
     let reference = enc_blocks(&mut enc, &plaintext);
 
     // The same eight blocks, grouped every way that exercises a different code path.
-    let (mut enc, _) = key.create_encryptor(&mut pinned_rng()).unwrap();
+    let (_, mut enc) = key.create_encryptor(&mut pinned_rng()).unwrap();
     let mut got = [[0u8; TOY_LEN]; 8];
     let a = enc_blocks(&mut enc, &[plaintext[0]])[0]; // N = 1
     let b = enc_blocks(&mut enc, &[plaintext[1], plaintext[2]]); // N = 2
@@ -155,14 +155,14 @@ fn the_pair_path_is_really_used() {
     let plaintext = [[0xA5u8; TOY_LEN], [0x5Au8; TOY_LEN]];
 
     // The correct toy round-trips.
-    let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
+    let (iv, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
     let ct = enc_blocks(&mut enc, &plaintext);
     let mut dec = key.create_decryptor(&iv);
     assert_eq!(dec_blocks(&mut dec, &ct), plaintext);
 
     // The swapped-pair toy encrypts identically (encryption is serial and never pairs)...
     let key = swapped_key();
-    let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
+    let (iv, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
     let ct = enc_blocks(&mut enc, &plaintext);
 
     // ...but decrypting the pair together must now be wrong, because the pair path is used.
@@ -195,14 +195,14 @@ fn the_four_block_path_is_really_used() {
     let plaintext: [[u8; TOY_LEN]; 5] = core::array::from_fn(|i| [0x10 * i as u8 + 1; TOY_LEN]);
 
     // The correct toy round-trips five blocks.
-    let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
+    let (iv, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
     let ct = enc_blocks(&mut enc, &plaintext);
     let mut dec = key.create_decryptor(&iv);
     assert_eq!(dec_blocks(&mut dec, &ct), plaintext);
 
     // The rotated-four toy encrypts identically (encryption is serial and never batches)...
     let key = swapped_four_key();
-    let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
+    let (iv, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
     let ct = enc_blocks(&mut enc, &plaintext);
 
     // ...but decrypting five together must be wrong, because the first four take the four path.
@@ -243,7 +243,7 @@ fn an_iv_bit_error_flips_exactly_that_bit_of_the_first_block() {
     let key = cbc_key();
     let plaintext = [[0x00u8; TOY_LEN], [0x11u8; TOY_LEN], [0x22u8; TOY_LEN]];
 
-    let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
+    let (iv, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
     let ct = enc_blocks(&mut enc, &plaintext);
 
     for byte in 0..TOY_LEN {
@@ -271,7 +271,7 @@ fn a_ciphertext_bit_error_affects_only_two_blocks() {
     let key = cbc_key();
     let plaintext = [[0x00u8; TOY_LEN], [0x11u8; TOY_LEN], [0x22u8; TOY_LEN], [0x33u8; TOY_LEN]];
 
-    let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
+    let (iv, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
     let ct = enc_blocks(&mut enc, &plaintext);
 
     let mut corrupt = ct;
@@ -298,7 +298,7 @@ fn each_encryption_gets_a_fresh_iv() {
     let key = cbc_key();
     let mut seen = std::collections::BTreeSet::new();
     for _ in 0..64 {
-        let (_, iv) = key.create_encryptor(&mut os_rng()).unwrap();
+        let (iv, _) = key.create_encryptor(&mut os_rng()).unwrap();
         assert!(seen.insert(iv), "IV repeated across encryptions: {iv:02x?}");
     }
 }
@@ -348,11 +348,11 @@ fn one_shots_agree_with_the_streaming_api() {
     let blocks3: [[u8; TOY_LEN]; 3] =
         core::array::from_fn(|b| flat3[b * TOY_LEN..][..TOY_LEN].try_into().unwrap());
     let (iv_a, ct_blocks) = {
-        let (mut enc, iv) = key.create_encryptor(&mut pinned_rng()).unwrap();
+        let (iv, mut enc) = key.create_encryptor(&mut pinned_rng()).unwrap();
         (iv, enc_blocks(&mut enc, &blocks3))
     };
     let mut buf = flat3;
-    let (_, iv_b) = key.encrypt_inplace(&mut pinned_rng(), &mut buf).unwrap();
+    let (iv_b, _) = key.encrypt_inplace(&mut pinned_rng(), &mut buf).unwrap();
     assert_eq!(iv_a, iv_b);
     assert_eq!(buf, *ct_blocks.as_flattened(), "3 blocks: one-shot must equal streaming");
     key.decrypt_inplace(&iv, &mut buf).unwrap();
@@ -363,7 +363,7 @@ fn one_shots_agree_with_the_streaming_api() {
     let blocks4: [[u8; TOY_LEN]; 4] =
         core::array::from_fn(|b| flat4[b * TOY_LEN..][..TOY_LEN].try_into().unwrap());
     let ct_blocks = {
-        let (mut enc, _) = key.create_encryptor(&mut pinned_rng()).unwrap();
+        let (_, mut enc) = key.create_encryptor(&mut pinned_rng()).unwrap();
         enc_blocks(&mut enc, &blocks4)
     };
     let mut buf = flat4;
@@ -374,7 +374,7 @@ fn one_shots_agree_with_the_streaming_api() {
 
     // The OS-RNG variant round-trips too.
     let mut buf = flat3;
-    let (_, iv_fresh) = key.encrypt_inplace(&mut os_rng(), &mut buf).unwrap();
+    let (iv_fresh, _) = key.encrypt_inplace(&mut os_rng(), &mut buf).unwrap();
     assert_ne!(buf, flat3);
     key.decrypt_inplace(&iv_fresh, &mut buf).unwrap();
     assert_eq!(buf, flat3);

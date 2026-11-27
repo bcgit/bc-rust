@@ -93,7 +93,7 @@ use bouncycastle_core::symmetric_key::{AeadInPlaceDecryptionKey, AeadInPlaceEncr
 ///     .expect("a 32-byte symmetric cipher key");
 /// let key = AES256Key::<GCM_SIV>::from_key_material(&material).expect("a valid AES-256 key");
 /// // The same line on an `AES256Key<GCM>` compiles.
-/// let (encryptor, nonce) = key.create_encryptor(&mut rng).expect("nonce draw");
+/// let (nonce, encryptor) = key.create_encryptor(&mut rng).expect("nonce draw");
 /// ```
 ///
 /// # Memory Usage

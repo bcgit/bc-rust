@@ -70,7 +70,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// let key = SM4Key::<CBC<NoPadding>>::from_key_material(&material).unwrap();
 ///
 /// let mut out = [0u8; 16];
-/// let (written, _iv) = key.encrypt_out(&mut rng, &[0u8; 16], &mut out).expect("aligned");
+/// let (_iv, written) = key.encrypt_out(&mut rng, &[0u8; 16], &mut out).expect("aligned");
 /// assert_eq!(written, 16);
 /// assert!(key.encrypt_out(&mut rng, b"hello", &mut out).is_err());
 /// ```

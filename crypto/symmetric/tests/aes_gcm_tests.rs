@@ -59,7 +59,7 @@ fn each_encryption_gets_a_fresh_nonce() {
     let mut seen = std::collections::BTreeSet::new();
     for _ in 0..16 {
         let mut ct = [0u8; 46];
-        let (_, nonce, tag) = key.encrypt_detached_out(&mut rng, b"aad", &data, &mut ct).unwrap();
+        let (nonce, _, tag) = key.encrypt_detached_out(&mut rng, b"aad", &data, &mut ct).unwrap();
         assert!(seen.insert(nonce), "nonce repeated across encryptions");
         let mut pt = [0u8; 46];
         key.decrypt_detached_out(&nonce, b"aad", &ct, &tag, &mut pt).unwrap();

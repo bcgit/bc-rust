@@ -35,7 +35,7 @@ fn toy_encrypt<const TAG_LEN: usize>(
     seed: [u8; 12],
 ) -> ([u8; 12], Vec<u8>, [u8; TAG_LEN]) {
     let mut ct = vec![0u8; message.len()];
-    let (_, nonce, tag) = gcm_key::<TAG_LEN>()
+    let (nonce, _, tag) = gcm_key::<TAG_LEN>()
         .encrypt_detached_out(&mut FixedSeedRNG::new(seed), aad, message, &mut ct)
         .unwrap();
     (nonce, ct, tag)
@@ -46,7 +46,7 @@ fn toy_encrypt<const TAG_LEN: usize>(
 #[test]
 fn aad_after_data_is_a_state_error_unless_empty() {
     let key = gcm_key::<16>();
-    let (mut enc, _nonce) = key.create_encryptor(&mut os_rng()).unwrap();
+    let (_nonce, mut enc) = key.create_encryptor(&mut os_rng()).unwrap();
     enc.do_update_aad(b"header").unwrap();
     let mut out = [0u8; 8];
     enc.do_encrypt_out(&[0x11u8; 8], &mut out).unwrap();
@@ -87,7 +87,7 @@ fn chunking_is_independent_for_aad_and_data() {
 
     for aad_split in [0usize, 1, 17, 40] {
         for data_split in [0usize, 1, 23, 50] {
-            let (mut enc, got_nonce) = key.create_encryptor(&mut FixedSeedRNG::new(seed)).unwrap();
+            let (got_nonce, mut enc) = key.create_encryptor(&mut FixedSeedRNG::new(seed)).unwrap();
             assert_eq!(got_nonce, nonce);
             enc.do_update_aad(&aad[..aad_split]).unwrap();
             enc.do_update_aad(&aad[aad_split..]).unwrap();
@@ -271,7 +271,7 @@ fn neither_direction_uses_the_inverse_cipher() {
         let message = b"a message that is not a whole number of blocks!!";
 
         let mut ct = [0u8; 48];
-        let (_, nonce, tag) = key
+        let (nonce, _, tag) = key
             .encrypt_detached_out(&mut FixedSeedRNG::new([0x4Du8; 12]), aad, message, &mut ct)
             .unwrap();
         assert_ne!(&ct[..], &message[..]);
@@ -310,7 +310,7 @@ fn the_key_enforces_the_material_policy() {
 fn the_key_one_shots_release_nothing_on_forgery() {
     let key = gcm_key::<16>();
     let mut ct = [0u8; 32 + 16];
-    let (n, nonce) =
+    let (nonce, n) =
         key.encrypt_with_aad_out(&mut os_rng(), b"aad", &[0x33u8; 32], &mut ct).unwrap();
     ct[0] ^= 1;
 

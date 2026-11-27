@@ -115,7 +115,7 @@ fn pinned_rng(nonce: [u8; NONCE_LEN]) -> FixedSeedRNG<[u8; NONCE_LEN]> {
 }
 
 fn pinned_encryptor(nonce: [u8; NONCE_LEN]) -> ToyCtr<'static, Encrypting> {
-    let (e, got) = KEY.create_encryptor(&mut pinned_rng(nonce)).unwrap();
+    let (got, e) = KEY.create_encryptor(&mut pinned_rng(nonce)).unwrap();
     assert_eq!(got, nonce, "the pinned RNG should reproduce the nonce");
     e
 }
@@ -249,7 +249,7 @@ fn check_counter_blocks<const N: usize>(blocks: usize) {
 
     let key = ctr_key_n::<N>();
 
-    let (mut e, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
+    let (got, mut e) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
     assert_eq!(got, nonce);
     let mut keystream = vec![0u8; blocks * TOY_LEN];
     e.do_encrypt_inplace(&mut keystream).expect("the run must fit in the counter space");
@@ -346,7 +346,7 @@ fn the_counter_limit_is_enforced() {
 
     let key = tiny_key();
     let encryptor = || {
-        let (e, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
+        let (got, e) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
         assert_eq!(got, nonce);
         e
     };
@@ -413,7 +413,7 @@ fn the_counter_limit_is_enforced_at_two_bytes_too() {
 
     let key = ctr_key_n::<NONCE>();
     let encryptor = || {
-        let (e, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
+        let (got, e) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
         assert_eq!(got, nonce);
         e
     };
@@ -457,7 +457,7 @@ fn neither_direction_uses_the_inverse_cipher() {
 
     let key = forward_only_key();
 
-    let (mut e, _) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
+    let (_, mut e) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
     let mut ct = plaintext.clone();
     e.do_encrypt_inplace(&mut ct).unwrap();
 
@@ -541,7 +541,7 @@ fn chunking_matches_a_single_call_over_several_batches() {
         let plaintext: Vec<u8> = (0..171).map(|i| (i * 7 + i / 16) as u8).collect();
 
         let encryptor = || {
-            let (e, got) =
+            let (got, e) =
                 key.create_encryptor(&mut FixedSeedRNG::new(nonce)).expect("encrypt init");
             assert_eq!(got, nonce, "{name}: the pinned RNG should reproduce the nonce");
             e
@@ -594,14 +594,14 @@ fn the_pair_path_is_really_used_in_both_directions() {
 
     // Encryption: two blocks together must go through encrypt_2blocks, so the swapped toy differs.
     let key = swapped_key();
-    let (mut e, _) = key.create_encryptor(&mut pinned_rng(nonce)).unwrap();
+    let (_, mut e) = key.create_encryptor(&mut pinned_rng(nonce)).unwrap();
     let mut swapped = plaintext.clone();
     e.do_encrypt_inplace(&mut swapped).unwrap();
     assert_ne!(swapped, ct, "CTR encryption must use the pair path");
 
     // ...but one block at a time avoids it, and then it agrees with the correct toy.
     let key = swapped_key();
-    let (mut e, _) = key.create_encryptor(&mut pinned_rng(nonce)).unwrap();
+    let (_, mut e) = key.create_encryptor(&mut pinned_rng(nonce)).unwrap();
     let mut single = plaintext.clone();
     for piece in single.chunks_mut(TOY_LEN) {
         e.do_encrypt_inplace(piece).unwrap();
@@ -626,14 +626,14 @@ fn the_four_block_path_is_really_used_in_both_directions() {
 
     let key = swapped_four_key();
 
-    let (mut e, _) = key.create_encryptor(&mut pinned_rng(nonce)).unwrap();
+    let (_, mut e) = key.create_encryptor(&mut pinned_rng(nonce)).unwrap();
     let mut swapped = plaintext.clone();
     e.do_encrypt_inplace(&mut swapped).unwrap();
     assert_ne!(swapped, ct, "five blocks must go through encrypt_4blocks");
 
     // Two blocks at a time uses pairs only, so the rotated-four toy is correct there.
     let key = swapped_four_key();
-    let (mut e, _) = key.create_encryptor(&mut pinned_rng(nonce)).unwrap();
+    let (_, mut e) = key.create_encryptor(&mut pinned_rng(nonce)).unwrap();
     let mut pairs = plaintext.clone();
     for piece in pairs.chunks_mut(2 * TOY_LEN) {
         e.do_encrypt_inplace(piece).unwrap();
@@ -657,7 +657,7 @@ fn each_encryption_gets_a_fresh_nonce() {
     let key = ctr_key();
     let mut seen = std::collections::BTreeSet::new();
     for _ in 0..64 {
-        let (_, nonce) = key.create_encryptor(&mut os_rng()).unwrap();
+        let (nonce, _) = key.create_encryptor(&mut os_rng()).unwrap();
         assert!(seen.insert(nonce), "nonce repeated across encryptions: {nonce:02x?}");
     }
 }
@@ -696,7 +696,7 @@ fn every_length_round_trips_without_padding() {
     for len in 0..=(3 * TOY_LEN + 1) {
         let plaintext = message(len);
         let mut data = plaintext.clone();
-        let (n, nonce) = key.encrypt_inplace(&mut os_rng(), &mut data).expect("encryption");
+        let (nonce, n) = key.encrypt_inplace(&mut os_rng(), &mut data).expect("encryption");
         assert_eq!(n, len, "len {len}: encrypt must report the number of bytes written");
         assert_eq!(data.len(), len, "len {len}: the ciphertext is as long as the plaintext");
         if len >= 8 {
@@ -720,7 +720,7 @@ fn every_permitted_nonce_length_works() {
 
         let key = ctr_key_n::<N>();
 
-        let (mut e, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
+        let (got, mut e) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
         assert_eq!(got, nonce);
         let mut ct = plaintext.clone();
         e.do_encrypt_inplace(&mut ct).unwrap();

@@ -44,7 +44,7 @@ fn stream_through(enc: &mut dyn SymmetricCipherEncryptor<16, 16>, plaintext: &[u
 fn cbc_streams_through_a_trait_object() {
     let key = AES128Key::<CBC<PKCS7>>::from_key_material(&key_material()).unwrap();
     let mut rng = FixedSeedRNG::new([7u8; 16]);
-    let (mut enc, iv) = key.create_encryptor(&mut rng).unwrap();
+    let (iv, mut enc) = key.create_encryptor(&mut rng).unwrap();
 
     let mut ct = stream_through(&mut enc, MSG);
     // The final is the concrete value's: `do_encrypt_final` takes `self`.
@@ -76,7 +76,7 @@ fn aad_and_stream_through(
 fn gcm_streams_through_a_trait_object() {
     let key = AES128Key::<GCM>::from_key_material(&key_material()).unwrap();
     let mut rng = FixedSeedRNG::new([9u8; 12]);
-    let (mut enc, nonce) = key.create_encryptor(&mut rng).unwrap();
+    let (nonce, mut enc) = key.create_encryptor(&mut rng).unwrap();
 
     let mut ct = aad_and_stream_through(&mut enc, b"header", MSG);
     let (last, n) = enc.do_encrypt_final().unwrap();
@@ -120,7 +120,7 @@ impl Session<'_> {
 #[test]
 fn cbc_stored_as_a_box_finishes_through_the_boxed_final() {
     let key = AES128Key::<CBC<PKCS7>>::from_key_material(&key_material()).unwrap();
-    let (enc, iv) = key.create_encryptor(&mut FixedSeedRNG::new([7u8; 16])).unwrap();
+    let (iv, enc) = key.create_encryptor(&mut FixedSeedRNG::new([7u8; 16])).unwrap();
     let mut session =
         Session { enc: Some(Box::new(enc)), dec: Some(Box::new(key.create_decryptor(&iv))) };
 
@@ -150,7 +150,7 @@ fn gcm_stored_as_a_box_finishes_through_the_boxed_finals() {
     let key = AES128Key::<GCM>::from_key_material(&key_material()).unwrap();
 
     // Tag inline, through the base trait's twin: the tag is the final's output.
-    let (enc, nonce) = key.create_encryptor(&mut FixedSeedRNG::new([9u8; 12])).unwrap();
+    let (nonce, enc) = key.create_encryptor(&mut FixedSeedRNG::new([9u8; 12])).unwrap();
     let mut enc: Box<dyn AEADCipherEncryptor<12, 16, 16> + '_> = Box::new(enc);
     let mut ct = aad_and_stream_through(enc.as_mut(), b"header", MSG);
     let (last, n) = enc.do_encrypt_final_boxed().unwrap();
@@ -158,7 +158,7 @@ fn gcm_stored_as_a_box_finishes_through_the_boxed_finals() {
     assert_eq!(key.decrypt_with_aad(&nonce, b"header", &ct).unwrap(), MSG);
 
     // Tag detached, through the AEAD twin.
-    let (enc, nonce) = key.create_encryptor(&mut FixedSeedRNG::new([9u8; 12])).unwrap();
+    let (nonce, enc) = key.create_encryptor(&mut FixedSeedRNG::new([9u8; 12])).unwrap();
     let mut enc: Box<dyn AEADCipherEncryptor<12, 16, 16> + '_> = Box::new(enc);
     let mut ct = aad_and_stream_through(enc.as_mut(), b"header", MSG);
     let mut last = [0u8; 16];

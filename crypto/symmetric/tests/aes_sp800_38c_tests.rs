@@ -316,7 +316,7 @@ fn the_fixed_frame_pair_agrees_with_the_direct_api_on_appendix_c3() {
     // came back, so an implementation that ignored the RNG could not pass silently.
     let nonce_seed: [u8; 12] = nonce_bytes.clone().try_into().expect("12-byte nonce");
     let mut rng = FixedSeedRNG::new(nonce_seed);
-    let (mut enc, nonce) = key.create_encryptor(&mut rng).expect("init");
+    let (nonce, mut enc) = key.create_encryptor(&mut rng).expect("init");
     assert_eq!(&nonce[..], &nonce_bytes[..], "the generated nonce must come from the RNG");
 
     // Chunk both phases, and check `update_out_len`'s promise that every byte is released at once.
@@ -356,7 +356,7 @@ fn the_fixed_frame_pair_agrees_with_the_direct_api_on_appendix_c3() {
     // `ciphertext || tag`, with the tag as the final's output, and the decryptor takes the tag
     // back off its end.
     let mut rng = FixedSeedRNG::new(nonce_seed);
-    let (mut enc, nonce) = key.create_encryptor(&mut rng).expect("init");
+    let (nonce, mut enc) = key.create_encryptor(&mut rng).expect("init");
     enc.do_update_aad(&aad).expect("aad");
     let mut inline = vec![0u8; 24];
     enc.do_encrypt_out(&plaintext, &mut inline).expect("update");
@@ -383,7 +383,7 @@ fn the_fixed_frame_pair_agrees_with_the_direct_api_on_appendix_c3() {
 fn the_adapters_refuse_more_than_the_declared_lengths() {
     let key = frame_key::<12, 16, 32, 32>();
 
-    let (mut enc, _) = key.create_encryptor(&mut os_rng()).expect("init");
+    let (_, mut enc) = key.create_encryptor(&mut os_rng()).expect("init");
     let mut out = [0xEEu8; 33];
     match enc.do_encrypt_out(&[0u8; 33], &mut out) {
         Err(SymmetricCipherError::StateError(msg)) => assert!(
@@ -395,14 +395,14 @@ fn the_adapters_refuse_more_than_the_declared_lengths() {
     assert_eq!(out, [0u8; 33], "a refused update must leave the output buffer zeroed");
 
     // In two calls that together overflow, the first must succeed and the second be refused.
-    let (mut enc, _) = key.create_encryptor(&mut os_rng()).expect("init");
+    let (_, mut enc) = key.create_encryptor(&mut os_rng()).expect("init");
     assert_eq!(enc.do_encrypt_out(&[0u8; 20], &mut out).expect("fits"), 20);
     assert!(matches!(
         enc.do_encrypt_out(&[0u8; 13], &mut out),
         Err(SymmetricCipherError::StateError(_))
     ));
 
-    let (mut enc, _) = key.create_encryptor(&mut os_rng()).expect("init");
+    let (_, mut enc) = key.create_encryptor(&mut os_rng()).expect("init");
     match enc.do_update_aad(&[0u8; 33]) {
         Err(SymmetricCipherError::GenericError(msg)) => {
             assert!(msg.contains("AAD_LEN"), "the refusal must name AAD_LEN, got: {msg}")
@@ -443,7 +443,7 @@ fn an_empty_update_does_not_close_the_aad_phase() {
     let aad = b"header";
     let message = b"payload";
 
-    let (mut enc, nonce) = key.create_encryptor(&mut os_rng()).expect("init");
+    let (nonce, mut enc) = key.create_encryptor(&mut os_rng()).expect("init");
     let mut sealed = [0u8; 7];
     enc.do_encrypt_out(&[], &mut sealed).expect("an empty update is a no-op");
     enc.do_update_aad(aad).expect("the AAD phase is still open after an empty update");
@@ -488,14 +488,14 @@ fn exact_lengths_are_accepted_whole_and_split() {
     let message = [0x5Au8; 32];
     let nonce_seed = [0x24u8; 12];
 
-    let (mut enc, nonce) = key.create_encryptor(&mut FixedSeedRNG::new(nonce_seed)).expect("init");
+    let (nonce, mut enc) = key.create_encryptor(&mut FixedSeedRNG::new(nonce_seed)).expect("init");
     enc.do_update_aad(&aad).expect("AAD exactly filling the capacity is accepted");
     let mut sealed = [0u8; 48];
     assert_eq!(enc.do_encrypt_out(&message, &mut sealed).expect("exactly DATA_LEN"), 32);
     let (tag, _) = enc.do_encrypt_final().expect("final");
     sealed[32..].copy_from_slice(&tag);
 
-    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(nonce_seed)).expect("init");
+    let (_, mut enc) = key.create_encryptor(&mut FixedSeedRNG::new(nonce_seed)).expect("init");
     enc.do_update_aad(&aad[..20]).expect("part");
     enc.do_update_aad(&aad[20..]).expect("exactly fills the remaining capacity");
     let mut split = [0u8; 48];
@@ -535,7 +535,7 @@ fn the_aad_capacity_and_the_payload_length_are_independent() {
     let key = frame_key::<12, 16, 8, 64>();
 
     // AAD past AAD_LEN is refused, although it would fit in DATA_LEN.
-    let (mut enc, _) = key.create_encryptor(&mut os_rng()).expect("init");
+    let (_, mut enc) = key.create_encryptor(&mut os_rng()).expect("init");
     assert!(matches!(enc.do_update_aad(&[0u8; 9]), Err(SymmetricCipherError::GenericError(_))));
 
     // A full AAD_LEN of AAD and a full DATA_LEN of payload together, far more than AAD_LEN alone,
@@ -543,7 +543,7 @@ fn the_aad_capacity_and_the_payload_length_are_independent() {
     // none, each agreeing with the direct API.
     let message = [0x5Au8; 64];
     for aad in [&[0x11u8; 8][..], &[0x11u8; 3][..], &[][..]] {
-        let (mut enc, nonce) = key.create_encryptor(&mut os_rng()).expect("init");
+        let (nonce, mut enc) = key.create_encryptor(&mut os_rng()).expect("init");
         enc.do_update_aad(aad).expect("within AAD_LEN");
         let mut sealed = [0u8; 64];
         enc.do_encrypt_out(&message, &mut sealed).expect("exactly DATA_LEN");
@@ -571,7 +571,7 @@ fn the_decryptor_releases_the_payload_and_holds_back_only_the_tag() {
     let key = frame_key::<12, 16, 32, 32>();
     let message = [0x5Au8; 32];
 
-    let (mut enc, nonce) = key.create_encryptor(&mut os_rng()).expect("init");
+    let (nonce, mut enc) = key.create_encryptor(&mut os_rng()).expect("init");
     let mut inline = [0u8; 48];
     enc.do_encrypt_out(&message, &mut inline).expect("the frame");
     let (tag, _) = enc.do_encrypt_final().expect("final");
@@ -639,7 +639,7 @@ fn packet_key_one_shots_take_the_frame_and_agree_with_the_declared_length_key() 
         let what = format!("{msg_len}-byte payload, {aad_len}-byte AAD");
 
         let mut detached = vec![0u8; msg_len];
-        let (written, nonce, tag) = key
+        let (nonce, written, tag) = key
             .encrypt_detached_out(&mut rng(), &aad, &msg, &mut detached)
             .unwrap_or_else(|e| panic!("{what}: {e:?}"));
         assert_eq!(written, msg_len);
@@ -649,7 +649,7 @@ fn packet_key_one_shots_take_the_frame_and_agree_with_the_declared_length_key() 
         assert_eq!((&detached, tag), (&direct, direct_tag), "{what}: detached agrees");
 
         let mut inline = vec![0u8; msg_len + 16];
-        let (written_i, nonce_i) = key
+        let (nonce_i, written_i) = key
             .encrypt_with_aad_out(&mut rng(), &aad, &msg, &mut inline)
             .unwrap_or_else(|e| panic!("{what}: {e:?}"));
         assert_eq!((nonce_i, written_i), (nonce, msg_len + 16));
@@ -727,7 +727,7 @@ fn packet_key_one_shots_take_the_frame_and_agree_with_the_declared_length_key() 
     // A failed tag leaves nothing behind, on all three decrypting forms.
     let msg = [0xA5u8; 48];
     let mut inline = [0u8; 64];
-    let (_, nonce) = key.encrypt_with_aad_out(&mut os_rng(), b"hdr", &msg, &mut inline).unwrap();
+    let (nonce, _) = key.encrypt_with_aad_out(&mut os_rng(), b"hdr", &msg, &mut inline).unwrap();
     let mut forged = inline;
     forged[0] ^= 1;
     let mut pt = [0xEEu8; 48];
@@ -778,7 +778,7 @@ fn every_final_refuses_a_payload_of_the_wrong_length() {
 
     // An encryptor fed `supplied` of the 8 declared bytes.
     let enc = |supplied: usize| {
-        let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(nonce_seed)).expect("init");
+        let (_, mut enc) = key.create_encryptor(&mut FixedSeedRNG::new(nonce_seed)).expect("init");
         enc.do_update_aad(aad).expect("aad");
         let mut out = [0u8; 8];
         enc.do_encrypt_out(&frame[..supplied], &mut out).expect("update");
@@ -830,7 +830,7 @@ fn every_final_refuses_a_payload_of_the_wrong_length() {
     assert_eq!((n, tag3), (0, tag));
     let mut ct = [0u8; 8];
     {
-        let (mut e, _) = key.create_encryptor(&mut FixedSeedRNG::new(nonce_seed)).expect("init");
+        let (_, mut e) = key.create_encryptor(&mut FixedSeedRNG::new(nonce_seed)).expect("init");
         e.do_update_aad(aad).expect("aad");
         e.do_encrypt_out(&frame, &mut ct).expect("update");
         e.do_encrypt_final().expect("final");
@@ -971,7 +971,7 @@ fn a_short_inline_ciphertext_is_rejected_the_same_way_for_a_non_empty_frame() {
         .expect("the appendix key");
     let frame = [0x5Au8; DATA_LEN];
     let mut sealed = vec![0u8; Enc::encrypt_out_len(DATA_LEN)];
-    let (n, nonce) =
+    let (nonce, n) =
         key.encrypt_with_aad_out(&mut os_rng(), b"hdr", &frame, &mut sealed).expect("seal");
     assert_eq!(n, DATA_LEN + 16);
 

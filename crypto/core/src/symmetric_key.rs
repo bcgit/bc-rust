@@ -35,7 +35,7 @@
 //!
 //! ```text
 //! let key = AES128Key::<GCM>::generate(&mut rng)?;
-//! let (mut enc, nonce) = key.create_encryptor(&mut rng)?;    // Result for the nonce draw only
+//! let (nonce, mut enc) = key.create_encryptor(&mut rng)?;    // Result for the nonce draw only
 //! let mut dec = key.create_decryptor(&nonce);                // infallible
 //!
 //! let key = HmacKey::<SHA256>::generate(&mut rng)?;
@@ -164,16 +164,16 @@ pub trait AeadEncryptionKey<
     fn create_encryptor<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError>;
+    ) -> Result<([u8; NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError>;
 
     /// Begins an encryption under a nonce the caller supplies. Infallible, as
     /// [`AeadDecryptionKey::create_decryptor`] is.
     fn create_encryptor_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor<'k>;
 
     /// One-shot with the tag inline: encrypts `plaintext` under `aad` into `ciphertext`, which
-    /// needs `encrypt_out_len(plaintext.len())` bytes of the encryptor type, and returns the number
-    /// of bytes written with the generated nonce. The entire output buffer is zeroized before the
-    /// ciphertext is written.
+    /// needs `encrypt_out_len(plaintext.len())` bytes of the encryptor type, and returns the
+    /// generated nonce and the number of bytes written. The entire output buffer is zeroized before
+    /// the ciphertext is written.
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, or any error
@@ -184,11 +184,11 @@ pub trait AeadEncryptionKey<
         aad: &[u8],
         plaintext: &[u8],
         ciphertext: &mut [u8],
-    ) -> Result<(usize, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; NONCE_LEN], usize), SymmetricCipherError> {
         ciphertext.fill(0);
-        let (enc, nonce) = self.create_encryptor(rng)?;
+        let (nonce, enc) = self.create_encryptor(rng)?;
         let written = crate::provided::encrypt_inline(enc, aad, plaintext, ciphertext)?;
-        Ok((written, nonce))
+        Ok((nonce, written))
     }
 
     /// As [`encrypt_with_aad_out`](Self::encrypt_with_aad_out), allocating the ciphertext.
@@ -209,7 +209,7 @@ pub trait AeadEncryptionKey<
                 FINAL_LEN,
             >>::encrypt_out_len(plaintext.len())
         ];
-        let (written, nonce) = self.encrypt_with_aad_out(rng, aad, plaintext, &mut ciphertext)?;
+        let (nonce, written) = self.encrypt_with_aad_out(rng, aad, plaintext, &mut ciphertext)?;
         ciphertext.truncate(written);
         Ok((nonce, ciphertext))
     }
@@ -226,11 +226,11 @@ pub trait AeadEncryptionKey<
         aad: &[u8],
         plaintext: &[u8],
         ciphertext: &mut [u8],
-    ) -> Result<(usize, [u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError> {
         ciphertext.fill(0);
-        let (enc, nonce) = self.create_encryptor(rng)?;
+        let (nonce, enc) = self.create_encryptor(rng)?;
         let (written, tag) = crate::provided::encrypt_detached(enc, aad, plaintext, ciphertext)?;
-        Ok((written, nonce, tag))
+        Ok((nonce, written, tag))
     }
 
     /// As [`encrypt_detached_out`](Self::encrypt_detached_out), allocating the ciphertext.
@@ -252,7 +252,7 @@ pub trait AeadEncryptionKey<
                 FINAL_LEN,
             >>::encrypt_detached_out_len(plaintext.len())
         ];
-        let (written, nonce, tag) =
+        let (nonce, written, tag) =
             self.encrypt_detached_out(rng, aad, plaintext, &mut ciphertext)?;
         ciphertext.truncate(written);
         Ok((nonce, ciphertext, tag))
@@ -489,7 +489,7 @@ pub trait AeadDeclaredEncryptionKey<
         rng: &mut dyn RNG,
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError>;
+    ) -> Result<([u8; NONCE_LEN], Self::Encryptor<'k>), SymmetricCipherError>;
 
     /// As [`create_encryptor`](Self::create_encryptor) under a nonce the caller supplies, who
     /// takes on the obligation that it never repeat under this key.
@@ -514,11 +514,11 @@ pub trait AeadDeclaredEncryptionKey<
         aad: &[u8],
         plaintext: &[u8],
         ciphertext: &mut [u8],
-    ) -> Result<(usize, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; NONCE_LEN], usize), SymmetricCipherError> {
         ciphertext.fill(0);
-        let (enc, nonce) = self.create_encryptor(rng, aad.len(), plaintext.len())?;
+        let (nonce, enc) = self.create_encryptor(rng, aad.len(), plaintext.len())?;
         let written = crate::provided::encrypt_inline(enc, aad, plaintext, ciphertext)?;
-        Ok((written, nonce))
+        Ok((nonce, written))
     }
 
     /// As [`AeadEncryptionKey::encrypt_with_aad`].
@@ -539,7 +539,7 @@ pub trait AeadDeclaredEncryptionKey<
                 FINAL_LEN,
             >>::encrypt_out_len(plaintext.len())
         ];
-        let (written, nonce) = self.encrypt_with_aad_out(rng, aad, plaintext, &mut ciphertext)?;
+        let (nonce, written) = self.encrypt_with_aad_out(rng, aad, plaintext, &mut ciphertext)?;
         ciphertext.truncate(written);
         Ok((nonce, ciphertext))
     }
@@ -554,11 +554,11 @@ pub trait AeadDeclaredEncryptionKey<
         aad: &[u8],
         plaintext: &[u8],
         ciphertext: &mut [u8],
-    ) -> Result<(usize, [u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError> {
         ciphertext.fill(0);
-        let (enc, nonce) = self.create_encryptor(rng, aad.len(), plaintext.len())?;
+        let (nonce, enc) = self.create_encryptor(rng, aad.len(), plaintext.len())?;
         let (written, tag) = crate::provided::encrypt_detached(enc, aad, plaintext, ciphertext)?;
-        Ok((written, nonce, tag))
+        Ok((nonce, written, tag))
     }
 
     /// As [`AeadEncryptionKey::encrypt_detached`].
@@ -580,7 +580,7 @@ pub trait AeadDeclaredEncryptionKey<
                 FINAL_LEN,
             >>::encrypt_detached_out_len(plaintext.len())
         ];
-        let (written, nonce, tag) =
+        let (nonce, written, tag) =
             self.encrypt_detached_out(rng, aad, plaintext, &mut ciphertext)?;
         ciphertext.truncate(written);
         Ok((nonce, ciphertext, tag))
@@ -888,7 +888,7 @@ pub trait SymmetricEncryptionKey<
     fn create_encryptor<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+    ) -> Result<([u8; INIT_DATA_LEN], Self::Encryptor<'k>), SymmetricCipherError>;
 
     /// Begins an encryption under init data the caller supplies. Infallible, as
     /// [`SymmetricDecryptionKey::create_decryptor`] is; the obligation on the value is the
@@ -897,7 +897,7 @@ pub trait SymmetricEncryptionKey<
     -> Self::Encryptor<'k>;
 
     /// One-shot: encrypts `plaintext` into `ciphertext`, which needs `encrypt_out_len` bytes of
-    /// the encryptor type, and returns the number of bytes written with the generated init data.
+    /// the encryptor type, and returns the generated init data and the number of bytes written.
     /// The entire output buffer is zeroized before the ciphertext is written.
     ///
     /// # Errors
@@ -908,11 +908,11 @@ pub trait SymmetricEncryptionKey<
         rng: &mut dyn RNG,
         plaintext: &[u8],
         ciphertext: &mut [u8],
-    ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
         ciphertext.fill(0);
-        let (enc, init_data) = self.create_encryptor(rng)?;
+        let (init_data, enc) = self.create_encryptor(rng)?;
         let written = crate::provided::symmetric_encrypt_out(enc, plaintext, ciphertext)?;
-        Ok((written, init_data))
+        Ok((init_data, written))
     }
 
     /// As [`encrypt_out`](Self::encrypt_out), allocating the ciphertext.
@@ -932,14 +932,14 @@ pub trait SymmetricEncryptionKey<
                 FINAL_LEN,
             >>::encrypt_out_len(plaintext.len())
         ];
-        let (written, init_data) = self.encrypt_out(rng, plaintext, &mut ciphertext)?;
+        let (init_data, written) = self.encrypt_out(rng, plaintext, &mut ciphertext)?;
         ciphertext.truncate(written);
         Ok((init_data, ciphertext))
     }
 
     /// One-shot in place, for a mode whose encryptor is a stream cipher: encrypts `data` in its
-    /// own buffer under init data drawn from `rng`, and returns the number of bytes written with
-    /// the init data.
+    /// own buffer under init data drawn from `rng`, and returns the init data and the number of
+    /// bytes written.
     ///
     /// # Errors
     /// As [`create_encryptor`](Self::create_encryptor), or
@@ -948,13 +948,13 @@ pub trait SymmetricEncryptionKey<
         &'k self,
         rng: &mut dyn RNG,
         data: &mut [u8],
-    ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError>
+    ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError>
     where
         Self::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
     {
-        let (mut enc, init_data) = self.create_encryptor(rng)?;
+        let (init_data, mut enc) = self.create_encryptor(rng)?;
         let written = StreamCipherEncryptor::do_encrypt_inplace(&mut enc, data)?;
-        Ok((written, init_data))
+        Ok((init_data, written))
     }
 
     /// As [`encrypt_out`](Self::encrypt_out) under init data the caller supplies, which is not
@@ -1116,7 +1116,7 @@ pub trait BlockEncryptionKey<
     fn create_encryptor<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+    ) -> Result<([u8; INIT_DATA_LEN], Self::Encryptor<'k>), SymmetricCipherError>;
 
     /// Begins an encryption under init data the caller supplies. Infallible, as
     /// [`BlockDecryptionKey::create_decryptor`] is.
@@ -1124,7 +1124,7 @@ pub trait BlockEncryptionKey<
     -> Self::Encryptor<'k>;
 
     /// One-shot: encrypts `data`, which must be a whole number of blocks, in place under init
-    /// data drawn from `rng`, and returns the number of bytes written with the init data.
+    /// data drawn from `rng`, and returns the init data and the number of bytes written.
     ///
     /// # Errors
     /// [`SymmetricCipherError::DataNotBlockAligned`] if `data.len()` is not a multiple of
@@ -1134,13 +1134,13 @@ pub trait BlockEncryptionKey<
         &self,
         rng: &mut dyn RNG,
         data: &mut [u8],
-    ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+    ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
         let (blocks, []) = data.as_chunks_mut::<BLOCK_LEN>() else {
             return Err(SymmetricCipherError::DataNotBlockAligned);
         };
-        let (mut enc, init_data) = self.create_encryptor(rng)?;
+        let (init_data, mut enc) = self.create_encryptor(rng)?;
         let written = enc.do_encrypt_blocks_inplace(blocks)?;
-        Ok((written, init_data))
+        Ok((init_data, written))
     }
 
     /// As [`encrypt_inplace`](Self::encrypt_inplace) under init data the caller supplies, which
@@ -1267,13 +1267,13 @@ pub trait NonceMacGenerationKey<const NONCE_LEN: usize, const MAC_LEN: usize> {
     fn create_generator<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Generator<'k>, [u8; NONCE_LEN]), MACError>;
+    ) -> Result<([u8; NONCE_LEN], Self::Generator<'k>), MACError>;
 
     /// Begins a tag under a nonce the caller supplies. Infallible.
     fn create_generator_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Generator<'k>;
 
     /// One-shot: the tag of `data` under a nonce drawn from `rng`, into `out`, written in full;
-    /// returns the number of bytes written, always `MAC_LEN`, with the nonce.
+    /// returns the nonce and the number of bytes written, always `MAC_LEN`.
     ///
     /// # Errors
     /// As [`create_generator`](Self::create_generator).
@@ -1282,11 +1282,11 @@ pub trait NonceMacGenerationKey<const NONCE_LEN: usize, const MAC_LEN: usize> {
         rng: &mut dyn RNG,
         data: &[u8],
         out: &mut [u8; MAC_LEN],
-    ) -> Result<(usize, [u8; NONCE_LEN]), MACError> {
+    ) -> Result<([u8; NONCE_LEN], usize), MACError> {
         out.fill(0);
-        let (mut generator, nonce) = self.create_generator(rng)?;
+        let (nonce, mut generator) = self.create_generator(rng)?;
         generator.do_update(data);
-        Ok((generator.finish_mac_into(&FinishToken::new(), out), nonce))
+        Ok((nonce, generator.finish_mac_into(&FinishToken::new(), out)))
     }
 
     /// One-shot: the nonce drawn from `rng` and the tag of `data` under it, in that order, as
@@ -1300,7 +1300,7 @@ pub trait NonceMacGenerationKey<const NONCE_LEN: usize, const MAC_LEN: usize> {
         data: &[u8],
     ) -> Result<([u8; NONCE_LEN], [u8; MAC_LEN]), MACError> {
         let mut out = [0u8; MAC_LEN];
-        let (_, nonce) = self.mac_out(rng, data, &mut out)?;
+        let (nonce, _) = self.mac_out(rng, data, &mut out)?;
         Ok((nonce, out))
     }
 
