@@ -205,15 +205,15 @@
 //! Stack written below the call, in bytes, as `dev_scripts/ecdsa_stack_harness` reports it (it
 //! paints the stack, runs the operation and looks for the lowest byte written; release build,
 //! x86-64, rustc 1.97 nightly, and within 64 bytes of these with rustc 1.88). Most of it is the
-//! stack wipe (see the Security Considerations); the final is the larger of the random and the
-//! deterministic signer's, on a signer held in a `Box`:
+//! stack wipe (see the Security Considerations); `encode` is also `encode_out`'s, and the final is
+//! the larger of the random and the deterministic signer's, on a signer held in a `Box`:
 //!
-//! | Curve                              | `from_bytes` | `keygen` | `create_signer` | `sign_out` | `sign_deterministic_out` | final  |
-//! |------------------------------------|--------------|----------|-----------------|------------|--------------------------|--------|
-//! | P-256, secp256k1, brainpoolP256r1  | 1,656        | 5,240    | 5,768           | 6,344      | 6,200                    | 5,976  |
-//! | P-384, brainpoolP384r1             | 1,656        | 6,776    | 7,304           | 8,280      | 7,976                    | 7,640  |
-//! | brainpoolP512r1                    | 1,656        | 8,312    | 8,840           | 9,848      | 9,544                    | 9,176  |
-//! | P-521                              | 1,656        | 9,080    | 9,608           | 10,792     | 10,312                   | 10,104 |
+//! | Curve                              | `from_bytes` | `encode` | `derive_pk` | `keygen` | `create_signer` | `sign_out` | `sign_deterministic_out` | final  |
+//! |------------------------------------|--------------|----------|-------------|----------|-----------------|------------|--------------------------|--------|
+//! | P-256, secp256k1, brainpoolP256r1  | 1,656        | 632      | 4,776       | 5,240    | 5,768           | 6,344      | 6,200                    | 5,976  |
+//! | P-384, brainpoolP384r1             | 1,656        | 632      | 6,088       | 6,776    | 7,304           | 8,280      | 7,976                    | 7,640  |
+//! | brainpoolP512r1                    | 1,656        | 632      | 7,400       | 8,312    | 8,840           | 9,848      | 9,544                    | 9,176  |
+//! | P-521                              | 1,656        | 632      | 8,056       | 9,080    | 9,608           | 10,792     | 10,312                   | 10,104 |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -261,15 +261,16 @@
 //!   key-pair generation require
 //!   [`CollisionResistantHash`](bouncycastle_core::traits::CollisionResistantHash), which
 //!   RIPEMD-160 lacks; see [`ECDSA`](ecdsa::ECDSA) for the hazmat wrapper that opts back in.
-//! - **The stack used to load or generate a private key, to draw `k` and to sign is overwritten
-//!   afterwards**: after `from_bytes`, `keygen`, `create_signer`, `sign_out` and the signers'
-//!   finals, by 1,536 bytes after `from_bytes` and, after the others, by 5,120 to 9,472 bytes
-//!   by curve, sized from measurements of optimised x86-64 builds with rustc 1.88 and 1.97 and
-//!   checked by `dev_scripts/check_ecdsa_stack.sh`, which covers those builds only. A signer holds
-//!   `k` in a `Secret` until it is dropped; where a caller moves the signer, as `do_final` takes
-//!   it by value, the place it was moved from is the caller's to look after, as is a key the
-//!   caller moves out of the `Result` it was returned in. `encode`, `encode_out` and `derive_pk`
-//!   have no such wipe.
+//! - **The stack used to load, encode or generate a private key, to derive its public key, to
+//!   draw `k` and to sign is overwritten afterwards**: after `from_bytes`, `encode`,
+//!   `encode_out`, `derive_pk`, `keygen`, `create_signer`, `sign_out` and the signers' finals,
+//!   by 512 bytes after an encoding, 1,536 after `from_bytes` and, after the others, by 4,608 to
+//!   9,472 bytes by curve, sized from measurements of optimised x86-64 builds with rustc 1.88
+//!   and 1.97 and checked by `dev_scripts/check_ecdsa_stack.sh`, which covers those builds only.
+//!   A signer holds `k` in a `Secret` until it is dropped; where a caller moves the signer, as
+//!   `do_final` takes it by value, the place it was moved from is the caller's to look after, as
+//!   is a key the caller moves out of the `Result` it was returned in, or the array `encode`
+//!   returns.
 //! - **`ctx` must be absent or empty.** ECDSA has no context input (FIPS 186-5 Sections 6.4.1
 //!   and 6.4.2 list none), so nothing could bind one into a signature. A non-empty `ctx` is
 //!   refused with `SignatureError::LengthError` by every constructor and one-shot, signing and

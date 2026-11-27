@@ -2,8 +2,9 @@
 //! 5.6.1.2.1, 5.6.2.1.2 and 5.6.2.3.3).
 
 use crate::curve::{
-    Curve, DECODE_STACK_FIXED, DECODE_STACK_PER_LIMB, KEYGEN_STACK_FIXED, KEYGEN_STACK_PER_LIMB,
-    SecretScalar, private_scalar_from_be_bytes,
+    Curve, DECODE_STACK_FIXED, DECODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, ENCODE_STACK_PER_LIMB,
+    KEYGEN_STACK_FIXED, KEYGEN_STACK_PER_LIMB, SecretScalar, private_scalar_from_be_bytes,
+    public_point_wiped,
 };
 use crate::eccdh::keys_common::{AgreementKeyPair, DerivePublicKey};
 use crate::stack_wipe::in_wiped_frame;
@@ -36,7 +37,7 @@ where
     C: Curve<PkUncompressed = [u8; PK_LEN]>,
 {
     fn derive_pk(&self) -> ECCDHPublicKey<C> {
-        let (x, y) = C::public_point(&self.0);
+        let (x, y) = public_point_wiped::<C>(&self.0);
         ECCDHPublicKey { x, y }
     }
 }
@@ -45,13 +46,18 @@ impl<C, const SK_LEN: usize> PrivateKey<SK_LEN> for ECCDHPrivateKey<C>
 where
     C: Curve<ScalarBytes = [u8; SK_LEN]>,
 {
+    // As the ECDSA key's: `encode` converts in a wiped frame and its array is written to the
+    // caller's slot; `encode_out` writes straight into `out`.
     fn encode(&self) -> [u8; SK_LEN] {
-        self.0.to_be_bytes()
+        in_wiped_frame::<C::Limbs, ENCODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, _>(|| {
+            self.0.to_be_bytes()
+        })
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        out.fill(0);
-        *out = self.0.to_be_bytes();
+        in_wiped_frame::<C::Limbs, ENCODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, _>(|| {
+            self.0.to_be_bytes_into(out)
+        });
         SK_LEN
     }
 

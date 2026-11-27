@@ -76,12 +76,12 @@
 //! * [`DHKEM::derive_key_pair`] is deterministic: the key pair is only as secret as the
 //!   input keying material.
 //! * The DH output, the PRKs and the derived values live in `Secret`s here and are wiped at the
-//!   end of their lifetime, and the `_out` forms write into the caller's buffers. What is not
-//!   reached: the by-value `encap_rng`, `decap` and `derive_key_pair` move their result out of
-//!   the frame that built it, and the HMAC the KDF runs leaves its inner and outer chaining states
-//!   and the SHA-256 message schedule of `prk XOR opad` on the dead stack below this module's
-//!   frames, from which the PRK is recoverable; that residue is `hmac`'s and `sha2`'s, and the
-//!   PRK keys one `HmacKey` per expand so it is left once.
+//!   end of their lifetime, and the `_out` forms write into the caller's buffers. The salt key,
+//!   each labeled HKDF step and `derive_key_pair` run in a frame of their own whose stack is
+//!   overwritten afterwards, so the HMAC states keyed by a salt or a PRK and the private key's
+//!   moves are not left on the dead stack. What is not reached: the by-value `encap_rng`, `decap` and
+//!   `derive_key_pair` move their result out of the frame that built it, and what the group's
+//!   own operations leave is the group's (see its module).
 
 mod dhkem;
 pub mod hazmat;

@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# Checks that ECDSA signing and the handling of its private keys (bouncycastle_ec::ecdsa), and the
-# decoding and generation of ECC CDH private keys (bouncycastle_ec::eccdh), leave nothing of what
-# they handled on the stack they used, over each of the seven curves, over
-# dev_scripts/ecdsa_stack_harness: for each operation it paints the stack, runs the operation,
-# copies the dead stack out and searches the copy for the words of every secret the operation
-# handled (the private key d, and for signing the RNG's output and k, as bytes and as limbs). The
-# operations are the decoding, copying, re-pairing and generation of a private key, the drawing
-# of k (create_signer), the random and the deterministic one-shots and the streaming finals.
+# Checks that ECDSA signing and the handling of its private keys (bouncycastle_ec::ecdsa), ECC
+# CDH's private keys and agreement (bouncycastle_ec::eccdh), and DHKEM over the NIST curves and
+# X448 with its labeled HKDF steps (bouncycastle_ec::dhkem) leave nothing of what they handled on
+# the stack they used, over each of the seven curves, over dev_scripts/ecdsa_stack_harness: for
+# each operation it paints the stack, runs the operation, copies the dead stack out and searches
+# the copy for the words of every secret the operation handled (the private keys, the RNG's
+# output, k, the Diffie-Hellman products, the DHKEM's PRK and shared secret and what a KDF
+# derived, as bytes and as limbs). The operations are the decoding, encoding, copying,
+# re-pairing and generation of a private key and the derivation of its public key, the drawing
+# of k (create_signer), the random and the deterministic one-shots and the streaming finals, the
+# agreement, and the DHKEM's private-key decoding, DeriveKeyPair, Encap, Decap, AuthEncap and
+# AuthDecap. DHKEM over X25519 is run and reported, and does not fail the check: its scalar
+# multiplication leaves part of its field inversion, by decision.
 #
 # Each operation is also run twice at the same addresses over different secrets (two keys, two
 # draws of the RNG), and the two copies of the stack compared: but for the signature, the public
-# key and the registers the call's first frames saved, they must be the same. That needs no known
-# value, so it reaches the arithmetic's intermediates, which the search has no name for.
+# key, the ciphertext and the registers the call's first frames saved, they must be the same.
+# That needs no known value, so it reaches the arithmetic's intermediates, which the search has
+# no name for.
 #
 # Controls: nothing run must leave nothing and the same stack twice, and a copy of a private key
 # left in a frame must be found by the search and by the comparison, so that a check that finds

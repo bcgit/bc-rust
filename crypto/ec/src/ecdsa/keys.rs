@@ -6,8 +6,9 @@
 //! moves, and [`ECDSAPrivateKey::with_hash`] re-pairs the same key bytes with another hash.
 
 use crate::curve::{
-    Curve, DECODE_STACK_FIXED, DECODE_STACK_PER_LIMB, KEYGEN_STACK_FIXED, KEYGEN_STACK_PER_LIMB,
-    SecretScalar, private_scalar_from_be_bytes,
+    Curve, DECODE_STACK_FIXED, DECODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, ENCODE_STACK_PER_LIMB,
+    KEYGEN_STACK_FIXED, KEYGEN_STACK_PER_LIMB, SecretScalar, private_scalar_from_be_bytes,
+    public_point_wiped,
 };
 use crate::ecdsa::ecdsa::EcdsaHash;
 use crate::ecdsa::keys_common::{DerivePublicKey, SignatureKeyPair};
@@ -48,7 +49,7 @@ where
     C: Curve<PkUncompressed = [u8; PK_LEN]>,
 {
     fn derive_pk(&self) -> ECDSAPublicKey<C, H> {
-        let (x, y) = C::public_point(&self.d);
+        let (x, y) = public_point_wiped::<C>(&self.d);
         ECDSAPublicKey { x, y, _hash: PhantomData }
     }
 }
@@ -57,13 +58,19 @@ impl<C, H: EcdsaHash, const SK_LEN: usize> PrivateKey<SK_LEN> for ECDSAPrivateKe
 where
     C: Curve<ScalarBytes = [u8; SK_LEN]>,
 {
+    // `encode` converts in a wiped frame, whose conversion stages the bytes of `d`, and the array
+    // it returns is written to the caller's slot, not staged above that frame. `encode_out`
+    // writes the bytes straight into `out`, staging none.
     fn encode(&self) -> [u8; SK_LEN] {
-        self.d.to_be_bytes()
+        in_wiped_frame::<C::Limbs, ENCODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, _>(|| {
+            self.d.to_be_bytes()
+        })
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        out.fill(0);
-        *out = self.d.to_be_bytes();
+        in_wiped_frame::<C::Limbs, ENCODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, _>(|| {
+            self.d.to_be_bytes_into(out)
+        });
         SK_LEN
     }
 

@@ -1,41 +1,62 @@
-//! What ECDSA signing and the handling of its private keys (bouncycastle_ec::ecdsa), and the
-//! decoding and generation of ECC CDH private keys (bouncycastle_ec::eccdh), leave on the dead
-//! stack, over each of the seven curves, for `../check_ecdsa_stack.sh`. For each operation the
-//! stack below the call is painted, the operation run with its results going to the heap or to a
-//! live frame above, the dead stack copied out, and the copy searched for the 8-byte words of every
-//! secret the operation handled: the private key `d`, and for signing the RNG's output and `k`, each
-//! as bytes and as limbs. The RNG is a fixed one, so the values are computed here, with the crate's
-//! public arithmetic, and checked against the operation's own output before they are searched for;
-//! the `k` of a signature is recovered from it, `k = s^-1 (e + r d)`, and checked against `r`.
+//! What ECDSA signing and the handling of its private keys (bouncycastle_ec::ecdsa), ECC CDH's
+//! private keys and agreement (bouncycastle_ec::eccdh), and DHKEM over the NIST curves, X448 and
+//! X25519 with its labeled HKDF steps (bouncycastle_ec::dhkem) leave on the dead stack, for
+//! `../check_ecdsa_stack.sh`. For each operation the stack below the call is painted, the
+//! operation run with its results going to the heap or to a live frame above, the dead stack
+//! copied out, and the copy searched for the 8-byte words of every secret the operation handled:
+//! the private keys, the RNG's output, `k`, each Diffie-Hellman product (`x` and `y`), the
+//! DHKEM's `eae_prk` and shared secret, and what a KDF derived, as bytes and, for integers, as
+//! limbs. The RNG is a fixed one, so the values are computed here, with the crate's public
+//! arithmetic, and checked against the operation's own output before they are searched for; the
+//! `k` of a signature is recovered from it, `k = s^-1 (e + r d)`, and checked against `r`.
 //!
 //! Each operation is also run twice, at the same addresses, over different secrets (two keys, and
-//! for the random signer two draws of the RNG), and the two copies compared: but for what the
+//! for the random operations two draws of the RNG), and the two copies compared: but for what the
 //! operation hands out and the registers the call's first frames saved, they must be the same.
 //!
 //! Controls: nothing run must leave nothing, and the same stack twice; a copy of `d` left in a
 //! frame must be found, and copies of two keys must differ.
 //!
-//! Not run: a private key's `encode`, `encode_out` and `derive_pk`, which run in no wiped frame.
+//! Reported and not failed: DHKEM over X25519, whose scalar multiplication leaves part of its
+//! field inversion (`bouncycastle_ec::ed::x25519`'s Security Considerations), lines marked
+//! `left`.
 //!
 //!   target/release/ecdsa_stack_harness
 //!
-//! One line per operation, `ok` or `FAIL`; the exit status is 1 if anything failed.
+//! One line per operation, `ok`, `FAIL` or `left`; the exit status is 1 if anything failed.
+use bouncycastle_core::agreement_key::AgreementKey;
+use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
+use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
+use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
     OneShotVerifyingKey, SigningKey,
 };
 use bouncycastle_core::traits::{
-    CollisionResistantHash, Hash, PrivateKey, PublicKey, SignatureSigner,
+    CollisionResistantHash, Hash, PrivateKey, PublicKey, RNG, SignatureSigner, Suspendable,
 };
+use bouncycastle_digest::concatkdf::ConcatKDF;
+use bouncycastle_digest::hmac::HMACParams;
 use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
-use bouncycastle_ec::curve::{Curve, FieldElement, ScalarFieldElement, SecretScalar};
+use bouncycastle_digest::x963kdf::X963KDF;
+use bouncycastle_ec::curve::{
+    Array, Curve, FieldElement, JacobianPoint, ScalarFieldElement, SecretScalar,
+};
+use bouncycastle_ec::dhkem::hazmat::{MAX_NH, labeled_expand, labeled_extract_out, salt_key};
+use bouncycastle_ec::dhkem::{AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEMParams};
+use bouncycastle_ec::eccdh::dhkem::{DhkemCurve, derive_key_pair};
+use bouncycastle_ec::eccdh::eccdh::{ECCDH, MatchedHash};
 use bouncycastle_ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
-use bouncycastle_ec::eccdh::keys_common::AgreementKeyPair;
+use bouncycastle_ec::eccdh::keys_common::{AgreementKeyPair, DerivePublicKey as EccdhDerive};
 use bouncycastle_ec::ecdsa::ecdsa::{ECDSA, EcdsaHash};
 use bouncycastle_ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 use bouncycastle_ec::ecdsa::keys_common::{DerivePublicKey, SignatureKeyPair};
+use bouncycastle_ec::ed::x448::{self, X448PrivateKey, X448PublicKey};
+use bouncycastle_ec::ed::x25519::{self, X25519PrivateKey, X25519PublicKey};
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
+use bouncycastle_utils::secret::ZeroizablePrimitive;
 use std::collections::HashSet;
 use std::hint::black_box;
 
@@ -129,11 +150,14 @@ struct Scan {
     buf: Vec<u8>,
     before: Vec<u8>,
     failures: usize,
+    /// Whether what is found is reported without failing the check: for an operation whose
+    /// residue is known and documented as left.
+    report_only: bool,
 }
 
 impl Scan {
     fn new() -> Self {
-        Self { buf: vec![0u8; DEPTH], before: vec![0u8; DEPTH], failures: 0 }
+        Self { buf: vec![0u8; DEPTH], before: vec![0u8; DEPTH], failures: 0, report_only: false }
     }
 
     /// Paints, runs `f` and copies the stack out. What `f` returns comes back by value.
@@ -178,10 +202,11 @@ impl Scan {
             println!("ok   {operation}: none of its secrets in the {used} bytes of stack it used");
         } else {
             println!(
-                "FAIL {operation}: left in the {used} bytes of stack it used: {}",
+                "{} {operation}: left in the {used} bytes of stack it used: {}",
+                self.fail_word(),
                 found.join(", ")
             );
-            self.failures += 1;
+            self.fail();
         }
     }
 
@@ -194,6 +219,17 @@ impl Scan {
             println!(
                 "FAIL {operation}: not found, so an operation that leaves nothing proves nothing"
             );
+            self.failures += 1;
+        }
+    }
+
+    /// How a finding is reported: `FAIL`, or `left` for an operation run with `report_only`.
+    fn fail_word(&self) -> &'static str {
+        if self.report_only { "left" } else { "FAIL" }
+    }
+
+    fn fail(&mut self) {
+        if !self.report_only {
             self.failures += 1;
         }
     }
@@ -248,10 +284,11 @@ impl Scan {
             (0, _) => println!("ok   {operation}: the same stack over different secrets"),
             (count, furthest) => {
                 println!(
-                    "FAIL {operation}: {count} bytes of stack differ with the secrets, the \
-                     furthest {furthest} bytes below the call"
+                    "{} {operation}: {count} bytes of stack differ with the secrets, the \
+                     furthest {furthest} bytes below the call",
+                    self.fail_word()
                 );
-                self.failures += 1;
+                self.fail();
             }
         }
     }
@@ -306,6 +343,15 @@ fn message(len: usize) -> Box<[u8]> {
 fn public_image(encoded: &[u8]) -> Vec<u8> {
     let half = (encoded.len() - 1) / 2;
     [&encoded[..], &limb_image(&encoded[1..1 + half]), &limb_image(&encoded[1 + half..])].concat()
+}
+
+/// The encoded public key of the private key `d`, from the curve's arithmetic.
+fn public_of<C, const SK: usize, const PK: usize>(d: &[u8; SK]) -> [u8; PK]
+where
+    C: Curve<ScalarBytes = [u8; SK], PkUncompressed = [u8; PK]>,
+{
+    let (x, y) = C::public_point(&C::Scalar::from_be_bytes(d));
+    C::encode_uncompressed(&x, &y)
 }
 
 /// A signature as what [`Scan::same`] lets differ: its bytes and the limbs of `r` and `s`.
@@ -379,13 +425,37 @@ fn main() {
     ecdsa::<Bp384r1, SHA384, 48, 97, 96>(&mut scan, "brainpoolP384r1");
     ecdsa::<Bp512r1, SHA512, 64, 129, 128>(&mut scan, "brainpoolP512r1");
 
-    eccdh::<P256, 32, 65>(&mut scan, "P-256");
-    eccdh::<P384, 48, 97>(&mut scan, "P-384");
-    eccdh::<P521, 66, 133>(&mut scan, "P-521");
-    eccdh::<Secp256K1, 32, 65>(&mut scan, "secp256k1");
-    eccdh::<Bp256r1, 32, 65>(&mut scan, "brainpoolP256r1");
-    eccdh::<Bp384r1, 48, 97>(&mut scan, "brainpoolP384r1");
-    eccdh::<Bp512r1, 64, 129>(&mut scan, "brainpoolP512r1");
+    eccdh::<P256, 32, 65, 32>(&mut scan, "P-256");
+    eccdh::<P384, 48, 97, 48>(&mut scan, "P-384");
+    eccdh::<P521, 66, 133, 66>(&mut scan, "P-521");
+    eccdh::<Secp256K1, 32, 65, 32>(&mut scan, "secp256k1");
+    eccdh::<Bp256r1, 32, 65, 32>(&mut scan, "brainpoolP256r1");
+    eccdh::<Bp384r1, 48, 97, 48>(&mut scan, "brainpoolP384r1");
+    eccdh::<Bp512r1, 64, 129, 64>(&mut scan, "brainpoolP512r1");
+
+    labeled::<SHA256>(&mut scan, "SHA-256");
+    labeled::<SHA384>(&mut scan, "SHA-384");
+    labeled::<SHA512>(&mut scan, "SHA-512");
+
+    dhkem::<P256, 32, 65, 32, 32>(&mut scan, "P-256");
+    dhkem::<P384, 48, 97, 48, 48>(&mut scan, "P-384");
+    dhkem::<P521, 66, 133, 66, 64>(&mut scan, "P-521");
+
+    dhkem_x::<X448PrivateKey, X448PublicKey, SHA512, 56, 64>(
+        &mut scan,
+        "X448",
+        0x0021,
+        x448::keygen,
+    );
+    // X25519's scalar multiplication leaves part of its inversion, by decision: reported.
+    scan.report_only = true;
+    dhkem_x::<X25519PrivateKey, X25519PublicKey, SHA256, 32, 32>(
+        &mut scan,
+        "X25519",
+        0x0020,
+        x25519::keygen,
+    );
+    scan.report_only = false;
 
     std::process::exit(if scan.failures == 0 { 0 } else { 1 });
 }
@@ -454,6 +524,35 @@ where
         }
         scan.same(&op(name), &publics[0], &publics[1]);
     }
+
+    // The encodings write less below the call than SAVED_REGISTERS, which the comparison of two
+    // runs excuses, so for them the search is the check.
+    for d in &keys {
+        *sk = ECDSAPrivateKey::from_bytes(d).unwrap();
+        scan.keep();
+        *encoded = scan.run(|| sk.encode());
+        assert_eq!(*encoded, *d);
+        scan.clean(&op("encode"), &key_values(d));
+    }
+    scan.same(&op("encode"), &[], &[]);
+    for d in &keys {
+        *sk = ECDSAPrivateKey::from_bytes(d).unwrap();
+        scan.keep();
+        assert_eq!(scan.run(|| sk.encode_out(&mut encoded)), SK);
+        assert_eq!(*encoded, *d);
+        scan.clean(&op("encode_out"), &key_values(d));
+    }
+    scan.same(&op("encode_out"), &[], &[]);
+    let mut publics = Vec::new();
+    for d in &keys {
+        *sk = ECDSAPrivateKey::from_bytes(d).unwrap();
+        scan.keep();
+        let pk: ECDSAPublicKey<C, H> = scan.run(|| sk.derive_pk());
+        assert_eq!(pk.encode(), public_of::<C, SK, PK>(d), "not its public key");
+        scan.clean(&op("derive_pk"), &key_values(d));
+        publics.push(public_image(&pk.encode()));
+    }
+    scan.same(&op("derive_pk"), &publics[0], &publics[1]);
 
     // Signing: twice, under two keys, from two draws of the RNG.
     let msg = message(100);
@@ -577,10 +676,42 @@ where
     scan.same(&op("deterministic final (boxed)"), &images[0], &images[1]);
 }
 
-/// The ECC CDH private key over `C`: loaded and generated.
-fn eccdh<C, const SK: usize, const PK: usize>(scan: &mut Scan, curve: &str)
+/// `[d]Q`, for the private key `d` and the encoded public key `q`: its `x`, which is the shared
+/// secret `Z` of ECC CDH, and its `y`, each as bytes and as limbs.
+fn shared_values<C, const SK: usize, const PK: usize, const FE: usize>(
+    values: &mut Values,
+    name: &str,
+    d: &[u8; SK],
+    q: &[u8; PK],
+) where
+    C: Curve<ScalarBytes = [u8; SK], PkUncompressed = [u8; PK], FeBytes = [u8; FE]>,
+{
+    let (x, y) = C::decode(q).unwrap();
+    let p = C::multiply_point(&C::Scalar::from_be_bytes(d), &C::Point::from_affine(x, y));
+    let (px, py) = p.to_affine().unwrap();
+    push_integer(values, name, &C::fe_be_bytes_from_limbs(&px.to_limbs()));
+    push_integer(values, &format!("{name} y"), &C::fe_be_bytes_from_limbs(&py.to_limbs()));
+    // Their Montgomery forms, `v * 2^(64 L) mod p`, as the brainpool curves hold them.
+    let mut two = C::Limbs::ZEROED;
+    two.as_mut()[0] = 2;
+    let (two, mut r) = (C::Fe::from_limbs(two), C::Fe::from_limbs(C::Limbs::ZEROED));
+    let mut one = C::Limbs::ZEROED;
+    one.as_mut()[0] = 1;
+    r = r.add(&C::Fe::from_limbs(one));
+    for _ in 0..64 * C::Limbs::LEN {
+        r = r.mul(&two);
+    }
+    for (part, v) in [("", px), (" y", py)] {
+        let mont = C::fe_be_bytes_from_limbs(&v.mul(&r).to_limbs());
+        push_integer(values, &format!("{name}{part} (Montgomery)"), &mont);
+    }
+}
+
+/// The ECC CDH private key over `C`: loaded, generated, encoded, its public key derived, and
+/// agreeing, raw and through the X9.63 and concatenation KDFs.
+fn eccdh<C, const SK: usize, const PK: usize, const FE: usize>(scan: &mut Scan, curve: &str)
 where
-    C: Curve<ScalarBytes = [u8; SK], PkUncompressed = [u8; PK]>,
+    C: Curve<ScalarBytes = [u8; SK], PkUncompressed = [u8; PK], FeBytes = [u8; FE]> + MatchedHash,
 {
     let draw_len = C::EXTRA_BITS_DRAW_LEN;
     let key_draws = [0, 1].map(|i| bytes_of(&format!("{curve} agreement key {i}"), draw_len));
@@ -619,4 +750,505 @@ where
         }
         scan.same(&op(name), &publics[0], &publics[1]);
     }
+
+    let mut sk = Box::new(ECCDHPrivateKey::<C>::from_bytes(&keys[0]).unwrap());
+    // As for ECDSA's encodings, the search is the check.
+    for d in &keys {
+        *sk = ECCDHPrivateKey::from_bytes(d).unwrap();
+        scan.keep();
+        *encoded = scan.run(|| sk.encode());
+        assert_eq!(*encoded, *d);
+        scan.clean(&op("encode"), &key_values(d));
+    }
+    scan.same(&op("encode"), &[], &[]);
+    for d in &keys {
+        *sk = ECCDHPrivateKey::from_bytes(d).unwrap();
+        scan.keep();
+        assert_eq!(scan.run(|| sk.encode_out(&mut encoded)), SK);
+        assert_eq!(*encoded, *d);
+        scan.clean(&op("encode_out"), &key_values(d));
+    }
+    scan.same(&op("encode_out"), &[], &[]);
+    let mut publics = Vec::new();
+    for d in &keys {
+        *sk = ECCDHPrivateKey::from_bytes(d).unwrap();
+        scan.keep();
+        let pk: ECCDHPublicKey<C> = scan.run(|| EccdhDerive::derive_pk(&*sk));
+        assert_eq!(pk.encode(), public_of::<C, SK, PK>(d), "not its public key");
+        scan.clean(&op("derive_pk"), &key_values(d));
+        publics.push(public_image(&pk.encode()));
+    }
+    scan.same(&op("derive_pk"), &publics[0], &publics[1]);
+
+    // Agreement: under two keys, with one peer.
+    let peer_d = C::reduce_wide_bits_mod_n_minus_1(&bytes_of(&format!("{curve} peer"), draw_len))
+        .to_be_bytes();
+    let peer_encoded = public_of::<C, SK, PK>(&peer_d);
+    let peer = ECCDHPublicKey::<C>::from_bytes(&peer_encoded).unwrap();
+    let agree_values = |d: &[u8; SK]| {
+        let mut values = key_values(d);
+        shared_values::<C, SK, PK, FE>(&mut values, "Z", d, &peer_encoded);
+        values
+    };
+    let mut z = Box::new(KeyMaterial::<FE>::new());
+    for d in &keys {
+        *sk = ECCDHPrivateKey::from_bytes(d).unwrap();
+        scan.keep();
+        assert_eq!(scan.run(|| AgreementKey::<(), FE>::agree_out(&*sk, &peer, (), &mut z)), Ok(FE));
+        let values = agree_values(d);
+        assert_eq!(z.ref_to_bytes(), &values[2].1[..], "not its Z");
+        scan.clean(&op("agree_out"), &values);
+    }
+    scan.same(&op("agree_out"), &[], &[]);
+
+    let kdf = X963KDF::<C::Hash>::new();
+    let params = KdfParams::new(&kdf, b"stack harness", KeyLen::<32>);
+    let mut key = Box::new(KeyMaterial::<32>::new());
+    for d in &keys {
+        *sk = ECCDHPrivateKey::from_bytes(d).unwrap();
+        scan.keep();
+        assert_eq!(scan.run(|| sk.agree_out(&peer, params, &mut key)), Ok(32));
+        let mut values = agree_values(d);
+        values.push(("derived key".to_string(), key.ref_to_bytes().to_vec()));
+        scan.clean(&op("agree_out (X9.63 KDF)"), &values);
+    }
+    scan.same(&op("agree_out (X9.63 KDF)"), &[], &[]);
+
+    let kdf = ConcatKDF::<C::Hash>::new();
+    let params = KdfParams::new(&kdf, b"stack harness", KeyLen::<32>);
+    for d in &keys {
+        *sk = ECCDHPrivateKey::from_bytes(d).unwrap();
+        scan.keep();
+        assert_eq!(scan.run(|| sk.agree_out(&peer, params, &mut key)), Ok(32));
+        let mut values = agree_values(d);
+        values.push(("derived key".to_string(), key.ref_to_bytes().to_vec()));
+        scan.clean(&op("agree_out (concatenation KDF)"), &values);
+    }
+    scan.same(&op("agree_out (concatenation KDF)"), &[], &[]);
+}
+
+/// The value of `values` named `name`.
+fn value(values: &Values, name: &str) -> Vec<u8> {
+    values.iter().find(|(n, _)| n == name).unwrap().1.clone()
+}
+
+/// `eae_prk = LabeledExtract("", "eae_prk", dh)` of the DHKEM with `kem_id`, over `H` (RFC
+/// 9180 Section 4.1): the PRK its shared secret is expanded from, checked against `ss` by that
+/// expansion over `kem_context` before it is searched for.
+fn eae_prk<H: HMACParams>(
+    kem_id: u16,
+    dh: &[&[u8]],
+    kem_context: &[&[u8]],
+    ss: &[u8],
+) -> (String, Vec<u8>) {
+    let suite_id = [b"KEM".as_slice(), &kem_id.to_be_bytes()].concat();
+    let mut prk = [0u8; MAX_NH];
+    let nh = labeled_extract_out::<H>(&suite_id, &salt_key::<H>(&[]), b"eae_prk", dh, &mut prk);
+    let prk_key = KeyMaterial::<MAX_NH>::from_bytes_as_type(&prk[..nh], KeyType::MACKey).unwrap();
+    let mut expanded = vec![0u8; ss.len()];
+    labeled_expand::<H>(&suite_id, &prk_key, b"shared_secret", kem_context, &mut expanded);
+    assert_eq!(expanded, ss, "not the PRK of the shared secret");
+    ("eae_prk".to_string(), prk[..nh].to_vec())
+}
+
+/// DHKEM over `C` (RFC 9180 Section 4.1, on the ECC CDH keys): a private key from bytes as
+/// `DeriveKeyPair` tests a candidate, `DeriveKeyPair` itself, and `Encap`, `Decap`, `AuthEncap`
+/// and `AuthDecap` through the keys' roles. Searched for the private keys, the RNG's output, each
+/// Diffie-Hellman product and the shared secret.
+fn dhkem<C, const SK: usize, const PK: usize, const FE: usize, const SS: usize>(
+    scan: &mut Scan,
+    curve: &str,
+) where
+    C: DhkemCurve<SharedSecret = KeyMaterial<SS>>
+        + Curve<ScalarBytes = [u8; SK], PkUncompressed = [u8; PK], FeBytes = [u8; FE]>,
+    ECCDH<C>: DHKEMParams<PK, SK, FE, PrivateKey = ECCDHPrivateKey<C>>,
+{
+    let draw_len = C::EXTRA_BITS_DRAW_LEN;
+    let key_of = |label: &str| {
+        C::reduce_wide_bits_mod_n_minus_1(&bytes_of(&format!("{curve} DHKEM {label}"), draw_len))
+            .to_be_bytes()
+    };
+    let keys = [key_of("recipient 0"), key_of("recipient 1")];
+    let sender = key_of("sender");
+    let e_draws = [0, 1].map(|i| bytes_of(&format!("{curve} DHKEM ephemeral {i}"), draw_len));
+    let e_keys = e_draws.clone().map(|w| C::reduce_wide_bits_mod_n_minus_1(&w).to_be_bytes());
+    let pks = keys.map(|d| public_of::<C, SK, PK>(&d));
+    let sender_pk = ECCDHPublicKey::<C>::from_bytes(&public_of::<C, SK, PK>(&sender)).unwrap();
+    let sender_sk = Box::new(ECCDHPrivateKey::<C>::from_bytes(&sender).unwrap());
+    let mut rng = Box::new(rng_of(&e_draws[0]));
+    let mut sk = Box::new(ECCDHPrivateKey::<C>::from_bytes(&keys[0]).unwrap());
+    let mut pk_r = Box::new(ECCDHPublicKey::<C>::from_bytes(&pks[0]).unwrap());
+    let mut enc = Box::new([0u8; PK]);
+    let mut ss = Box::new(KeyMaterial::<SS>::new());
+    let mut cts = Vec::new();
+    let op = |name: &str| format!("DHKEM {curve} {name}");
+
+    for d in &keys {
+        scan.keep();
+        let loaded =
+            scan.run(|| <ECCDH<C> as DHKEMParams<PK, SK, FE>>::private_key_from_bytes(d)).unwrap();
+        assert_eq!(loaded.encode(), *d);
+        scan.clean(&op("private_key_from_bytes"), &key_values(d));
+    }
+    scan.same(&op("private_key_from_bytes"), &[], &[]);
+
+    let mut publics = Vec::new();
+    for i in 0..2 {
+        let ikm = Box::new(
+            KeyMaterial::<64>::from_bytes_as_type(
+                &bytes_of(&format!("{curve} DHKEM ikm {i}"), 64),
+                KeyType::Seed,
+            )
+            .unwrap(),
+        );
+        scan.keep();
+        let (pk, derived) = scan.run(|| derive_key_pair::<C>(&*ikm)).unwrap();
+        scan.clean(&op("derive_key_pair"), &key_values(&derived.encode()));
+        publics.push(public_image(&pk.encode()));
+    }
+    scan.same(&op("derive_key_pair"), &publics[0], &publics[1]);
+
+    // Encap to two recipients, from two draws of the RNG.
+    let mut images = Vec::new();
+    for i in 0..2 {
+        *pk_r = ECCDHPublicKey::from_bytes(&pks[i]).unwrap();
+        *rng = rng_of(&e_draws[i]);
+        scan.keep();
+        assert_eq!(scan.run(|| pk_r.encaps_out(&mut *rng, (), &mut enc, &mut ss)), Ok(PK));
+        assert_eq!(*enc, public_of::<C, SK, PK>(&e_keys[i]), "not its ephemeral key");
+        let mut values = key_values(&e_keys[i]);
+        push_integer(&mut values, "RNG output", &e_draws[i]);
+        shared_values::<C, SK, PK, FE>(&mut values, "dh", &e_keys[i], &pks[i]);
+        let dh = value(&values, "dh (bytes)");
+        values.push(eae_prk::<C::KDFHash>(
+            C::KEM_ID,
+            &[&dh],
+            &[&enc[..], &pks[i]],
+            ss.ref_to_bytes(),
+        ));
+        values.push(("shared secret".to_string(), ss.ref_to_bytes().to_vec()));
+        scan.clean(&op("encaps_out"), &values);
+        images.push([public_image(&*enc), public_image(&pks[i])].concat());
+        cts.push((*enc, ss.ref_to_bytes().to_vec()));
+    }
+    scan.same(&op("encaps_out"), &images[0], &images[1]);
+
+    // Decap of the first, by the two recipients: the same `enc` both times, so that only the
+    // secrets differ.
+    let mut images = Vec::new();
+    for i in 0..2 {
+        *sk = ECCDHPrivateKey::from_bytes(&keys[i]).unwrap();
+        *enc = cts[0].0;
+        scan.keep();
+        assert_eq!(scan.run(|| sk.decaps_out(&enc, (), &mut ss)), Ok(SS));
+        assert!(i == 1 || ss.ref_to_bytes() == &cts[0].1[..], "not the encapsulated secret");
+        let mut values = key_values(&keys[i]);
+        shared_values::<C, SK, PK, FE>(&mut values, "dh", &keys[i], &enc);
+        let dh = value(&values, "dh (bytes)");
+        values.push(eae_prk::<C::KDFHash>(
+            C::KEM_ID,
+            &[&dh],
+            &[&enc[..], &pks[i]],
+            ss.ref_to_bytes(),
+        ));
+        values.push(("shared secret".to_string(), ss.ref_to_bytes().to_vec()));
+        scan.clean(&op("decaps_out"), &values);
+        images.push([public_image(&*enc), public_image(&pks[i])].concat());
+    }
+    scan.same(&op("decaps_out"), &images[0], &images[1]);
+
+    // AuthEncap from one sender to two recipients, and AuthDecap of the first by both.
+    let mut images = Vec::new();
+    let mut cts = Vec::new();
+    for i in 0..2 {
+        *pk_r = ECCDHPublicKey::from_bytes(&pks[i]).unwrap();
+        *rng = rng_of(&e_draws[i]);
+        scan.keep();
+        assert_eq!(
+            scan.run(|| pk_r.auth_encaps_out(&mut *rng, &sender_sk, &mut enc, &mut ss)),
+            Ok(PK)
+        );
+        let mut values = key_values(&e_keys[i]);
+        push_integer(&mut values, "sender's d", &sender);
+        push_integer(&mut values, "RNG output", &e_draws[i]);
+        shared_values::<C, SK, PK, FE>(&mut values, "dh_e", &e_keys[i], &pks[i]);
+        shared_values::<C, SK, PK, FE>(&mut values, "dh_s", &sender, &pks[i]);
+        let (dh_e, dh_s) = (value(&values, "dh_e (bytes)"), value(&values, "dh_s (bytes)"));
+        values.push(eae_prk::<C::KDFHash>(
+            C::KEM_ID,
+            &[&dh_e, &dh_s],
+            &[&enc[..], &pks[i], &sender_pk.encode()],
+            ss.ref_to_bytes(),
+        ));
+        values.push(("shared secret".to_string(), ss.ref_to_bytes().to_vec()));
+        scan.clean(&op("auth_encaps_out"), &values);
+        images.push([public_image(&*enc), public_image(&pks[i])].concat());
+        cts.push((*enc, ss.ref_to_bytes().to_vec()));
+    }
+    scan.same(&op("auth_encaps_out"), &images[0], &images[1]);
+    let mut images = Vec::new();
+    for i in 0..2 {
+        *sk = ECCDHPrivateKey::from_bytes(&keys[i]).unwrap();
+        *enc = cts[0].0;
+        scan.keep();
+        assert_eq!(scan.run(|| sk.auth_decaps_out(&enc, &sender_pk, &mut ss)), Ok(SS));
+        assert!(i == 1 || ss.ref_to_bytes() == &cts[0].1[..], "not the encapsulated secret");
+        let mut values = key_values(&keys[i]);
+        shared_values::<C, SK, PK, FE>(&mut values, "dh_e", &keys[i], &enc);
+        shared_values::<C, SK, PK, FE>(&mut values, "dh_s", &keys[i], &sender_pk.encode());
+        let (dh_e, dh_s) = (value(&values, "dh_e (bytes)"), value(&values, "dh_s (bytes)"));
+        values.push(eae_prk::<C::KDFHash>(
+            C::KEM_ID,
+            &[&dh_e, &dh_s],
+            &[&enc[..], &pks[i], &sender_pk.encode()],
+            ss.ref_to_bytes(),
+        ));
+        values.push(("shared secret".to_string(), ss.ref_to_bytes().to_vec()));
+        scan.clean(&op("auth_decaps_out"), &values);
+        images.push([public_image(&*enc), public_image(&pks[i])].concat());
+    }
+    scan.same(&op("auth_decaps_out"), &images[0], &images[1]);
+}
+
+/// What a key of an X25519 or X448 DHKEM is searched for: its bytes as given and as encoded
+/// (clamped). Its scalar arithmetic is in limbs of another radix, which the comparison of two
+/// runs reaches and the search does not.
+fn x_key_values<SKT: PrivateKey<N>, const N: usize>(name: &str, raw: &[u8]) -> Values {
+    let encoded = SKT::from_bytes(raw).unwrap().encode();
+    vec![(format!("{name} (bytes)"), raw.to_vec()), (format!("{name} (clamped)"), encoded.to_vec())]
+}
+
+/// The Diffie-Hellman output of the private key `raw` and `pk`, through the key's agreement.
+fn x_dh<SKT, PKT, const N: usize>(raw: &[u8], pk: &PKT) -> Vec<u8>
+where
+    SKT: PrivateKey<N> + AgreementKey<(), N, PublicKey = PKT>,
+{
+    let mut z = KeyMaterial::<N>::new();
+    SKT::from_bytes(raw).unwrap().agree_out(pk, (), &mut z).unwrap();
+    z.ref_to_bytes().to_vec()
+}
+
+/// DHKEM over X25519 or X448 (RFC 9180 Section 7.1): `Encap`, `Decap`, `AuthEncap` and
+/// `AuthDecap`, searched for the private keys, the RNG's output, each Diffie-Hellman output and
+/// the shared secret, as [`dhkem`] does over the NIST curves.
+fn dhkem_x<SKT, PKT, H: HMACParams, const N: usize, const SS: usize>(
+    scan: &mut Scan,
+    name: &str,
+    kem_id: u16,
+    keygen: fn(&mut dyn RNG) -> Result<(PKT, SKT), KeyAgreementError>,
+) where
+    SKT: PrivateKey<N>
+        + DecapsulatingKey<(), N, SS>
+        + AuthDecapsulatingKey<N, SS, SenderPublicKey = PKT>
+        + AgreementKey<(), N, PublicKey = PKT>,
+    PKT: PublicKey<N>
+        + EncapsulatingKey<(), N, SS>
+        + AuthEncapsulatingKey<N, SS, SenderPrivateKey = SKT>,
+{
+    let raw = |label: &str| bytes_of(&format!("{name} DHKEM {label}"), N);
+    let pair = |raw: &[u8]| keygen(&mut rng_of(raw)).unwrap();
+    let keys = [raw("recipient 0"), raw("recipient 1")];
+    let sender = raw("sender");
+    let e_draws = [raw("ephemeral 0"), raw("ephemeral 1")];
+    let pks = keys.clone().map(|d| pair(&d).0);
+    let (sender_pk, sender_sk) = pair(&sender);
+    let sender_sk = Box::new(sender_sk);
+    let mut rng = Box::new(rng_of(&e_draws[0]));
+    // One allocation each, so that the two runs see the same addresses.
+    let mut sk = Box::new(SKT::from_bytes(&keys[0]).unwrap());
+    let mut pk_r = Box::new(PKT::from_bytes(&pks[0].encode()).unwrap());
+    let mut enc = Box::new([0u8; N]);
+    let mut ss = Box::new(KeyMaterial::<SS>::new());
+    let op = |what: &str| format!("DHKEM {name} {what}");
+
+    let mut cts = Vec::new();
+    let mut images = Vec::new();
+    for i in 0..2 {
+        *pk_r = PKT::from_bytes(&pks[i].encode()).unwrap();
+        *rng = rng_of(&e_draws[i]);
+        scan.keep();
+        assert_eq!(scan.run(|| pk_r.encaps_out(&mut *rng, (), &mut enc, &mut ss)), Ok(N));
+        let mut values = x_key_values::<SKT, N>("ephemeral key", &e_draws[i]);
+        values.push(("dh".to_string(), x_dh::<SKT, PKT, N>(&e_draws[i], &pks[i])));
+        let dh = value(&values, "dh");
+        values.push(eae_prk::<H>(kem_id, &[&dh], &[&enc[..], &pks[i].encode()], ss.ref_to_bytes()));
+        values.push(("shared secret".to_string(), ss.ref_to_bytes().to_vec()));
+        scan.clean(&op("encaps_out"), &values);
+        images.push([&enc[..], &pks[i].encode()].concat());
+        cts.push((*enc, ss.ref_to_bytes().to_vec()));
+    }
+    scan.same(&op("encaps_out"), &images[0], &images[1]);
+    let mut images = Vec::new();
+    for i in 0..2 {
+        *sk = SKT::from_bytes(&keys[i]).unwrap();
+        *enc = cts[0].0;
+        scan.keep();
+        assert_eq!(scan.run(|| sk.decaps_out(&enc, (), &mut ss)), Ok(SS));
+        assert!(i == 1 || ss.ref_to_bytes() == &cts[0].1[..], "not the encapsulated secret");
+        let mut values = x_key_values::<SKT, N>("d", &keys[i]);
+        let pk_e = PKT::from_bytes(&enc[..]).unwrap();
+        values.push(("dh".to_string(), x_dh::<SKT, PKT, N>(&keys[i], &pk_e)));
+        let dh = value(&values, "dh");
+        values.push(eae_prk::<H>(kem_id, &[&dh], &[&enc[..], &pks[i].encode()], ss.ref_to_bytes()));
+        values.push(("shared secret".to_string(), ss.ref_to_bytes().to_vec()));
+        scan.clean(&op("decaps_out"), &values);
+        images.push([&enc[..], &pks[i].encode()].concat());
+    }
+    scan.same(&op("decaps_out"), &images[0], &images[1]);
+
+    let mut cts = Vec::new();
+    let mut images = Vec::new();
+    for i in 0..2 {
+        *pk_r = PKT::from_bytes(&pks[i].encode()).unwrap();
+        *rng = rng_of(&e_draws[i]);
+        scan.keep();
+        assert_eq!(
+            scan.run(|| pk_r.auth_encaps_out(&mut *rng, &sender_sk, &mut enc, &mut ss)),
+            Ok(N)
+        );
+        let mut values = x_key_values::<SKT, N>("ephemeral key", &e_draws[i]);
+        values.extend(x_key_values::<SKT, N>("sender's key", &sender));
+        values.push(("dh_e".to_string(), x_dh::<SKT, PKT, N>(&e_draws[i], &pks[i])));
+        values.push(("dh_s".to_string(), x_dh::<SKT, PKT, N>(&sender, &pks[i])));
+        let (dh_e, dh_s) = (value(&values, "dh_e"), value(&values, "dh_s"));
+        values.push(eae_prk::<H>(
+            kem_id,
+            &[&dh_e, &dh_s],
+            &[&enc[..], &pks[i].encode(), &sender_pk.encode()],
+            ss.ref_to_bytes(),
+        ));
+        values.push(("shared secret".to_string(), ss.ref_to_bytes().to_vec()));
+        scan.clean(&op("auth_encaps_out"), &values);
+        images.push([&enc[..], &pks[i].encode()].concat());
+        cts.push((*enc, ss.ref_to_bytes().to_vec()));
+    }
+    scan.same(&op("auth_encaps_out"), &images[0], &images[1]);
+    let mut images = Vec::new();
+    for i in 0..2 {
+        *sk = SKT::from_bytes(&keys[i]).unwrap();
+        *enc = cts[0].0;
+        scan.keep();
+        assert_eq!(scan.run(|| sk.auth_decaps_out(&enc, &sender_pk, &mut ss)), Ok(SS));
+        assert!(i == 1 || ss.ref_to_bytes() == &cts[0].1[..], "not the encapsulated secret");
+        let mut values = x_key_values::<SKT, N>("d", &keys[i]);
+        let pk_e = PKT::from_bytes(&enc[..]).unwrap();
+        values.push(("dh_e".to_string(), x_dh::<SKT, PKT, N>(&keys[i], &pk_e)));
+        values.push(("dh_s".to_string(), x_dh::<SKT, PKT, N>(&keys[i], &sender_pk)));
+        let (dh_e, dh_s) = (value(&values, "dh_e"), value(&values, "dh_s"));
+        values.push(eae_prk::<H>(
+            kem_id,
+            &[&dh_e, &dh_s],
+            &[&enc[..], &pks[i].encode(), &sender_pk.encode()],
+            ss.ref_to_bytes(),
+        ));
+        values.push(("shared secret".to_string(), ss.ref_to_bytes().to_vec()));
+        scan.clean(&op("auth_decaps_out"), &values);
+        images.push([&enc[..], &pks[i].encode()].concat());
+    }
+    scan.same(&op("auth_decaps_out"), &images[0], &images[1]);
+}
+
+/// `LabeledExtract` and `LabeledExpand` (`bouncycastle_ec::dhkem::hazmat`), over `H`: the KDF
+/// steps of the DHKEMs and of HPKE's key schedule, here with a secret salt, IKM and PRK.
+fn labeled<H: PadHash>(scan: &mut Scan, hash: &str) {
+    let nh = <H as bouncycastle_core::traits::HashAlgParams>::OUTPUT_LEN;
+    let suite_id = b"HPKE\x00\x10\x00\x01\x00\x01";
+    let op = |name: &str| format!("DHKEM hazmat {hash} {name}");
+
+    // The HMAC key of a secret salt, as HPKE's key schedule makes it from the shared secret.
+    let mut key = Box::new(salt_key::<H>(&[]));
+    for i in 0..2 {
+        let salt = bytes_of(&format!("{hash} salt key {i}"), nh);
+        scan.keep();
+        *key = scan.run(|| salt_key::<H>(&salt));
+        let mut values = pad_values::<H>("salt", &salt);
+        values.push(("salt".to_string(), salt));
+        scan.clean(&op("salt_key"), &values);
+    }
+    scan.same(&op("salt_key"), &[], &[]);
+
+    let mut prk = Box::new([0u8; MAX_NH]);
+    for i in 0..2 {
+        let salt = bytes_of(&format!("{hash} salt {i}"), nh);
+        let ikm = bytes_of(&format!("{hash} ikm {i}"), nh);
+        *key = salt_key::<H>(&salt);
+        scan.keep();
+        let len =
+            scan.run(|| labeled_extract_out::<H>(suite_id, &key, b"secret", &[&ikm], &mut prk));
+        assert_eq!(len, nh);
+        let mut values = pad_values::<H>("salt", &salt);
+        values.push(("salt".to_string(), salt));
+        values.push(("ikm".to_string(), ikm));
+        values.push(("prk".to_string(), prk[..nh].to_vec()));
+        scan.clean(&op("labeled_extract_out"), &values);
+    }
+    scan.same(&op("labeled_extract_out"), &[], &[]);
+    let mut okm = Box::new([0u8; 80]);
+    for i in 0..2 {
+        let prk_bytes = bytes_of(&format!("{hash} prk {i}"), nh);
+        let prk = Box::new(
+            KeyMaterial::<MAX_NH>::from_bytes_as_type(&prk_bytes, KeyType::MACKey).unwrap(),
+        );
+        scan.keep();
+        assert_eq!(
+            scan.run(|| labeled_expand::<H>(suite_id, &prk, b"key", &[b"context"], &mut okm[..])),
+            80
+        );
+        let mut values = pad_values::<H>("prk", &prk_bytes);
+        values.push(("prk".to_string(), prk_bytes));
+        values.push(("okm".to_string(), okm.to_vec()));
+        scan.clean(&op("labeled_expand"), &values);
+    }
+    scan.same(&op("labeled_expand"), &[], &[]);
+}
+
+/// A hash whose HMAC pad states the harness computes: its block length, and its chaining value
+/// after one block, read from its suspended state (after the three-byte version prefix, the
+/// state words in little-endian order, as they lie in memory here).
+trait PadHash: HMACParams {
+    const BLOCK: usize;
+    fn chaining_value(block: &[u8]) -> Vec<u8>;
+}
+
+impl PadHash for SHA256 {
+    const BLOCK: usize = 64;
+    fn chaining_value(block: &[u8]) -> Vec<u8> {
+        let mut hash = SHA256::default();
+        hash.do_update(block);
+        hash.suspend()[3..3 + 32].to_vec()
+    }
+}
+
+impl PadHash for SHA384 {
+    const BLOCK: usize = 128;
+    fn chaining_value(block: &[u8]) -> Vec<u8> {
+        let mut hash = SHA384::default();
+        hash.do_update(block);
+        hash.suspend()[3..3 + 64].to_vec()
+    }
+}
+
+impl PadHash for SHA512 {
+    const BLOCK: usize = 128;
+    fn chaining_value(block: &[u8]) -> Vec<u8> {
+        let mut hash = SHA512::default();
+        hash.do_update(block);
+        hash.suspend()[3..3 + 64].to_vec()
+    }
+}
+
+/// The inner and outer pad states of the HMAC key `key` (RFC 2104 Section 2): what an HMAC
+/// key holds, and as good as the key to whoever finds them.
+fn pad_values<H: PadHash>(name: &str, key: &[u8]) -> Values {
+    let state = |pad: u8| {
+        let mut block = vec![pad; H::BLOCK];
+        for (b, k) in block.iter_mut().zip(key) {
+            *b ^= k;
+        }
+        H::chaining_value(&block)
+    };
+    vec![
+        (format!("{name}'s inner pad state"), state(0x36)),
+        (format!("{name}'s outer pad state"), state(0x5c)),
+    ]
 }

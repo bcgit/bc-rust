@@ -131,8 +131,8 @@
 //! | `X25519PrivateKey::from_bytes`      | 1368 B |
 //! | `X25519PrivateKey::from_bytes_out`  | 1256 B |
 //! | `agree` on the private key          | 1400 B |
-//! | `encaps` on the public key          | 4696 B |
-//! | `decaps` on the private key         | 4104 B |
+//! | `encaps` on the public key          | 4760 B |
+//! | `decaps` on the private key         | 4136 B |
 //!
 //! Key generation, decoding a private key, and key agreement each run one Montgomery ladder plus
 //! the field inversion: the chain is the in-place scalar multiplication, the field inversion and

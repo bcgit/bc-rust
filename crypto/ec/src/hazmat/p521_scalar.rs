@@ -558,6 +558,11 @@ impl SecretScalar for P521Scalar {
     fn to_be_bytes(&self) -> [u8; 66] {
         P521Scalar::to_be_bytes(self)
     }
+
+    #[inline(never)]
+    fn to_be_bytes_into(&self, out: &mut [u8; 66]) {
+        crate::hazmat::p521_sec1::be_bytes_from_limbs_into(self.limbs(), out)
+    }
 }
 
 impl ScalarFieldElement for P521ScalarField {

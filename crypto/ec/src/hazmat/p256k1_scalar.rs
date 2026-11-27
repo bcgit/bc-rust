@@ -453,6 +453,11 @@ impl SecretScalar for P256K1Scalar {
     fn to_be_bytes(&self) -> [u8; 32] {
         P256K1Scalar::to_be_bytes(self)
     }
+
+    #[inline(never)]
+    fn to_be_bytes_into(&self, out: &mut [u8; 32]) {
+        crate::hazmat::p256k1_sec1::be_bytes_from_limbs_into(self.limbs(), out)
+    }
 }
 
 impl ScalarFieldElement for P256K1ScalarField {

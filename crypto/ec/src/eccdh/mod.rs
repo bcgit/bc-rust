@@ -141,21 +141,21 @@
 //! `mem_usage_benches` harness's `measure` wrapper down (its own frame, which holds what the
 //! compiler inlined of the operation, plus the frames on the deepest path through the crate's
 //! own symbols and a return address per hop, from the compiler's frame-layout remarks and the
-//! release binary's call graph; rustc 1.97.0-nightly, x86-64). `agree` and the two DHKEM
-//! operations (RFC 9180 Section 4.1, [`dhkem`]) are dominated by the variable-base multiplier's
-//! per-call table of sixteen Jacobian points; the figures for `keygen` and `encaps` exclude the
-//! caller's RNG, which they reach through `dyn RNG`, and include the stack wipe after key
-//! generation (see the Security Considerations):
+//! release binary's call graph; rustc 1.97.0-nightly, x86-64). Each figure peaks in the stack
+//! wipe that follows the key generation or the multiplication (see the Security
+//! Considerations); `agree` and the two DHKEM operations (RFC 9180 Section 4.1, [`dhkem`]) in
+//! the one after the variable-base multiplication. The figures for `keygen` and `encaps`
+//! exclude the caller's RNG, which they reach through `dyn RNG`:
 //!
-//! | Curve           | keygen | agree | encaps | decaps |
-//! |-----------------|--------|-------|--------|--------|
-//! | P-256           | 5,576  | 4,368 | 6,216  | 4,864  |
-//! | P-384           | 7,160  | 5,936 | 8,024  | 6,720  |
-//! | P-521           | 9,528  | 8,784 | 10,840 | 10,016 |
-//! | secp256k1       | 5,576  | 4,208 |        |        |
-//! | brainpoolP256r1 | 5,576  | 4,416 |        |        |
-//! | brainpoolP384r1 | 7,160  | 5,880 |        |        |
-//! | brainpoolP512r1 | 8,744  | 7,784 |        |        |
+//! | Curve           | keygen | agree  | encaps | decaps |
+//! |-----------------|--------|--------|--------|--------|
+//! | P-256           | 5,576  | 6,840  | 7,640  | 7,288  |
+//! | P-384           | 7,160  | 8,904  | 9,944  | 9,592  |
+//! | P-521           | 9,528  | 12,024 | 13,528 | 13,032 |
+//! | secp256k1       | 5,576  | 6,840  |        |        |
+//! | brainpoolP256r1 | 5,576  | 6,840  |        |        |
+//! | brainpoolP384r1 | 7,160  | 8,904  |        |        |
+//! | brainpoolP512r1 | 8,744  | 10,984 |        |        |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -185,22 +185,20 @@
 //!   `to_affine`'s identity branch at key generation and in `derive_pk`, false for every valid
 //!   `d`. Of Section 5.7.1.2 step 4's destruction of intermediates, this module does its own
 //!   part: `P`, `z`, the inverse of `P`'s `Z` coordinate and its square, and the byte string are
-//!   zeroized on every path, and `Z` is written into the caller's buffer. What is not reached:
-//!   a value a one-shot returns (`agree`'s `Z` or derived key) is moved out of the frame that
-//!   built it, and a move does not wipe its source, so use the `_out` forms into a buffer you own
-//!   where that matters -- agreement and the paired derivations have one; key generation and
-//!   `from_bytes` build the private key in a frame of their own and overwrite the stack it used
-//!   afterwards (1,536 bytes after decoding and 5,120 to 8,960 after generation, by curve, as
-//!   [`ecdsa`](crate::ecdsa)'s keys do and checked by the same `dev_scripts/check_ecdsa_stack.sh`),
-//!   so `d` is not left above the wiped region, and moving the key out of the `Result` the caller
-//!   is returned is the caller's; the KDF's hash finalises by value
-//!   ([`Hash::do_final_out`](bouncycastle_core::traits::Hash::do_final_out) takes `self`), so
-//!   the hasher's block buffer, which held `Z`, is moved and its source is not wiped, on the
-//!   `_out` path too; and the arithmetic's intermediates in [`crate::hazmat`] (the
-//!   multiplier's superseded accumulators, table and a limb of the scalar in its frames, the
-//!   inversion's table of powers) are that module's and are not reached, as its docs say. Key
-//!   generation draws at least `len(n) + 64` bits, rounded up to a byte, and reduces them in
-//!   constant time (Section 5.6.1.2.1), writing each step into a `Secret`.
+//!   zeroized on every path, and `Z` is written into the caller's buffer. The multiplication
+//!   `[d]Q` (of an agreement and of a DHKEM), key generation, `from_bytes`, `encode`,
+//!   `encode_out` and `derive_pk` run in a frame of their own whose stack is overwritten
+//!   afterwards (512 bytes after an encoding, 1,536 after decoding, 4,608 to 7,808 after
+//!   deriving a public key, 5,120 to 8,960 after generation and 6,656 to 11,776 after a
+//!   multiplication, by curve, as [`ecdsa`](crate::ecdsa)'s keys do and checked by the same
+//!   `dev_scripts/check_ecdsa_stack.sh`), so neither `d`, `P` nor the arithmetic's
+//!   intermediates are left on the dead stack. What is not reached: a value a one-shot returns
+//!   (`agree`'s `Z` or derived key, the key `from_bytes` returns, the array `encode` returns) is
+//!   moved out of the frame that built it, and a move does not wipe its source, so use the
+//!   `_out` forms into a buffer you own where that matters -- agreement and the paired
+//!   derivations have one -- and moving a key out of the `Result` the caller is returned is the
+//!   caller's. Key generation draws at least `len(n) + 64` bits, rounded up to a byte, and
+//!   reduces them in constant time (Section 5.6.1.2.1), writing each step into a `Secret`.
 
 pub mod dhkem;
 pub mod eccdh;

@@ -10,6 +10,7 @@
 //! which the solver resolves from `C` so that no call site names `N`. The `*_LEN` constants are the
 //! same numbers for documentation and arithmetic, and [`check_lengths`] pins the two together.
 
+use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::RNGError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::RNG;
@@ -125,6 +126,10 @@ pub trait SecretScalar: Clone + Debug + PartialEq + Eq + 'static {
     fn from_be_bytes(bytes: &Self::Bytes) -> Self;
     /// The big-endian encoding, as a plain array the caller asked for.
     fn to_be_bytes(&self) -> Self::Bytes;
+    /// The big-endian encoding, written into `out` with no array of its own on the way.
+    // The impls are never inlined, so that what a target short of registers spills of `d` lies
+    // in a frame of their own, below the caller's, where the encoding's stack wipe reaches it.
+    fn to_be_bytes_into(&self, out: &mut Self::Bytes);
 }
 
 /// An element of the scalar field `Z_n` in the curve's Montgomery representation, for the
@@ -338,6 +343,35 @@ pub(crate) const DECODE_STACK_FIXED: usize = 192;
 /// 5632 and 6104 bytes below the call, measured the same way.
 pub(crate) const KEYGEN_STACK_PER_LIMB: usize = 96;
 pub(crate) const KEYGEN_STACK_FIXED: usize = 256;
+
+/// The same after a private key is encoded: 512 bytes. Before the wipe, `encode` and
+/// `encode_out` wrote to at most 136 and 216 bytes below the call on P-521, 120 and 184 on
+/// brainpoolP512r1 and 72 on the other curves (rustc 1.97; 72 with 1.88), measured the same
+/// way. `encode_out` now writes straight into the caller's buffer, which on x86-64 leaves
+/// nothing; on a target short of registers (thumbv6m) the conversion still spills limbs of `d`
+/// into its own frame, below the caller's, where this wipe reaches them.
+pub(crate) const ENCODE_STACK_PER_LIMB: usize = 0;
+pub(crate) const ENCODE_STACK_FIXED: usize = 64;
+
+/// The same after a public key is derived from a private one, [`public_point_wiped`]: 4608
+/// bytes on a 256-bit curve, 5888 on a 384-bit one, 7168 on brainpoolP512r1 and 7808 on P-521.
+/// Unwiped, `derive_pk` writes to at most 2768, 3952, 4960 and 5352 bytes below the call,
+/// measured the same way.
+const DERIVE_STACK_PER_LIMB: usize = 80;
+const DERIVE_STACK_FIXED: usize = 256;
+
+/// The same after the product `[d]Q` of an agreement or a DHKEM's DH: 6656 bytes on a 256-bit
+/// curve, 8704 on a 384-bit one, 10752 on brainpoolP512r1 and 11776 on P-521. Unwiped, ECC
+/// CDH's `agree_out` writes to at most 3856, 5648, 7174 and 8056 bytes below the call, measured
+/// the same way.
+pub(crate) const AGREE_STACK_PER_LIMB: usize = 128;
+pub(crate) const AGREE_STACK_FIXED: usize = 320;
+
+/// [`Curve::public_point`] of a private scalar, in a frame of its own whose stack is overwritten
+/// afterwards: the comb's intermediates depend on `d`.
+pub(crate) fn public_point_wiped<C: Curve>(d: &C::Scalar) -> (C::Fe, C::Fe) {
+    in_wiped_frame::<C::Limbs, DERIVE_STACK_PER_LIMB, DERIVE_STACK_FIXED, _>(|| C::public_point(d))
+}
 
 /// The lengths a [`Curve`] impl states, checked against the array types it names and each
 /// other; evaluated as a `const` beside every impl, so a curve whose table disagrees with its

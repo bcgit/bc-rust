@@ -547,11 +547,14 @@ Eleven workflows under `.github/workflows/`, all triggered by pull requests:
   `KEY_WIPED_STACK_WORDS` in `crypto/ec/src/sm2/encryption_core.rs`, or `WIPED_STACK_WORDS` in `keys.rs` and
   `sm2.rs` for the signing key and signing (the harness reports the depth with the wipe's body taken out).
 - `ecdsa-stack.yml`: `dev_scripts/check_ecdsa_stack.sh`, the same shape and matrix over
-  `dev_scripts/ecdsa_stack_harness`, which runs ECDSA's key decoding and generation, the drawing of `k`, the
-  one-shots and the signers' finals, and ECC CDH's key decoding and generation, on all seven curves, searching for
-  `d`, `k` and the RNG's output and comparing two runs over different keys. Its wipes scale with the curve's limb
-  count: re-measure `DECODE_STACK_*` and `KEYGEN_STACK_*` in `crypto/ec/src/curve.rs` and `SIGN_STACK_*` in
-  `crypto/ec/src/ecdsa/ecdsa.rs`.
+  `dev_scripts/ecdsa_stack_harness`, which runs ECDSA's and ECC CDH's key decoding, encoding, generation and
+  `derive_pk`, the drawing of `k`, the one-shots and the signers' finals, on all seven curves, ECC CDH's agreement
+  (raw and through its KDFs), and DHKEM over the NIST curves and X448 with its labeled HKDF steps (X25519's DHKEM
+  is reported, not failed), searching for the keys, `k`, the RNG's output, the DH products and the derived secrets
+  and comparing two runs over different keys. Its wipes scale with the curve's limb count: re-measure
+  `DECODE_STACK_*`, `ENCODE_STACK_*`, `DERIVE_STACK_*`, `AGREE_STACK_*` and `KEYGEN_STACK_*` in
+  `crypto/ec/src/curve.rs`, `SIGN_STACK_*` in `crypto/ec/src/ecdsa/ecdsa.rs`, and the fixed
+  `LABELED_STACK_WORDS` and `DERIVE_KEY_PAIR_STACK_WORDS` in `crypto/ec/src/dhkem/`.
 - `publish_doc_benches_to_ghpages.yaml`: builds rustdoc and runs `quality_stats.sh`; on `main` it also
   publishes docs and code stats to GitHub Pages (`https://bcgit.github.io/bc-rust/`). Its bench step is
   commented out because the benches are too slow on the hosted runner, so benchmark figures come from a

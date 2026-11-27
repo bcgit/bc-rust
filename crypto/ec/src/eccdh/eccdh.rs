@@ -7,9 +7,10 @@
 //! The KDF type on the parameters selects the algorithm at the call; the pairing trait is in
 //! [`crate::eccdh::kdf`].
 
-use crate::curve::{Curve, FieldElement, JacobianPoint};
+use crate::curve::{AGREE_STACK_FIXED, AGREE_STACK_PER_LIMB, Curve, FieldElement, JacobianPoint};
 use crate::eccdh::kdf::{KdfPairing, PairedKdf, derive};
 use crate::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
+use crate::stack_wipe::in_wiped_frame;
 use crate::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
 use bouncycastle_core::errors::{KeyAgreementError, KeyMaterialError};
@@ -69,11 +70,15 @@ pub(in crate::eccdh) fn agree_out<C, const SS_LEN: usize>(
 where
     C: Curve<FeBytes = [u8; SS_LEN]>,
 {
-    // 1. Compute the point P = h d_A Q_B. The cofactor h is 1 (the module docs), so this is [d]Q,
-    //    in constant time in d; Q passed full validation when the key was decoded.
-    let q = C::Point::from_affine(peer_pk.x, peer_pk.y);
-    let mut p = C::multiply_point(sk.scalar(), &q);
-    z_from_product::<C, SS_LEN>(&mut p, ss)
+    // In a frame whose stack is overwritten afterwards: the multiplier's intermediates depend on
+    // d and on P. Z leaves it only in the caller's buffer.
+    in_wiped_frame::<C::Limbs, AGREE_STACK_PER_LIMB, AGREE_STACK_FIXED, _>(|| {
+        // 1. Compute the point P = h d_A Q_B. The cofactor h is 1 (the module docs), so this is
+        //    [d]Q, in constant time in d; Q passed full validation when the key was decoded.
+        let q = C::Point::from_affine(peer_pk.x, peer_pk.y);
+        let mut p = C::multiply_point(sk.scalar(), &q);
+        z_from_product::<C, SS_LEN>(&mut p, ss)
+    })
 }
 
 /// Steps 2 to 4 of SP 800-56A Rev. 3 Section 5.7.1.2 over the product `P`: `Z`, the

@@ -3,6 +3,7 @@
 //! workers its keys hand out.
 
 use crate::dhkem::hazmat::{self as labeled, MAX_NH};
+use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, KeyMaterialError, RNGError};
 use bouncycastle_core::kem_key::KEMAlgorithm;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -11,6 +12,12 @@ use bouncycastle_core::traits::{Algorithm, HashAlgParams, RNG};
 use bouncycastle_digest::hmac::HMACParams;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
+
+/// What the stack wipe overwrites after `DeriveKeyPair`, in words: 2 KiB. The private key and
+/// the expansion are wiped in their own frames; this reaches the copies of the key that its moves
+/// leave in this module's frames, which a wipe of 512 bytes misses and one of 1 KiB reaches over
+/// the three NIST curves (x86-64, rustc 1.97 and 1.88, `dev_scripts/ecdsa_stack_harness`).
+const DERIVE_KEY_PAIR_STACK_WORDS: usize = 256;
 
 // The labels of RFC 9180 Sections 4.1 and 7.1.3.
 const LABEL_EAE_PRK: &[u8] = b"eae_prk";
@@ -458,36 +465,40 @@ impl<
             ));
         }
 
-        // dkp_prk = LabeledExtract("", "dkp_prk", ikm)
-        let mut dkp_prk = KeyMaterial::<MAX_NH>::new();
-        Self::labeled_extract_into(LABEL_DKP_PRK, &[ikm.ref_to_bytes()], &mut dkp_prk);
-        let mut bytes = Secret::<[u8; N_SK]>::new();
-        match G::DERIVE_KEY_PAIR {
-            DeriveKeyPairForm::Expand => {
-                // sk = LabeledExpand(dkp_prk, "sk", "", Nsk)
-                Self::labeled_expand(&dkp_prk, LABEL_SK, &[], &mut *bytes);
-                // return (sk, pk(sk)); every byte string is a key of such a group.
-                let sk = G::private_key_from_bytes(&bytes)
-                    .ok_or(KEMError::KeyGenError("the derived bytes are not a private key"))?;
-                Ok((G::pk(&sk), sk))
-            }
-            DeriveKeyPairForm::Candidate { bitmask } => {
-                // while sk == 0 or sk >= order: ... counter = counter + 1; "if counter > 255:
-                // raise DeriveKeyPairError". A u8 counter takes the values 0 to 255.
-                for counter in 0..=u8::MAX {
-                    // bytes = LabeledExpand(dkp_prk, "candidate", I2OSP(counter, 1), Nsk)
-                    Self::labeled_expand(&dkp_prk, LABEL_CANDIDATE, &[&[counter]], &mut *bytes);
-                    // bytes[0] = bytes[0] & bitmask
-                    bytes[0] &= bitmask;
-                    // sk = OS2IP(bytes), tested by the group
-                    if let Some(sk) = G::private_key_from_bytes(&bytes) {
-                        // return (sk, pk(sk))
-                        return Ok((G::pk(&sk), sk));
-                    }
+        // The pair is built in a wiped frame, `Result` and all: moving the private key out of the
+        // candidate test and into the pair leaves copies of it in this function's frames.
+        in_wiped_frame::<u64, 0, DERIVE_KEY_PAIR_STACK_WORDS, _>(|| {
+            // dkp_prk = LabeledExtract("", "dkp_prk", ikm)
+            let mut dkp_prk = KeyMaterial::<MAX_NH>::new();
+            Self::labeled_extract_into(LABEL_DKP_PRK, &[ikm.ref_to_bytes()], &mut dkp_prk);
+            let mut bytes = Secret::<[u8; N_SK]>::new();
+            match G::DERIVE_KEY_PAIR {
+                DeriveKeyPairForm::Expand => {
+                    // sk = LabeledExpand(dkp_prk, "sk", "", Nsk)
+                    Self::labeled_expand(&dkp_prk, LABEL_SK, &[], &mut *bytes);
+                    // return (sk, pk(sk)); every byte string is a key of such a group.
+                    let sk = G::private_key_from_bytes(&bytes)
+                        .ok_or(KEMError::KeyGenError("the derived bytes are not a private key"))?;
+                    Ok((G::pk(&sk), sk))
                 }
-                Err(KEMError::KeyGenError("DeriveKeyPair: 256 candidates were all refused"))
+                DeriveKeyPairForm::Candidate { bitmask } => {
+                    // while sk == 0 or sk >= order: ... counter = counter + 1; "if counter > 255:
+                    // raise DeriveKeyPairError". A u8 counter takes the values 0 to 255.
+                    for counter in 0..=u8::MAX {
+                        // bytes = LabeledExpand(dkp_prk, "candidate", I2OSP(counter, 1), Nsk)
+                        Self::labeled_expand(&dkp_prk, LABEL_CANDIDATE, &[&[counter]], &mut *bytes);
+                        // bytes[0] = bytes[0] & bitmask
+                        bytes[0] &= bitmask;
+                        // sk = OS2IP(bytes), tested by the group
+                        if let Some(sk) = G::private_key_from_bytes(&bytes) {
+                            // return (sk, pk(sk))
+                            return Ok((G::pk(&sk), sk));
+                        }
+                    }
+                    Err(KEMError::KeyGenError("DeriveKeyPair: 256 candidates were all refused"))
+                }
             }
-        }
+        })
     }
 
     /// `ExtractAndExpand(dh, kem_context)` (RFC 9180 Section 4.1) into `out`, zeroized first,

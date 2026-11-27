@@ -321,6 +321,11 @@ impl SecretScalar for Bp512r1Scalar {
     fn to_be_bytes(&self) -> [u8; 64] {
         Bp512r1Scalar::to_be_bytes(self)
     }
+
+    #[inline(never)]
+    fn to_be_bytes_into(&self, out: &mut [u8; 64]) {
+        crate::hazmat::bp512r1_sec1::be_bytes_from_limbs_into(self.limbs(), out)
+    }
 }
 
 impl ScalarFieldElement for Bp512r1ScalarField {
