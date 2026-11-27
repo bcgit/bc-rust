@@ -106,12 +106,12 @@
 //! | MLKEM512_lowmemory/Decaps  | 11.1 (12.8)            | 19.2 (37.4)       |
 //! | MLKEM768_lowmemory/Decaps  | 12.5 (18.3)            | 10.8 (28.6)       |
 //! | MLKEM1024_lowmemory/Decaps | 14.3 (25.0)            | 7.1 (20.4)        |
-//! | MLKEM512_lowmemory/KdfEncaps  | 10.8 (15.7)         |                   |
-//! | MLKEM768_lowmemory/KdfEncaps  | 11.5 (21.2)         |                   |
-//! | MLKEM1024_lowmemory/KdfEncaps | 12.9 (28.7)         |                   |
+//! | MLKEM512_lowmemory/KdfEncaps  | 11.3 (16.1)         |                   |
+//! | MLKEM768_lowmemory/KdfEncaps  | 11.4 (21.2)         |                   |
+//! | MLKEM1024_lowmemory/KdfEncaps | 12.7 (28.7)         |                   |
 //! | MLKEM512_lowmemory/KdfDecaps  | 11.1 (13.2)         |                   |
-//! | MLKEM768_lowmemory/KdfDecaps  | 12.4 (19.9)         |                   |
-//! | MLKEM1024_lowmemory/KdfDecaps | 13.6 (26.5)         |                   |
+//! | MLKEM768_lowmemory/KdfDecaps  | 12.4 (18.6)         |                   |
+//! | MLKEM1024_lowmemory/KdfDecaps | 13.6 (25.2)         |                   |
 //!
 //! The Kdf rows derive a 32-byte key through [`MLKEM512_HKDF_SHA256`] and a 64-byte one through
 //! [`MLKEM768_HKDF_SHA512`] and [`MLKEM1024_HKDF_SHA512`]; they have no throughput figure.

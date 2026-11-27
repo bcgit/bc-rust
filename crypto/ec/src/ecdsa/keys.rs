@@ -12,9 +12,9 @@ use crate::curve::{
 };
 use crate::ecdsa::ecdsa::EcdsaHash;
 use crate::ecdsa::keys_common::{DerivePublicKey, SignatureKeyPair};
-use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::traits::{CollisionResistantHash, PrivateKey, PublicKey, RNG};
+use bouncycastle_utils::stack_wipe::in_wiped_frame_scaled;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 use core::marker::PhantomData;
@@ -62,13 +62,13 @@ where
     // it returns is written to the caller's slot, not staged above that frame. `encode_out`
     // writes the bytes straight into `out`, staging none.
     fn encode(&self) -> [u8; SK_LEN] {
-        in_wiped_frame::<C::Limbs, ENCODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, _>(|| {
+        in_wiped_frame_scaled::<C::Limbs, ENCODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, _>(|| {
             self.d.to_be_bytes()
         })
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        in_wiped_frame::<C::Limbs, ENCODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, _>(|| {
+        in_wiped_frame_scaled::<C::Limbs, ENCODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, _>(|| {
             self.d.to_be_bytes_into(out)
         });
         SK_LEN
@@ -84,7 +84,7 @@ where
             .map_err(|_| KeyDecodingError("an ECDSA private key is the curve's scalar length"))?;
         // The key is built in the wiped frame, `Result` and all: the temporaries of the
         // conversion would otherwise hold a copy of `d` in this frame.
-        in_wiped_frame::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
+        in_wiped_frame_scaled::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
             private_key_from_be_bytes::<C, _>(
                 bytes,
                 |d| Ok(Self { d: d.clone(), _hash: PhantomData }),
@@ -171,7 +171,7 @@ impl<C: Curve, H: EcdsaHash> Display for ECDSAPublicKey<C, H> {
 pub fn keygen<C: Curve, H: EcdsaHash + CollisionResistantHash>(
     rng: &mut dyn RNG,
 ) -> Result<(ECDSAPublicKey<C, H>, ECDSAPrivateKey<C, H>), SignatureError> {
-    in_wiped_frame::<C::Limbs, KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED, _>(|| {
+    in_wiped_frame_scaled::<C::Limbs, KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED, _>(|| {
         let (d, (x, y)) = C::keygen_extra_bits(rng)?;
         Ok((ECDSAPublicKey { x, y, _hash: PhantomData }, ECDSAPrivateKey { d, _hash: PhantomData }))
     })

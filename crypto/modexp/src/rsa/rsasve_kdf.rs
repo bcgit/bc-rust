@@ -17,7 +17,6 @@
 //! readable, so a key held in a token that runs RSASVE and HKDF inside the device can be handed
 //! the same parameters; see the `rsa` module's `# Scope`.
 
-use crate::rsa::rsa_core::wipe_stack_below;
 use crate::rsa::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
 use crate::rsa::size::{RsaSigningSize, RsaSize, min_strength};
 use bouncycastle_core::errors::KEMError;
@@ -29,6 +28,7 @@ use bouncycastle_core::traits::{Algorithm, KDF, KEMDecapsulator, KEMEncapsulator
 use bouncycastle_digest::hkdf::HKDFParams;
 use bouncycastle_digest::hkdf::HkdfDescription;
 use bouncycastle_utils::const_str::ConstStr;
+use bouncycastle_utils::stack_wipe::wipe_stack_below_scaled;
 use core::marker::PhantomData;
 
 /// RSASVE at the modulus size `K` with the secret value derived through HKDF over `H`: the
@@ -160,12 +160,12 @@ where
         let result = self.derive_in_own_frame(rng, ct, ss);
         // As after decapsulation: HKDF's pseudorandom key is left in the frames of the
         // derivation, on this side as on that one.
-        wipe_stack_below::<K::Limbs, KDF_ENCAPS_STACK_PER_LIMB, KDF_ENCAPS_STACK_FIXED>();
+        wipe_stack_below_scaled::<K::Limbs, KDF_ENCAPS_STACK_PER_LIMB, KDF_ENCAPS_STACK_FIXED>();
         result
     }
 }
 
-/// What [`wipe_stack_below`] overwrites after encapsulation with HKDF: this many `K::Limbs`
+/// What [`wipe_stack_below_scaled`] overwrites after encapsulation with HKDF: this many `K::Limbs`
 /// values and this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97) with
 /// SHA-256, the operation uses 7160 bytes at RSA-2048, 9336 at RSA-3072, 12280 at RSA-4096 and
 /// 24056 at RSA-8192; these cover 8320, 11648, 14976 and 28288, the difference being room for
@@ -177,7 +177,7 @@ impl<K: RsaSigningSize, H: HKDFParams, const SS_LEN: usize>
     RsasveKdfEncapsulator<'_, '_, '_, K, H, SS_LEN>
 {
     /// The work of `encaps_out`. Never inlined, so that what it and the derivation leave lies
-    /// below its caller's frame, where [`wipe_stack_below`] reaches it.
+    /// below its caller's frame, where [`wipe_stack_below_scaled`] reaches it.
     #[allow(non_snake_case)]
     #[inline(never)]
     fn derive_in_own_frame<const N: usize>(
@@ -226,12 +226,12 @@ where
         let result = self.derive_in_own_frame(ct, ss);
         // HKDF's pseudorandom key, from which every key under this `Z` follows, is left in
         // the frames of the derivation: the whole operation's stack is overwritten.
-        wipe_stack_below::<K::Limbs, KDF_DECAPS_STACK_PER_LIMB, KDF_DECAPS_STACK_FIXED>();
+        wipe_stack_below_scaled::<K::Limbs, KDF_DECAPS_STACK_PER_LIMB, KDF_DECAPS_STACK_FIXED>();
         result
     }
 }
 
-/// What [`wipe_stack_below`] overwrites after decapsulation with HKDF: this many `K::Limbs`
+/// What [`wipe_stack_below_scaled`] overwrites after decapsulation with HKDF: this many `K::Limbs`
 /// values and this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97) with
 /// SHA-256, the operation, RSASVE.RECOVER's own wipe included, uses 12024 bytes at RSA-2048,
 /// 16504 at RSA-3072, 20984 at RSA-4096 and 38904 at RSA-8192; these cover 12800, 17408, 22016
@@ -243,7 +243,7 @@ impl<K: RsaSigningSize, H: HKDFParams, const SS_LEN: usize>
     RsasveKdfDecapsulator<'_, '_, '_, K, H, SS_LEN>
 {
     /// The work of `decaps_out`. Never inlined, so that what it and the derivation leave lies
-    /// below its caller's frame, where [`wipe_stack_below`] reaches it.
+    /// below its caller's frame, where [`wipe_stack_below_scaled`] reaches it.
     #[allow(non_snake_case)]
     #[inline(never)]
     fn derive_in_own_frame<const N: usize>(

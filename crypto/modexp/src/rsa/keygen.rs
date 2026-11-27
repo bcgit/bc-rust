@@ -26,7 +26,6 @@
 
 use crate::rsa::keys::{RsaPrivateComponents, RsaPublicComponents};
 use crate::rsa::modexp::{MontgomeryContext, check_widths, mod_pow, mul_mod, reduce_wide};
-use crate::rsa::rsa_core::{WipeStackBelowOnReturn, wipe_stack_below};
 use crate::rsa::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -34,6 +33,7 @@ use bouncycastle_core::traits::RNG;
 use bouncycastle_utils::montgomery;
 use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
+use bouncycastle_utils::stack_wipe::{WipeStackBelowScaledOnDrop, wipe_stack_below_scaled};
 use core::num::NonZeroUsize;
 
 /// The public exponent every key pair this module generates uses: `F4 = 2^16 + 1 = 65537`.
@@ -390,11 +390,11 @@ pub fn is_probable_prime<const N: usize, const N2: usize, const N21: usize>(
     let verdict = is_probable_prime_in_own_frame::<N, N2, N21>(w, rounds, rng);
     // `w` may be a prime of a private key: the context over it and the powers of the bases
     // pass through frames that no `Secret` names, as in the CRT.
-    wipe_stack_below::<[u64; N], PRIMALITY_STACK_PER_LIMB, PRIMALITY_STACK_FIXED>();
+    wipe_stack_below_scaled::<[u64; N], PRIMALITY_STACK_PER_LIMB, PRIMALITY_STACK_FIXED>();
     verdict
 }
 
-/// What `wipe_stack_below` overwrites after [`is_probable_prime`]: this many `[u64; N]` values
+/// What `wipe_stack_below_scaled` overwrites after [`is_probable_prime`]: this many `[u64; N]` values
 /// and this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97) with the
 /// workspace's hash DRBG as the RNG, the test uses 4600 bytes at 16 limbs (a prime of RSA-2048),
 /// 6488 at 24, 8328 at 32 and 13768 at 64; these cover 5504, 7552, 9600 and 17792, the
@@ -621,12 +621,12 @@ where
     let verdict = validate_key_pair_in_own_frame::<K, HALF, HALF2, HALF21>(sk, rng);
     // Key generation's wipe: validation makes the same computations over the primes, less
     // the search, and measured 5344, 7304, 9656 and 16392 bytes at the four sizes.
-    wipe_stack_below::<[u64; HALF2], KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED>();
+    wipe_stack_below_scaled::<[u64; HALF2], KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED>();
     verdict
 }
 
 /// The work of [`validate_key_pair`]. Never inlined, so that what it leaves lies below its
-/// caller's frame, where `wipe_stack_below` reaches it.
+/// caller's frame, where `wipe_stack_below_scaled` reaches it.
 #[inline(never)]
 fn validate_key_pair_in_own_frame<K, const HALF: usize, const HALF2: usize, const HALF21: usize>(
     sk: &RsaPrivateComponents<K>,
@@ -741,7 +741,8 @@ where
     // The primes, the exponents and what is derived from them pass through locals, return
     // slots and the frames of the primality test that no `Secret` names.
     let _wipe =
-        WipeStackBelowOnReturn::<[u64; HALF2], KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED>::new();
+        WipeStackBelowScaledOnDrop::<[u64; HALF2], KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED>::new(
+        );
     keygen_in_own_frame::<K, HALF, HALF2, HALF21>(rng, rounds, required_strength)
 }
 
@@ -756,12 +757,12 @@ pub(in crate::rsa) fn keygen_as<K: RsaSigningSize, T, E>(
     ) -> Result<T, E>,
 ) -> Result<T, E> {
     let _wipe =
-        WipeStackBelowOnReturn::<K::Limbs, KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED>::new();
+        WipeStackBelowScaledOnDrop::<K::Limbs, KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED>::new();
     keygen_as_in_own_frame::<K, T, E>(rng, finish)
 }
 
 /// The work of [`keygen_as`]. Never inlined, so that what it leaves lies below its caller's
-/// frame, where `wipe_stack_below` reaches it.
+/// frame, where `wipe_stack_below_scaled` reaches it.
 #[inline(never)]
 fn keygen_as_in_own_frame<K: RsaSigningSize, T, E>(
     rng: &mut dyn RNG,
@@ -772,7 +773,7 @@ fn keygen_as_in_own_frame<K: RsaSigningSize, T, E>(
     finish(K::keygen(rng))
 }
 
-/// What `wipe_stack_below` overwrites after key generation: this many `[u64; HALF2]` values
+/// What `wipe_stack_below_scaled` overwrites after key generation: this many `[u64; HALF2]` values
 /// and this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97), key
 /// generation uses 11480 bytes at RSA-2048, 16600 at RSA-3072, 21976 at RSA-4096 and 41144 at
 /// RSA-8192; these cover 13568, 19328, 25088 and 48128, the difference being room for a
@@ -781,7 +782,7 @@ const KEYGEN_STACK_PER_LIMB: usize = 45;
 const KEYGEN_STACK_FIXED: usize = 256;
 
 /// The work of [`keygen_from_rng`]. Never inlined, so that what it leaves lies below its
-/// caller's frame, where `wipe_stack_below` reaches it.
+/// caller's frame, where `wipe_stack_below_scaled` reaches it.
 #[inline(never)]
 fn keygen_in_own_frame<K, const HALF: usize, const HALF2: usize, const HALF21: usize>(
     rng: &mut dyn RNG,

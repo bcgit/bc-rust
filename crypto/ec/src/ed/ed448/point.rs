@@ -16,9 +16,9 @@ use super::precomp::{COMB_BASE, WNAF_BASE, WNAF_BASE_225};
 use super::scalar::{self, SCALAR_LEN, SIGNED_DIGITS};
 use crate::ed::curve448::{FieldElement448, NormalizedFieldElement448};
 use crate::ed::wnaf;
-use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 
 /// Octets in an encoded point (RFC 8032 Section 5.2.2).
 pub(super) const POINT_LEN: usize = 57;

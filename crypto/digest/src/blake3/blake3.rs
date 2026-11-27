@@ -9,7 +9,6 @@ use crate::blake3::compress::{
     BLOCK_LEN, CHUNK_END, CHUNK_LEN, CHUNK_START, DERIVE_KEY_CONTEXT, DERIVE_KEY_MATERIAL, IV,
     KEYED_HASH, PARENT, ROOT, compress, words_from_le_bytes,
 };
-use crate::stack_wipe::wipe_stack_below;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use bouncycastle_core::direction::{Decrypting, Encrypting};
@@ -20,6 +19,7 @@ use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, Mac
 use bouncycastle_core::traits::{
     FinishToken, Hash, HashOneShot, MACGenerator, MACVerifier, RNG, Suspendable, XOF, XOFSqueezer,
 };
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{ct, min, secret::Secret};
 use core::marker::PhantomData;

@@ -1,8 +1,8 @@
 use crate::sha2::SHA512InitValue;
-use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, HashOneShot, Suspendable};
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
@@ -359,9 +359,7 @@ impl<PARAMS: SHA512InitValue> Sha512State<PARAMS> {
 /// so that its frame lies below its caller's, where [`Sha512State::compress`]'s wipe reaches it.
 #[inline(never)]
 fn compress_blocks(h: &mut [u64; 8], blocks: &[[u8; 128]]) {
-    // The message schedule, zeroized on drop: it holds the last block's words (W_64..W_79), and
-    // the wipe after this frame does not reach the frame's topmost slots (see
-    // COMPRESS_WIPED_STACK_WORDS), so it is not left to that.
+    // The message schedule, zeroized on drop: it holds the last block's words (W_64..W_79).
     let mut w = Secret::<[u64; 16]>::new();
     for block in blocks {
         compress_block(h, block, &mut w);
@@ -372,11 +370,8 @@ fn compress_blocks(h: &mut [u64; 8], blocks: &[[u8; 128]]) {
 /// more than that frame uses for the working variables and other values it spills, measured at
 /// 320 bytes with the return address and red zone on x86-64, 368 on thumbv6m and 444 on riscv32i
 /// (464 at opt-level z; release and `mutants` profiles; nightly `-Zbuild-std=core` for the last
-/// two), with room on riscv32i for a compiler that spills a few words more. The wipe's
-/// array lies below its own return address and saved registers, so it does not reach the topmost
-/// bytes of the compression frame, which hold that frame's register saves; the schedule is
-/// zeroized in [`compress_blocks`] rather than left to the wipe. An unoptimised build's frame is
-/// not covered.
+/// two), with room on riscv32i for a compiler that spills a few words more. An unoptimised
+/// build's frame is not covered.
 const COMPRESS_WIPED_STACK_WORDS: usize = 80;
 
 /// Internal struct for SHA512.

@@ -20,13 +20,13 @@
 //! private key only at a [`RsaSigningSize`], with the byte layouts described on the components.
 //! The scheme is not encoded, so a key file is decoded under the key type it is for.
 
-use crate::rsa::rsa_core::{WipeStackBelowOnReturn, wipe_stack_below};
 use crate::rsa::rsassa::RsaSignatureAlgorithm;
 use crate::rsa::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
+use bouncycastle_utils::stack_wipe::{WipeStackBelowScaledOnDrop, wipe_stack_below_scaled};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 use core::marker::PhantomData;
@@ -154,7 +154,7 @@ pub struct RsaPrivateComponents<K: RsaSize> {
     e: u64,
 }
 
-/// What [`wipe_stack_below`] overwrites after a private key is constructed or decoded: this
+/// What [`wipe_stack_below_scaled`] overwrites after a private key is constructed or decoded: this
 /// many `K::Limbs` values and this many words. Measured in x86-64 release builds (rustc 1.88
 /// and 1.97), decoding, the deeper of the two, uses at most 6016 bytes at RSA-2048, 9040 at
 /// RSA-3072, 11832 at RSA-4096 and 24104 at RSA-8192; these cover 7232, 10688, 14144 and
@@ -172,14 +172,14 @@ const COPY_STACK_FIXED: usize = 32;
 impl<K: RsaSize> Clone for RsaPrivateComponents<K> {
     fn clone(&self) -> Self {
         let _wipe =
-            WipeStackBelowOnReturn::<K::Limbs, COPY_STACK_PER_LIMB, COPY_STACK_FIXED>::new();
+            WipeStackBelowScaledOnDrop::<K::Limbs, COPY_STACK_PER_LIMB, COPY_STACK_FIXED>::new();
         self.clone_in_own_frame()
     }
 }
 
 impl<K: RsaSize> RsaPrivateComponents<K> {
     /// The copy [`Clone::clone`] makes. Never inlined, so that what it leaves lies below its
-    /// caller's frame, where [`wipe_stack_below`] reaches it.
+    /// caller's frame, where [`wipe_stack_below_scaled`] reaches it.
     #[inline(never)]
     fn clone_in_own_frame(&self) -> Self {
         Self {
@@ -230,12 +230,13 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
         e: u64,
         finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
     ) -> Result<T, E> {
-        let _wipe = WipeStackBelowOnReturn::<K::Limbs, KEY_STACK_PER_LIMB, KEY_STACK_FIXED>::new();
+        let _wipe =
+            WipeStackBelowScaledOnDrop::<K::Limbs, KEY_STACK_PER_LIMB, KEY_STACK_FIXED>::new();
         Self::from_crt_components_in_own_frame(p, q, d_p, d_q, q_inv, e, finish)
     }
 
     /// The work of [`Self::from_crt_components_as`]. Never inlined, so that the copies of the
-    /// components it leaves lie below its caller's frame, where [`wipe_stack_below`] reaches
+    /// components it leaves lie below its caller's frame, where [`wipe_stack_below_scaled`] reaches
     /// them.
     #[inline(never)]
     fn from_crt_components_in_own_frame<T, E>(
@@ -399,14 +400,14 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     /// The `# Encoding` layout.
     pub(in crate::rsa) fn encode_raw(&self) -> K::PrivateKeyEncoded {
         let _wipe =
-            WipeStackBelowOnReturn::<K::Limbs, COPY_STACK_PER_LIMB, COPY_STACK_FIXED>::new();
+            WipeStackBelowScaledOnDrop::<K::Limbs, COPY_STACK_PER_LIMB, COPY_STACK_FIXED>::new();
         self.encode_raw_in_own_frame()
     }
 
     /// The `# Encoding` layout into `out`.
     pub(in crate::rsa) fn encode_raw_out(&self, out: &mut K::PrivateKeyEncoded) {
         self.encode_raw_out_in_own_frame(out);
-        wipe_stack_below::<K::Limbs, COPY_STACK_PER_LIMB, COPY_STACK_FIXED>();
+        wipe_stack_below_scaled::<K::Limbs, COPY_STACK_PER_LIMB, COPY_STACK_FIXED>();
     }
 
     /// The work of [`Self::encode_raw`]. Never inlined: see
@@ -447,7 +448,8 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
         bytes: &K::PrivateKeyEncoded,
         finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
     ) -> Result<T, E> {
-        let _wipe = WipeStackBelowOnReturn::<K::Limbs, KEY_STACK_PER_LIMB, KEY_STACK_FIXED>::new();
+        let _wipe =
+            WipeStackBelowScaledOnDrop::<K::Limbs, KEY_STACK_PER_LIMB, KEY_STACK_FIXED>::new();
         Self::from_bytes_raw_in_own_frame(bytes, finish)
     }
 

@@ -1,6 +1,6 @@
-use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 
 /// `RC[ir]` for the 24 rounds of KECCAK-f[1600]: FIPS 202 Algorithm 6 (iota) steps 2-3,
 /// evaluated with the `rc(t)` LFSR of Algorithm 5 for `ir = 0..24` and stored as lanes.

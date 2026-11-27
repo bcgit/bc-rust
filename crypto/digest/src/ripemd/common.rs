@@ -11,11 +11,11 @@
 //! first three.
 
 use crate::ripemd::sealed::RIPEMDFamily;
-use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, HashOneShot};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use core::marker::PhantomData;
 use core::slice;

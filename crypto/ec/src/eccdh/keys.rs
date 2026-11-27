@@ -7,9 +7,9 @@ use crate::curve::{
     public_point_wiped,
 };
 use crate::eccdh::keys_common::{AgreementKeyPair, DerivePublicKey};
-use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError};
 use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
+use bouncycastle_utils::stack_wipe::in_wiped_frame_scaled;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 
@@ -49,13 +49,13 @@ where
     // As the ECDSA key's: `encode` converts in a wiped frame and its array is written to the
     // caller's slot; `encode_out` writes straight into `out`.
     fn encode(&self) -> [u8; SK_LEN] {
-        in_wiped_frame::<C::Limbs, ENCODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, _>(|| {
+        in_wiped_frame_scaled::<C::Limbs, ENCODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, _>(|| {
             self.0.to_be_bytes()
         })
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        in_wiped_frame::<C::Limbs, ENCODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, _>(|| {
+        in_wiped_frame_scaled::<C::Limbs, ENCODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, _>(|| {
             self.0.to_be_bytes_into(out)
         });
         SK_LEN
@@ -71,7 +71,7 @@ where
             .map_err(|_| KeyDecodingError("an ECC CDH private key is the curve's scalar length"))?;
         // The key is built in the wiped frame, `Result` and all: the temporaries of the
         // conversion would otherwise hold a copy of `d` in this frame.
-        in_wiped_frame::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
+        in_wiped_frame_scaled::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
             private_key_from_be_bytes::<C, _>(
                 bytes,
                 |d| Ok(Self(d.clone())),
@@ -140,7 +140,7 @@ impl<C: Curve> Display for ECCDHPublicKey<C> {
 pub fn keygen<C: Curve>(
     rng: &mut dyn RNG,
 ) -> Result<(ECCDHPublicKey<C>, ECCDHPrivateKey<C>), KeyAgreementError> {
-    in_wiped_frame::<C::Limbs, KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED, _>(|| {
+    in_wiped_frame_scaled::<C::Limbs, KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED, _>(|| {
         let (d, (x, y)) = C::keygen_extra_bits(rng)?;
         Ok((ECCDHPublicKey { x, y }, ECCDHPrivateKey(d)))
     })

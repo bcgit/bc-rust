@@ -60,7 +60,6 @@
 use crate::modes::hazmat::gcm_siv::GcmSivPermutation;
 use crate::modes::iv::random_iv;
 use crate::modes::polyval::Polyval;
-use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadInPlaceDecryptMode, AeadInPlaceEncryptMode, BlockPermutation, ElectronicCodeBook, Mode,
@@ -70,6 +69,7 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::RNG;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
+use bouncycastle_utils::stack_wipe::in_wiped_frame;
 
 // Imports needed for docs
 #[allow(unused_imports)]

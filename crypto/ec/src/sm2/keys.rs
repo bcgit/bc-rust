@@ -12,13 +12,13 @@ use crate::hazmat::sm2_comb::comb_multiply_base_point;
 use crate::hazmat::sm2_scalar::{Sm2Scalar, Sm2ScalarField};
 use crate::hazmat::sm2_sec1;
 use crate::rng_draw::fill_bytes;
-use crate::sm2::encryption_core::WipeStackBelowOnDrop;
 use crate::sm2::extra_bits::{N_MINUS_1_LIMBS, reduce_wide_bits_mod_n_minus_2};
 use bouncycastle_core::errors::{KeyDecodingError, RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
+use bouncycastle_utils::stack_wipe::WipeStackBelowOnDrop;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 

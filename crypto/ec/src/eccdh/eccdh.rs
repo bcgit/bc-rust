@@ -10,7 +10,6 @@
 use crate::curve::{AGREE_STACK_FIXED, AGREE_STACK_PER_LIMB, Curve, FieldElement, JacobianPoint};
 use crate::eccdh::kdf::{KdfPairing, PairedKdf, derive};
 use crate::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
-use crate::stack_wipe::in_wiped_frame;
 use crate::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
 use bouncycastle_core::errors::{KeyAgreementError, KeyMaterialError};
@@ -25,6 +24,7 @@ use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_digest::x963kdf::{X963KDF, X963KDFParams};
 use bouncycastle_utils::const_str::ConstStr;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::in_wiped_frame_scaled;
 use core::marker::PhantomData;
 
 /// ECC CDH over the curve `C`: the algorithm an [`ECCDHPrivateKey<C>`] runs when made into a
@@ -72,7 +72,7 @@ where
 {
     // In a frame whose stack is overwritten afterwards: the multiplier's intermediates depend on
     // d and on P. Z leaves it only in the caller's buffer.
-    in_wiped_frame::<C::Limbs, AGREE_STACK_PER_LIMB, AGREE_STACK_FIXED, _>(|| {
+    in_wiped_frame_scaled::<C::Limbs, AGREE_STACK_PER_LIMB, AGREE_STACK_FIXED, _>(|| {
         // 1. Compute the point P = h d_A Q_B. The cofactor h is 1 (the module docs), so this is
         //    [d]Q, in constant time in d; Q passed full validation when the key was decoded.
         let q = C::Point::from_affine(peer_pk.x, peer_pk.y);

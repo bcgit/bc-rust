@@ -99,7 +99,6 @@ use crate::ripemd::RIPEMD160;
 use crate::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use crate::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use crate::sm3::SM3;
-use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError};
 use bouncycastle_core::hazmat::{
     KdfCredit, WithoutCollisionResistance, do_hazardous_operations, label_kdf_output,
@@ -109,6 +108,7 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrai
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KDF};
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 use core::marker::PhantomData;
 // Imports needed only for docs
 #[allow(unused_imports)]
@@ -131,10 +131,12 @@ pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 /// of its own (the `*_in_own_frame` functions, `expand_fill`), in 64-bit words, for a hash whose
 /// state is at most [`SMALL_HASH_STATE_LEN`] bytes (SHA-2, SM3, RIPEMD-160): more than an
 /// operation leaves written below the frame that wipes, with room for a compiler that lays the
-/// frames out less tightly. In the x86-64 release build 384 words clear every such hash (320
-/// leave 48 bytes of a `KDF` derivation over SHA-384 or SHA-512; HMAC's finishing wipes its own
-/// frames). An unoptimised build's frames are not covered.
-const HKDF_WIPED_STACK_WORDS: usize = 448;
+/// frames out less tightly. In the x86-64 release build 384 words clear every such hash with
+/// rustc 1.88 and nightly (320 leave 48 bytes of a `KDF` derivation over SHA-384 or SHA-512;
+/// HMAC's finishing wipes its own frames), and rustc 1.100 needs 452 for a `KDF` derivation over
+/// SHA-512. 504 rather than 512: under massif, `bench_mlkem_mem_usage`'s HKDF rows read 2.5 to
+/// 4 kB deeper with a 4096-byte wipe than with 4032. An unoptimised build's frames are not covered.
+const HKDF_WIPED_STACK_WORDS: usize = 504;
 
 /// As [`HKDF_WIPED_STACK_WORDS`], for a hash with a larger state (SHA-3): 768 words clear
 /// SHA3-224 and SHA3-256, and a `KDF` derivation over SHA3-384 or SHA3-512 needs 960 (896 leave
@@ -295,6 +297,9 @@ impl<H: HKDFParams> HKDF<H> {
 
     /// Overwrites the stack an operation's own-frame function used, by the hash's class (see
     /// [`SMALL_HASH_STATE_LEN`]). The branch is on a constant, so only one wipe is compiled in.
+    /// Inlined, so that the wipe's frames start at the caller's stack pointer, where the
+    /// operation's frame did, and not below a frame of this.
+    #[inline(always)]
     fn wipe_below() {
         if size_of::<H>() <= SMALL_HASH_STATE_LEN {
             wipe_stack_below::<HKDF_WIPED_STACK_WORDS>();

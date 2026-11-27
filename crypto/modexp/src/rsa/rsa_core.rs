@@ -23,6 +23,7 @@ use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::montgomery;
 use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive, zeroize_in_place};
+use bouncycastle_utils::stack_wipe::wipe_stack_below_scaled;
 
 /// RSAVP1 (RFC 8017 §5.2.2): `m = s^e mod n`, recovering the message representative from a
 /// signature representative under the public key.
@@ -125,63 +126,7 @@ fn is_one<const N: usize>(x: &[u64; N]) -> Condition<u64> {
     Condition::<u64>::is_zero(diff)
 }
 
-/// Overwrites the stack that the previous call made from the caller's frame used, by taking a
-/// frame of its own over the same memory and wiping it. Never inlined: the frame is the point.
-/// The caller runs its computation in a never-inlined function, so that everything the
-/// computation and its callees spill or stage lies below the caller's frame, and calls this
-/// next.
-///
-/// The frame is `COUNT` values of `T`, for the part of the computation's stack that scales
-/// with the modulus (`T` is a limb array of the size in hand), and `FIXED` words for the part
-/// that does not. Each caller gives the measured figures beside its constants.
-///
-/// The shape of `wipe_stack_below` in `bouncycastle_ec::ed` (`ed25519/scalar.rs`) and
-/// `bouncycastle_digest::sha3` (`keccak.rs`), which are private to those modules and of one fixed size.
-/// Like theirs it is sized for an optimised build: an unoptimised build's frames are larger
-/// and are not covered.
-#[inline(never)]
-pub(in crate::rsa) fn wipe_stack_below<
-    T: ZeroizablePrimitive,
-    const COUNT: usize,
-    const FIXED: usize,
->() {
-    let mut scaled = Secret::<[T; COUNT]>::new();
-    let mut fixed = Secret::<[u64; FIXED]>::new();
-    core::hint::black_box((&mut *scaled, &mut *fixed));
-}
-
-/// [`wipe_stack_below`] when it goes out of scope, for a function whose result is itself the
-/// secret and is returned by value. Such a function ends with the call that does the work, so
-/// that the result is written to where the function's own caller wants it and not staged in
-/// this frame, and declares this first, so that the wipe runs after that call has returned:
-///
-/// ```text
-/// let _wipe = WipeStackBelowOnReturn::<T, COUNT, FIXED>::new();
-/// Self::the_work_in_own_frame(..)
-/// ```
-pub(in crate::rsa) struct WipeStackBelowOnReturn<
-    T: ZeroizablePrimitive,
-    const COUNT: usize,
-    const FIXED: usize,
->(core::marker::PhantomData<T>);
-
-impl<T: ZeroizablePrimitive, const COUNT: usize, const FIXED: usize>
-    WipeStackBelowOnReturn<T, COUNT, FIXED>
-{
-    pub(in crate::rsa) fn new() -> Self {
-        Self(core::marker::PhantomData)
-    }
-}
-
-impl<T: ZeroizablePrimitive, const COUNT: usize, const FIXED: usize> Drop
-    for WipeStackBelowOnReturn<T, COUNT, FIXED>
-{
-    fn drop(&mut self) {
-        wipe_stack_below::<T, COUNT, FIXED>();
-    }
-}
-
-/// What [`wipe_stack_below`] overwrites after the checked CRT: this many `[u64; L]` values and
+/// What [`wipe_stack_below_scaled`] overwrites after the checked CRT: this many `[u64; L]` values and
 /// this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97), the computation
 /// and everything it calls use 8248 bytes at RSA-2048, 10552 at RSA-3072, 13752 at RSA-4096
 /// and 27592 at RSA-8192; these cover 9600, 13440, 17280 and 32640, the difference being
@@ -225,12 +170,12 @@ pub(in crate::rsa) fn crt_exp_checked<
     let ok = crt_exp_checked_in_own_frame::<L, L2, L21, HALF, HALF2, HALF21>(
         p, q, d_p, d_q, q_inv, n, e, x, out,
     );
-    wipe_stack_below::<[u64; L], CRT_STACK_PER_LIMB, CRT_STACK_FIXED>();
+    wipe_stack_below_scaled::<[u64; L], CRT_STACK_PER_LIMB, CRT_STACK_FIXED>();
     ok
 }
 
 /// The computation of [`crt_exp_checked`]. Never inlined, so that what it and its callees
-/// leave lies below its caller's frame, where [`wipe_stack_below`] reaches it.
+/// leave lies below its caller's frame, where [`wipe_stack_below_scaled`] reaches it.
 #[allow(clippy::too_many_arguments)]
 #[inline(never)]
 fn crt_exp_checked_in_own_frame<

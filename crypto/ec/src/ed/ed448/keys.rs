@@ -5,7 +5,6 @@ use super::point::PublicPoint;
 use super::scheme::{
     self, CONTEXT_MAX_LEN, ExpandedKey, PREHASH_LEN, PRIVATE_KEY_LEN, PUBLIC_KEY_LEN, SIGNATURE_LEN,
 };
-use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::{KeyDecodingError, KeyMaterialError, RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
@@ -19,6 +18,7 @@ use bouncycastle_core::traits::{
 use bouncycastle_digest::sha3::SHAKE256;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::in_wiped_frame_scaled;
 use core::fmt::{self, Debug, Display, Formatter};
 
 /// String name of the Ed448 algorithm.
@@ -98,7 +98,7 @@ const KEYGEN_STACK_WORDS: usize = 192;
 /// causes; [`SignatureError::KeyGenError`] if the octets drawn are a private key this module
 /// refuses ([`Ed448PrivateKey`]), which is not known to happen. The generation is not retried.
 pub fn keygen(rng: &mut dyn RNG) -> Result<(Ed448PublicKey, Ed448PrivateKey), SignatureError> {
-    in_wiped_frame::<u64, 0, KEYGEN_STACK_WORDS, _>(|| {
+    in_wiped_frame_scaled::<u64, 0, KEYGEN_STACK_WORDS, _>(|| {
         let mut sk = Ed448PrivateKey::zeroized();
         keygen_out(rng, &mut sk)?;
         let pk = sk.pk()?;
@@ -282,7 +282,7 @@ impl PrivateKey<PRIVATE_KEY_LEN> for Ed448PrivateKey {
     /// (see the type), which no known octets are; or if the computed public key fails its
     /// check, which no input causes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
-        in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+        in_wiped_frame_scaled::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
             let mut sk = Self::zeroized();
             Self::from_bytes_out(bytes, &mut sk)?;
             Ok(sk)
@@ -294,7 +294,7 @@ impl PrivateKey<PRIVATE_KEY_LEN> for Ed448PrivateKey {
 /// Considerations); `clone_from` copies field by field into a key you hold.
 impl Clone for Ed448PrivateKey {
     fn clone(&self) -> Self {
-        in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+        in_wiped_frame_scaled::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
             let mut sk = Self::zeroized();
             sk.clone_from(self);
             sk

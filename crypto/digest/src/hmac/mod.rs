@@ -126,7 +126,6 @@
 
 pub mod hazmat;
 
-use crate::stack_wipe::{in_wiped_frame, wipe_stack_below};
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError};
 use bouncycastle_core::hazmat::{WithoutCollisionResistance, do_hazardous_operations};
@@ -137,6 +136,7 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, FinishToken, HashAlgParams, HashOneShot, MACGenerator, MACVerifier,
     RNG,
 };
+use bouncycastle_utils::stack_wipe::{in_wiped_frame, wipe_stack_below};
 use bouncycastle_utils::{ct, secret::Secret};
 use core::fmt::{Debug, Display, Formatter};
 use core::marker::PhantomData;

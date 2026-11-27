@@ -34,6 +34,8 @@ pub mod nat;
 #[allow(unsafe_code)]
 pub mod secret;
 #[forbid(unsafe_code)]
+pub mod stack_wipe;
+#[forbid(unsafe_code)]
 pub mod suspendable_state;
 
 /// Basic max function. If they are equal, it returns the first one.

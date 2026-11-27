@@ -10,13 +10,13 @@
 //! which the solver resolves from `C` so that no call site names `N`. The `*_LEN` constants are the
 //! same numbers for documentation and arithmetic, and [`check_lengths`] pins the two together.
 
-use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::RNGError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::RNG;
 use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
+use bouncycastle_utils::stack_wipe::in_wiped_frame_scaled;
 use core::fmt::Debug;
 
 /// A fixed-size array a curve's values are held or encoded in: `[u64; L]` limbs or `[u8; N]`
@@ -391,7 +391,9 @@ pub(crate) const AGREE_STACK_FIXED: usize = 320;
 /// [`Curve::public_point`] of a private scalar, in a frame of its own whose stack is overwritten
 /// afterwards: the comb's intermediates depend on `d`.
 pub(crate) fn public_point_wiped<C: Curve>(d: &C::Scalar) -> (C::Fe, C::Fe) {
-    in_wiped_frame::<C::Limbs, DERIVE_STACK_PER_LIMB, DERIVE_STACK_FIXED, _>(|| C::public_point(d))
+    in_wiped_frame_scaled::<C::Limbs, DERIVE_STACK_PER_LIMB, DERIVE_STACK_FIXED, _>(|| {
+        C::public_point(d)
+    })
 }
 
 /// The lengths a [`Curve`] impl states, checked against the array types it names and each

@@ -187,8 +187,8 @@
 //! | Decaps    | 12,824 | 18,264 | 25,032 |
 //! | Encaps, expanded key | 17,144 | 26,184 | 37,064 |
 //! | Decaps, expanded key | 16,920 | 26,136 | 37,064 |
-//! | Encaps, HKDF | 15,688 | 21,192 | 28,744 |
-//! | Decaps, HKDF | 13,248 | 19,928 | 26,536 |
+//! | Encaps, HKDF | 16,120 | 21,192 | 28,744 |
+//! | Decaps, HKDF | 13,248 | 18,584 | 25,192 |
 //!
 //! [`MLKEMTrait::keygen_out`] writes into a private key the caller holds, so no copy of it is left
 //! behind by a move.

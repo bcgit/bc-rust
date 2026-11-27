@@ -225,6 +225,5 @@ pub mod hazmat;
 pub mod inverse_vartime;
 mod rng_draw;
 pub mod sm2;
-mod stack_wipe;
 
 pub use curves::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};

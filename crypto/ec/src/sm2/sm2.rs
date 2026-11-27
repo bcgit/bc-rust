@@ -53,11 +53,9 @@ use crate::hazmat::sm2_scalar::{N_LIMBS, Sm2PublicScalar, Sm2Scalar, Sm2ScalarFi
 use crate::hazmat::sm2_sec1;
 use crate::hazmat::sm2_wnaf::shamir_multiply;
 use crate::rng_draw::fill_bytes;
-use crate::sm2::encryption_core::WipeStackBelowOnDrop;
 use crate::sm2::extra_bits::reduce_wide_bits_mod_n_minus_1;
 use crate::sm2::keys::{EXTRA_BITS_DRBG_OUTPUT_LEN, SM2PrivateKey, SM2PublicKey};
 use crate::sm2::za;
-use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::security_strength::SecurityStrength;
 #[allow(unused_imports)] // for the docs
@@ -72,6 +70,8 @@ use bouncycastle_core::traits::{
 use bouncycastle_digest::sm3::SM3;
 use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::WipeStackBelowOnDrop;
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 
 /// What the stack wipe overwrites after `k` is drawn and after signing, in 64-bit words: 4096
 /// bytes. In x86-64 builds under the workspace's release profile with the body of the wipe taken

@@ -45,7 +45,6 @@
 
 use crate::rsa::keygen::{fill_bytes, keygen_as};
 use crate::rsa::keys::{RsaPrivateComponents, RsaPublicComponents, decoding_error};
-use crate::rsa::rsa_core::wipe_stack_below;
 use crate::rsa::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{KEMError, KeyDecodingError, RNGError, SignatureError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -57,6 +56,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_utils::const_str::ConstStr;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
+use bouncycastle_utils::stack_wipe::wipe_stack_below_scaled;
 use core::fmt;
 use core::fmt::{Display, Formatter};
 use core::marker::PhantomData;
@@ -354,12 +354,12 @@ where
         let result = self.recover_in_own_frame(ct, ss);
         // The secret value passes through return slots on its way from limbs to `ss`; the
         // whole operation's stack is overwritten, the CRT's own wipe being inside it.
-        wipe_stack_below::<K::Limbs, DECAPS_STACK_PER_LIMB, DECAPS_STACK_FIXED>();
+        wipe_stack_below_scaled::<K::Limbs, DECAPS_STACK_PER_LIMB, DECAPS_STACK_FIXED>();
         result
     }
 }
 
-/// What [`wipe_stack_below`] overwrites after RSASVE.RECOVER: this many `K::Limbs` values and
+/// What [`wipe_stack_below_scaled`] overwrites after RSASVE.RECOVER: this many `K::Limbs` values and
 /// this many words. Measured in x86-64 release builds (rustc 1.88 and 1.97), the operation
 /// uses 9240 bytes at RSA-2048, 12248 at RSA-3072, 15960 at RSA-4096 and 31848 at RSA-8192;
 /// these cover 10752, 15104, 19456 and 36864, the difference being room for a compiler that
@@ -369,7 +369,7 @@ const DECAPS_STACK_FIXED: usize = 256;
 
 impl<K: RsaSigningSize> RsasveDecapsulator<'_, K> {
     /// The work of `decaps_out`. Never inlined, so that what it leaves lies below its caller's
-    /// frame, where [`wipe_stack_below`] reaches it.
+    /// frame, where [`wipe_stack_below_scaled`] reaches it.
     #[allow(non_snake_case)]
     #[inline(never)]
     fn recover_in_own_frame<const N: usize>(

@@ -22,7 +22,6 @@ use crate::hazmat::sm2_sec1;
 use crate::rng_draw::fill_bytes;
 use crate::sm2::extra_bits::reduce_wide_bits_mod_n_minus_1;
 use crate::sm2::keys::EXTRA_BITS_DRBG_OUTPUT_LEN;
-use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::errors::{PublicKeyEncryptionError, RNGError};
 use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -30,6 +29,7 @@ use bouncycastle_core::traits::{Hash, RNG};
 use bouncycastle_digest::sm3::SM3;
 use bouncycastle_utils::ct::{Condition, ct_eq_bytes_condition, value_barrier};
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 
 /// Length of `C1`, the point `[k]G` in the uncompressed form `04 || x1 || y1`.
 pub(in crate::sm2) const C1_LEN: usize = 65;
@@ -266,16 +266,6 @@ const WIPED_STACK_WORDS: usize = 1024;
 /// 2440 and 2208; with 2304 bytes the check fails. Measured in review on arm64 Linux, it fails
 /// with 2048 bytes and passes with 2560.
 pub(in crate::sm2) const KEY_WIPED_STACK_WORDS: usize = 512;
-
-/// [`wipe_stack_below`] when it is dropped: declared first in a function, after that
-/// function's result has been written and its other locals dropped.
-pub(in crate::sm2) struct WipeStackBelowOnDrop<const WORDS: usize>;
-
-impl<const WORDS: usize> Drop for WipeStackBelowOnDrop<WORDS> {
-    fn drop(&mut self) {
-        wipe_stack_below::<WORDS>();
-    }
-}
 
 /// Step A1's reduction of the RNG's output to `k`, then [`encrypt_with_k`]. Never inlined, so
 /// that what it and its callees leave lies below its caller's frame, where

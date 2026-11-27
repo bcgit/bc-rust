@@ -26,15 +26,15 @@ use crate::hazmat::sm2::Sm2FieldElement;
 use crate::hazmat::sm2_comb::comb_multiply_base_point;
 use crate::hazmat::sm2_scalar::Sm2Scalar;
 use crate::hazmat::sm2_sec1;
-use crate::sm2::encryption_core::{self, KEY_WIPED_STACK_WORDS, WipeStackBelowOnDrop};
+use crate::sm2::encryption_core::{self, KEY_WIPED_STACK_WORDS};
 use crate::sm2::extra_bits::{N_MINUS_1_LIMBS, reduce_wide_bits_mod_n_minus_2};
 use crate::sm2::keys::{EXTRA_BITS_DRBG_OUTPUT_LEN, PK_LEN, SK_LEN};
-use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::errors::{KeyDecodingError, PublicKeyEncryptionError, RNGError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
+use bouncycastle_utils::stack_wipe::{WipeStackBelowOnDrop, wipe_stack_below};
 use core::fmt;
 use core::fmt::{Display, Formatter};
 

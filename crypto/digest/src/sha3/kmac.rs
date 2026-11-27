@@ -63,7 +63,6 @@ use crate::sha3::cshake::{
     CSHAKE_COMPONENT_LEN, CSHAKEBorrowedSqueezer, CSHAKEInternal, CSHAKESqueezer,
 };
 use crate::sha3::{SHAKE128Params, SHAKE256Params, SHAKEParams};
-use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -75,6 +74,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_utils::ct;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,

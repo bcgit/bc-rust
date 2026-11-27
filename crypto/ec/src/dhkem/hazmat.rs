@@ -12,13 +12,13 @@
 //! like an all-zero PRK (one HMAC output in 2^(8 * Nh)), is a panic.
 //! Use HKDF (`bouncycastle_digest::hkdf`) for key derivation.
 
-use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
 use bouncycastle_core::traits::HashAlgParams;
 use bouncycastle_digest::hmac::hazmat as hmac_hazmat;
 use bouncycastle_digest::hmac::{HMACParams, HmacKey};
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::in_wiped_frame_scaled;
 
 /// The version label that RFC 9180 Section 4 puts in every labeled KDF input: at the front of
 /// `labeled_ikm`, and after `I2OSP(L, 2)` in `labeled_info`.
@@ -50,7 +50,7 @@ pub fn salt_key<H: HMACParams>(salt: &[u8]) -> HmacKey<H> {
     // In a wiped frame: the key is moved out of the `Result`s HMAC builds it in, and the copies
     // of its pad states left behind are as good as the salt, which in HPKE's key schedule is the
     // KEM's shared secret (SALT_KEY_STACK_WORDS).
-    in_wiped_frame::<u64, 0, SALT_KEY_STACK_WORDS, _>(|| {
+    in_wiped_frame_scaled::<u64, 0, SALT_KEY_STACK_WORDS, _>(|| {
         // Cannot fail: the bytes fit, an all-zero or empty salt is typed Zeroized, which HMAC
         // accepts as a weak key, and the strength is not checked.
         let salt = KeyMaterial::<MAX_NH>::from_bytes_as_type(salt, KeyType::MACKey)
@@ -72,7 +72,7 @@ pub fn labeled_extract_out<H: HMACParams>(
 ) -> usize {
     out.fill(0);
     // In a wiped frame, for the copy of the inner state (LABELED_STACK_WORDS).
-    in_wiped_frame::<u64, 0, LABELED_STACK_WORDS, _>(|| {
+    in_wiped_frame_scaled::<u64, 0, LABELED_STACK_WORDS, _>(|| {
         // PRK = HMAC-Hash(salt, IKM)
         // HMAC through its hazmat halves, as HKDF's expand loop runs it: the role wants the tag
         // length as a const, which a hash-generic KDF does not have.
@@ -130,7 +130,7 @@ pub fn labeled_expand<H: HMACParams>(
     assert!(out.len() <= 255 * nh && out.len() <= 0xFFFF, "LabeledExpand: L is too long");
     let l = (out.len() as u16).to_be_bytes();
     // In a wiped frame, for the copies of the inner state (LABELED_STACK_WORDS).
-    in_wiped_frame::<u64, 0, LABELED_STACK_WORDS, _>(|| {
+    in_wiped_frame_scaled::<u64, 0, LABELED_STACK_WORDS, _>(|| {
         // T(0) = empty string (zero length)
         let mut t = Secret::<[u8; MAX_NH]>::new();
         let mut t_len = 0;

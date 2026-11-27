@@ -12,9 +12,9 @@ use super::scalar;
 use crate::ed::bits;
 use crate::ed::curve25519::{FieldElement25519, NormalizedFieldElement25519};
 use crate::ed::wnaf;
-use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 
 /// d = -121665/121666 (RFC 8032 Section 5.1, Table 1).
 const C_D: FieldElement25519 = FieldElement25519::new([

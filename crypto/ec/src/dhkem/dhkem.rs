@@ -3,7 +3,6 @@
 //! workers its keys hand out.
 
 use crate::dhkem::hazmat::{self as labeled, MAX_NH};
-use crate::stack_wipe::in_wiped_frame;
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, KeyMaterialError, RNGError};
 use bouncycastle_core::kem_key::KEMAlgorithm;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -11,6 +10,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashAlgParams, RNG};
 use bouncycastle_digest::hmac::HMACParams;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::in_wiped_frame_scaled;
 use core::marker::PhantomData;
 
 /// What the stack wipe overwrites after `DeriveKeyPair`, in words: 2 KiB. The private key and
@@ -467,7 +467,7 @@ impl<
 
         // The pair is built in a wiped frame, `Result` and all: moving the private key out of the
         // candidate test and into the pair leaves copies of it in this function's frames.
-        in_wiped_frame::<u64, 0, DERIVE_KEY_PAIR_STACK_WORDS, _>(|| {
+        in_wiped_frame_scaled::<u64, 0, DERIVE_KEY_PAIR_STACK_WORDS, _>(|| {
             // dkp_prk = LabeledExtract("", "dkp_prk", ikm)
             let mut dkp_prk = KeyMaterial::<MAX_NH>::new();
             Self::labeled_extract_into(LABEL_DKP_PRK, &[ikm.ref_to_bytes()], &mut dkp_prk);

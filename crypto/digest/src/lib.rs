@@ -56,5 +56,4 @@ pub mod sha1;
 pub mod sha2;
 pub mod sha3;
 pub mod sm3;
-mod stack_wipe;
 pub mod x963kdf;

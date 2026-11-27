@@ -7,9 +7,9 @@
 //! [`Secret`] and write their result into the caller's buffer.
 
 use crate::ed::{nat, wnaf};
-use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 
 /// Limbs in a scalar.
 const SIZE: usize = 4;

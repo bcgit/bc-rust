@@ -49,7 +49,6 @@ use crate::dhkem::{
 };
 use crate::eccdh::eccdh::{ECCDH, z_bytes_from_product};
 use crate::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
-use crate::stack_wipe::in_wiped_frame;
 use crate::{P256, P384, P521};
 use bouncycastle_core::errors::{KEMError, KeyAgreementError};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorithm};
@@ -59,6 +58,7 @@ use bouncycastle_core::traits::{Algorithm, KEMDecapsulator, KEMEncapsulator, RNG
 use bouncycastle_digest::hmac::HMACParams;
 use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::in_wiped_frame_scaled;
 use core::marker::PhantomData;
 
 mod sealed {
@@ -351,7 +351,7 @@ where
     /// the value is in `[1, n-1]`.
     // The key is built in a wiped frame, as the private key's `from_bytes` builds it.
     fn private_key_from_bytes(sk: &[u8; N_SK]) -> Option<ECCDHPrivateKey<C>> {
-        in_wiped_frame::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
+        in_wiped_frame_scaled::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
             private_key_from_be_bytes::<C, _>(
                 sk,
                 |d| Some(ECCDHPrivateKey::from_scalar(d.clone())),
@@ -376,7 +376,7 @@ where
     ) -> Result<(), KeyAgreementError> {
         // In a wiped frame, as ECC CDH's agreement runs: the product's intermediates depend on
         // the private key and on the DH output.
-        in_wiped_frame::<C::Limbs, AGREE_STACK_PER_LIMB, AGREE_STACK_FIXED, _>(|| {
+        in_wiped_frame_scaled::<C::Limbs, AGREE_STACK_PER_LIMB, AGREE_STACK_FIXED, _>(|| {
             let q = C::Point::from_affine(pk.x, pk.y);
             let mut p = C::multiply_point(sk.scalar(), &q);
             z_bytes_from_product::<C, N_DH>(&mut p, out)

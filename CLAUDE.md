@@ -578,12 +578,16 @@ Twelve workflows under `.github/workflows/`, all triggered by pull requests:
   commented out because the benches are too slow on the hosted runner, so benchmark figures come from a
   developer's machine, not CI.
 
-A stack check's pass on x86-64 does not carry to another target: a wipe takes a frame of its own
-over the stack below its caller, but never clears the registers that frame saves or the padding
-above its array, and the size of both, like the depth of the frames it wipes, is the target's.
-That is why the SM2, ECDSA and symmetric stack checks run on arm64 as well, and why a target
-they do not run on is not covered by them. The SM2 and ECDSA harnesses run each operation with
-the callee-saved registers zeroed (`dev_scripts/stack_scrubbed_call.rs`): arm64 has ten, and the harness's own
+A stack check's pass on x86-64 does not carry to another target: how deep the frames a wipe must
+reach go is the target's. That is why the SM2, ECDSA and symmetric stack checks run on arm64 as
+well, and why a target they do not run on is not covered by them. The wipe itself
+(`bouncycastle_utils::stack_wipe`) writes every byte from its caller's stack pointer down to the
+depth asked for, checked on x86-64, aarch64, thumbv6m and riscv32i: one frame holds an array of
+that size, and a leaf that saves no callee-saved register then writes the 128 bytes directly
+below the caller, where that frame keeps its return address, saved registers and padding. That
+holds while the leaf stays one and the first frame keeps under 128 bytes above its array (at
+most 40 measured). The SM2 and ECDSA harnesses run each operation with the callee-saved
+registers zeroed (`dev_scripts/stack_scrubbed_call.rs`): arm64 has ten, and the harness's own
 copies of a key otherwise reached the stack through a library frame's register saves. Their
 `STACK_DETAIL=1` prints how far below the call each finding lies.
 

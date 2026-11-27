@@ -667,7 +667,13 @@ where
     }
     scan.same(&op("sign"), &images[0], &images[1]);
 
-    // The streaming final, on a signer that sits in a box: nothing is moved out of it.
+    // The streaming final, on a signer that sits in a box: nothing is moved out of it. Unlike
+    // the deterministic final below, each signer is made just before its run, after the first
+    // run's checks have allocated, so the two boxes may sit at different addresses. Made as
+    // the first is freed instead, P-521's two runs differ 136 to 368 bytes below the call, on
+    // x86-64 and arm64, by layout or allocator state not yet found: the first run's top frames
+    // hold, 16 bytes deeper than the second's, the low limbs of `e` (SHA-512(msg)'s last two
+    // state words) and two words not identified. Not excused; kept in this order pending that.
     let mut images = Vec::new();
     for i in 0..2 {
         *sk = ECDSAPrivateKey::from_bytes(&keys[i]).unwrap();
@@ -718,18 +724,36 @@ where
     }
     scan.same(&op("sign_deterministic"), &images[0], &images[1]);
 
+    // The final frees the box, and the second key's is made straight after, before anything
+    // else allocates, so that the allocator hands both runs the same address.
     let mut images = Vec::new();
+    *sk = ECDSAPrivateKey::from_bytes(&keys[0]).unwrap();
+    let key: *mut ECDSAPrivateKey<C, H> = &mut *sk;
+    // SAFETY: `key` points into `sk`, which outlives both signers and is not otherwise used
+    // while they live; it is rewritten only after the first signer has been consumed.
+    let new_signer = move || -> Box<dyn SignatureSigner<SIG> + '_> {
+        Box::new(
+            DeterministicSigningKey::<ECDSA<C, H>, SIG>::create_signer_deterministic(
+                unsafe { &*key },
+                None,
+            )
+            .unwrap(),
+        )
+    };
+    let mut signer = Some(new_signer());
     for i in 0..2 {
-        *sk = ECDSAPrivateKey::from_bytes(&keys[i]).unwrap();
-        let mut signer: Box<dyn SignatureSigner<SIG> + '_> = Box::new(
-            DeterministicSigningKey::<ECDSA<C, H>, SIG>::create_signer_deterministic(&*sk, None)
-                .unwrap(),
-        );
-        signer.do_update(&msg);
+        let mut boxed = signer.take().unwrap();
+        boxed.do_update(&msg);
         scan.keep();
-        assert_eq!(scan.run(|| signer.do_final_out_boxed(&mut sig)), Ok(SIG));
-        scan.clean(&op("deterministic final (boxed)"), &signing_values(i, &sig, None));
-        images.push(signature_image(&*sig));
+        assert_eq!(scan.run(|| boxed.do_final_out_boxed(&mut sig)), Ok(SIG));
+        let signed = *sig;
+        if i == 0 {
+            // SAFETY: as above; the first signer is gone.
+            unsafe { *key = ECDSAPrivateKey::from_bytes(&keys[1]).unwrap() };
+            signer = Some(new_signer());
+        }
+        scan.clean(&op("deterministic final (boxed)"), &signing_values(i, &signed, None));
+        images.push(signature_image(&signed));
     }
     scan.same(&op("deterministic final (boxed)"), &images[0], &images[1]);
 }

@@ -218,7 +218,7 @@ use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::fmt::{self, Display, Formatter};
 
 use crate::ed::curve25519::FieldElement25519;
-use crate::stack_wipe::in_wiped_frame;
+use bouncycastle_utils::stack_wipe::in_wiped_frame_scaled;
 
 // Only the field arithmetic (`FieldElement25519` in curve25519.rs) is shared with Ed25519. The
 // scalar and point types below are X25519's own: an Ed25519 scalar is reduced mod the group order
@@ -290,7 +290,7 @@ const BY_VALUE_STACK_WORDS: usize = 64;
 /// # Errors
 /// [`KeyAgreementError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver.
 pub fn keygen(rng: &mut dyn RNG) -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
-    in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+    in_wiped_frame_scaled::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
         let mut sk = X25519PrivateKey::zeroized();
         keygen_out(rng, &mut sk)?;
         let pk = sk.pk;
@@ -333,7 +333,7 @@ pub fn keygen_out(rng: &mut dyn RNG, sk: &mut X25519PrivateKey) -> Result<(), Ke
 pub fn keygen_from_seed(
     seed: &KeyMaterial256,
 ) -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
-    in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+    in_wiped_frame_scaled::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
         let mut sk = X25519PrivateKey::zeroized();
         keygen_from_seed_out(seed, &mut sk)?;
         let pk = sk.pk;
@@ -663,7 +663,7 @@ impl PrivateKey<SCALAR_LEN> for X25519PrivateKey {
     ///
     /// [`KeyDecodingError`] if `bytes` is not 32 bytes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
-        in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+        in_wiped_frame_scaled::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
             let mut sk = Self::zeroized();
             Self::from_bytes_out(bytes, &mut sk)?;
             Ok(sk)
@@ -675,7 +675,7 @@ impl PrivateKey<SCALAR_LEN> for X25519PrivateKey {
 /// Considerations); `clone_from` copies field by field into a key you hold.
 impl Clone for X25519PrivateKey {
     fn clone(&self) -> Self {
-        in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+        in_wiped_frame_scaled::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
             let mut sk = Self::zeroized();
             sk.clone_from(self);
             sk
