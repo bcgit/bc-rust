@@ -78,12 +78,9 @@ impl SignatureAlgorithm for Ed25519ph {}
 /// with 128 (x86-64 release builds, rustc 1.97 and 1.88).
 const BY_VALUE_STACK_WORDS: usize = 64;
 
-/// The same after [`keygen`], whose frame also decodes the public key: 3072 bytes. The harness
-/// finds no copy of the key with 1024 bytes wiped, but the public key's decoding leaves values
-/// that differ from key to key down to 2304 bytes below the call; they are public, and
-/// wiping them too lets the harness compare two runs over different keys. It passes with
-/// 2304 bytes and fails with 2048, measured the same way.
-const KEYGEN_STACK_WORDS: usize = 384;
+/// The same after [`keygen`], whose frame holds the key pair: 1024 bytes. The harness passes
+/// with 384 bytes wiped and fails with 320, measured the same way.
+const KEYGEN_STACK_WORDS: usize = 128;
 
 /// Generates a key pair from `rng`, which must offer Ed25519's 128 bits: the 32 octets it
 /// draws are the private key (RFC 8032 Section 5.1.5).
