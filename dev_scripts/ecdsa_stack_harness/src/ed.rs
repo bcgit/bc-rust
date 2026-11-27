@@ -539,7 +539,10 @@ where
         assert_eq!(generated_pk.encode(), pks[i]);
         scan.clean(&op("keygen"), &key.values::<E, SK, PK, SIG>());
     }
-    scan.same(&op("keygen"), &publics[0], &publics[1]);
+    // `keygen` is `keygen_out`, compared below, then `pk`, which decodes the public key: the
+    // field elements of its square root are public but differ from key to key, and no image of
+    // them is computed here, so two runs are not compared and the search is the check.
+
     for (i, key) in keys.iter().enumerate() {
         scan.keep();
         *rng = rng_of(&key.seed);
@@ -684,6 +687,9 @@ pub(crate) trait XScheme<const N: usize>:
     const NAME: &'static str;
     /// RFC 7748 Section 6's test vector: Alice's private key, Bob's public key, `K`.
     const VECTOR: [&'static str; 3];
+    /// The bits of a field element's limbs, and how many there are.
+    const LIMB_BITS: usize;
+    const LIMBS: usize;
     fn keygen(rng: &mut dyn RNG) -> Result<(Self::Pk, Self), KeyAgreementError>;
     fn keygen_out(rng: &mut dyn RNG, sk: &mut Self) -> Result<(), KeyAgreementError>;
     fn keygen_from_seed(seed: &KeyMaterial<N>) -> Result<(Self::Pk, Self), KeyAgreementError>;
@@ -697,6 +703,8 @@ pub(crate) trait XScheme<const N: usize>:
 impl XScheme<32> for X25519PrivateKey {
     type Pk = X25519PublicKey;
     const NAME: &'static str = "X25519";
+    const LIMB_BITS: usize = 51;
+    const LIMBS: usize = 5;
     const VECTOR: [&'static str; 3] = [
         "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
         "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
@@ -737,6 +745,8 @@ impl XScheme<32> for X25519PrivateKey {
 impl XScheme<56> for X448PrivateKey {
     type Pk = X448PublicKey;
     const NAME: &'static str = "X448";
+    const LIMB_BITS: usize = 56;
+    const LIMBS: usize = 8;
     const VECTOR: [&'static str; 3] = [
         "9a8f4925d1519f5775cf46b04b5800d4ee9ee8bae8bc5565d498c28dd9c9baf574a9419744897391006382a6f\
          127ab1d9ac2d8c0a598726b",
@@ -789,10 +799,14 @@ pub(crate) fn xdh<X: XScheme<N>, const N: usize>(scan: &mut Scan, scalar_mult_le
         X::clamp(&mut k);
         k
     };
+    // The field arithmetic's limbs of a value: the ladder's, for `K`, and of the clamped scalar,
+    // should it pass through a field element.
+    let limbs = |v: &[u8]| radix_limbs(v, X::LIMB_BITS, X::LIMBS);
     let key_values = |raw: &[u8]| -> Values {
         vec![
             ("private key (bytes)".to_string(), raw.to_vec()),
             ("private key (clamped)".to_string(), clamped(raw).to_vec()),
+            ("private key (clamped, limbs)".to_string(), limbs(&clamped(raw))),
         ]
     };
     // The comparison of two runs over an operation that multiplies by the scalar.
@@ -928,6 +942,7 @@ pub(crate) fn xdh<X: XScheme<N>, const N: usize>(scan: &mut Scan, scalar_mult_le
         assert_eq!(z.ref_to_bytes(), theirs.ref_to_bytes(), "not their K");
         let mut values = key_values(raw);
         values.push(("K".to_string(), z.ref_to_bytes().to_vec()));
+        values.push(("K (limbs)".to_string(), limbs(z.ref_to_bytes())));
         scan.clean(&op("agree_out"), &values);
     }
     same_scalar_mult(scan, "agree_out", &[], &[]);
