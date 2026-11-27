@@ -1,6 +1,7 @@
 //! What ECDSA signing and the handling of its private keys (bouncycastle_ec::ecdsa), ECC CDH's
-//! private keys and agreement (bouncycastle_ec::eccdh), and DHKEM over the NIST curves, X448 and
-//! X25519 with its labeled HKDF steps (bouncycastle_ec::dhkem) leave on the dead stack, for
+//! private keys and agreement (bouncycastle_ec::eccdh), DHKEM over the NIST curves, X448 and
+//! X25519 with its labeled HKDF steps (bouncycastle_ec::dhkem), and Ed25519, Ed448, X25519 and
+//! X448 with their keys (bouncycastle_ec::ed, in [`ed`]) leave on the dead stack, for
 //! `../check_ecdsa_stack.sh`. For each operation the stack below the call is painted, the
 //! operation run with its results going to the heap or to a live frame above, the dead stack
 //! copied out, and the copy searched for the 8-byte words of every secret the operation handled:
@@ -17,9 +18,9 @@
 //! Controls: nothing run must leave nothing, and the same stack twice; a copy of `d` left in a
 //! frame must be found, and copies of two keys must differ.
 //!
-//! Reported and not failed: DHKEM over X25519, whose scalar multiplication leaves part of its
-//! field inversion (`bouncycastle_ec::ed::x25519`'s Security Considerations), lines marked
-//! `left`.
+//! Reported and not failed: DHKEM over X25519, and the comparison of two runs of every X25519
+//! operation that multiplies by the scalar, whose scalar multiplication leaves part of its field
+//! inversion (`bouncycastle_ec::ed::x25519`'s Security Considerations), lines marked `left`.
 //!
 //!   target/release/ecdsa_stack_harness
 //!
@@ -55,10 +56,13 @@ use bouncycastle_ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 use bouncycastle_ec::ecdsa::keys_common::{DerivePublicKey, SignatureKeyPair};
 use bouncycastle_ec::ed::x448::{self, X448PrivateKey, X448PublicKey};
 use bouncycastle_ec::ed::x25519::{self, X25519PrivateKey, X25519PublicKey};
+use bouncycastle_ec::ed::{ed448, ed25519};
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 use std::collections::HashSet;
 use std::hint::black_box;
+
+mod ed;
 
 /// How far below the call the stack is painted and searched. The deepest operation here uses
 /// under 16 KiB.
@@ -456,6 +460,12 @@ fn main() {
         x25519::keygen,
     );
     scan.report_only = false;
+
+    ed::eddsa::<ed25519::Ed25519PrivateKey, 32, 32, 64>(&mut scan);
+    ed::eddsa::<ed448::Ed448PrivateKey, 57, 57, 114>(&mut scan);
+    ed::xdh::<X448PrivateKey, 56>(&mut scan, false);
+    // X25519's scalar multiplication leaves part of its inversion, by decision: reported.
+    ed::xdh::<X25519PrivateKey, 32>(&mut scan, true);
 
     std::process::exit(if scan.failures == 0 { 0 } else { 1 });
 }

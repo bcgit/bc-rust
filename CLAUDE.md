@@ -549,12 +549,17 @@ Eleven workflows under `.github/workflows/`, all triggered by pull requests:
 - `ecdsa-stack.yml`: `dev_scripts/check_ecdsa_stack.sh`, the same shape and matrix over
   `dev_scripts/ecdsa_stack_harness`, which runs ECDSA's and ECC CDH's key decoding, encoding, generation and
   `derive_pk`, the drawing of `k`, the one-shots and the signers' finals, on all seven curves, ECC CDH's agreement
-  (raw and through its KDFs), and DHKEM over the NIST curves and X448 with its labeled HKDF steps (X25519's DHKEM
-  is reported, not failed), searching for the keys, `k`, the RNG's output, the DH products and the derived secrets
-  and comparing two runs over different keys. Its wipes scale with the curve's limb count: re-measure
-  `DECODE_STACK_*`, `ENCODE_STACK_*`, `DERIVE_STACK_*`, `AGREE_STACK_*` and `KEYGEN_STACK_*` in
+  (raw and through its KDFs), DHKEM over the NIST curves and X448 with its labeled HKDF steps, and, in its `ed`
+  module, Ed25519's and Ed448's key generation, decoding, copies, encodings and every form of signing and X25519's
+  and X448's keys and agreement (X25519's DHKEM, and the comparison of its scalar multiplications, are reported,
+  not failed), searching for the keys, `k` or EdDSA's `r` and prefix, the RNG's output, the DH products and the
+  derived secrets and comparing two runs over different keys. Its wipes scale with the curve's limb count:
+  re-measure `DECODE_STACK_*`, `ENCODE_STACK_*`, `DERIVE_STACK_*`, `AGREE_STACK_*` and `KEYGEN_STACK_*` in
   `crypto/ec/src/curve.rs`, `SIGN_STACK_*` in `crypto/ec/src/ecdsa/ecdsa.rs`, and the fixed
-  `LABELED_STACK_WORDS` and `DERIVE_KEY_PAIR_STACK_WORDS` in `crypto/ec/src/dhkem/`.
+  `LABELED_STACK_WORDS` and `DERIVE_KEY_PAIR_STACK_WORDS` in `crypto/ec/src/dhkem/`, `WIPED_STACK_WORDS` in
+  `crypto/ec/src/ed/{ed25519,ed448}/{point,scalar}.rs` and `x448.rs`, `BY_VALUE_STACK_WORDS` in
+  `crypto/ec/src/ed/{ed25519,ed448}/keys.rs`, `x25519.rs` and `x448.rs`, and `KEYGEN_STACK_WORDS` in the two
+  `keys.rs`.
 - `publish_doc_benches_to_ghpages.yaml`: builds rustdoc and runs `quality_stats.sh`; on `main` it also
   publishes docs and code stats to GitHub Pages (`https://bcgit.github.io/bc-rust/`). Its bench step is
   commented out because the benches are too slow on the hosted runner, so benchmark figures come from a

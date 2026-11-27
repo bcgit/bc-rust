@@ -27,5 +27,5 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Search the stack ECDSA, ECC CDH and DHKEM used for what they handled
+      - name: Search the stack ECDSA, ECC CDH, DHKEM and EdDSA/XDH used for what they handled
         run: ./dev_scripts/check_ecdsa_stack.sh
