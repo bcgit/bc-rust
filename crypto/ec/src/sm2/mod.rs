@@ -263,8 +263,8 @@
 //!   build they may not reach everything. Loading a private key (`from_bytes`) zeroizes the
 //!   copies it makes and has no such wipe, and neither have `encode`, `encode_out` and
 //!   `clone`; in the x86-64 and arm64 builds the check finds nothing of the key on the stack
-//!   after any of the four. The key a call returns, and the bytes `encode` returns, are the caller's to
-//!   look after.
+//!   after any of the four. The key a call returns, and the bytes `encode` returns, are the
+//!   caller's to look after.
 
 pub mod encryption;
 pub(in crate::sm2) mod encryption_core;

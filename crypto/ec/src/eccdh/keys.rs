@@ -63,10 +63,8 @@ where
 
     /// `d` must be in `[1, n-1]` (SP 800-56A Rev. 3 Section 5.6.2.1.2), checked on the raw
     /// big-endian value before any reduction, so that `d = n + 1` is refused rather than loaded
-    /// as `d = 1`; the check and the load are those of [`private_scalar_from_be_bytes`], which
-    /// stages the candidate in a `Secret` and reveals only whether the key loaded.
-    ///
-    /// [`private_scalar_from_be_bytes`]: crate::curve::private_scalar_from_be_bytes
+    /// as `d = 1`. The check and the load stage the candidate in a `Secret`, wipe the scalar it
+    /// is reduced into, and reveal only whether the key loaded.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         let bytes: &[u8; SK_LEN] = bytes
             .try_into()
@@ -76,7 +74,7 @@ where
         in_wiped_frame::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
             private_key_from_be_bytes::<C, _>(
                 bytes,
-                |d| Ok(Self(d)),
+                |d| Ok(Self(d.clone())),
                 || Err(KeyDecodingError("ECC CDH private key must be in [1, n-1]")),
             )
         })

@@ -122,8 +122,9 @@ pub trait SecretScalar: Clone + Debug + PartialEq + Eq + 'static {
     fn from_limbs(limbs: Self::Limbs) -> Self;
     /// From borrowed limbs, reduced mod `n`, leaving the caller's copy to the caller.
     fn from_borrowed_limbs(limbs: &Self::Limbs) -> Self;
-    /// As [`from_borrowed_limbs`](Self::from_borrowed_limbs), reduced into `out`, which is
-    /// wiped when it is dropped, rather than into a scalar that is returned by a move.
+    /// As [`from_borrowed_limbs`](Self::from_borrowed_limbs), reduced into `out`.
+    // For a caller that wipes what it reduced into: a scalar returned by a move leaves the
+    // memory it was built in behind, unwiped.
     fn from_borrowed_limbs_into(limbs: &Self::Limbs, out: &mut Self);
     /// From the big-endian encoding, reduced mod `n`.
     fn from_be_bytes(bytes: &Self::Bytes) -> Self;
@@ -323,26 +324,19 @@ pub fn limbs_in_range<const L: usize>(limbs: &[u64; L], n: &[u64; L]) -> Conditi
 /// A private scalar from its big-endian encoding, or `None` when the encoding is not in
 /// `[1, n-1]`: the check is on the raw value before any reduction, so that `d = n + 1` is refused
 /// rather than loaded as `d = 1`. The candidate is a secret from the moment it arrives, so the
-/// limbs are staged in a [`Secret`] and the scalar is reduced from that borrowed copy straight into
-/// its own; nothing plain is left in this frame.
+/// limbs are staged in a [`Secret`], and the scalar they are reduced into is wiped once the
+/// one returned has been copied from it.
 pub fn private_scalar_from_be_bytes<C: Curve>(bytes: &C::ScalarBytes) -> Option<C::Scalar> {
-    let mut limbs = Secret::<C::Limbs>::new();
-    C::limbs_from_be_bytes_into(bytes, &mut limbs);
-    if !C::scalar_in_range(&limbs).to_bool() {
-        return None;
-    }
-    Some(C::Scalar::from_borrowed_limbs(&limbs))
+    private_key_from_be_bytes::<C, _>(bytes, |d| Some(d.clone()), || None)
 }
 
-/// [`private_scalar_from_be_bytes`] for a key's decoding in a wiped frame: `key` of the scalar,
-/// or `refused()`. The scalar is reduced into a local that is wiped when it is dropped, and `key`
-/// is given a copy of it. Returned by a move, as [`SecretScalar::from_borrowed_limbs`] returns
-/// it, the scalar would leave the memory it was reduced into unwiped in the frame of the closure
-/// that runs this, at the top, which the wipe after that frame does not reach (on aarch64 its
-/// own saved registers and padding lie over those slots).
+/// The check and load of [`private_scalar_from_be_bytes`], for a key's decoding: `key(&d)`, or
+/// `refused()`. `d` is reduced into a local that is wiped when it is dropped, and `key` builds
+/// the value returned from a reference to it, so the one copy of `d` made here is the one `key`
+/// writes into that value.
 pub(crate) fn private_key_from_be_bytes<C: Curve, R>(
     bytes: &C::ScalarBytes,
-    key: impl FnOnce(C::Scalar) -> R,
+    key: impl FnOnce(&C::Scalar) -> R,
     refused: impl FnOnce() -> R,
 ) -> R {
     let mut limbs = Secret::<C::Limbs>::new();
@@ -350,9 +344,12 @@ pub(crate) fn private_key_from_be_bytes<C: Curve, R>(
     if !C::scalar_in_range(&limbs).to_bool() {
         return refused();
     }
+    // Not `from_borrowed_limbs`: the scalar it returns is moved, and the memory it was reduced
+    // in stays behind unwiped, at the top of the decoding's frame, where on aarch64 the wipe
+    // after that frame does not reach.
     let mut d = C::Scalar::from_limbs(C::Limbs::ZEROED);
     C::Scalar::from_borrowed_limbs_into(&limbs, &mut d);
-    key(d.clone())
+    key(&d)
 }
 
 /// What the stack wipe overwrites after an ECDSA or ECC CDH private key is decoded: this many of

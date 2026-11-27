@@ -354,7 +354,7 @@ where
         in_wiped_frame::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
             private_key_from_be_bytes::<C, _>(
                 sk,
-                |d| Some(ECCDHPrivateKey::from_scalar(d)),
+                |d| Some(ECCDHPrivateKey::from_scalar(d.clone())),
                 || None,
             )
         })

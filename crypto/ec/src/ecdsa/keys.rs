@@ -76,11 +76,8 @@ where
 
     /// FIPS 186-5 Section 6.2: `d` is in `[1, n-1]`, checked on the raw big-endian value before
     /// any reduction, so that `d = n + 1` is refused rather than loaded as `d = 1` (one key would
-    /// otherwise have unboundedly many encodings); the check and the load are those of
-    /// [`private_scalar_from_be_bytes`], which stages the candidate in a `Secret` and reveals only
-    /// whether the key loaded.
-    ///
-    /// [`private_scalar_from_be_bytes`]: crate::curve::private_scalar_from_be_bytes
+    /// otherwise have unboundedly many encodings). The check and the load stage the candidate in
+    /// a `Secret`, wipe the scalar it is reduced into, and reveal only whether the key loaded.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
         let bytes: &[u8; SK_LEN] = bytes
             .try_into()
@@ -90,7 +87,7 @@ where
         in_wiped_frame::<C::Limbs, DECODE_STACK_PER_LIMB, DECODE_STACK_FIXED, _>(|| {
             private_key_from_be_bytes::<C, _>(
                 bytes,
-                |d| Ok(Self { d, _hash: PhantomData }),
+                |d| Ok(Self { d: d.clone(), _hash: PhantomData }),
                 || Err(KeyDecodingError("ECDSA private key must be in [1, n-1]")),
             )
         })
