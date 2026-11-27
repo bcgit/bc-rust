@@ -16,6 +16,7 @@ use super::precomp::{COMB_BASE, WNAF_BASE, WNAF_BASE_225};
 use super::scalar::{self, SCALAR_LEN, SIGNED_DIGITS};
 use crate::ed::curve448::{FieldElement448, NormalizedFieldElement448};
 use crate::ed::wnaf;
+use crate::stack_wipe::wipe_stack_below;
 use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::Secret;
 
@@ -369,7 +370,29 @@ pub(super) fn scalar_mult_base(k: &[u8; SCALAR_LEN], r: &mut PointProjective) {
 /// Writes the encoding of `[k]B` to `r`, for `k` as [`scalar_mult_base`] takes it, after
 /// checking that the result is a point of the curve; on failure `r` is cleared. Constant
 /// time; the outcome of the check is not secret.
+///
+/// The coordinates wipe themselves, but the compiler also spills limbs of them, and of the
+/// inversion that normalizes the result, to stack slots no wipe in the source reaches, so the
+/// computation runs in a frame of its own and the stack it used is overwritten afterwards.
 pub(super) fn scalar_mult_base_encoded(
+    k: &[u8; SCALAR_LEN],
+    r: &mut [u8; POINT_LEN],
+) -> Result<(), ResultCheckFailed> {
+    let checked = scalar_mult_base_encoded_in_own_frame(k, r);
+    wipe_stack_below::<WIPED_STACK_WORDS>();
+    checked
+}
+
+/// How much stack [`wipe_stack_below`] overwrites, in 64-bit words: 4096 bytes. The check of
+/// `dev_scripts/ecdsa_stack_harness` passes with 2816 bytes wiped and fails with 2752 (rustc
+/// 1.97, x86-64 release build), and passes with 2944 and fails with 2816 with rustc 1.88. The
+/// rest is room for a compiler that lays the frames out less tightly.
+const WIPED_STACK_WORDS: usize = 512;
+
+/// The computation of [`scalar_mult_base_encoded`]. Never inlined, so that what it spills lies
+/// below its caller's frame, where [`wipe_stack_below`] reaches it.
+#[inline(never)]
+fn scalar_mult_base_encoded_in_own_frame(
     k: &[u8; SCALAR_LEN],
     r: &mut [u8; POINT_LEN],
 ) -> Result<(), ResultCheckFailed> {

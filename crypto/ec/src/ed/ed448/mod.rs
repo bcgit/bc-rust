@@ -175,9 +175,11 @@
 //! [`Ed448PrivateKey::from_bytes_out`], `clone_from` and `encode_out` into a key or buffer you
 //! own where that matters.
 //!
-//! Two computations would leave secrets on the stack that no `Secret` reaches. One is the last
-//! step of signing, where the compiler spills limbs of the scalar it held in registers: it
-//! runs in a frame of its own whose stack is overwritten afterwards. The other is every
+//! Three computations would leave secrets on the stack that no `Secret` reaches. One is the last
+//! step of signing, where the compiler spills limbs of the scalar it held in registers, and
+//! another each fixed-base multiplication (key expansion's `[s]B`, signing's `[r]B`), which
+//! spills limbs of the point's coordinates and of the inversion that normalizes them: each runs
+//! in a frame of its own whose stack is overwritten afterwards. The third is every
 //! SHAKE256 over the private key or the prefix: a sponge that is moved to be squeezed leaves
 //! the private key and whole Keccak states of the prefix's hash behind, so each is finished
 //! where it sits, and `bouncycastle_digest::sha3` overwrites the frame of each Keccak permutation,
