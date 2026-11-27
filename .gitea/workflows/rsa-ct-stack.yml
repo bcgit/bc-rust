@@ -1,0 +1,43 @@
+name: RSA Constant-Time Setup and Stack Wipes
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rsa-ct-stack-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rsa-ct-stack:
+    name: rsa-ct-stack
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # The runner's container may run as root without sudo.
+      - name: Install valgrind
+        run: |
+          if ! command -v valgrind >/dev/null; then
+            if [ "$(id -u)" = 0 ]; then SUDO=; else SUDO=sudo; fi
+            $SUDO apt-get update && $SUDO apt-get install -y valgrind
+          fi
+
+      - name: Install Rust toolchain
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Check the RSA private-key arithmetic under memcheck with the key undefined
+        run: ./dev_scripts/check_rsa_ct.sh
+
+      - name: Search the stack each RSA private-key operation used for the key
+        run: ./dev_scripts/check_rsa_stack.sh

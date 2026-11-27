@@ -563,9 +563,11 @@ Eleven workflows under `.github/workflows/`, all triggered by pull requests:
 `cargo test --all` is the workspace run, so a failing test does block a PR; what CI does not run is
 `cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.
 
-The gitea origin has its own copies of six of the pull-request checks under `.gitea/workflows/`
-(there is no Pages job, and `oaep-ct.yml`, `rsa-ct-stack.yml`, `sm2-stack.yml` and `ecdsa-stack.yml` have no gitea copy). They differ from the GitHub ones in two ways: the toolchain is installed
-with `rustup` in a shell step, and the test job takes its vectors from the runner's read-only
+The gitea origin has its own copies of the ten pull-request checks under `.gitea/workflows/`
+(there is no Pages job). They differ from the GitHub ones in four ways: the toolchain is installed
+with `rustup` in a shell step; valgrind is installed with or without `sudo`, whichever the
+runner's container allows; `sm2-stack.yml` and `ecdsa-stack.yml` run on x86-64 only, there being
+no arm64 runner; and the test job takes its vectors from the runner's read-only
 `/bc-test-data` and `/wycheproof` mounts, failing if either is missing. Wycheproof's are read out
 of the mounted clone at the pinned commit (`git archive`), wherever the clone's `HEAD` is, so the
 runner's clone needs a fetch only when the pin moves past what it holds. The pin is therefore
