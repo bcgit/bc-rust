@@ -57,16 +57,18 @@
 //! | BLAKE2b-512 suspended state                             | 212          |
 //! | BLAKE2s-256 suspended state                             | 108          |
 //!
-//! Peak stack per call, measured by painting the stack below a non-inlined call into the operation
-//! (the object and the output buffer included, the 1 KiB input static; release build with thin
-//! LTO, x86_64, rustc 1.97.0-nightly):
+//! Peak stack per call, measured by painting the stack, calling the operation through a function
+//! pointer and finding the deepest byte it changed below the caller's stack pointer, with two
+//! paint values in turn, rounded up to an 8-byte word (the return address, the object and the
+//! output buffer included, the 1 KiB input static, streaming in 100-byte updates, `mac_out` after
+//! building its key; release build with thin LTO, x86_64, rustc 1.97.0-nightly):
 //!
 //! | Operation                                   | BLAKE2b-512 | BLAKE2s-256 |
 //! |---------------------------------------------|-------------|-------------|
-//! | hash, one-shot or streaming                 | 1120 B      | 656 B       |
-//! | MAC key from [`KeyMaterial`]                | 792 B       | 440 B       |
-//! | MAC, the key's `mac_out`                    | 968 B       | 568 B       |
-//! | hash `suspend`, `from_suspended`, finish    | 1688 B      | 840 B       |
+//! | hash, one-shot / streaming                  | 696 / 952 B | 424 / 568 B |
+//! | MAC key from [`KeyMaterial`]                | 840 B       | 472 B       |
+//! | MAC, the key's `mac_out`                    | 1032 B      | 600 B       |
+//! | hash `suspend`, `from_suspended`, finish    | 1608 B      | 808 B       |
 //!
 //! # 🚨 Security Considerations 🚨
 //!

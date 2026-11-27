@@ -10,8 +10,8 @@
 //! Make sure you build in release mode!
 //!
 //! The `kbkdf` module docs' stack table is the deepest frame chain from each [`measure`] instance
-//! down, as for the ECC CDH harness. For that build `main` is edited to call every bench, so that
-//! none is dead-stripped; as committed it calls one, as the other harnesses do.
+//! down, as for the ECC CDH harness, with `main` calling that bench alone: one build per bench.
+//! With every bench called from `main` the HMAC-SHA2 figures come out up to 720 bytes larger.
 //!
 //! Note: print!() forces the compiler not to optimize away the actual code. The name of the bench
 //! goes to stderr so that the junk on stdout can be piped to /dev/null.

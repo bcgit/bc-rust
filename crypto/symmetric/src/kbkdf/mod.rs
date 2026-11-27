@@ -267,7 +267,8 @@ pub(in crate::kbkdf) fn check_request<P: Prf, K: KeyMaterialTrait + ?Sized>(
 /// `K(i)` for the counter `i` into the buffer it is handed, of `P::H_LEN` bytes; it returns the
 /// block's length. Returns `len`.
 // Inlined into each mode, so that the loop and the mode's blocks share one frame: out of line,
-// the deepest frame chain of a derivation is up to 944 bytes longer (the module's Memory Usage).
+// the deepest frame chain of a CMAC-AES256 derivation is 48 bytes longer, while the HMAC ones'
+// are up to 384 bytes shorter (measured as for the module's Memory Usage).
 #[inline(always)]
 pub(in crate::kbkdf) fn derive_blocks_out<P: Prf, K: KeyMaterialTrait + ?Sized>(
     keys: &[&K],

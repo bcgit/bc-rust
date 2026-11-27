@@ -174,19 +174,21 @@
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //!
 //! Peak stack usage of each operation, measured with `mem_usage_benches/bench_mlkem_mem_usage` under
-//! `valgrind --tool=massif --stacks=yes` on 2026-11-24 (release build, one call; the Encaps and
-//! Decaps rows are the operation alone, on a key the caller already holds, the encoded inputs being statics):
+//! `valgrind --tool=massif --heap=no --stacks=yes` on 2026-11-27, the largest `mem_stacks_B` of a
+//! release build for x86-64 with rustc 1.97 nightly, `main` calling that bench alone (one call; the
+//! Encaps and Decaps rows are the operation alone, on a key the caller already holds, the encoded
+//! inputs being statics):
 //!
 //! | Operation | ML-KEM-512 | ML-KEM-768 | ML-KEM-1024 |
 //! |-----------|------------|------------|-------------|
-//! | KeyGen    | 21,560 | 29,512 | 39,016 |
+//! | KeyGen    | 21,560 | 29,512 | 39,032 |
 //! | KeyGen, `keygen_out` | 11,480 | 15,976 | 21,480 |
-//! | Encaps    | 13,576 | 19,720 | 26,776 |
+//! | Encaps    | 11,816 | 16,776 | 22,872 |
 //! | Decaps    | 12,824 | 18,264 | 25,032 |
-//! | Encaps, expanded key | 14,280 | 22,632 | 32,808 |
+//! | Encaps, expanded key | 17,144 | 26,184 | 37,064 |
 //! | Decaps, expanded key | 16,920 | 26,136 | 37,064 |
-//! | Encaps, HKDF | 14,936 | 21,672 | 28,744 |
-//! | Decaps, HKDF | 13,264 | 18,616 | 25,224 |
+//! | Encaps, HKDF | 15,688 | 21,192 | 28,744 |
+//! | Decaps, HKDF | 13,248 | 19,928 | 26,536 |
 //!
 //! [`MLKEMTrait::keygen_out`] writes into a private key the caller holds, so no copy of it is left
 //! behind by a move.
