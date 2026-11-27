@@ -173,7 +173,9 @@
 //! not wipe its source: that holds for the key pair of [`keygen`], for the trait's `from_bytes`,
 //! for `clone` and for the array `encode` returns. Use [`keygen_out`],
 //! [`Ed448PrivateKey::from_bytes_out`], `clone_from` and `encode_out` into a key or buffer you
-//! own where that matters.
+//! own where that matters. [`keygen`], `from_bytes` and `clone` build the key in a frame of their
+//! own whose stack is overwritten afterwards, so the copies left are those of the caller's
+//! moves, not of theirs.
 //!
 //! Three computations would leave secrets on the stack that no `Secret` reaches. One is the last
 //! step of signing, where the compiler spills limbs of the scalar it held in registers, and

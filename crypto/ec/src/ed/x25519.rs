@@ -172,8 +172,10 @@
 //! trait's `from_bytes` and `DeriveKeyPair`, for `clone`, for the clamped scalar `encode`
 //! returns, and for the results of `core`'s by-value `agree`, `encaps` and `decaps`. Use the
 //! `_out` forms, [`X25519PrivateKey::from_bytes_out`] and `clone_from`, into a buffer or key you
-//! own where that matters. What HKDF's own frames keep is in `crate::dhkem`'s Security
-//! Considerations.
+//! own where that matters. [`keygen`], [`keygen_from_seed`], `from_bytes` and `clone` build the
+//! key in a frame of their own whose stack is overwritten afterwards, so the copies left are
+//! those of the caller's moves, not of theirs. What HKDF's own frames keep is in
+//! `crate::dhkem`'s Security Considerations.
 //!
 //! These wipes are made in the source, and a copy the compiler makes on its own is beyond them.
 //! A stack probe of this module found, below the frame after every operation that multiplies by
@@ -216,6 +218,7 @@ use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::fmt::{self, Display, Formatter};
 
 use crate::ed::curve25519::FieldElement25519;
+use crate::stack_wipe::in_wiped_frame;
 
 // Only the field arithmetic (`FieldElement25519` in curve25519.rs) is shared with Ed25519. The
 // scalar and point types below are X25519's own: an Ed25519 scalar is reduced mod the group order
@@ -271,6 +274,12 @@ impl AlgorithmOID for X25519 {
     const OID_DER: &'static [u8] = &[0x06, 0x03, 0x2B, 0x65, 0x6E];
 }
 
+/// What the stack wipe overwrites, in 64-bit words, after [`keygen`], [`keygen_from_seed`], the
+/// trait's `from_bytes` and `clone` build a key in a frame of their own, which the move out of
+/// it would otherwise leave holding a copy: 512 bytes. `dev_scripts/ecdsa_stack_harness` passes
+/// with 192 bytes wiped and fails with 128 (x86-64 release builds, rustc 1.97 and 1.88).
+const BY_VALUE_STACK_WORDS: usize = 64;
+
 /// Generates a key pair from `rng`, which must offer X25519's 128 bits: the 32 bytes it draws
 /// are the private key (RFC 7748 Section 6.1: "Alice generates 32 random bytes in a\[0\] to
 /// a\[31\]").
@@ -280,14 +289,13 @@ impl AlgorithmOID for X25519 {
 ///
 /// # Errors
 /// [`KeyAgreementError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver.
-// Inlined so that the key is built in the caller's frame and moved into the pair once; out of
-// line, LLVM stages a further copy of it, which the stack harness's keygen rows show.
-#[inline(always)]
 pub fn keygen(rng: &mut dyn RNG) -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
-    let mut sk = X25519PrivateKey::zeroized();
-    keygen_out(rng, &mut sk)?;
-    let pk = sk.pk;
-    Ok((pk, sk))
+    in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+        let mut sk = X25519PrivateKey::zeroized();
+        keygen_out(rng, &mut sk)?;
+        let pk = sk.pk;
+        Ok((pk, sk))
+    })
 }
 
 /// Generates a private key into `sk`, a key you hold: the RNG, which must offer X25519's 128
@@ -322,16 +330,15 @@ pub fn keygen_out(rng: &mut dyn RNG, sk: &mut X25519PrivateKey) -> Result<(), Ke
 /// # Errors
 /// [`KeyAgreementError::KeyMaterialError`] for a seed of another type or length, or of too
 /// little strength.
-// Inlined so that the key is built in the caller's frame and moved into the pair once; out of
-// line, LLVM stages a further copy of it, which the stack harness's keygen rows show.
-#[inline(always)]
 pub fn keygen_from_seed(
     seed: &KeyMaterial256,
 ) -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
-    let mut sk = X25519PrivateKey::zeroized();
-    keygen_from_seed_out(seed, &mut sk)?;
-    let pk = sk.pk;
-    Ok((pk, sk))
+    in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+        let mut sk = X25519PrivateKey::zeroized();
+        keygen_from_seed_out(seed, &mut sk)?;
+        let pk = sk.pk;
+        Ok((pk, sk))
+    })
 }
 
 /// The private key whose scalar is `seed`'s 32 bytes, into `sk`, a key you hold: the seed's
@@ -656,9 +663,11 @@ impl PrivateKey<SCALAR_LEN> for X25519PrivateKey {
     ///
     /// [`KeyDecodingError`] if `bytes` is not 32 bytes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
-        let mut sk = Self::zeroized();
-        Self::from_bytes_out(bytes, &mut sk)?;
-        Ok(sk)
+        in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+            let mut sk = Self::zeroized();
+            Self::from_bytes_out(bytes, &mut sk)?;
+            Ok(sk)
+        })
     }
 }
 
@@ -666,9 +675,11 @@ impl PrivateKey<SCALAR_LEN> for X25519PrivateKey {
 /// Considerations); `clone_from` copies field by field into a key you hold.
 impl Clone for X25519PrivateKey {
     fn clone(&self) -> Self {
-        let mut sk = Self::zeroized();
-        sk.clone_from(self);
-        sk
+        in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+            let mut sk = Self::zeroized();
+            sk.clone_from(self);
+            sk
+        })
     }
 
     fn clone_from(&mut self, source: &Self) {

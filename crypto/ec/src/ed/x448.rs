@@ -171,7 +171,9 @@
 //! `DeriveKeyPair`, for `clone`, for the clamped scalar `encode` returns, and for the results
 //! of `core`'s by-value `agree`, `encaps` and `decaps`. Use the `_out` forms,
 //! [`X448PrivateKey::from_bytes_out`] and `clone_from`, into a buffer or key you own where that
-//! matters.
+//! matters. [`keygen`], [`keygen_from_seed`], `from_bytes` and `clone` build the key in a frame
+//! of their own whose stack is overwritten afterwards, so the copies left are those of the
+//! caller's moves, not of theirs.
 //!
 //! These wipes are made in the source, and a copy the compiler makes on its own is beyond them.
 //! A stack probe of this module (one release build, x86-64) found register spills left below
@@ -195,7 +197,7 @@
 use crate::dhkem::{
     AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEM, DHKEMParams, DeriveKeyPairForm, HpkeKem,
 };
-use crate::stack_wipe::wipe_stack_below;
+use crate::stack_wipe::{in_wiped_frame, wipe_stack_below};
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
 use bouncycastle_core::errors::{
     KEMError, KeyAgreementError, KeyDecodingError, KeyMaterialError, RNGError,
@@ -264,6 +266,12 @@ impl AlgorithmOID for X448 {
     const OID_DER: &'static [u8] = &[0x06, 0x03, 0x2B, 0x65, 0x6F];
 }
 
+/// What the stack wipe overwrites, in 64-bit words, after [`keygen`], [`keygen_from_seed`], the
+/// trait's `from_bytes` and `clone` build a key in a frame of their own, which the move out of
+/// it would otherwise leave holding a copy: 1024 bytes. `dev_scripts/ecdsa_stack_harness` passes
+/// with 320 bytes wiped and fails with 256 (x86-64 release builds, rustc 1.97 and 1.88).
+const BY_VALUE_STACK_WORDS: usize = 128;
+
 /// Generates a key pair from `rng`, which must offer X448's 192 bits: the 56 bytes it draws are
 /// the private key (RFC 7748 Section 6.2: "Alice and Bob generate 56 random bytes").
 ///
@@ -272,14 +280,13 @@ impl AlgorithmOID for X448 {
 ///
 /// # Errors
 /// [`KeyAgreementError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver.
-// Inlined so that the key is built in the caller's frame and moved into the pair once; out of
-// line, LLVM stages a further copy of it, which the stack harness's keygen rows show.
-#[inline(always)]
 pub fn keygen(rng: &mut dyn RNG) -> Result<(X448PublicKey, X448PrivateKey), KeyAgreementError> {
-    let mut sk = X448PrivateKey::zeroized();
-    keygen_out(rng, &mut sk)?;
-    let pk = sk.pk;
-    Ok((pk, sk))
+    in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+        let mut sk = X448PrivateKey::zeroized();
+        keygen_out(rng, &mut sk)?;
+        let pk = sk.pk;
+        Ok((pk, sk))
+    })
 }
 
 /// Generates a private key into `sk`, a key you hold: the RNG, which must offer X448's 192 bits,
@@ -314,16 +321,15 @@ pub fn keygen_out(rng: &mut dyn RNG, sk: &mut X448PrivateKey) -> Result<(), KeyA
 /// # Errors
 /// [`KeyAgreementError::KeyMaterialError`] for a seed of another type or length, or of too
 /// little strength.
-// Inlined so that the key is built in the caller's frame and moved into the pair once; out of
-// line, LLVM stages a further copy of it, which the stack harness's keygen rows show.
-#[inline(always)]
 pub fn keygen_from_seed(
     seed: &KeyMaterial<SCALAR_LEN>,
 ) -> Result<(X448PublicKey, X448PrivateKey), KeyAgreementError> {
-    let mut sk = X448PrivateKey::zeroized();
-    keygen_from_seed_out(seed, &mut sk)?;
-    let pk = sk.pk;
-    Ok((pk, sk))
+    in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+        let mut sk = X448PrivateKey::zeroized();
+        keygen_from_seed_out(seed, &mut sk)?;
+        let pk = sk.pk;
+        Ok((pk, sk))
+    })
 }
 
 /// The private key whose scalar is `seed`'s 56 bytes, into `sk`, a key you hold: the seed's
@@ -662,9 +668,11 @@ impl PrivateKey<SCALAR_LEN> for X448PrivateKey {
     ///
     /// [`KeyDecodingError`] if `bytes` is not 56 bytes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError> {
-        let mut sk = Self::zeroized();
-        Self::from_bytes_out(bytes, &mut sk)?;
-        Ok(sk)
+        in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+            let mut sk = Self::zeroized();
+            Self::from_bytes_out(bytes, &mut sk)?;
+            Ok(sk)
+        })
     }
 }
 
@@ -672,9 +680,11 @@ impl PrivateKey<SCALAR_LEN> for X448PrivateKey {
 /// Considerations); `clone_from` copies field by field into a key you hold.
 impl Clone for X448PrivateKey {
     fn clone(&self) -> Self {
-        let mut sk = Self::zeroized();
-        sk.clone_from(self);
-        sk
+        in_wiped_frame::<u64, 0, BY_VALUE_STACK_WORDS, _>(|| {
+            let mut sk = Self::zeroized();
+            sk.clone_from(self);
+            sk
+        })
     }
 
     fn clone_from(&mut self, source: &Self) {

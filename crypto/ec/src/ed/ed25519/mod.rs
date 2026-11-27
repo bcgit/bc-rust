@@ -163,7 +163,9 @@
 //! not wipe its source: that holds for the key pair of [`keygen`], for the trait's `from_bytes`,
 //! for `clone` and for the array `encode` returns. Use [`keygen_out`],
 //! [`Ed25519PrivateKey::from_bytes_out`], `clone_from` and `encode_out` into a key or buffer you
-//! own where that matters. Signing also overwrites the stack its last step used, where the
+//! own where that matters. [`keygen`], `from_bytes` and `clone` build the key in a frame of their
+//! own whose stack is overwritten afterwards, so the copies left are those of the caller's
+//! moves, not of theirs. Signing also overwrites the stack its last step used, where the
 //! compiler otherwise leaves limbs of the scalar it held in registers, and each fixed-base
 //! multiplication (key expansion's `[s]B`, signing's `[r]B`) the stack it used, where it leaves
 //! limbs of the point's coordinates and of the inversion that normalizes them; a scan of the
