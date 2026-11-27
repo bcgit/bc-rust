@@ -577,7 +577,7 @@ where
         assert!(copy == *sk);
         scan.clean(&op("clone"), &key.values::<E, SK, PK, SIG>());
     }
-    scan.same(&op("clone"), &[], &[]);
+    scan.same(&op("clone"), &publics[0], &publics[1]);
     for key in &keys {
         E::from_bytes_out(&key.seed, &mut sk).unwrap();
         scan.keep();
@@ -620,14 +620,15 @@ where
     }
     // `pk` decodes the stored public key and reads nothing secret, so two keys' runs differ in
     // public values alone and are not compared: the search is the check.
+    let mut pk = Box::new(sk.pk());
     for key in &keys {
         E::from_bytes_out(&key.seed, &mut sk).unwrap();
-        let pk = Box::new(sk.pk());
+        *pk = sk.pk();
         scan.keep();
         assert!(scan.run(|| E::consistent(&pk, &sk)));
         scan.clean(&op("keypair_consistency_check"), &key.values::<E, SK, PK, SIG>());
     }
-    scan.same(&op("keypair_consistency_check"), &[], &[]);
+    scan.same(&op("keypair_consistency_check"), &publics[0], &publics[1]);
 
     // Signing, under two keys. Ed25519 takes no context; Ed448 and the pre-hash variants are
     // given one.
@@ -664,15 +665,27 @@ where
         }
         scan.same(&op(what), &images[0], &images[1]);
     }
-    // The pre-hash variant's streaming final, on a signer in a box.
+    // The pre-hash variant's streaming final, on a signer in a box. The final frees the box, and
+    // the second key's is made straight after, before anything else allocates, so that the
+    // allocator hands both runs the same address.
     let mut images = Vec::new();
-    for (i, key) in keys.iter().enumerate() {
-        E::from_bytes_out(&key.seed, &mut sk).unwrap();
-        let mut signer = sk.ph_signer(Some(ph_ctx));
-        signer.do_update(&msg);
+    E::from_bytes_out(&keys[0].seed, &mut sk).unwrap();
+    let key: *mut E = &mut *sk;
+    // SAFETY: `key` points into `sk`, which outlives both signers and is not otherwise used
+    // while they live; it is rewritten only after the first signer has been consumed.
+    let mut signer = Some(unsafe { &*key }.ph_signer(Some(ph_ctx)));
+    for i in 0..2 {
+        let mut boxed = signer.take().unwrap();
+        boxed.do_update(&msg);
         scan.keep();
-        assert_eq!(scan.run(|| signer.do_final_out_boxed(&mut sig)), Ok(SIG));
-        let (values, image) = sign_values(i, &sig, true);
+        assert_eq!(scan.run(|| boxed.do_final_out_boxed(&mut sig)), Ok(SIG));
+        let signed = *sig;
+        if i == 0 {
+            // SAFETY: as above; the first signer is gone.
+            E::from_bytes_out(&keys[1].seed, unsafe { &mut *key }).unwrap();
+            signer = Some(unsafe { &*key }.ph_signer(Some(ph_ctx)));
+        }
+        let (values, image) = sign_values(i, &signed, true);
         scan.clean(&op("ph final (boxed)"), &values);
         images.push(image);
     }
@@ -849,20 +862,21 @@ pub(crate) fn xdh<X: XScheme<N>, const N: usize>(scan: &mut Scan, scalar_mult_le
         scan.clean(&op("keygen_out"), &key_values(raw));
     }
     same_scalar_mult(scan, "keygen_out", &publics[0], &publics[1]);
-    let seeds = raws
-        .clone()
-        .map(|r| Box::new(KeyMaterial::<N>::from_bytes_as_type(&r, KeyType::Seed).unwrap()));
+    // One seed, overwritten for each key, so that both runs pass the same address.
+    let mut seed = Box::new(KeyMaterial::<N>::new());
     for (i, raw) in raws.iter().enumerate() {
+        *seed = KeyMaterial::from_bytes_as_type(raw, KeyType::Seed).unwrap();
         scan.keep();
-        let (pk, generated) = scan.run(|| X::keygen_from_seed(&seeds[i])).unwrap();
+        let (pk, generated) = scan.run(|| X::keygen_from_seed(&seed)).unwrap();
         assert_eq!(generated.encode(), clamped(raw));
         assert_eq!(pk.encode(), pks[i].encode());
         scan.clean(&op("keygen_from_seed"), &key_values(raw));
     }
     same_scalar_mult(scan, "keygen_from_seed", &publics[0], &publics[1]);
     for (i, raw) in raws.iter().enumerate() {
+        *seed = KeyMaterial::from_bytes_as_type(raw, KeyType::Seed).unwrap();
         scan.keep();
-        scan.run(|| X::keygen_from_seed_out(&seeds[i], &mut sk)).unwrap();
+        scan.run(|| X::keygen_from_seed_out(&seed, &mut sk)).unwrap();
         assert_eq!(sk.encode(), clamped(raw));
         assert_eq!(sk.pk().encode(), pks[i].encode());
         scan.clean(&op("keygen_from_seed_out"), &key_values(raw));

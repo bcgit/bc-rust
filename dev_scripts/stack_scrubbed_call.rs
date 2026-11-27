@@ -1,14 +1,21 @@
-//! A call made with every callee-saved register zero, for the SM2 and ECDSA stack harnesses, each
-//! of which includes this file as its `scrubbed` module. This program computes with the secrets it
-//! searches for (to know what to search for, and to check the operation's output), and a word
-//! of one can wait in a callee-saved register of `main` across the call that runs the operation;
-//! the first frame below that uses the register saves it, a copy the search then finds, which is
-//! this program's and not the operation's. A Rust function cannot clear those registers, so this
-//! is a few lines of assembly: it saves them in its own frame, above every frame searched, zeroes
-//! them, makes the call and restores them.
+//! A call made with the registers zero, for the SM2 and ECDSA stack harnesses, each of which
+//! includes this file as its `scrubbed` module. This program computes with the secrets it searches
+//! for (to know what to search for, and to check the operation's output), and a word of one can
+//! wait in a register of `main` across the call that runs the operation: in a callee-saved one,
+//! which the first frame below that uses it saves, or in a caller-saved one that the harness's
+//! own frames above the operation leave alone, which a prologue can store as well (an argument
+//! register it was not passed, as the half of an `Option` a `None` leaves unset). Either way the
+//! copy the search then finds is this program's and not the operation's. A Rust function cannot
+//! clear those registers, so this is a few lines of assembly: it saves the callee-saved ones in
+//! its own frame, above every frame searched, zeroes them and every caller-saved register but
+//! the two carrying the target and its argument, makes the call and restores the callee-saved
+//! ones.
 //!
-//! aarch64 (AAPCS64): x19-x28 and the low halves of v8-v15. x86-64 (System V): rbx, rbp and
-//! r12-r15. The caller-saved registers are not touched: no callee saves those.
+//! aarch64 (AAPCS64): callee-saved x19-x28 and the low halves of v8-v15; caller-saved x1-x15,
+//! x17 and v0-v31 (x16 carries the target, x0 the argument; x18, the platform register, is left).
+//! x86-64 (System V): callee-saved rbx, rbp and r12-r15; caller-saved rsi, rdx, rcx, r8-r11 and
+//! xmm0-xmm15 (rax carries the target, rdi the argument). The upper halves of the AVX registers
+//! are left, AVX not being baseline.
 
 #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
 core::arch::global_asm!(
@@ -48,6 +55,48 @@ core::arch::global_asm!(
     "movi v13.16b, #0",
     "movi v14.16b, #0",
     "movi v15.16b, #0",
+    // The caller-saved registers but x0 (the argument) and x16 (the target), which a
+    // callee's prologue can also store, as it does argument registers it was not passed.
+    "mov x1, xzr",
+    "mov x2, xzr",
+    "mov x3, xzr",
+    "mov x4, xzr",
+    "mov x5, xzr",
+    "mov x6, xzr",
+    "mov x7, xzr",
+    "mov x8, xzr",
+    "mov x9, xzr",
+    "mov x10, xzr",
+    "mov x11, xzr",
+    "mov x12, xzr",
+    "mov x13, xzr",
+    "mov x14, xzr",
+    "mov x15, xzr",
+    "mov x17, xzr",
+    "movi v0.16b, #0",
+    "movi v1.16b, #0",
+    "movi v2.16b, #0",
+    "movi v3.16b, #0",
+    "movi v4.16b, #0",
+    "movi v5.16b, #0",
+    "movi v6.16b, #0",
+    "movi v7.16b, #0",
+    "movi v16.16b, #0",
+    "movi v17.16b, #0",
+    "movi v18.16b, #0",
+    "movi v19.16b, #0",
+    "movi v20.16b, #0",
+    "movi v21.16b, #0",
+    "movi v22.16b, #0",
+    "movi v23.16b, #0",
+    "movi v24.16b, #0",
+    "movi v25.16b, #0",
+    "movi v26.16b, #0",
+    "movi v27.16b, #0",
+    "movi v28.16b, #0",
+    "movi v29.16b, #0",
+    "movi v30.16b, #0",
+    "movi v31.16b, #0",
     "blr x16",
     "ldp d14, d15, [sp, #144]",
     "ldp d12, d13, [sp, #128]",
@@ -86,6 +135,31 @@ core::arch::global_asm!(
     "xor r13d, r13d",
     "xor r14d, r14d",
     "xor r15d, r15d",
+    // The caller-saved registers but rdi (the argument) and rax (the target), which a
+    // callee's prologue can also store, as it does argument registers it was not passed.
+    "xor esi, esi",
+    "xor edx, edx",
+    "xor ecx, ecx",
+    "xor r8d, r8d",
+    "xor r9d, r9d",
+    "xor r10d, r10d",
+    "xor r11d, r11d",
+    "pxor xmm0, xmm0",
+    "pxor xmm1, xmm1",
+    "pxor xmm2, xmm2",
+    "pxor xmm3, xmm3",
+    "pxor xmm4, xmm4",
+    "pxor xmm5, xmm5",
+    "pxor xmm6, xmm6",
+    "pxor xmm7, xmm7",
+    "pxor xmm8, xmm8",
+    "pxor xmm9, xmm9",
+    "pxor xmm10, xmm10",
+    "pxor xmm11, xmm11",
+    "pxor xmm12, xmm12",
+    "pxor xmm13, xmm13",
+    "pxor xmm14, xmm14",
+    "pxor xmm15, xmm15",
     "call rax",
     "add rsp, 8",
     "pop r15",
@@ -104,12 +178,13 @@ compile_error!(
 );
 
 unsafe extern "C" {
-    /// Calls `job(arg)` with the callee-saved registers zero, and restores them.
+    /// Calls `job(arg)` with the callee-saved registers and every caller-saved register but the
+    /// two that carry `job` and `arg` zero, and restores the callee-saved ones.
     fn stack_harness_scrubbed_call(job: extern "C" fn(*mut u8), arg: *mut u8);
 }
 
-/// Runs `f` with every callee-saved register zero, its frames below one of this module's that
-/// holds what those registers held.
+/// Runs `f` with every callee-saved register and the caller-saved ones zero, its frames below one
+/// of this module's that holds what the callee-saved registers held.
 pub fn call<F: FnOnce()>(f: F) {
     extern "C" fn job<F: FnOnce()>(arg: *mut u8) {
         // SAFETY: `arg` is the `Option<F>` of `call`, alive and borrowed by nothing else until

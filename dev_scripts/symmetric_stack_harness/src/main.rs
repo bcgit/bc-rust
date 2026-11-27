@@ -15,10 +15,10 @@
 //! for.
 //!
 //! Each operation is also run twice, at the same addresses, over different secrets, and the two
-//! copies compared: but for what the operation hands out, the registers the call's first frames
-//! saved, and an address of this program's that a deeper frame saved from a register, they must
-//! be the same. Every key, message, output and worker an operation touches is in one place for
-//! both runs, so that the pointers it holds are the same.
+//! copies compared: but for what the operation hands out and an address of this program's that
+//! a frame saved from a register, they must be the same. Every key, message, output and worker
+//! an operation touches is in one place for both runs, so that the pointers it holds are the
+//! same.
 //!
 //! Controls: nothing run must leave nothing, and the same stack twice; a copy of a key left in a
 //! frame must be found, and copies of two keys must differ; and two values of a `u32` left over
@@ -60,6 +60,9 @@ use std::collections::{HashMap, HashSet};
 use std::hint::black_box;
 use std::num::NonZeroU32;
 
+#[path = "../../stack_public_run.rs"]
+mod public;
+
 /// How far below the call the stack is painted and searched. The deepest operation here uses
 /// under 16 KiB.
 const DEPTH: usize = 256 * 1024;
@@ -67,12 +70,13 @@ const DEPTH: usize = 256 * 1024;
 const PAD: usize = 16 * 1024;
 const PAINT: u8 = 0xA5;
 /// How far below the call a difference between two runs is put down to the registers the
-/// call's first frames saved, and not counted: this program's loop index and the like. On
-/// x86-64 (rustc 1.88 and 1.97-nightly) nothing differs there but what the stale-address rule
-/// of [`Scan::differences`] excuses, and HMAC-SHA3-256's by-value final, 55 bytes down, which
-/// is reported anyway; the margin is the SM2 harness's, for arm64, whose frames save more
-/// registers (x19-x28 and the frame record) than x86-64's.
-const SAVED_REGISTERS: usize = 256;
+/// call's first frames saved, and not counted. None is: on x86-64 (rustc 1.100, 1.97 and 1.88)
+/// and arm64 (rustc 1.100 and 1.97), the only rows that differ within 256 bytes of the call,
+/// beyond what the stale-address rule of [`Scan::differences`] excuses, are rows reported
+/// (`left`) anyway, all on x86-64: an AES-GCM-SIV key's construction (key-schedule bytes from
+/// 54 bytes down), HMAC-SHA3-256's by-value final (55 bytes down) and PBKDF2 (32 bytes from 184
+/// down).
+const SAVED_REGISTERS: usize = 0;
 
 #[inline(never)]
 fn paint() {
@@ -114,17 +118,9 @@ fn measure<T>(buf: &mut [u8], f: impl FnOnce() -> T) -> T {
     result
 }
 
-/// The leak the second control looks for: a copy of `value` in a frame, left as it is, further
-/// below the call than [`SAVED_REGISTERS`].
+/// The leak the second control looks for: a copy of `value` in a frame, left as it is.
 #[inline(never)]
 fn leak(value: &[u8; 32]) {
-    let mut pad = [0u8; 2 * SAVED_REGISTERS];
-    black_box(&mut pad);
-    leak_here(value);
-}
-
-#[inline(never)]
-fn leak_here(value: &[u8; 32]) {
     let mut local = *value;
     black_box(&mut local);
 }
@@ -135,13 +131,6 @@ fn leak_here(value: &[u8; 32]) {
 /// zero-extended.
 #[inline(never)]
 fn leak_word(word: u64) {
-    let mut pad = [0u8; 2 * SAVED_REGISTERS];
-    black_box(&mut pad);
-    leak_word_here(word);
-}
-
-#[inline(never)]
-fn leak_word_here(word: u64) {
     let mut local = word;
     black_box(&mut local);
 }
@@ -253,9 +242,9 @@ impl Scan {
         }
     }
 
-    /// The bytes in which the last run's stack is not `before`, leaving out those that are a
-    /// part of `public` in the one and the same part of `public_before` in the other, and how
-    /// far below the call the furthest of them is.
+    /// The bytes in which the last run's stack is not `before`, leaving out those that are
+    /// pieces of `public` in the one and the same pieces of `public_before` in the other
+    /// ([`public::public_run`]), and how far below the call the furthest of them is.
     fn differences(&self, before: &[u8], public_before: &[u8], public: &[u8]) -> (usize, usize) {
         let lowest = |buf: &[u8]| buf.iter().position(|b| *b != PAINT).unwrap_or(DEPTH);
         let start = lowest(before).min(lowest(&self.buf));
@@ -270,16 +259,12 @@ impl Scan {
             while end < DEPTH && before[end] != self.buf[end] {
                 end += 1;
             }
-            let len = end - i;
-            let explained = (0..public.len().saturating_sub(len - 1)).any(|at| {
-                public_before[at..at + len] == before[i..end]
-                    && public[at..at + len] == self.buf[i..end]
-            });
+            let explained = public::public_run(before, &self.buf, i, end, public_before, public);
             // The first frames of a call save the registers they go on to use, and what those
             // held is this program's own: a loop's pointer, a length. Only the bytes of the run
             // within SAVED_REGISTERS of the call are put down to that.
             let deep_end = end.min((DEPTH - PAD).saturating_sub(SAVED_REGISTERS));
-            // Deeper down, only an address this program left in a callee-saved register, which a
+            // Below that, only an address this program left in a callee-saved register, which a
             // frame saved: both runs touch the same memory, so their pointers are the same, but
             // the compiler keeps this program's own values (the run's expected outputs, which
             // differ) in registers across the call, and a frame of rustc 1.88's saves one.

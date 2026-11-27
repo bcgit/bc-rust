@@ -13,11 +13,11 @@
 //!
 //! Each operation is also run twice, at the same addresses, over different secrets (two keys, and
 //! for the random operations two draws of the RNG), and the two copies compared: but for what the
-//! operation hands out and the registers the call's first frames saved, they must be the same.
+//! operation hands out, they must be the same.
 //!
-//! Each operation runs with the callee-saved registers zero ([`scrubbed`]): a word of a secret
-//! this program computed with, waiting in one of them, would otherwise be saved to the stack by
-//! the operation's first frames and found there, as on arm64 it was. With `STACK_DETAIL` set,
+//! Each operation runs with the callee- and caller-saved registers zero ([`scrubbed`]): a word of
+//! a secret this program computed with, waiting in one of them, would otherwise be saved to the
+//! stack by the operation's first frames and found there, as on arm64 it was. With `STACK_DETAIL` set,
 //! each finding is also printed with how far below the call it lies (negative above it, in this
 //! program's frames), which is what a wipe is sized from.
 //!
@@ -69,6 +69,8 @@ use std::collections::HashSet;
 use std::hint::black_box;
 
 mod ed;
+#[path = "../../stack_public_run.rs"]
+mod public;
 #[path = "../../stack_scrubbed_call.rs"]
 mod scrubbed;
 
@@ -79,12 +81,11 @@ const DEPTH: usize = 256 * 1024;
 const PAD: usize = 16 * 1024;
 const PAINT: u8 = 0xA5;
 /// How far below the call a difference between two runs is put down to the operation's first
-/// frames, above its wiped ones, and not counted: the registers they save, which
-/// [`Scan::run`] has zeroed, and values handed out on the way to the caller's slot. With this
-/// at 0, the furthest seen is 208 bytes on arm64 (rustc 1.100: Ed25519's `sign`, staging the
-/// signature it returns), 136 on arm64 with rustc 1.97 and 128 on x86-64 (rustc 1.100, 1.97
-/// and 1.88).
-const SAVED_REGISTERS: usize = 256;
+/// frames and not counted. None is: with the registers zeroed ([`Scan::run`]),
+/// every input in one buffer for both runs, and what an operation hands out, as it lies in
+/// memory, named in its public image, no row differs there on x86-64 (rustc 1.100, 1.97 and
+/// 1.88) or arm64 (rustc 1.100 and 1.97).
+const SAVED_REGISTERS: usize = 0;
 
 /// The fixed RNG's seed: one draw at its start. Every operation here draws once.
 const SEED_LEN: usize = 128;
@@ -130,17 +131,9 @@ fn measure<T>(buf: &mut [u8], f: impl FnOnce() -> T) -> T {
     result
 }
 
-/// The leak the second control looks for: a copy of `value` in a frame, left as it is, further
-/// below the call than [`SAVED_REGISTERS`].
+/// The leak the second control looks for: a copy of `value` in a frame, left as it is.
 #[inline(never)]
 fn leak(value: &[u8; 32]) {
-    let mut pad = [0u8; 2 * SAVED_REGISTERS];
-    black_box(&mut pad);
-    leak_here(value);
-}
-
-#[inline(never)]
-fn leak_here(value: &[u8; 32]) {
     let mut local = *value;
     black_box(&mut local);
 }
@@ -175,7 +168,7 @@ impl Scan {
     }
 
     /// Paints, runs `f` and copies the stack out. What `f` returns comes back by value. Run with
-    /// the callee-saved registers zero ([`scrubbed`]), and painted from that frame down as well
+    /// the registers zero ([`scrubbed`]), and painted from that frame down as well
     /// as from [`measure`]'s, so that the slots `measure`'s own frame leaves unwritten hold the
     /// paint and not what an earlier call of this program's left there.
     fn run<T>(&mut self, f: impl FnOnce() -> T) -> T {
@@ -279,8 +272,8 @@ impl Scan {
     }
 
     /// The bytes in which the last run's stack is not the kept run's, leaving out those that
-    /// are a part of `public` in the one and the same part of `public_before` in the other,
-    /// and how far below the call the furthest of them is.
+    /// are pieces of `public` in the one and the same pieces of `public_before` in the other
+    /// ([`public::public_run`]), and how far below the call the furthest of them is.
     fn differences(&self, public_before: &[u8], public: &[u8]) -> (usize, usize) {
         let lowest = |buf: &[u8]| buf.iter().position(|b| *b != PAINT).unwrap_or(DEPTH);
         let start = lowest(&self.before).min(lowest(&self.buf));
@@ -295,17 +288,21 @@ impl Scan {
             while end < DEPTH && self.before[end] != self.buf[end] {
                 end += 1;
             }
-            let explained = self.public_run(i, end, public_before, public);
+            let explained =
+                public::public_run(&self.before, &self.buf, i, end, public_before, public);
             // The first frames of a call save the registers they go on to use, and what those
             // held is this program's own: a loop's pointer, a length. Only the bytes of the run
             // within SAVED_REGISTERS of the call are put down to that.
             let deep_end = end.min((DEPTH - PAD).saturating_sub(SAVED_REGISTERS));
             if !explained && deep_end > i {
                 if detail() {
+                    let (from, to) = (i & !7, (deep_end + 7).min(DEPTH) & !7);
                     println!(
-                        "       {} bytes differ {} bytes below the call",
+                        "       {} bytes differ {} bytes below the call: {:02x?} / {:02x?}",
                         deep_end - i,
-                        (DEPTH - i).saturating_sub(PAD)
+                        (DEPTH - i).saturating_sub(PAD),
+                        &self.before[from..to.max(from + 8)],
+                        &self.buf[from..to.max(from + 8)]
                     );
                 }
                 count += deep_end - i;
@@ -314,42 +311,6 @@ impl Scan {
             i = end;
         }
         (count, furthest)
-    }
-
-    /// Whether the bytes `i..end`, in which the two runs differ, are pieces of `public_before` in
-    /// the kept run and the same pieces of `public` in the last, one after another: two public
-    /// values can lie side by side, in any order, and a value returned by value can be staged in
-    /// chunks out of order (Ed448's signature, on x86-64 with rustc 1.100, as bytes 23..39 then
-    /// 0..7). Each piece is at least four bytes, which both runs match by chance at a given place
-    /// in the image with odds of 2^-64, but for the whole run when it is shorter, and for a last
-    /// piece that carries on where the one before it ended in the image.
-    fn public_run(&self, i: usize, end: usize, public_before: &[u8], public: &[u8]) -> bool {
-        // How many bytes from `p` match the image from `at`, in both runs.
-        let matching = |p: usize, at: usize| {
-            (0..(end - p).min(public.len() - at))
-                .take_while(|l| {
-                    public_before[at + l] == self.before[p + l] && public[at + l] == self.buf[p + l]
-                })
-                .count()
-        };
-        let mut p = i;
-        // Where in the image the last piece ended.
-        let mut after: Option<usize> = None;
-        while p < end {
-            let (len, at) =
-                (0..public.len()).map(|at| (matching(p, at), at)).max().unwrap_or((0, 0));
-            if len >= 4 {
-                p += len;
-                after = Some(at + len);
-                continue;
-            }
-            let rest = end - p;
-            return match after {
-                None => len == rest,
-                Some(at) => at < public.len() && matching(p, at) == rest,
-            };
-        }
-        true
     }
 
     /// After the same operation run twice, at the same addresses, over different secrets: the
@@ -426,6 +387,16 @@ fn message(len: usize) -> Box<[u8]> {
 fn public_image(encoded: &[u8]) -> Vec<u8> {
     let half = (encoded.len() - 1) / 2;
     [&encoded[..], &limb_image(&encoded[1..1 + half]), &limb_image(&encoded[1 + half..])].concat()
+}
+
+/// The bytes of `value` as it lies in memory: for a public key returned by value, which is
+/// staged on the way to the caller in the form it is held in (brainpool coordinates are held in
+/// Montgomery form, which [`public_image`] does not have).
+fn memory_image<T>(value: &T) -> Vec<u8> {
+    // SAFETY: `value` is a live, initialized `T` of `size_of::<T>()` bytes; the public key types
+    // read here are arrays of limbs, with no padding.
+    unsafe { core::slice::from_raw_parts((value as *const T).cast::<u8>(), size_of::<T>()) }
+        .to_vec()
 }
 
 /// The encoded public key of the private key `d`, from the curve's arithmetic.
@@ -614,8 +585,6 @@ where
         scan.same(&op(name), &publics[0], &publics[1]);
     }
 
-    // The encodings write less below the call than SAVED_REGISTERS, which the comparison of two
-    // runs excuses, so for them the search is the check.
     for d in &keys {
         *sk = ECDSAPrivateKey::from_bytes(d).unwrap();
         scan.keep();
@@ -639,7 +608,7 @@ where
         let pk: ECDSAPublicKey<C, H> = scan.run(|| sk.derive_pk());
         assert_eq!(pk.encode(), public_of::<C, SK, PK>(d), "not its public key");
         scan.clean(&op("derive_pk"), &key_values(d));
-        publics.push(public_image(&pk.encode()));
+        publics.push([public_image(&pk.encode()), memory_image(&pk)].concat());
     }
     scan.same(&op("derive_pk"), &publics[0], &publics[1]);
 
@@ -865,7 +834,7 @@ where
         let pk: ECCDHPublicKey<C> = scan.run(|| EccdhDerive::derive_pk(&*sk));
         assert_eq!(pk.encode(), public_of::<C, SK, PK>(d), "not its public key");
         scan.clean(&op("derive_pk"), &key_values(d));
-        publics.push(public_image(&pk.encode()));
+        publics.push([public_image(&pk.encode()), memory_image(&pk)].concat());
     }
     scan.same(&op("derive_pk"), &publics[0], &publics[1]);
 
@@ -972,24 +941,27 @@ fn dhkem<C, const SK: usize, const PK: usize, const FE: usize, const SS: usize>(
     let mut cts = Vec::new();
     let op = |name: &str| format!("DHKEM {curve} {name}");
 
+    // One buffer, overwritten for each key, so that both runs pass the same address.
+    let mut encoded = Box::new([0u8; SK]);
     for d in &keys {
+        *encoded = *d;
         scan.keep();
-        let loaded =
-            scan.run(|| <ECCDH<C> as DHKEMParams<PK, SK, FE>>::private_key_from_bytes(d)).unwrap();
+        let loaded = scan
+            .run(|| <ECCDH<C> as DHKEMParams<PK, SK, FE>>::private_key_from_bytes(&*encoded))
+            .unwrap();
         assert_eq!(loaded.encode(), *d);
         scan.clean(&op("private_key_from_bytes"), &key_values(d));
     }
     scan.same(&op("private_key_from_bytes"), &[], &[]);
 
     let mut publics = Vec::new();
+    let mut ikm = Box::new(KeyMaterial::<64>::new());
     for i in 0..2 {
-        let ikm = Box::new(
-            KeyMaterial::<64>::from_bytes_as_type(
-                &bytes_of(&format!("{curve} DHKEM ikm {i}"), 64),
-                KeyType::Seed,
-            )
-            .unwrap(),
-        );
+        *ikm = KeyMaterial::from_bytes_as_type(
+            &bytes_of(&format!("{curve} DHKEM ikm {i}"), 64),
+            KeyType::Seed,
+        )
+        .unwrap();
         scan.keep();
         let (pk, derived) = scan.run(|| derive_key_pair::<C>(&*ikm)).unwrap();
         scan.clean(&op("derive_key_pair"), &key_values(&derived.encode()));
@@ -1257,13 +1229,17 @@ fn labeled<H: PadHash>(scan: &mut Scan, hash: &str) {
     scan.same(&op("salt_key"), &[], &[]);
 
     let mut prk = Box::new([0u8; MAX_NH]);
+    // One buffer for the IKM, overwritten for each run, so that both pass the same address.
+    let mut ikm_buf = Box::new([0u8; MAX_NH]);
     for i in 0..2 {
         let salt = bytes_of(&format!("{hash} salt {i}"), nh);
         let ikm = bytes_of(&format!("{hash} ikm {i}"), nh);
+        ikm_buf[..nh].copy_from_slice(&ikm);
         *key = salt_key::<H>(&salt);
         scan.keep();
-        let len =
-            scan.run(|| labeled_extract_out::<H>(suite_id, &key, b"secret", &[&ikm], &mut prk));
+        let len = scan.run(|| {
+            labeled_extract_out::<H>(suite_id, &key, b"secret", &[&ikm_buf[..nh]], &mut prk)
+        });
         assert_eq!(len, nh);
         let mut values = pad_values::<H>("salt", &salt);
         values.push(("salt".to_string(), salt));
@@ -1273,11 +1249,10 @@ fn labeled<H: PadHash>(scan: &mut Scan, hash: &str) {
     }
     scan.same(&op("labeled_extract_out"), &[], &[]);
     let mut okm = Box::new([0u8; 80]);
+    let mut prk = Box::new(KeyMaterial::<MAX_NH>::new());
     for i in 0..2 {
         let prk_bytes = bytes_of(&format!("{hash} prk {i}"), nh);
-        let prk = Box::new(
-            KeyMaterial::<MAX_NH>::from_bytes_as_type(&prk_bytes, KeyType::MACKey).unwrap(),
-        );
+        *prk = KeyMaterial::from_bytes_as_type(&prk_bytes, KeyType::MACKey).unwrap();
         scan.keep();
         assert_eq!(
             scan.run(|| labeled_expand::<H>(suite_id, &prk, b"key", &[b"context"], &mut okm[..])),

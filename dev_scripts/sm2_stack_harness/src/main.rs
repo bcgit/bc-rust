@@ -11,12 +11,11 @@
 //! they are searched for.
 //!
 //! Each operation is also run twice, at the same addresses, over different secrets, and the two
-//! copies compared: but for the ciphertext and the registers the call's first frames saved,
-//! they must be the same.
+//! copies compared: but for the ciphertext, they must be the same.
 //!
-//! Each operation runs with the callee-saved registers zero ([`scrubbed`]): a word of a secret
-//! this program computed with, waiting in one of them, would otherwise be saved to the stack by
-//! the operation's first frames and found there, as on arm64 it was. With `STACK_DETAIL` set,
+//! Each operation runs with the callee- and caller-saved registers zero ([`scrubbed`]): a word of
+//! a secret this program computed with, waiting in one of them, would otherwise be saved to the
+//! stack by the operation's first frames and found there, as on arm64 it was. With `STACK_DETAIL` set,
 //! each finding is also printed with how far below the call it lies (negative above it, in this
 //! program's frames), which is what a wipe is sized from.
 //!
@@ -46,6 +45,8 @@ use bouncycastle_ec::sm2::sm2::SIG_LEN;
 use std::collections::HashSet;
 use std::hint::black_box;
 
+#[path = "../../stack_public_run.rs"]
+mod public;
 #[path = "../../stack_scrubbed_call.rs"]
 mod scrubbed;
 
@@ -56,10 +57,10 @@ const DEPTH: usize = 256 * 1024;
 const PAD: usize = 16 * 1024;
 const PAINT: u8 = 0xA5;
 /// How far below the call a difference between two runs is put down to the registers the
-/// call's first frames saved, and not counted. With those registers zeroed ([`Scan::run`]),
-/// nothing differs there on arm64 (rustc 1.100 and 1.97) or x86-64 (rustc 1.97 and 1.88); this
-/// is room for a frame record and two register pairs.
-const SAVED_REGISTERS: usize = 64;
+/// call's first frames saved, and not counted. None is: with those registers zeroed
+/// ([`Scan::run`]), nothing differs there on x86-64 (rustc 1.100, 1.97 and 1.88) or arm64
+/// (rustc 1.100 and 1.97).
+const SAVED_REGISTERS: usize = 0;
 
 /// The private key of GM/T 0003.5-2012 Annex C.2.
 const DB: [u8; 32] = [
@@ -139,17 +140,9 @@ fn measure<T>(buf: &mut [u8], f: impl FnOnce() -> T) -> T {
     result
 }
 
-/// The leak the second control looks for: a copy of `value` in a frame, left as it is, further
-/// below the call than [`SAVED_REGISTERS`].
+/// The leak the second control looks for: a copy of `value` in a frame, left as it is.
 #[inline(never)]
 fn leak(value: &[u64; 4]) {
-    let mut pad = [0u8; 2 * SAVED_REGISTERS];
-    black_box(&mut pad);
-    leak_here(value);
-}
-
-#[inline(never)]
-fn leak_here(value: &[u64; 4]) {
     let mut local = *value;
     black_box(&mut local);
 }
@@ -268,7 +261,7 @@ impl Scan {
     }
 
     /// Paints, runs `f` and copies the stack out. What `f` returns comes back by value. Run with
-    /// the callee-saved registers zero ([`scrubbed`]), and painted from that frame down as well
+    /// the registers zero ([`scrubbed`]), and painted from that frame down as well
     /// as from [`measure`]'s, so that the slots `measure`'s own frame leaves unwritten hold the
     /// paint and not what an earlier call of this program's left there.
     fn run<T>(&mut self, f: impl FnOnce() -> T) -> T {
@@ -360,8 +353,8 @@ impl Scan {
     }
 
     /// The bytes in which the last run's stack is not the kept run's, leaving out those that
-    /// are a part of `public` in the one and the same part of `public_before` in the other,
-    /// and how far below the call the furthest of them is.
+    /// are pieces of `public` in the one and the same pieces of `public_before` in the other
+    /// ([`public::public_run`]), and how far below the call the furthest of them is.
     fn differences(&self, public_before: &[u8], public: &[u8]) -> (usize, usize) {
         let lowest = |buf: &[u8]| buf.iter().position(|b| *b != PAINT).unwrap_or(DEPTH);
         let start = lowest(&self.before).min(lowest(&self.buf));
@@ -377,10 +370,8 @@ impl Scan {
                 end += 1;
             }
             let len = end - i;
-            let explained = (0..public.len().saturating_sub(len - 1)).any(|at| {
-                public_before[at..at + len] == self.before[i..end]
-                    && public[at..at + len] == self.buf[i..end]
-            });
+            let explained =
+                public::public_run(&self.before, &self.buf, i, end, public_before, public);
             // The first frames of a call save the registers they go on to use, and what those
             // held is this program's own: a loop's pointer, a length.
             let below_the_call = (DEPTH - end).saturating_sub(PAD);
@@ -857,17 +848,33 @@ fn signing(scan: &mut Scan) {
     }
     scan.same("sign", &images[0], &images[1]);
 
-    // The streaming final, on a signer that sits in a box: nothing is moved out of it.
+    // The streaming final, on a signer that sits in a box: nothing is moved out of it. The final
+    // frees the box, and the second draw's is made straight after, before anything else
+    // allocates, so that the allocator hands both runs the same address.
     let mut images = Vec::new();
-    for wide in [WIDE_1, WIDE_2] {
-        *rng = FixedSeedRNG::new([wide, wide].concat().try_into().unwrap());
-        let mut signer: Box<dyn SignatureSigner<SIG_LEN> + '_> =
-            Box::new(sk.create_signer(&mut *rng, Some(IDA)).unwrap());
-        signer.do_update(&msg);
+    let seeds = [WIDE_1, WIDE_2].map(|wide| [wide, wide].concat().try_into().unwrap());
+    *rng = FixedSeedRNG::new(seeds[0]);
+    let rng_ptr: *mut FixedSeedRNG<[u8; 80]> = &mut *rng;
+    let key = &*sk;
+    // SAFETY: `rng_ptr` points into `rng`, which outlives both signers and is not otherwise used
+    // while they live; it is reseeded only after the first signer has been consumed.
+    let new_signer = move || -> Box<dyn SignatureSigner<SIG_LEN> + '_> {
+        Box::new(key.create_signer(unsafe { &mut *rng_ptr }, Some(IDA)).unwrap())
+    };
+    let mut signer = Some(new_signer());
+    for (i, wide) in [WIDE_1, WIDE_2].iter().enumerate() {
+        let mut boxed = signer.take().unwrap();
+        boxed.do_update(&msg);
         scan.keep();
-        assert_eq!(scan.run(|| signer.do_final_out_boxed(&mut sig)), Ok(SIG_LEN));
-        scan.clean("do_final_out_boxed", &check(&sig, &wide));
-        images.push(signature_image(&sig));
+        assert_eq!(scan.run(|| boxed.do_final_out_boxed(&mut sig)), Ok(SIG_LEN));
+        let signed = *sig;
+        if i == 0 {
+            // SAFETY: as above; the first signer is gone.
+            unsafe { *rng_ptr = FixedSeedRNG::new(seeds[1]) };
+            signer = Some(new_signer());
+        }
+        scan.clean("do_final_out_boxed", &check(&signed, wide));
+        images.push(signature_image(&signed));
     }
     scan.same("do_final_out_boxed", &images[0], &images[1]);
 }

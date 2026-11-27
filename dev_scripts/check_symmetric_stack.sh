@@ -14,9 +14,9 @@
 # failing the check: an HMAC worker finished by value, PBKDF2, and an AES key's construction.
 #
 # Each operation is also run twice at the same addresses over different secrets, and the two
-# copies of the stack compared: but for what it hands out and the registers the call's first
-# frames saved, they must be the same. That needs no known value, so it reaches the
-# intermediates the search has no name for.
+# copies of the stack compared: but for what it hands out and an address of the harness's that
+# a frame saved from a register, they must be the same, to the byte below the call. That needs
+# no known value, so it reaches the intermediates the search has no name for.
 #
 # Controls: nothing run must leave nothing and the same stack twice, a copy of a key left in a
 # frame must be found by the search and by the comparison, and a u32 left over an address or a

@@ -15,9 +15,9 @@
 # searched for.
 #
 # Each operation is also run twice at the same addresses over different secrets (two draws of
-# the RNG, two private keys), and the two copies of the stack compared: but for the ciphertext
-# and for the registers the call's first frames saved, they must be the same. That needs no
-# known value, so it reaches the arithmetic's intermediates, which the search has no name for.
+# the RNG, two private keys), and the two copies of the stack compared: but for the ciphertext,
+# they must be the same, to the byte below the call. That needs no known value, so it reaches
+# the arithmetic's intermediates, which the search has no name for.
 #
 # Controls: nothing run must leave nothing and the same stack twice, and a copy of a private key
 # left in a frame must be found by the search and by the comparison, so that a check that finds
@@ -29,8 +29,8 @@
 # this on both (.github/workflows/sm2-stack.yml). A pass says nothing of another target or
 # another compiler, and nothing of a debug build, whose frames are larger and are not covered.
 # It does not look at registers, at the heap, or at what a caller does with a key it was
-# returned, and what the caller's own callee-saved registers held, which a library frame may
-# save, is out of its scope: the harness zeroes them before each operation.
+# returned, and what the caller's own registers held, callee- and caller-saved, which a library
+# frame may save, is out of its scope: the harness zeroes them before each operation.
 #
 #   ./dev_scripts/check_sm2_stack.sh
 set -euo pipefail
