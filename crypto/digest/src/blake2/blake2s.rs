@@ -19,7 +19,7 @@ use core::marker::PhantomData;
 /// RFC 7693 s. 2.1: "Block bytes | bb = 64".
 const BB: usize = 64;
 
-/// RFC 7693 s. 2.1: "Hash bytes | 1 <= nn <= 32". This crate implements only nn = 32.
+/// RFC 7693 s. 2.1: "Hash bytes | 1 <= nn <= 32". This module implements only nn = 32.
 const NN: usize = 32;
 
 /// RFC 7693 s. 2.1: "Key bytes | 0 <= kk <= 32".
@@ -216,6 +216,9 @@ impl Blake2sCore {
             // of this block.
             self.add_to_t(BB);
             compress(&mut self.h, &self.buf, self.t, false);
+            // The block is in `h` now; clear it, so the key block `d[0]` (keyed mode) or a
+            // message block does not stay behind the shorter tail written below.
+            self.buf.fill(0);
             self.buf_len = 0;
 
             // Whole blocks straight from the input, keeping at least one byte back so that the
@@ -582,5 +585,24 @@ impl MACVerifier<NN> for BLAKE2s_256_MAC<'_, Decrypting> {
         let mut computed: Secret<[u8; NN]> = Secret::new();
         self.core.finalize(token, &mut *computed);
         if ct::ct_eq_bytes(&*computed, mac) { Ok(()) } else { Err(MACError::VerificationFailed) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // Private state: whether the buffer still holds key bytes after the key block is compressed
+    // cannot be observed through the public API (a suspended state carries only `buf_len` bytes).
+    use super::*;
+
+    #[test]
+    fn the_key_block_does_not_stay_in_the_buffer() {
+        let key = [0xA5u8; 32];
+        let mut core = Blake2sCore::new_keyed(&key);
+        // One block past the key block and one byte more: the key block and one message block
+        // are compressed, and a one-byte tail is buffered.
+        core.update(&[0x11u8; 64 + 1]);
+        assert_eq!(core.buf_len, 1);
+        assert_eq!(core.buf[0], 0x11);
+        assert!(core.buf[1..].iter().all(|&b| b == 0), "key bytes left behind the tail");
     }
 }

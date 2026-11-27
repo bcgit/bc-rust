@@ -1,5 +1,5 @@
 //! Cross-check of the constant-time engine against a table-driven transcription of BC Java's
-//! `SM4Engine` (`tests/common/mod.rs`), on many keys and blocks, in every lane, in both
+//! `SM4Engine` (`tests/sm4_common/mod.rs`), on many keys and blocks, in every lane, in both
 //! directions.
 //!
 //! The known-answer files pin a handful of published values. This file pins *agreement with the

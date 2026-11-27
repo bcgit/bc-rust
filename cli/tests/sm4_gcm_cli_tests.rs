@@ -7,7 +7,7 @@
 //! and to the library's own `SM4Key<GCM>`.
 
 mod common;
-use bouncycastle::sm4::hazmat::SM4Internal;
+use bouncycastle::symmetric::sm4::hazmat::SM4Internal;
 use common::{
     Framing, KEY16, KEY32, any_input_length, fresh_prefix_per_invocation, library_gcm_decrypt,
     pseudo_random, round_trips, run_err, run_ok, tohex, unhex, wrong_key_lengths,

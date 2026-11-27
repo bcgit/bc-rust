@@ -46,16 +46,16 @@
 //! With rustc 1.97 nightly on x86-64 the frames are: closures 792 B for `TDESInternal::new` and
 //! 536 B for `TDES2Internal::new`, and 40, 72 and 104 B for the one-, two- and four-block entry
 //! points of either engine; the engines' `new` 440 B and 312 B; `expand` 48 B; the one-block
-//! permutation methods 48 B. The crate docs tabulate the chains: `new` 1304 B and 920 B, the
-//! one-block calls 104 B, the two- and four-block calls 80 B and 112 B.
+//! permutation methods 48 B. The `tdes` module docs tabulate the chains: `new` 1304 B and 920 B,
+//! the one-block calls 104 B, the two- and four-block calls 80 B and 112 B.
 
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
 use bouncycastle::core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
-use bouncycastle::tdes::hazmat::{TDES2Internal, TDESInternal};
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
+use bouncycastle::symmetric::tdes::hazmat::{TDES2Internal, TDESInternal};
+use bouncycastle::symmetric::tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
 fn bench_do_nothing() {

@@ -10,10 +10,10 @@
 use crate::helpers::block_mode_helpers::{
     DecryptOnlyAction, decrypt_stream, load_iv, load_key_object,
 };
-use bouncycastle::cipher::modes::CBC;
-use bouncycastle::cipher::padding::PKCS7;
 use bouncycastle::core::symmetric_key::SymmetricDecryptionKey;
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN_2KEY, TDES2Key};
+use bouncycastle::symmetric::modes::CBC;
+use bouncycastle::symmetric::padding::PKCS7;
+use bouncycastle::symmetric::tdes::{BLOCK_LEN, KEY_LEN_2KEY, TDES2Key};
 
 pub(crate) fn tdes2_cbc_cmd(
     action: &DecryptOnlyAction,

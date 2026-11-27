@@ -1,4 +1,3 @@
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -16,6 +15,7 @@ use bouncycastle_symmetric::chacha20::ChaCha20;
 use bouncycastle_symmetric::chacha20_poly1305_aead::{
     ChaCha20_Poly1305, ChaCha20Poly1305Key, MAX_MESSAGE_LEN,
 };
+use bouncycastle_symmetric::{Decrypting, Encrypting};
 
 type Enc<'k> = ChaCha20_Poly1305<'k, Encrypting>;
 type Dec<'k> = ChaCha20_Poly1305<'k, Decrypting>;
@@ -101,7 +101,7 @@ fn key_capacity_does_not_replace_key_length() {
     }
 }
 
-/// The figures in the crate docs' Memory Usage table.
+/// The figures in the module docs' Memory Usage table.
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn sizes_match_the_documented_memory_table() {

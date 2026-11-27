@@ -6,8 +6,6 @@
 #[path = "kbkdf_common/mod.rs"]
 mod common;
 
-use bouncycastle_aes::AES128Key;
-use bouncycastle_cipher::modes::CMAC;
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kdf_params::KdfDescription;
@@ -18,6 +16,7 @@ use bouncycastle_core::traits::{Algorithm, KDF};
 use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
 use bouncycastle_digest::hkdf::HKDF;
 use bouncycastle_digest::sha2::SHA256;
+use bouncycastle_symmetric::aes::AES128Key;
 use bouncycastle_symmetric::kbkdf::{
     CounterPosition, CounterSize, IterationCounterPosition as Position, KDF_Counter_CMAC_AES128,
     KDF_Counter_CMAC_AES192, KDF_Counter_CMAC_AES256, KDF_Counter_HMAC_SHA256,
@@ -26,6 +25,7 @@ use bouncycastle_symmetric::kbkdf::{
     KDF_Feedback_HMAC_SHA256, KDF_Feedback_HMAC_SHA512, PRF_CMAC_AES128, PRF_CMAC_AES192,
     PRF_CMAC_AES256, Prf,
 };
+use bouncycastle_symmetric::modes::CMAC;
 use common::{hmac_sha256, random};
 
 const KEY: [u8; 32] = [0x5A; 32];

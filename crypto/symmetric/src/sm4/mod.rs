@@ -18,7 +18,7 @@
 //!
 //! ## Modes of operation
 //!
-//! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
+//! A key is built once, under a mode from `bouncycastle_symmetric::modes`, and used for as many
 //! messages as needed: `CBC<PKCS7>` for CBC (Sec 8.4; NIST SP 800-38A Sec 6.2) with PKCS#7 padding,
 //! `CFB` for SM4-CFB-128 (Sec 8.5.1), `CFB8` for SM4-CFB-8, the `s = 8` segment size, which is a
 //! different and non-interoperable mode costing one SM4 call per byte, `OFB` for SM4-OFB (Sec 8.6),
@@ -31,13 +31,13 @@
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
 //! padding scheme to bridge the difference; the CFB modes, OFB and CTR are stream ciphers and take
-//! any length with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the
+//! any length with no padding at all. See the `bouncycastle_symmetric::modes` module docs for the
 //! comparison, and [`SM4_CBC`] for why the scheme is named in the type.
 //!
 //! ```
 //! use bouncycastle_symmetric::sm4::SM4Key;
-//! use bouncycastle_cipher::modes::CBC;
-//! use bouncycastle_cipher::padding::PKCS7;
+//! use bouncycastle_symmetric::modes::CBC;
+//! use bouncycastle_symmetric::padding::PKCS7;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 //! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -63,7 +63,7 @@
 //!
 //! ```
 //! use bouncycastle_symmetric::sm4::SM4Key;
-//! use bouncycastle_cipher::modes::CTR;
+//! use bouncycastle_symmetric::modes::CTR;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 //! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -258,8 +258,8 @@
 //! * **Source engine.** The `FK` and `CK` tables, round structure and key schedule this module
 //!   reproduces, and the S-box table the circuit is verified against, come from the reference
 //!   engine named at the top of this page. A direct transcription of it lives in the tests
-//!   (`tests/common/mod.rs` and `tests/bc_java_tests.rs`), and this engine is checked against it on
-//!   thousands of inputs.
+//!   (`tests/sm4_common/mod.rs` and `tests/sm4_bc_java_tests.rs`), and this engine is checked
+//!   against it on thousands of inputs.
 //! * **Normative reference: GB/T 32907-2016**, read via `draft-ribose-cfrg-sm4-10`, "The SM4
 //!   Blockcipher Algorithm And Its Modes Of Operations" (Tse, Wong, Saarinen; CFRG, April 2018).
 //!   Every function cites its section. The S-box and `CK` tables were extracted mechanically from
@@ -267,18 +267,18 @@
 //! * **The non-linear section of the S-box circuit** is from the 113-gate straight-line program
 //!   `SLP_AES_113.txt` in Peralta's circuit collection, described in J. Boyar and R. Peralta, "A
 //!   new combinational logic minimization technique with applications to cryptology",
-//!   <https://eprint.iacr.org/2009/191.pdf>, as transcribed in `bouncycastle-aes`. The
+//!   <https://eprint.iacr.org/2009/191.pdf>, as transcribed in `bouncycastle_symmetric::aes`. The
 //!   algebraic structure of the SM4 S-box that makes the reuse possible is analysed in Liu, Ji,
 //!   Hu, Ding and Lv, "Analysis of the SMS4 Block Cipher" (ACISP 2007); here it was re-derived by
 //!   search and verified exhaustively.
 //! * **The bit-plane transpose** is translated from BearSSL's `aes_ct` by Thomas Pornin (MIT
-//!   licence), as in the AES crate.
+//!   licence), as in the AES module.
 //! * Verified against every value in the draft's Appendix A.1 -- Examples 1 through 6, including
 //!   all 32 round keys and all 32 per-round outputs of Examples 1 and 4, and the two 1,000,000-fold
 //!   iterated ciphertexts -- the SM4-ECB, SM4-CBC, SM4-OFB and SM4-CFB vectors of Appendix A.2.1,
 //!   A.2.2, A.2.3 and A.2.4 (and OpenSSL's `SM4-OFB` vector), the SM4-CTR vectors of Appendix A.2.5
 //!   (through a reference built from the Sec 8.7.1 equations, which the `CTR` key is then held to
-//!   -- see `tests/stream_mode_tests.rs` for why the published counter blocks are not ones it
+//!   -- see `tests/sm4_stream_mode_tests.rs` for why the published counter blocks are not ones it
 //!   produces), plus GB/T 32907-2016's own two examples as republished at
 //!   <https://eprint.iacr.org/2008/329.pdf>. RFC 8998 Appendix A.1 and Project Wycheproof's
 //!   `sm4_gcm_test.json` run through the `GCM` key; Appendix A.2 and `sm4_ccm_test.json` through

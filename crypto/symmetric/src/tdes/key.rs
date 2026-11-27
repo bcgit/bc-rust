@@ -38,7 +38,7 @@ impl TDESEngine for TDES2Internal {}
 ///
 /// [`TDESKey<P, M>`] is generic over the engine `P` -- the three-key [`TDESInternal`] or the
 /// decryption-only two-key [`TDES2Internal`] -- and the mode `M`, exactly as `AESKey<P, M>` is in
-/// `bouncycastle-aes`. [`TDES3Key<M>`] and [`TDES2Key<M>`] name the two engines. The key holds
+/// `bouncycastle_symmetric::aes`. [`TDES3Key<M>`] and [`TDES2Key<M>`] name the two engines. The key holds
 /// the mode's key state (for every TDEA mode, the keyed permutation itself) and its workers borrow
 /// it, so `create_encryptor` and `create_decryptor` copy no schedule.
 ///

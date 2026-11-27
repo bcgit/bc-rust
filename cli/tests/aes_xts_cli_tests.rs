@@ -5,9 +5,9 @@
 //! help listing.
 
 mod common;
-use bouncycastle::aes::{XTS_AES_128, XTS_AES_256};
-use bouncycastle::cipher::modes::{XTS_MAX_DATA_UNIT_LEN, XTS_MIN_DATA_UNIT_LEN, XTSKey};
 use bouncycastle::core::hazmat::BlockPermutation;
+use bouncycastle::symmetric::aes::{XTS_AES_128, XTS_AES_256};
+use bouncycastle::symmetric::modes::{XTS_MAX_DATA_UNIT_LEN, XTS_MIN_DATA_UNIT_LEN, XTSKey};
 use common::{
     KEY32, key_object, listed_in_help, pseudo_random, run, run_err_silent, run_ok, unhex,
 };
@@ -94,7 +94,7 @@ fn the_commands_agree_with_the_library_at_any_data_unit_length() {
 
 /// A 512-byte data unit whose byte k is k mod 251, under the key 01 02 .. and `TWEAK`, against
 /// OpenSSL 3.5.0: the first block and the last 32 bytes of the known answers in
-/// `crypto/aes/tests/xts_tests.rs`, through the commands.
+/// `crypto/symmetric/tests/aes_xts_tests.rs`, through the commands.
 #[test]
 fn an_openssl_known_answer_through_the_commands() {
     let pt: Vec<u8> = (0..512).map(|k| (k % 251) as u8).collect();

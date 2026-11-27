@@ -1,20 +1,20 @@
 //! Type alias for SM4 in CFB8 mode (draft-ribose-cfrg-sm4-10 Sec 8.5 with `s = 8`; NIST SP 800-38A
 //! Sec 6.3, `s = 8`). The docs are on [`SM4_CFB8`], which the module root re-exports.
 
+use crate::modes::Cfb8;
 use crate::sm4::BLOCK_LEN;
 use crate::sm4::hazmat::SM4Internal;
-use bouncycastle_cipher::modes::Cfb8;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
 
-/// SM4 in CFB8 mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// SM4 in CFB8 mode. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`]; the wrong direction is a compile error, not a runtime
 /// check.
 ///
-/// See `bouncycastle_cipher::modes::cfb8` for the construction. The alias is a stream cipher with
+/// See `bouncycastle_symmetric::modes::cfb8` for the construction. The alias is a stream cipher with
 /// a one-byte segment, and comes from a key, [`SM4Key<CFB8>`](crate::sm4::SM4Key), through the
 /// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one block, drawn from
 /// the caller's RNG by encryption and returned.
@@ -22,16 +22,16 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// This is the draft's **SM4-CFB-8**, named in Sec 8.5.1 as "the 8-bit SM4-CFB mode, where s is set
 /// to 8". It is a **different, non-interoperable mode** from SM4-CFB-128, not a variant of it:
 /// their ciphertexts differ from the second byte, and it costs a full SM4 call per byte, sixteen
-/// times the work of [`SM4_CFB`](crate::sm4::SM4_CFB). See the `bouncycastle_cipher::modes::Cfb8` docs
+/// times the work of [`SM4_CFB`](crate::sm4::SM4_CFB). See the `bouncycastle_symmetric::modes::Cfb8` docs
 /// for when that is the right trade.
 ///
 /// The draft defines the mode but publishes no example for it -- Appendix A.2.4's vectors are all
-/// `s = 128` -- so `tests/stream_mode_tests.rs` pins this alias against the Sec 8.5.2 equations
+/// `s = 128` -- so `tests/sm4_stream_mode_tests.rs` pins this alias against the Sec 8.5.2 equations
 /// evaluated directly over the permutation instead.
 ///
 /// ```
 /// use bouncycastle_symmetric::sm4::SM4Key;
-/// use bouncycastle_cipher::modes::{CFB, CFB8};
+/// use bouncycastle_symmetric::modes::{CFB, CFB8};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

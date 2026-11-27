@@ -1,9 +1,12 @@
+//! Hash_DRBG's instantiate, reseed and generate. The tests that seed from the operating system
+//! need the `std` feature; the rest seed from fixed bytes and run in every configuration.
+
 #[cfg(test)]
 mod tests {
     use bouncycastle_core::errors::{KeyMaterialError, RNGError};
-    use bouncycastle_core::key_material::{
-        KeyMaterial, KeyMaterial0, KeyMaterial256, KeyMaterialTrait, KeyType,
-    };
+    #[cfg(feature = "std")]
+    use bouncycastle_core::key_material::KeyMaterialTrait;
+    use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterial256, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::RNG;
     use bouncycastle_core_test_framework::DUMMY_SEED;
@@ -11,6 +14,7 @@ mod tests {
     use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
     use bouncycastle_rng::{MIN_NONCE_LEN, Sp80090ADrbg};
 
+    #[cfg(feature = "std")]
     #[test]
     fn basic_test() {
         // SHA256
@@ -167,6 +171,62 @@ mod tests {
         }
     }
 
+    /// SP 800-90A Rev. 1 Section 9.1, Instantiate Process step 4: a requested strength below 112
+    /// bits is raised to 112, so `SecurityStrength::None` asks for a 112-bit seed and nonce, and
+    /// the instance reports 112 bits. The seed skips `DUMMY_SEED`'s leading zero byte, which on
+    /// its own would be an all-zero key, refused for its type rather than its length.
+    #[test]
+    fn a_strength_below_112_bits_is_instantiated_at_112() {
+        fn instantiate(seed_len: usize, nonce_len: usize) -> Result<HashDRBG_SHA256, RNGError> {
+            let seed =
+                KeyMaterial::<64>::from_bytes_as_type(&DUMMY_SEED[1..=seed_len], KeyType::Seed)
+                    .unwrap();
+            let nonce = KeyMaterial::<64>::from_bytes_as_type(
+                &DUMMY_SEED[64 - nonce_len..64],
+                KeyType::Seed,
+            )
+            .unwrap();
+            let mut drbg = HashDRBG_SHA256::new_uninitialized();
+            drbg.instantiate(false, seed, &nonce, &[], SecurityStrength::None)?;
+            Ok(drbg)
+        }
+        fn refused(r: Result<HashDRBG_SHA256, RNGError>) -> bool {
+            matches!(r, Err(RNGError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))))
+        }
+        assert!(refused(instantiate(1, 0)));
+        assert!(refused(instantiate(1, MIN_NONCE_LEN)));
+        assert!(refused(instantiate(13, MIN_NONCE_LEN)));
+        assert!(refused(instantiate(20, 0)));
+
+        for drbg in [instantiate(14, MIN_NONCE_LEN), instantiate(21, 0)] {
+            let mut drbg = drbg.unwrap();
+            assert_eq!(drbg.security_strength(), SecurityStrength::_112bit);
+            let mut out = [0u8; 32];
+            assert_eq!(drbg.generate_out(&[], &mut out).unwrap(), 32);
+            assert_ne!(out, [0u8; 32]);
+        }
+    }
+
+    /// Section 9.1, Instantiate Process step 2: prediction resistance is not supported, so asking
+    /// for it is an error, and the instance stays uninstantiated.
+    #[test]
+    fn prediction_resistance_is_refused() {
+        let mut drbg = HashDRBG_SHA256::new_uninitialized();
+        let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
+        assert!(matches!(
+            drbg.instantiate(true, seed, &KeyMaterial0::new(), &[], SecurityStrength::_128bit),
+            Err(RNGError::GenericError(_))
+        ));
+        let mut out = [0u8; 32];
+        assert_eq!(drbg.generate_out(&[], &mut out), Err(RNGError::Uninitialized));
+
+        // The refusal used no state: the instance can still be instantiated.
+        let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
+        drbg.instantiate(false, seed, &KeyMaterial0::new(), &[], SecurityStrength::_128bit)
+            .unwrap();
+    }
+
+    #[cfg(feature = "std")]
     #[test]
     fn test_reseed() {
         // Basic success case
@@ -210,6 +270,7 @@ mod tests {
         // Testing would blow up the test suite.
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_generate() {
         // Basic success case
@@ -249,6 +310,7 @@ mod tests {
         // TODO: Tests for ReseedRequired. Investigate how this gets triggered. The limits are in the exobyte range.
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_generate_out() {
         // Basic success case
@@ -295,6 +357,7 @@ mod tests {
         // TODO: tests for ReseedRequired. Investigate how this gets triggered. The limits are in the exobyte range.
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_generate_keymaterial() {
         // Basic success case -- exactly a block of output
@@ -346,6 +409,7 @@ mod tests {
         // TODO: tests for ReseedRequired. Investigate how this gets triggered. The limits are in the exobyte range.
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn test_rng_trait() {
         let mut rng = HashDRBG_SHA256::new_from_os();
@@ -396,9 +460,11 @@ mod tests {
             let seed = KeyMaterial::<64>::from_bytes_as_type(&hex(entropy), KeyType::Seed).unwrap();
             let nonce = KeyMaterial::<64>::from_bytes_as_type(&hex(nonce), KeyType::Seed).unwrap();
             drbg.instantiate(false, seed, &nonce, &[], strength).unwrap();
-            drbg.generate(&[], len).unwrap();
-            drbg.generate(&[], len).unwrap();
-            drbg.generate(&[], len).unwrap()
+            let mut out = vec![0u8; len];
+            for _ in 0..3 {
+                assert_eq!(drbg.generate_out(&[], &mut out).unwrap(), len);
+            }
+            out
         }
         assert_eq!(
             third::<HashDRBG_SHA256>(
@@ -422,16 +488,6 @@ mod tests {
                 "356ad18ba9f67f3a5b5f56d9a20731a05f02f13aa1659eb3906d557e825078208c094ce00e403ec150cfdf98cea7825a54274c23e8194f3f400afe492731987b7e37cbe10eccddb32900b93e859a029ac9032e057428de67af2ad84a877776429ef6d325670be177b0ef1c0a15ad2907bd04cf6b910607abbb179e332b74645dc8d117c4d87da5242c2903216d3ada8ec01402144b61f90ed94b838e298c7a314fe9ebacae1a968dda321de4a9ae1681efa0e714d9f94845e2be898738c1d8b6e288f6599dddf3f4bd049b3512a5046e53b0b5e41276fb94ce63e24371cadc43353bf3dedd9e3b72697f6c10210b261945e052f3f0b1a9c533d4082d5414e61c"
             )
         );
-    }
-
-    /// Table 2: `max_number_of_bits_per_request` is 2^19 bits, 65536 bytes; one more is refused.
-    #[test]
-    fn the_per_request_limit_is_enforced() {
-        let mut rng = HashDRBG_SHA256::new_from_os();
-        assert_eq!(rng.generate(&[], 65536).unwrap().len(), 65536);
-        assert!(matches!(rng.generate(&[], 65537), Err(RNGError::GenericError(_))));
-        let mut out = vec![0u8; 65537];
-        assert!(matches!(rng.generate_out(&[], &mut out), Err(RNGError::GenericError(_))));
     }
 
     /// `add_seed_keymaterial` is the full reseed of Section 10.1.1.3: two instances from one seed

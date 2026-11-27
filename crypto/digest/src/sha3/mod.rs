@@ -166,11 +166,12 @@
 //!
 //! | Object                                                          | Size (bytes) |
 //! |-----------------------------------------------------------------|--------------|
-//! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256`, `SHAKESqueezer`       | 440          |
-//! | `CSHAKE128/256`, `KMACXOF128/256`, `TUPLEHASHXOF128/256`, `CSHAKESqueezer` | 448 |
-//! | `KMAC128/256`, `KMAC128Key`/`KMAC256Key`, `TUPLEHASH128/256`    | 456          |
-//! | `PARALLELHASHXOF128/256`                                        | 912          |
-//! | `PARALLELHASH128/256`                                           | 920          |
+//! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256`, `SHAKESqueezer`       | 424          |
+//! | `CSHAKE128/256`, `KMACXOF128/256`, `TUPLEHASHXOF128/256`, `CSHAKESqueezer` | 432 |
+//! | `KMAC128/256`, `KMAC128Key`/`KMAC256Key`                        | 432          |
+//! | `TUPLEHASH128/256`                                              | 440          |
+//! | `PARALLELHASHXOF128/256`                                        | 880          |
+//! | `PARALLELHASH128/256`                                           | 888          |
 //!
 //! Suspended states, as `SUSPENDED_*_STATE_LEN`:
 //!
@@ -182,7 +183,8 @@
 //! | ParallelHashXOF                                                 | 832          |
 //! | ParallelHash                                                    | 840          |
 //!
-//! Sizes are `core::mem::size_of` values reported by `mem_usage_benches/bench_sha3_mem_usage.rs`
+//! Sizes are `core::mem::size_of` values reported by
+//! `mem_usage_benches/src/bench_sha3_mem_usage.rs`
 //! (`cargo run --release -p mem_usage_benches --bin bench_sha3_mem_usage`), which also has valgrind
 //! massif entry points for measuring peak stack usage of the hash, XOF and suspend/resume paths.
 //!
@@ -196,11 +198,11 @@
 //! * The sponge state and queue are held in [`bouncycastle_utils::secret::Secret`] and zeroized on
 //!   drop, where the value then is. [`XOF::into_squeezer`] moves the sponge, and a move wipes
 //!   nothing: a copy of the state, from which what was absorbed can be computed back, may stay
-//!   on the stack. A SHAKE, cSHAKE or KMACXOF that has absorbed a secret is finished with
+//!   on the stack. An XOF of this module that has absorbed a secret is finished with
 //!   `finish_squeezer` instead ([`SHAKEInternal::finish_squeezer`]), which lends out the squeezer
-//!   where the sponge sits. Those three have it; TupleHashXOF and ParallelHashXOF do not, nor,
-//!   outside this crate, do Ascon's XOFs or BLAKE3. A value finished that way is to be dropped:
-//!   giving it more input, or finishing it any other way, panics.
+//!   where the sponge sits, as BLAKE3's types do; Ascon's XOFs do not have it. A value
+//!   finished that way is to be dropped: giving it more input, or finishing it any other way,
+//!   panics.
 //! * The Keccak-f permutation spills lanes of the state to its stack frame, and those are the
 //!   message, the key or the output of whatever is hashed, so it runs in a frame of its own
 //!   that is overwritten after every call. The overwrite is sized for an optimised build
@@ -288,7 +290,7 @@ mod sealed {
 }
 
 /// The parameter set of a SHA-3 hash. Sealed: the only implementations are the four FIPS 202
-/// parameter sets in this crate, so `SHA3Internal` cannot be instantiated over anything else.
+/// parameter sets in this module, so `SHA3Internal` cannot be instantiated over anything else.
 pub trait SHA3Params: HashAlgParams + Clone + sealed::Sealed {
     /// The security strength, which fixes the capacity and the rate.
     const SIZE: KeccakSize;
@@ -421,7 +423,7 @@ pub trait SHAKEParams: Algorithm + Clone + sealed::Sealed {
     const PARALLELHASHXOF_ALG_NAME: &'static str;
     /// The first of eight state tags for the SP 800-185 functions built on this parameter set,
     /// which follow it in the order below. The same rule as [`SHA3Params::STATE_TAG`]: distinct
-    /// from every other tag in the crate, and never reused.
+    /// from every other tag in the module, and never reused.
     const SP800_185_STATE_TAG_BASE: u8;
     /// The state tag of cSHAKE.
     const CSHAKE_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE;

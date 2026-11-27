@@ -53,9 +53,9 @@
 //!
 //! | PRF | Stack |
 //! |---|---|
-//! | HMAC-SHA256 | 2728 |
-//! | HMAC-SHA512 | 4232 |
-//! | HMAC-SHA3-256 | 6088 |
+//! | HMAC-SHA256 | 3992 |
+//! | HMAC-SHA512 | 5096 |
+//! | HMAC-SHA3-256 | 7592 |
 //!
 //! [`Secret`]: bouncycastle_utils::secret::Secret
 //!

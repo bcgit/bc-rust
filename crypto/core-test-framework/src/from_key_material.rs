@@ -2,7 +2,7 @@
 //! [`FromAnyKeyMaterial`]: the key-type and security-strength policy that the cipher and MAC
 //! suites used to check at every `do_*_init`, now checked once where the key is made.
 
-use crate::DUMMY_SEED;
+use crate::{DUMMY_SEED, ShortRNG};
 use bouncycastle_core::errors::{KeyMaterialError, MACError, SymmetricCipherError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -36,7 +36,8 @@ impl TestFrameworkFromKeyMaterial {
     /// * material of the wrong [`KeyType`] is refused with [`KeyMaterialError::InvalidKeyType`];
     /// * the security-strength policy matches `max_strength`;
     /// * [`FromKeyMaterial::generate`] draws a key from an RNG of sufficient strength, tagged
-    ///   [`FromKeyMaterial::KEY_TYPE`], and refuses one instantiated below the key's strength.
+    ///   [`FromKeyMaterial::KEY_TYPE`], and refuses one instantiated below the key's strength
+    ///   and one that writes short.
     pub fn test<const KEY_LEN: usize, K: FromKeyMaterial<KEY_LEN>>(
         &self,
         alg_name: &'static str,
@@ -104,6 +105,8 @@ impl TestFrameworkFromKeyMaterial {
             Err(SymmetricCipherError::KeyMaterialError(_)) => {}
             Err(e) => panic!("unexpected error from generate: {e:?}"),
         }
+        // ... and not from one that writes fewer bytes than it was asked for
+        assert!(K::generate(&mut ShortRNG).is_err(), "generate must refuse a short draw");
     }
 }
 
@@ -134,7 +137,8 @@ impl TestFrameworkFromAnyKeyMaterial {
     /// * a key one step below the construction's strength is refused by `from_key_material` and
     ///   accepted by `from_key_material_allow_weak`;
     /// * material of the wrong [`KeyType`] is refused with [`KeyMaterialError::InvalidKeyType`];
-    /// * [`FromAnyKeyMaterial::generate`] draws a usable key.
+    /// * [`FromAnyKeyMaterial::generate`] draws a usable key, and refuses an RNG that writes
+    ///   short.
     pub fn test<const MAC_LEN: usize, K: FromAnyKeyMaterial + MacGenerationKey<MAC_LEN>>(
         &self,
         key: &impl KeyMaterialTrait,
@@ -222,5 +226,6 @@ impl TestFrameworkFromAnyKeyMaterial {
         generator.do_update(b"Hi There");
         assert_eq!(generator.do_final(), generated.mac(b"Hi There"));
         assert_ne!(generated.mac(b"Hi There"), weak_ok.mac(b"Hi There"), "a fresh key");
+        assert!(K::generate(&mut ShortRNG).is_err(), "generate must refuse a short draw");
     }
 }

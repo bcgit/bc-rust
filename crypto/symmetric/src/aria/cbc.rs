@@ -1,16 +1,16 @@
 //! Type aliases for ARIA (RFC 5794, KS X 1213-1) in CBC mode (NIST SP 800-38A Sec 6.2), with
 //! padding. The docs are on [`ARIA_CBC_128`], which the module root re-exports.
 
+use crate::Direction;
 use crate::aria::BLOCK_LEN;
 use crate::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle_cipher::Direction;
-use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use crate::modes::Cbc;
+use crate::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use crate::{Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_cipher::padding::{NoPadding, PKCS7};
+use crate::padding::{NoPadding, PKCS7};
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
@@ -19,7 +19,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// `CBC<Pad>` hands out. `Dir` is [`Encrypting`] or [`Decrypting`] and `Pad` is [`PKCS7`] or
 /// [`NoPadding`]; the wrong direction is a compile error, not a runtime check.
 ///
-/// See `bouncycastle_cipher::modes::cbc` for the construction. The alias names the padded worker,
+/// See `bouncycastle_symmetric::modes::cbc` for the construction. The alias names the padded worker,
 /// which accepts input of any size; `NoPadding` accepts only whole blocks but goes through the same
 /// adapter. `ARIA128Key<CBC<PKCS7>>` (or `CBC<NoPadding>`) hands the workers out through the
 /// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair, and `ARIA128Key<CBC<Blocks>>`
@@ -32,8 +32,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::aria::ARIA128Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::PKCS7;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -56,8 +56,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::aria::ARIA128Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::NoPadding;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::NoPadding;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 /// use bouncycastle_rng::HashDRBG_SHA512;

@@ -18,7 +18,7 @@
 //! [`SymmetricCipherEncryptor`]: bouncycastle_core::traits::SymmetricCipherEncryptor
 //! [`SymmetricCipherDecryptor`]: bouncycastle_core::traits::SymmetricCipherDecryptor
 
-use crate::{DUMMY_SEED, FailingRNG};
+use crate::{DUMMY_SEED, FailingRNG, ShortRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::symmetric_key::{
@@ -145,6 +145,16 @@ impl TestFrameworkAEADCipher {
                 Err(SymmetricCipherError::RNGError(_))
             ));
             assert!(stale.iter().all(|&b| b == 0), "encrypt_with_aad_out must zeroize first");
+            // ... and when the RNG writes short, which is no nonce
+            if NONCE_LEN > 0 {
+                let mut stale = vec![0xA5u8; encrypt_detached_out_len(len)];
+                assert!(matches!(
+                    key.encrypt_detached_out(&mut ShortRNG, aad, msg, &mut stale),
+                    Err(SymmetricCipherError::RNGError(_))
+                ));
+                assert!(stale.iter().all(|&b| b == 0), "encrypt_detached_out must zeroize first");
+                assert!(key.create_encryptor(&mut ShortRNG).is_err(), "a short nonce draw");
+            }
             ct.truncate(ct_len);
             assert_ne!(tag, [0u8; TAG_LEN], "len {len}: the tag must not be all zeros");
             // Only assert the ciphertext differs from the plaintext once there is enough of it for
@@ -1091,6 +1101,13 @@ impl TestFrameworkAEADInPlace {
             "a failed nonce draw must be returned as the RNG's error"
         );
         assert_eq!(&buf[..], msg, "a failed nonce draw must leave the buffer untouched");
+        if NONCE_LEN > 0 {
+            assert!(matches!(
+                key.encrypt_detached_inplace(&mut ShortRNG, aad, &mut buf),
+                Err(SymmetricCipherError::RNGError(_))
+            ));
+            assert_eq!(&buf[..], msg, "a short nonce draw must leave the buffer untouched");
+        }
 
         // encryptions under the same key must not reuse a nonce
         if NONCE_LEN > 0 {
@@ -1257,6 +1274,15 @@ impl TestFrameworkAEADTaggedLayout {
         dec.do_update_aad(AAD).unwrap();
         dec.do_decrypt_out(&tampered, &mut pt).unwrap();
         assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::AEADTagCheckFailed)));
+        let mut dec = key.create_decryptor(&nonce);
+        dec.do_update_aad(AAD).unwrap();
+        dec.do_decrypt_out(&tampered, &mut pt).unwrap();
+        let mut last = [0xEEu8; FINAL_LEN];
+        assert!(matches!(
+            dec.do_decrypt_final_out(&mut last),
+            Err(SymmetricCipherError::AEADTagCheckFailed)
+        ));
+        assert_eq!(last, [0u8; FINAL_LEN], "a failed final leaves its buffer zeroized");
 
         let mut wrong_tag = [0u8; TAG_LEN];
         wrong_tag.copy_from_slice(&ct[msg.len()..]);

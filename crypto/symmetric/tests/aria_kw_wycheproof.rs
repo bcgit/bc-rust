@@ -2,9 +2,9 @@
 //! `ARIA*Key<KW>` and `ARIA*Key<KWP>`, via the shared runner. Requires the Wycheproof repository at
 //! `../wycheproof`; absent, the tests warn and pass.
 
-use bouncycastle_cipher::modes::{KW, KWP};
 use bouncycastle_cipher_test_framework::wycheproof;
 use bouncycastle_symmetric::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
+use bouncycastle_symmetric::modes::{KW, KWP};
 
 #[test]
 fn wycheproof_aria_kw() {

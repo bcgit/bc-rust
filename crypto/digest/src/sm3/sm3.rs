@@ -1,5 +1,6 @@
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::traits::{FinishToken, Hash, HashOneShot, Suspendable};
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
@@ -86,11 +87,27 @@ impl SM3 {
         Self { v, byte_count: 0, x_buf: Secret::new(), x_buf_off: 0 }
     }
 
-    /// GB/T 32905-2016 s. 5.3: compression function V^(i+1) = CF(V^(i), B^(i)) for each block.
+    /// [`Self::compress_blocks`] in a frame of its own, and the stack that frame used
+    /// overwritten afterwards: the message expansion and the registers spilled there are the
+    /// message and the chaining value of whatever is hashed, an HMAC key or a private key among
+    /// them.
     ///
     /// Takes the chaining value rather than `&mut self` so callers can pass `self.x_buf` as the
     /// block without a conflicting borrow.
     fn compress(v: &mut [u32; 8], blocks: &[[u8; 64]]) {
+        // Only to save the wipe; mutants note: deleting it is an equivalent mutant.
+        if blocks.is_empty() {
+            return;
+        }
+        Self::compress_blocks(v, blocks);
+        wipe_stack_below::<COMPRESS_WIPED_STACK_WORDS>();
+    }
+
+    /// GB/T 32905-2016 s. 5.3: compression function V^(i+1) = CF(V^(i), B^(i)) for each block.
+    /// Never inlined, so that its frame lies below its caller's, where [`Self::compress`]'s wipe
+    /// reaches it.
+    #[inline(never)]
+    fn compress_blocks(v: &mut [u32; 8], blocks: &[[u8; 64]]) {
         // s. 5.3.2 message expansion: W_0..W_67. W'_j = W_j ^ W_{j+4} is computed on the fly.
         let mut w = [0u32; 68];
 
@@ -263,6 +280,9 @@ impl Hash for SM3 {
             self.x_buf[self.x_buf_off..].copy_from_slice(&block[..available]);
             block = &block[available..];
             Self::compress(&mut self.v, slice::from_ref(&self.x_buf));
+            // Not left where a clone or a suspended state would carry it. Once per call at
+            // most: whole blocks after this one are compressed from `block`.
+            self.x_buf.fill(0);
         }
 
         let (chunks, remainder) = block.as_chunks::<64>();
@@ -289,12 +309,20 @@ impl Hash for SM3 {
         num_partial_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
+        // Cleared before the check, so that a refused call leaves nothing stale in the buffer.
+        output.fill(0);
         if num_partial_bits > 7 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
         Ok(self.do_final_internal(partial_byte, num_partial_bits, output))
     }
 }
+
+/// How much stack [`wipe_stack_below`] overwrites after [`SM3::compress_blocks`], in 64-bit words:
+/// more than that frame, which calls nothing, uses (272 bytes with its return address in the
+/// x86-64 release build), with room for a compiler that lays it out less tightly. An unoptimised
+/// build's frame is not covered.
+const COMPRESS_WIPED_STACK_WORDS: usize = 64;
 
 /// Length in bytes of the serialized state of SM3.
 ///

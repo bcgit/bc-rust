@@ -10,9 +10,10 @@
 //! ciphertexts through the plain one. All of them are raw bytes, or hex with `--hex-input`.
 
 use crate::helpers::{
-    SecretBytes, decode_hex_arg, load_secret, parse_seed, read_input_file,
-    read_input_file_or_stdin, read_secret_file_or_stdin, seed_error, write_bytes_or_hex,
-    write_bytes_or_hex_to_file, write_private_key, write_secret_bytes_or_hex,
+    SecretBytes, WriteError, decode_hex_arg, finish_stdout, load_secret, parse_seed,
+    read_input_file, read_input_file_or_stdin, read_secret_file_or_stdin, seed_error,
+    try_write_bytes_or_hex, try_write_bytes_or_hex_to_file, try_write_stdout, write_bytes_or_hex,
+    write_private_key, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::errors::KEMError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
@@ -20,9 +21,8 @@ use bouncycastle::core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG};
-use bouncycastle::hkdf::HkdfDescription;
-use bouncycastle::hmac::HMACParams;
-use bouncycastle::mlkem::{
+use bouncycastle::digest::hkdf::{HKDFParams, HkdfDescription};
+use bouncycastle::pqc::mlkem::{
     MLKEM512, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey,
     MLKEM512PublicKey, MLKEM768, MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN,
     MLKEM768PrivateKey, MLKEM768PublicKey, MLKEM1024, MLKEM1024_CT_LEN, MLKEM1024_PK_LEN,
@@ -81,7 +81,7 @@ pub(crate) struct ParameterSet<
     keygen: fn(&mut dyn RNG) -> Result<(PK, SK), KEMError>,
     keygen_from_seed: fn(&KeyMaterial<SEED_LEN>) -> Result<(PK, SK), KEMError>,
     keypair_consistency_check: fn(&PK, &SK) -> Result<(), KEMError>,
-    pk_of: fn(&SK) -> PK,
+    pk_of: fn(&SK) -> Result<PK, KEMError>,
     encaps: fn(&PK, &mut dyn RNG) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>,
     decaps: fn(&SK, &[u8; CT_LEN]) -> Result<KeyMaterial<SS_LEN>, KEMError>,
 }
@@ -98,7 +98,7 @@ pub(crate) const MLKEM512_SET: ParameterSet<
     keygen: MLKEM512::keygen,
     keygen_from_seed: MLKEM512::keygen_from_seed,
     keypair_consistency_check: MLKEM512::keypair_consistency_check,
-    pk_of: |sk| sk.pk().clone(),
+    pk_of: |sk| sk.pk().cloned(),
     encaps: |pk, rng| pk.encaps(rng, ()),
     decaps: |sk, ct| sk.decaps(ct, ()),
 };
@@ -115,7 +115,7 @@ pub(crate) const MLKEM768_SET: ParameterSet<
     keygen: MLKEM768::keygen,
     keygen_from_seed: MLKEM768::keygen_from_seed,
     keypair_consistency_check: MLKEM768::keypair_consistency_check,
-    pk_of: |sk| sk.pk().clone(),
+    pk_of: |sk| sk.pk().cloned(),
     encaps: |pk, rng| pk.encaps(rng, ()),
     decaps: |sk, ct| sk.decaps(ct, ()),
 };
@@ -132,7 +132,7 @@ pub(crate) const MLKEM1024_SET: ParameterSet<
     keygen: MLKEM1024::keygen,
     keygen_from_seed: MLKEM1024::keygen_from_seed,
     keypair_consistency_check: MLKEM1024::keypair_consistency_check,
-    pk_of: |sk| sk.pk().clone(),
+    pk_of: |sk| sk.pk().cloned(),
     encaps: |pk, rng| pk.encaps(rng, ()),
     decaps: |sk, ct| sk.decaps(ct, ()),
 };
@@ -152,32 +152,49 @@ pub(crate) fn mlkem_cmd<
     ctfile: &Option<String>,
     output_hex: bool,
 ) {
+    // `exit` runs no destructors, so each arm drops its secrets before a write's result, or
+    // a check's, can end the process.
     match action {
         MLKEMAction::Keygen => {
-            let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os())
-                .unwrap_or_else(|e| keygen_error(e));
-            write_private_key(&sk, output_hex);
+            let written = {
+                let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os())
+                    .unwrap_or_else(|e| keygen_error(e));
+                write_private_key(&sk, output_hex)
+            };
+            finish_stdout(written);
         }
         MLKEMAction::KeygenFromSeed => {
-            let input = read_secret_file_or_stdin(skfile);
-            let seed = parse_seed::<SEED_LEN>(input.ref_to_bytes())
-                .unwrap_or_else(|e| seed_error::<SEED_LEN>(e));
-            let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap_or_else(|e| keygen_error(e));
-            write_private_key(&sk, output_hex);
+            let written = {
+                let input = read_secret_file_or_stdin(skfile);
+                let seed = parse_seed::<SEED_LEN>(input.ref_to_bytes())
+                    .unwrap_or_else(|e| seed_error::<SEED_LEN>(e));
+                let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap_or_else(|e| keygen_error(e));
+                write_private_key(&sk, output_hex)
+            };
+            finish_stdout(written);
         }
         MLKEMAction::PkFromSk => {
-            let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
-            write_bytes_or_hex(&(set.pk_of)(&sk).encode(), output_hex);
+            let pk = {
+                let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
+                (set.pk_of)(&sk)
+            }
+            .unwrap_or_else(|e| {
+                eprintln!("Error: {e:?}");
+                exit(-1)
+            });
+            write_bytes_or_hex(&pk.encode(), output_hex);
         }
         MLKEMAction::CheckConsistency => {
-            let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
             let pk = parse_pk(set, &read_required_file(pkfile, "pkfile"));
-            match (set.keypair_consistency_check)(&pk, &sk) {
-                Ok(_) => crate::helpers::println_stdout("SUCCESS: pk and sk match."),
-                Err(_) => {
-                    eprintln!("Error: the public and private keys do not match.");
-                    exit(-1);
-                }
+            let matches = {
+                let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
+                (set.keypair_consistency_check)(&pk, &sk).is_ok()
+            };
+            if matches {
+                crate::helpers::println_stdout("SUCCESS: pk and sk match.");
+            } else {
+                eprintln!("Error: the public and private keys do not match.");
+                exit(-1);
             }
         }
         MLKEMAction::Encaps => {
@@ -187,16 +204,23 @@ pub(crate) fn mlkem_cmd<
                     eprintln!("Error: encapsulation failed: {e:?}");
                     exit(-1);
                 });
-            write_encaps_output(&ss, &ct, ctfile, output_hex);
+            let written = write_encaps_output(&ss, &ct, ctfile, output_hex);
+            drop(ss);
+            finish_stdout(written);
         }
         MLKEMAction::Decaps => {
-            let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
             let ct = read_ciphertext::<CT_LEN>(ctfile, set.name);
-            let ss = (set.decaps)(&sk, &ct).unwrap_or_else(|e| {
+            let ss = {
+                let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
+                (set.decaps)(&sk, &ct)
+            };
+            let ss = ss.unwrap_or_else(|e| {
                 eprintln!("Error: decapsulation failed: {e:?}");
                 exit(-1);
             });
-            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            let written = write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            drop(ss);
+            finish_stdout(written);
         }
     }
 }
@@ -217,7 +241,7 @@ pub(crate) enum MLKEMHkdfAction {
 
 /// One body for the three `mlkem*-hkdf-*` subcommands: the plain set's keys, and the roles over
 /// `KdfParams` the `_params` marker names, the HKDF described by the salt. The derived key is one hash
-/// output long, the crate's `*_SS_LEN`.
+/// output long, the `mlkem` module's `*_SS_LEN`.
 #[allow(clippy::too_many_arguments)] // one flag per input, the HKDF ones each inline or from a file
 pub(crate) fn mlkem_hkdf_cmd<
     PK,
@@ -245,7 +269,7 @@ pub(crate) fn mlkem_hkdf_cmd<
         + for<'p> EncapsulatingKey<KdfParams<'p, HkdfDescription<'p, H>, SS_LEN>, CT_LEN, SS_LEN>,
     SK: PrivateKey<SK_LEN>
         + for<'p> DecapsulatingKey<KdfParams<'p, HkdfDescription<'p, H>, SS_LEN>, CT_LEN, SS_LEN>,
-    H: HMACParams,
+    H: HKDFParams,
 {
     // RFC 5869 Section 2.2: the salt is optional, "a non-secret random value"; absent, HKDF uses
     // a string of HashLen zeros, which a zero-length salt selects. It is typed as the random
@@ -283,35 +307,46 @@ pub(crate) fn mlkem_hkdf_cmd<
                     eprintln!("Error: encapsulation failed: {e:?}");
                     exit(-1);
                 });
-            write_encaps_output(&ss, &ct, ctfile, output_hex);
+            let written = write_encaps_output(&ss, &ct, ctfile, output_hex);
+            drop(ss);
+            finish_stdout(written);
         }
         MLKEMHkdfAction::Decaps => {
-            let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
             let ct = read_ciphertext::<CT_LEN>(ctfile, set.name);
-            let ss = sk.decaps(&ct, params).unwrap_or_else(|e| {
+            // `exit` runs no destructors, so the key is dropped before the result is looked at.
+            let ss = {
+                let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
+                sk.decaps(&ct, params)
+            };
+            let ss = ss.unwrap_or_else(|e| {
                 eprintln!("Error: decapsulation failed: {e:?}");
                 exit(-1);
             });
-            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            let written = write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+            drop(ss);
+            finish_stdout(written);
         }
     }
 }
 
 /// The ciphertext to file and the secret to stdout, or both to stdout in hex separated by a
-/// newline when there is no ctfile.
+/// newline when there is no ctfile. A failed write is returned for the caller to act on once it
+/// has dropped the secret.
 fn write_encaps_output<const SS_LEN: usize, const CT_LEN: usize>(
     ss: &KeyMaterial<SS_LEN>,
     ct: &[u8; CT_LEN],
     ctfile: &Option<String>,
     output_hex: bool,
-) {
+) -> Result<(), WriteError> {
     if let Some(ctfile) = ctfile {
-        write_bytes_or_hex_to_file(ct, ctfile, output_hex);
-        write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex);
+        try_write_bytes_or_hex_to_file(ct, ctfile, output_hex).and_then(|()| {
+            write_secret_bytes_or_hex(ss.ref_to_bytes(), output_hex).map_err(WriteError::from)
+        })
     } else {
-        write_bytes_or_hex(ct, true);
-        crate::helpers::write_stdout(b"\n");
-        write_secret_bytes_or_hex(ss.ref_to_bytes(), true);
+        try_write_bytes_or_hex(ct, true)
+            .and_then(|()| try_write_stdout(b"\n"))
+            .and_then(|()| write_secret_bytes_or_hex(ss.ref_to_bytes(), true))
+            .map_err(WriteError::from)
     }
 }
 

@@ -53,7 +53,7 @@ const MULTIPLY_IS_FIXED_LATENCY: bool = cfg!(any(target_arch = "x86_64", target_
 /// wherever it may: two `lea`s on x86-64, where that is harmless, and a `muls` on Cortex-M0,
 /// whose timing depends on the operand. So off the two fixed-latency targets `v` first goes
 /// through [`ct::value_barrier`], which hides its known-zero bits, and the ORs stay ORs; this is
-/// the same guard as `bouncycastle-aes`'s round-key widening, and
+/// the same guard as `bouncycastle_symmetric::aes`'s round-key widening, and
 /// `dev_scripts/check_aes_ct_asm.sh` greps the round function's assembly for it on Cortex-M0
 /// and RISC-V 32I.
 #[inline(always)]

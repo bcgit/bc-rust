@@ -1,16 +1,16 @@
 //! Padded CBC through the key: the aliases are only type aliases, so what is worth checking is
 //! that both parameters select -- the direction picks the encryptor or the decryptor, and the
 //! padding scheme changes the behaviour. The mode and the padding layer are tested in
-//! `bouncycastle-cipher`; this is the wiring between them and the key.
+//! `bouncycastle_symmetric::modes`; this is the wiring between them and the key.
 
 use crate::Permutation;
 use crate::material::{material, rng};
-use bouncycastle_cipher::BlockCipherKey;
-use bouncycastle_cipher::modes::CBC;
-use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
+use bouncycastle_symmetric::BlockCipherKey;
+use bouncycastle_symmetric::modes::CBC;
+use bouncycastle_symmetric::padding::{NoPadding, PKCS7};
 
 const BLOCK_LEN: usize = 16;
 

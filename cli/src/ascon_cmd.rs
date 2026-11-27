@@ -4,10 +4,6 @@
 use std::io::{self, Read};
 use std::process::exit;
 
-use bouncycastle::ascon::AsconAEAD128Key;
-use bouncycastle::ascon::AsconCXof128;
-use bouncycastle::ascon::AsconHash256;
-use bouncycastle::ascon::AsconXof128;
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -16,6 +12,10 @@ use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, Fr
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
+use bouncycastle::symmetric::ascon::AsconAEAD128Key;
+use bouncycastle::symmetric::ascon::AsconCXof128;
+use bouncycastle::symmetric::ascon::AsconHash256;
+use bouncycastle::symmetric::ascon::AsconXof128;
 
 use crate::helpers;
 use crate::helpers::{CHUNK_LEN, decode_hex_arg, load_secret, read_input_file, read_stdin_chunk};
@@ -99,7 +99,8 @@ pub(crate) fn cxof128_cmd(customization: &[u8], output_len: usize, output_hex: b
 /// Both directions stream stdin in fixed-size chunks (no full-buffer slurp). Encryption emits
 /// ciphertext eagerly, before the tag is known; note that in the decryption direction, plaintext
 /// is likewise emitted before the tag has been checked, so it should not be treated as
-/// authentic until this command exits with status 0 (see the crate's "Security Considerations").
+/// authentic until this command exits with status 0 (see the `ascon` module's "Security
+/// Considerations").
 #[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn aead128_cmd(
     key: &Option<String>,
@@ -181,7 +182,7 @@ fn aead128_encrypt_stream(
 /// Decrypts a stream whose final 16 bytes are the tag, which is only known once EOF is reached.
 /// The key's decryptor holds the last 16 bytes it has seen back itself, releasing everything
 /// before them as soon as it is known not to be part of the tag; at EOF
-/// [`SymmetricCipherDecryptor::do_decrypt_final`] checks what it held back as the tag.
+/// [`SymmetricCipherDecryptor::do_decrypt_final_out`] checks what it held back as the tag.
 fn aead128_decrypt_stream(
     key: &AsconAEAD128Key,
     nonce: Option<&[u8; 16]>,
@@ -223,8 +224,9 @@ fn aead128_decrypt_stream(
         helpers::write_bytes_or_hex(&out[..written], output_hex);
     }
 
-    match cipher.do_decrypt_final() {
-        Ok((last, last_len)) => {
+    let mut last = [0u8; 16];
+    match cipher.do_decrypt_final_out(&mut last) {
+        Ok(last_len) => {
             helpers::write_bytes_or_hex(&last[..last_len], output_hex);
             if output_hex {
                 crate::helpers::write_stdout(b"\n");

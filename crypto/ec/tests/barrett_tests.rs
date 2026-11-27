@@ -1,5 +1,5 @@
 //! Known-answer tests for [`bouncycastle_ec::barrett`], with `m = n - 1` for P-256 (the modulus
-//! `bouncycastle-ecdsa`'s extra-bits reduction passes it). `MU_LOW_LIMBS` is
+//! `bouncycastle_ec::ecdsa`'s extra-bits reduction passes it). `MU_LOW_LIMBS` is
 //! `floor(2^512 / m) - 2^256`, and every expected value is Python's `T % m`, both computed
 //! independently of this crate; the inputs are the extremes of the algorithm's bound (`0`, `1`,
 //! `m - 1`, `m`, `m + 1`, `2m - 1`, `4m - 1`, `m * 2^256 - 1`, the all-ones values at the widths

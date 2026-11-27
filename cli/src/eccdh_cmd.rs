@@ -1,4 +1,4 @@
-//! Generic CLI wiring for every curve in `bouncycastle-eccdh`: one instantiation of
+//! Generic CLI wiring for every curve in `bouncycastle_ec::eccdh`: one instantiation of
 //! [`eccdh_cmd`] per curve marker, as `ecdsa_cmd.rs` does for ECDSA. `agree` writes the raw shared secret `Z` of SP 800-56A Rev. 3
 //! Section 5.7.1.2, which is keying material for a KDF (`hkdf-sha256` and friends take it from
 //! a file through `--ikm-file`; the inline `--ikm` would leave it in the command history), not a
@@ -7,7 +7,7 @@
 
 use crate::helpers::kem_helpers::{decaps_cmd, encaps_cmd};
 use crate::helpers::{
-    println_stdout, read_input_file, read_secret_file_or_stdin, write_bytes_or_hex,
+    finish_stdout, println_stdout, read_input_file, read_secret_file_or_stdin, write_bytes_or_hex,
     write_private_key, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::agreement_key::AgreementKey;
@@ -16,9 +16,9 @@ use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle::ec::curve::Curve;
+use bouncycastle::ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
+use bouncycastle::ec::eccdh::keys_common::DerivePublicKey;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
-use bouncycastle::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
-use bouncycastle::eccdh::keys_common::DerivePublicKey;
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
 use std::process::exit;
@@ -58,25 +58,40 @@ pub(crate) fn eccdh_cmd<
     output_hex: bool,
     alg_name: &str,
 ) {
+    // `exit` runs no destructors, so each arm drops its secrets before a write's result, or
+    // a check's, can end the process.
     match action {
         ECCDHAction::Keygen => {
-            let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap_or_else(|e| {
-                eprintln!("Error: key generation failed: {e:?}");
-                exit(-1);
-            });
-            write_private_key(&sk, output_hex);
+            let written = {
+                let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap_or_else(|e| {
+                    eprintln!("Error: key generation failed: {e:?}");
+                    exit(-1);
+                });
+                write_private_key(&sk, output_hex)
+            };
+            finish_stdout(written);
         }
         ECCDHAction::PkFromSk => {
-            let sk =
-                parse_sk::<SK, SK_LEN>(read_secret_file_or_stdin(skfile).ref_to_bytes(), alg_name);
-            write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
+            let pk = {
+                let sk = parse_sk::<SK, SK_LEN>(
+                    read_secret_file_or_stdin(skfile).ref_to_bytes(),
+                    alg_name,
+                );
+                sk.derive_pk()
+            };
+            write_bytes_or_hex(&pk.encode(), output_hex);
         }
         ECCDHAction::CheckConsistency => {
-            let sk =
-                parse_sk::<SK, SK_LEN>(read_secret_file_or_stdin(skfile).ref_to_bytes(), alg_name);
             let pk = parse_pk::<PK, PK_LEN>(&require_file(pkfile, "pkfile"), alg_name);
             // SP 800-56A Rev. 3 Section 5.6.2.1.4 method (b): recompute dG and compare.
-            if sk.derive_pk() == pk {
+            let matches = {
+                let sk = parse_sk::<SK, SK_LEN>(
+                    read_secret_file_or_stdin(skfile).ref_to_bytes(),
+                    alg_name,
+                );
+                sk.derive_pk() == pk
+            };
+            if matches {
                 println_stdout("SUCCESS: pk and sk match.");
             } else {
                 eprintln!("FAILURE: pk and sk do not match.");
@@ -84,14 +99,21 @@ pub(crate) fn eccdh_cmd<
             }
         }
         ECCDHAction::Agree => {
-            let sk =
-                parse_sk::<SK, SK_LEN>(read_secret_file_or_stdin(skfile).ref_to_bytes(), alg_name);
             let peer_pk = parse_pk::<PK, PK_LEN>(&require_file(pkfile, "pkfile"), alg_name);
-            let z = sk.agree(&peer_pk, ()).unwrap_or_else(|e| {
+            let z = {
+                let sk = parse_sk::<SK, SK_LEN>(
+                    read_secret_file_or_stdin(skfile).ref_to_bytes(),
+                    alg_name,
+                );
+                sk.agree(&peer_pk, ())
+            };
+            let z = z.unwrap_or_else(|e| {
                 eprintln!("Error: key agreement failed: {e:?}");
                 exit(-1);
             });
-            write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
+            let written = write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
+            drop(z);
+            finish_stdout(written);
         }
         // The three curves with a DHKEM take these two in `dhkem_cmd`.
         ECCDHAction::Encaps | ECCDHAction::Decaps => {

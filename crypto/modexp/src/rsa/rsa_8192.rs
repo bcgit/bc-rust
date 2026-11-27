@@ -1,0 +1,54 @@
+//! RSA-8192: the generic types at this size, as aliases over the marker [`RSA8192`]:
+//! every (scheme, hash) pairing offered at this size, the lengths, and RSASVE; a key is
+//! `RsaPrivateKey<RSASSA_PSS_SHA256>` and so on, and comes from the marker's generators.
+//! Every (scheme, hash) pairing is an algorithm marker the key role traits are implemented over.
+//! PSS's salt length is the hash's own output length throughout, RFC 8017 §9.1 note 4's
+//! "typical" choice and Wycheproof's own `rsa_pss_*_mgf1_<hLen>_test.json`.
+
+use crate::rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
+use crate::rsa::rsassa_pss::RSASSA_PSS;
+use crate::rsa::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
+pub use crate::rsa::size::RSA8192;
+use crate::rsa::size::RsaSize;
+use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
+
+/// Encoded length of an RSA-8192 public key: `n || e`.
+pub const PK_LEN: usize = RSA8192::PK_LEN;
+/// Length of an RSA-8192 signature: the modulus's.
+pub const SIG_LEN: usize = RSA8192::K_LEN;
+/// Encoded length of an RSA-8192 private key: `p || q || dP || dQ || qInv || e`.
+pub const SK_LEN: usize = RSA8192::SK_LEN;
+
+/// RSASSA-PKCS1-v1_5 with SHA-256 at RSA-8192.
+#[allow(non_camel_case_types)]
+pub type RSASSA_PKCS1_v1_5_SHA256 = RSASSA_PKCS1_v1_5<RSA8192, SHA256>;
+/// RSASSA-PKCS1-v1_5 with SHA-384 at RSA-8192.
+#[allow(non_camel_case_types)]
+pub type RSASSA_PKCS1_v1_5_SHA384 = RSASSA_PKCS1_v1_5<RSA8192, SHA384>;
+/// RSASSA-PKCS1-v1_5 with SHA-512 at RSA-8192.
+#[allow(non_camel_case_types)]
+pub type RSASSA_PKCS1_v1_5_SHA512 = RSASSA_PKCS1_v1_5<RSA8192, SHA512>;
+/// RSASSA-PSS with SHA-256 (and MGF1 over it) at RSA-8192.
+#[allow(non_camel_case_types)]
+pub type RSASSA_PSS_SHA256 = RSASSA_PSS<RSA8192, SHA256>;
+/// RSASSA-PSS with SHA-384 (and MGF1 over it) at RSA-8192.
+#[allow(non_camel_case_types)]
+pub type RSASSA_PSS_SHA384 = RSASSA_PSS<RSA8192, SHA384>;
+/// RSASSA-PSS with SHA-512 (and MGF1 over it) at RSA-8192.
+#[allow(non_camel_case_types)]
+pub type RSASSA_PSS_SHA512 = RSASSA_PSS<RSA8192, SHA512>;
+
+/// An RSA-8192 key-establishment private key.
+pub type RSA8192KEMPrivateKey = RsaKEMPrivateKey<RSA8192>;
+/// An RSA-8192 key-establishment public key.
+pub type RSA8192KEMPublicKey = RsaKEMPublicKey<RSA8192>;
+/// Length of an RSASVE-8192 ciphertext: `nLen`.
+pub const CT_LEN: usize = RSA8192::K_LEN;
+/// Length of an RSASVE-8192 shared secret, the secret value `Z`: `nLen`.
+pub const SS_LEN: usize = RSA8192::K_LEN;
+/// RSASVE at RSA-8192; `RSASVE::keygen` gives the KEM pair.
+pub type RSASVE = crate::rsa::rsasve::RSASVE<RSA8192>;
+/// RSAES-OAEP at RSA-8192 with the label hash `H` and MGF1 over `M`; the key-establishment
+/// keys above run it under [`OaepParams`](crate::rsa::rsaes_oaep::OaepParams).
+#[allow(non_camel_case_types)]
+pub type RSAES_OAEP<H, M = H> = crate::rsa::rsaes_oaep::RSAES_OAEP<RSA8192, H, M>;

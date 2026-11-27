@@ -1,16 +1,16 @@
 //! Type aliases for TDES in CBC mode (NIST SP 800-38A Sec 6.2; "TCBC" in SP 800-38A Appendix E),
 //! with padding. The docs are on [`TDES_CBC`], which the module root re-exports.
 
+use crate::Direction;
+use crate::modes::Cbc;
+use crate::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use crate::tdes::BLOCK_LEN;
 use crate::tdes::hazmat::{TDES2Internal, TDESInternal};
-use bouncycastle_cipher::Direction;
-use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use crate::{Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_cipher::padding::{NoPadding, PKCS7};
+use crate::padding::{NoPadding, PKCS7};
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
@@ -24,8 +24,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES3Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::PKCS7;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -51,8 +51,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES3Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::NoPadding;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::NoPadding;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 /// use bouncycastle_rng::HashDRBG_SHA512;
@@ -78,9 +78,9 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```compile_fail
 /// use bouncycastle_symmetric::tdes::{TDES_CBC, TDES3Key};
-/// use bouncycastle_cipher::Encrypting;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::{NoPadding, PKCS7};
+/// use bouncycastle_symmetric::Encrypting;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::{NoPadding, PKCS7};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 /// use bouncycastle_rng::HashDRBG_SHA512;
@@ -95,7 +95,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// let _mismatched: TDES_CBC<Encrypting, PKCS7> = enc;
 /// ```
 ///
-/// See `bouncycastle_cipher::modes::cbc` for the construction. The aliases name the padded
+/// See `bouncycastle_symmetric::modes::cbc` for the construction. The aliases name the padded
 /// workers, which accept input of any size; `NoPadding` accepts only whole blocks but goes through
 /// the same adapter. The workers come from a key: [`TDES3Key<CBC<PKCS7>>`](crate::tdes::TDES3Key) (or
 /// `CBC<NoPadding>`) hands them out through the [`SymmetricEncryptionKey`] /
@@ -111,7 +111,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// explicit at every use, and makes a mismatched pair a compile error rather than a decryption
 /// that returns plausible-looking rubbish.
 ///
-/// The two schemes `bouncycastle_cipher::padding` provides are [`PKCS7`], which is what almost
+/// The two schemes `bouncycastle_symmetric::padding` provides are [`PKCS7`], which is what almost
 /// everyone means by "padded CBC" (RFC 5652 s. 6.3; Java's `DESede/CBC/PKCS5Padding`), and
 /// [`NoPadding`], which adds nothing and instead *rejects* a message that is not a whole number
 /// of blocks -- useful for formats already defined on block boundaries, where silently padding
@@ -142,8 +142,8 @@ pub type TDES_CBC<'k, Dir, Pad> = <Dir as Direction>::Select<
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES2Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::NoPadding;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::NoPadding;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 ///

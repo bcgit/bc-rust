@@ -3,11 +3,11 @@
 //!
 //! ChaCha20 has no interesting stack profile: every call works on one 64-byte block state, so a
 //! call needs a few hundred bytes, below the floor of the process's own start-up that massif
-//! reports (see `bench_aes_mem_usage`). The figures in the crate docs are read from the compiler
-//! as `bench_ascon_mem_usage` describes: the deepest chain of frames below each `measure` closure
-//! after LTO, from `-C remark=prologepilog` and the disassembly, plus 8 bytes of return address
-//! per call, x86-64 Linux. The panic paths are not followed, and the `&mut dyn RNG` call is to
-//! `FixedNonce::next_bytes_out`.
+//! reports (see `bench_aes_mem_usage`). The figures in the `chacha20` module docs are read from the
+//! compiler as `bench_ascon_mem_usage` describes: the deepest chain of frames below each `measure`
+//! closure after LTO, from `-C remark=prologepilog` and the disassembly, plus 8 bytes of return
+//! address per call, x86-64 Linux. The panic paths are not followed, and the `&mut dyn RNG` call is
+//! to `FixedNonce::next_bytes_out`.
 //!
 //! ```text
 //! RUSTFLAGS="-C remark=prologepilog" cargo build --release -p mem_usage_benches --bin bench_chacha20_mem_usage 2> remarks.txt
@@ -23,8 +23,6 @@
 
 use core::hint::black_box;
 
-use bouncycastle::chacha20::{ChaCha20, ChaCha20Key, KEY_LEN, NONCE_LEN};
-use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::{RNGError, SymmetricCipherError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
@@ -32,6 +30,8 @@ use bouncycastle::core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle::core::traits::{RNG, StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle::symmetric::chacha20::{ChaCha20, ChaCha20Key, KEY_LEN, NONCE_LEN};
+use bouncycastle::symmetric::{Decrypting, Encrypting};
 
 type Enc = ChaCha20<'static, Encrypting>;
 type Dec = ChaCha20<'static, Decrypting>;

@@ -32,12 +32,11 @@
 //!
 //! Everything internal to the modes -- the counter increment, the short final block, the shift
 //! register, the chunking -- is covered by the SP 800-38A and ACVP vectors in
-//! `bouncycastle_cipher::modes`.
+//! `bouncycastle_symmetric::modes`.
 
 #[path = "camellia_common/mod.rs"]
 mod common;
 
-use bouncycastle_cipher::modes::{CFB, CFB8, CTR, OFB};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::hazmat::FixedSeedRNG;
@@ -52,6 +51,7 @@ use bouncycastle_symmetric::camellia::hazmat::{
 use bouncycastle_symmetric::camellia::{
     BLOCK_LEN, CTR_NONCE_LEN, Camellia128Key, Camellia192Key, Camellia256Key,
 };
+use bouncycastle_symmetric::modes::{CFB, CFB8, CTR, OFB};
 use common::bytes;
 
 const KEY_128: &str = "2B7E151628AED2A6ABF7158809CF4F3C";
@@ -672,7 +672,7 @@ fn the_cfb8_keys_agree_with_the_equations() {
 
 /// The counter limit, through a key: under `CTR<15>` the counter is one byte, so the 256th block
 /// is the last the mode will produce, and the byte after it is refused rather than repeating the
-/// keystream (`bouncycastle_cipher::modes::Ctr`'s rule, pinned here on a Camellia key so that the
+/// keystream (`bouncycastle_symmetric::modes::Ctr`'s rule, pinned here on a Camellia key so that the
 /// key-object path reaches it).
 #[test]
 fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {

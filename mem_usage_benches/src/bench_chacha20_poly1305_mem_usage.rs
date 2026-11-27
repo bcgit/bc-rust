@@ -1,11 +1,11 @@
 //! A single run of one ChaCha20-Poly1305 entry point, so that its stack usage can be read. Build
 //! in release mode.
 //!
-//! The figures in the crate docs are read from the compiler as `bench_ascon_mem_usage` and
-//! `bench_chacha20_mem_usage` describe: the deepest chain of frames below each `measure` closure
-//! after LTO, from `-C remark=prologepilog` and the disassembly, plus 8 bytes of return address
-//! per call, x86-64 Linux. The panic paths are not followed, and the `&mut dyn RNG` call is to
-//! `FixedNonce::next_bytes_out`.
+//! The figures in the `chacha20_poly1305_aead` module docs are read from the compiler as
+//! `bench_ascon_mem_usage` and `bench_chacha20_mem_usage` describe: the deepest chain of frames
+//! below each `measure` closure after LTO, from `-C remark=prologepilog` and the disassembly, plus
+//! 8 bytes of return address per call, x86-64 Linux. The panic paths are not followed, and the
+//! `&mut dyn RNG` call is to `FixedNonce::next_bytes_out`.
 //!
 //! ```text
 //! RUSTFLAGS="-C remark=prologepilog" cargo build --release -p mem_usage_benches --bin bench_chacha20_poly1305_mem_usage 2> remarks.txt
@@ -20,10 +20,6 @@
 
 use core::hint::black_box;
 
-use bouncycastle::chacha20_poly1305_aead::{
-    ChaCha20_Poly1305, ChaCha20Poly1305Key, KEY_LEN, NONCE_LEN, TAG_LEN,
-};
-use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::{RNGError, SymmetricCipherError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
@@ -32,6 +28,10 @@ use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, RNG, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
+use bouncycastle::symmetric::chacha20_poly1305_aead::{
+    ChaCha20_Poly1305, ChaCha20Poly1305Key, KEY_LEN, NONCE_LEN, TAG_LEN,
+};
+use bouncycastle::symmetric::{Decrypting, Encrypting};
 
 type Key = ChaCha20Poly1305Key;
 type Enc = ChaCha20_Poly1305<'static, Encrypting>;

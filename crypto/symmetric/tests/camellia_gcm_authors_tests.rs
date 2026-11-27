@@ -7,12 +7,11 @@
 //! under Camellia-128 and Camellia-256. The cases with a 12-byte IV are here, numbered as in
 //! that file: 1, 3 and 4 at 128 bits and 13 to 16 at 256 bits. Its cases 5, 6, 17 and 18 use
 //! 8- and 60-byte IVs, which [`GCM`] does not take (the nonce is fixed at 96 bits), so they are
-//! not run. Camellia-192 has no case in the set; `gcm_bc_java_tests.rs` covers it.
+//! not run. Camellia-192 has no case in the set; `camellia_gcm_bc_java_tests.rs` covers it.
 
 #[path = "camellia_common/mod.rs"]
 mod common;
 
-use bouncycastle_cipher::modes::{GCM, GMAC};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -20,6 +19,7 @@ use bouncycastle_core::symmetric_key::{
     AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial, NonceMacGenerationKey,
 };
 use bouncycastle_symmetric::camellia::{Camellia128Key, Camellia256Key};
+use bouncycastle_symmetric::modes::{GCM, GMAC};
 use common::bytes;
 
 /// (case, key, IV, AAD, plaintext, ciphertext, tag).

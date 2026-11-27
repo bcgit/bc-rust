@@ -1,4 +1,4 @@
-# The private-key operations of bouncycastle-rsa, each run over a painted stack that is then
+# The private-key operations of bouncycastle_modexp::rsa, each run over a painted stack that is then
 # searched for what the operation handled, for `../check_rsa_stack.sh`. Its own workspace, so
 # the root `cargo build --workspace` never builds it.
 [package]
@@ -11,7 +11,7 @@ publish = false
 bouncycastle-core = { path = "../../crypto/core" }
 bouncycastle-digest = { path = "../../crypto/digest" }
 bouncycastle-rng = { path = "../../crypto/rng" }
-bouncycastle-rsa = { path = "../../crypto/rsa" }
+bouncycastle-modexp = { path = "../../crypto/modexp" }
 
 # The root workspace's release profile: the wipes are sized for the frames it lays out.
 [profile.release]

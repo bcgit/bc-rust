@@ -44,12 +44,13 @@
 //!
 //! With rustc 1.97 nightly on x86-64 the frames are: closures 264 B for `new`, 88 B for the one-
 //! and four-block entry points and 104 B for the two-block ones; `new` 232 B; `encrypt_4blocks`
-//! and `decrypt_4blocks` 120 B; `tau` 152 B; `ortho` 24 B. The crate docs tabulate the chains,
-//! 704 B for `new`, 416 B for the one- and four-block calls and 432 B for the two-block ones.
+//! and `decrypt_4blocks` 120 B; `tau` 152 B; `ortho` 24 B. The `sm4` module docs tabulate the
+//! chains, 704 B for `new`, 416 B for the one- and four-block calls and 432 B for the two-block
+//! ones.
 
 #![allow(dead_code)]
 
-use bouncycastle::sm4::hazmat::SM4Internal;
+use bouncycastle::symmetric::sm4::hazmat::SM4Internal;
 
 use mem_usage_benches::block_cipher_mem_usage as bench;
 

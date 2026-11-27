@@ -36,8 +36,10 @@ impl<P: MLKEMParams + CiphertextLen<CT_LEN>, const CT_LEN: usize> EncapsWithRand
     for MLKEMPublicKey<P>
 {
     fn encaps_with_randomness(&self, m: [u8; MLKEM_RND_LEN]) -> ([u8; MLKEM_SS_LEN], [u8; CT_LEN]) {
-        // The public contract returns `K` by value; the internal path keeps it in a `Secret`.
-        let (K, ct) = MLKEM::<P>::encaps_internal::<CT_LEN>(self, &m);
-        (*K, ct)
+        // The public contract returns `K` by value; the internal path writes into these.
+        let mut K = [0u8; MLKEM_SS_LEN];
+        let mut ct = [0u8; CT_LEN];
+        MLKEM::<P>::encaps_internal_out::<CT_LEN>(self, &m, &mut ct, &mut K);
+        (K, ct)
     }
 }

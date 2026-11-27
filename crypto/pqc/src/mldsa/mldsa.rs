@@ -451,7 +451,7 @@
 //! ```
 
 use crate::mldsa::aux_functions::{
-    expand_mask, make_hint_vecs, sig_decode, sig_encode, use_hint_vecs,
+    expand_mask_out, make_hint_vecs, sig_decode, sig_encode, use_hint_vecs,
 };
 use crate::mldsa::matrix::{MatrixTrait, VectorTrait};
 use crate::mldsa::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPrivateKeyTrait};
@@ -470,11 +470,10 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTr
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey,
-    OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, sign_out_with_signer,
-    verify_with_verifier,
+    OneShotVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey, verify_with_verifier,
 };
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, FinishToken, Hash, RNG, SignatureSigner, SignatureVerifier,
+    Algorithm, AlgorithmOID, FinishToken, Hash, RNG, RNGExt, SignatureSigner, SignatureVerifier,
     XOFSqueezer,
 };
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
@@ -657,9 +656,10 @@ pub(in crate::mldsa) fn sign_internal<
     // 10: while (𝐳, 𝐡) = ⊥ do
     //  ▷ rejection sampling loop
 
-    // these need to be outside the loop because they form the encoded signature value
+    // these need to be outside the loop because they form the encoded signature value. 𝐳 is
+    // secret until a round is accepted, and in a rejected round for good, so it is a `Secret`.
     let mut sig_val_c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
-    let mut sig_val_z: P::VecL;
+    let mut sig_val_z = Secret::<P::VecL>::new();
     let mut sig_val_h: P::VecK;
     loop {
         // FIPS 204 s. 6.2 allows:
@@ -670,21 +670,27 @@ pub(in crate::mldsa) fn sign_internal<
             return Err(SignatureError::RejectionLimitExceeded);
         }
 
-        // 11: 𝐲 ∈ 𝑅^ℓ ← ExpandMask(𝜌″, 𝜅)
-        let mut y = expand_mask::<P>(&rho_p_p, kappa);
+        // The values of a round derived from 𝐲 and the key are secret, the rejected rounds' too:
+        // each is a `Secret` scoped to the round, and wiped when it ends.
 
-        let mut w = {
+        // 11: 𝐲 ∈ 𝑅^ℓ ← ExpandMask(𝜌″, 𝜅)
+        let mut y = Secret::<P::VecL>::new();
+        expand_mask_out::<P>(&rho_p_p, kappa, &mut y);
+
+        // 𝐰 = 𝐀𝐲 gives 𝐲 away where 𝑘 ≥ ℓ.
+        let mut w = Secret::<P::VecK>::new();
+        {
             // scope for y_hat
             // 12: 𝐰 ← NTT−1(𝐀_hat * NTT(𝐲))
-            let mut y_hat = y;
+            let mut y_hat = Secret::<P::VecL>::new();
+            *y_hat = *y;
             y_hat.ntt();
-            let mut w = A_hat.matrix_vector_ntt(&y_hat);
+            A_hat.matrix_vector_ntt_out(&y_hat, &mut w);
             // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
             w.reduce32();
             w.inv_ntt();
             w.conditional_add_q();
-            w
-        };
+        }
 
         // 13: 𝐰1 ← HighBits(𝐰)
         //  ▷ signer’s commitment
@@ -714,12 +720,12 @@ pub(in crate::mldsa) fn sign_internal<
 
         // 18: ⟨⟨𝑐𝐬1⟩⟩ ← NTT−1(𝑐_hat * 𝐬1_hat)
         //  Note: <<.>> in FIPS 204 means that this value will be used again later, so this should be kept.
-        let mut cs1 = sk.s1_hat().scalar_vector_ntt(&c_hat);
-        cs1.inv_ntt();
-
         // 20: 𝐳 ← 𝐲 + ⟨⟨𝑐𝐬1⟩⟩
-        y.add_vector_ntt(&cs1);
-        sig_val_z = y;
+        // ⟨⟨𝑐𝐬1⟩⟩ is built in 𝐳's buffer and 𝐲 added to it: the coefficientwise sum is the same
+        // either way round, and no third vector is held.
+        sk.s1_hat().scalar_vector_ntt_out(&c_hat, &mut sig_val_z);
+        sig_val_z.inv_ntt();
+        sig_val_z.add_vector_ntt(&y);
 
         // 23 (first half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
         //  ▷ validity checks
@@ -731,13 +737,14 @@ pub(in crate::mldsa) fn sign_internal<
         };
 
         // 19: ⟨⟨𝑐𝐬2⟩⟩ ← NTT−1(𝑐_hat * 𝐬2̂_hat)
-        let mut cs2 = sk.s2_hat().scalar_vector_ntt(&c_hat);
+        let mut cs2 = Secret::<P::VecK>::new();
+        sk.s2_hat().scalar_vector_ntt_out(&c_hat, &mut cs2);
         cs2.inv_ntt();
 
         // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
         // 𝐰 is not read again below -- 𝐰1 was taken from it above -- so the subtraction and the
         // LowBits both run in its buffer, which 𝐫0 names from here on.
-        let r0 = &mut w;
+        let r0 = &mut *w;
         r0.sub_vector(&cs2);
         r0.low_bits::<P>();
 
@@ -755,7 +762,8 @@ pub(in crate::mldsa) fn sign_internal<
         };
 
         // 25: ⟨⟨𝑐𝐭0⟩⟩ ← NTT−1(𝑐_hat * 𝐭0̂_hat)
-        let mut ct0 = sk.t0_hat().scalar_vector_ntt(&c_hat);
+        let mut ct0 = Secret::<P::VecK>::new();
+        sk.t0_hat().scalar_vector_ntt_out(&c_hat, &mut ct0);
         ct0.inv_ntt();
 
         // 28 (first half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
@@ -1037,11 +1045,11 @@ pub(in crate::mldsa) fn check_filled_tr(tr: &[u8; MLDSA_TR_LEN]) -> Result<(), S
     Ok(())
 }
 
-/// Draws `rnd` (FIPS 204 Section 3.4: "the 32-byte random value rnd shall be generated by the
-/// cryptographic module that generates the signature").
+/// Draws `rnd` (FIPS 204 Section 5.4: "the 32-byte random value 𝑟𝑛𝑑 shall be generated by the
+/// cryptographic module that generates the signature (i.e., that runs ML-DSA.Sign_internal)").
 /// Into `rnd`, so that the bytes go from the RNG to a wiped slot and not through a return value.
 pub(in crate::mldsa) fn draw_rnd(rng: &mut dyn RNG, rnd: &mut Rnd) -> Result<(), SignatureError> {
-    rng.next_bytes_out(&mut rnd[..])?;
+    rng.next_bytes_exact_out(&mut rnd[..])?;
     Ok(())
 }
 
@@ -1139,6 +1147,28 @@ impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, const SIG_LEN: usize>
     }
 }
 
+/// The body of the one-shots over a message: mu built over `msg` in this frame, then Algorithm
+/// 7 with `rnd`, which the caller holds. No signer is built, so `rnd` is not moved with one and
+/// left behind.
+fn sign_msg_with_rnd<
+    P: SignatureLen<SIG_LEN>,
+    SK: MLDSAPrivateKeyTrait<P>,
+    const SIG_LEN: usize,
+>(
+    sk: &SK,
+    msg: &[u8],
+    ctx: Option<&[u8]>,
+    rnd: &[u8; MLDSA_RND_LEN],
+    output: &mut [u8; SIG_LEN],
+) -> Result<usize, SignatureError> {
+    output.fill(0);
+    check_filled_tr(sk.tr())?;
+    let mut mu_builder = sk.create_mu_builder(ctx)?;
+    mu_builder.do_update(msg);
+    let mu = mu_builder.do_final();
+    sk.sign_mu_with_rnd_out(&mu, rnd, output)
+}
+
 /*** The role impls: the plain keys and the expanded keys, for the parameter set they belong to ***/
 
 impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> SigningKey<MLDSA<P>, SIG_LEN>
@@ -1170,8 +1200,10 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotSigningKey<MLDSA<P>,
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        let signer = SigningKey::<MLDSA<P>, SIG_LEN>::create_signer(self, rng, ctx);
-        sign_out_with_signer(signer, msg, output)
+        output.fill(0);
+        let mut rnd = Rnd::new();
+        draw_rnd(rng, &mut rnd)?;
+        sign_msg_with_rnd::<P, Self, SIG_LEN>(self, msg, ctx, &rnd, output)
     }
 }
 
@@ -1202,9 +1234,7 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        let signer =
-            DeterministicSigningKey::<MLDSA<P>, SIG_LEN>::create_signer_deterministic(self, ctx);
-        sign_out_with_signer(signer, msg, output)
+        sign_msg_with_rnd::<P, Self, SIG_LEN>(self, msg, ctx, &[0u8; MLDSA_RND_LEN], output)
     }
 }
 
@@ -1237,8 +1267,10 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotSigningKey<MLDSA<P>,
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        let signer = SigningKey::<MLDSA<P>, SIG_LEN>::create_signer(self, rng, ctx);
-        sign_out_with_signer(signer, msg, output)
+        output.fill(0);
+        let mut rnd = Rnd::new();
+        draw_rnd(rng, &mut rnd)?;
+        sign_msg_with_rnd::<P, Self, SIG_LEN>(self, msg, ctx, &rnd, output)
     }
 }
 
@@ -1269,9 +1301,7 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        let signer =
-            DeterministicSigningKey::<MLDSA<P>, SIG_LEN>::create_signer_deterministic(self, ctx);
-        sign_out_with_signer(signer, msg, output)
+        sign_msg_with_rnd::<P, Self, SIG_LEN>(self, msg, ctx, &[0u8; MLDSA_RND_LEN], output)
     }
 }
 

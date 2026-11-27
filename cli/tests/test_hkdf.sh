@@ -5,7 +5,8 @@
 #
 # The known answers: HKDF-SHA256 is RFC 5869 Appendix A.1; HKDF-SHA384 and HKDF-SHA512 are
 # tcId 11 of Wycheproof's testvectors_v1/hkdf_sha384_test.json and hkdf_sha512_test.json;
-# HKDF-SM3, which has no published vectors, is RFC 5869 A.1's inputs through OpenSSL 3.0.13.
+# HKDF-SM3, which has no published vectors, is RFC 5869 A.1's inputs through OpenSSL 3.0.13; so is
+# HKDF-RIPEMD160, whose value is the A.1 known answer of crypto/digest/tests/hkdf_hkdf_ripemd_tests.rs.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -92,6 +93,18 @@ test_hkdf_sm3_matches_openssl_on_rfc5869_a1_inputs() {
         "HKDF-SM3 OKM"
 }
 
+test_hkdf_ripemd160_matches_openssl_on_rfc5869_a1_inputs() {
+    local got
+    got=$(hex_out "$BC_RUST" hkdf-ripemd160 \
+        --salt 000102030405060708090a0b0c \
+        --ikm 0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b \
+        --additional-input f0f1f2f3f4f5f6f7f8f9 \
+        --len 42 -x)
+    assert_eq "$got" \
+        "8e2a6e5c36796c02636a4246873f35edf59684f394da0ec847b3643aa1f0059ce97de9843cf9db968a88" \
+        "HKDF-RIPEMD160 OKM"
+}
+
 # ---- file inputs --------------------------------------------------------------------------
 
 # `hkdf_files_match_hex SUBCOMMAND` derives from random inputs passed once as hex and once as
@@ -122,6 +135,10 @@ test_hkdf_sha512_files_match_hex() {
 
 test_hkdf_sm3_files_match_hex() {
     hkdf_files_match_hex hkdf-sm3
+}
+
+test_hkdf_ripemd160_files_match_hex() {
+    hkdf_files_match_hex hkdf-ripemd160
 }
 
 # When a value is given both as hex and as a file, the file is used, as the help text says.
@@ -162,6 +179,10 @@ test_hkdf_sha512_one_octet_past_a_block() {
 
 test_hkdf_sm3_one_octet_past_a_block() {
     hkdf_short_output_is_a_prefix hkdf-sm3 33
+}
+
+test_hkdf_ripemd160_one_octet_past_a_block() {
+    hkdf_short_output_is_a_prefix hkdf-ripemd160 21
 }
 
 # An empty Z derives a key from nothing (the KDF trait allows it; no command-line user means

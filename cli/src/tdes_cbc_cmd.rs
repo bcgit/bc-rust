@@ -19,10 +19,10 @@ use crate::helpers::block_mode_helpers::{
     CipherDirection, TDEA_LIMIT_PADDED, decrypt_stream, encrypt_stream_bounded, load_iv,
     load_key_object, start_encryptor,
 };
-use bouncycastle::cipher::modes::CBC;
-use bouncycastle::cipher::padding::PKCS7;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
+use bouncycastle::symmetric::modes::CBC;
+use bouncycastle::symmetric::padding::PKCS7;
+use bouncycastle::symmetric::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
 
 pub(crate) fn tdes_cbc_cmd(
     action: &CipherDirection,

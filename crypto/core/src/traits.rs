@@ -6,9 +6,12 @@ use crate::errors::*;
 use crate::key_material::KeyMaterialTrait;
 use crate::security_strength::SecurityStrength;
 use crate::signature_key::PreHashStrengthRule;
-use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::fmt::{Debug, Display};
 use core::marker::Sized;
+
+#[cfg(feature = "alloc")]
+use alloc::{boxed::Box, vec, vec::Vec};
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -19,7 +22,7 @@ use crate::key_material::KeyType;
 
 /// What an AEAD key's allocating one-shot with a detached tag hands back:
 /// `(nonce, ciphertext, tag)`
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub type AEADEncryptedTuple<const NONCE_LEN: usize, const TAG_LEN: usize> =
     ([u8; NONCE_LEN], Vec<u8>, [u8; TAG_LEN]);
 
@@ -80,18 +83,27 @@ pub trait AEADCipherDecryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
     where
         Self: Sized,
     {
-        self.finish_decrypt_detached_into(&FinishToken::new(), tag, plaintext)
+        zeroize_on_err(
+            self.finish_decrypt_detached_into(&FinishToken::new(), tag, plaintext),
+            plaintext,
+        )
     }
 
     /// [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out) for a worker held
     /// as `Box<dyn AEADCipherDecryptor>`. The box is consumed, and nothing is moved out of it:
     /// the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_decrypt_final_detached_out_boxed(
         mut self: Box<Self>,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; FINAL_LEN],
     ) -> Result<usize, SymmetricCipherError> {
-        self.finish_decrypt_detached_into(&FinishToken::new(), tag, plaintext)
+        zeroize_on_err(
+            self.finish_decrypt_detached_into(&FinishToken::new(), tag, plaintext),
+            plaintext,
+        )
     }
 
     /// Finishes the decryption with the tag detached, where the worker sits: the one detached
@@ -107,11 +119,10 @@ pub trait AEADCipherDecryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
 
     /// As [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out), returning
     /// the final buffer together with the number of leading bytes of it that are plaintext, the
-    /// shape of [`SymmetricCipherDecryptor::do_decrypt_final`]. The two are provided the other way
-    /// round from the base trait's pair -- the `_out` form is the one an implementor's method fills --
-    /// because that is the form that lets an implementor decrypt the held-back bytes straight into
-    /// the caller's buffer. On failure no buffer is returned, so nothing unauthenticated is left
-    /// behind by this call.
+    /// shape of [`SymmetricCipherDecryptor::do_decrypt_final`]. On failure no buffer is returned,
+    /// so nothing unauthenticated is left behind by this call. On success the plaintext is
+    /// returned by value, as from [`SymmetricCipherDecryptor::do_decrypt_final`];
+    /// [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out) leaves no copy.
     ///
     /// # Errors
     /// As [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out).
@@ -240,6 +251,9 @@ pub trait AEADCipherEncryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
     /// [`do_encrypt_final_detached_out`](Self::do_encrypt_final_detached_out) for a worker held
     /// as `Box<dyn AEADCipherEncryptor>`. The box is consumed, and nothing is moved out of it:
     /// the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_encrypt_final_detached_out_boxed(
         mut self: Box<Self>,
         ciphertext: &mut [u8; FINAL_LEN],
@@ -416,7 +430,8 @@ pub trait BlockCipherEncryptor<const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
 /// A method on `&mut self` could be called twice, or followed by more input, which for a MAC, an
 /// AEAD or a signer repeats a nonce or a one-time key. So each of those methods takes a
 /// `&FinishToken`, whose constructor is private to this crate: the callers are the provided
-/// consuming finals, which drop the worker as they return. An implementor receives the token and passes it
+/// consuming finals, which drop the worker as they return, and the provided one-shots, which
+/// build a worker, finish it where it sits and drop it. An implementor receives the token and passes it
 /// to a worker it owns and is finishing with itself (HMAC to its hash). The one other source is
 /// [`crate::hazmat::finish_token`], for code that owns a worker without implementing a worker
 /// trait, which takes on what the consuming finals guarantee; so a token shows that a final was
@@ -437,7 +452,8 @@ pub trait BlockCipherEncryptor<const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
 pub struct FinishToken(());
 
 impl FinishToken {
-    /// For the provided consuming finals in this crate and [`crate::hazmat::finish_token`].
+    /// For the provided consuming finals and one-shots in this crate and
+    /// [`crate::hazmat::finish_token`].
     pub(crate) fn new() -> Self {
         Self(())
     }
@@ -521,8 +537,8 @@ pub trait Hash: AlgorithmInfo {
     /// Finish absorbing input and produce the hashes output.
     /// Consumes self, so this must be the final call to this object.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_final(mut self) -> Vec<u8>
     where
         Self: Sized,
@@ -553,6 +569,9 @@ pub trait Hash: AlgorithmInfo {
     /// [`do_final_out`](Self::do_final_out) for a hash held as `Box<dyn Hash>`, which cannot call
     /// a method that takes `self` by value. The box is consumed, so a stored hash is finished
     /// exactly once, and nothing is moved out of it: the state is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_final_out_boxed(mut self: Box<Self>, output: &mut [u8]) -> usize {
         self.finish_into(&FinishToken::new(), output)
     }
@@ -575,8 +594,8 @@ pub trait Hash: AlgorithmInfo {
     /// 0 is a valid value and means the message ends on a byte boundary (equivalent to [`Hash::do_final`]).
     /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_final_partial_bits(
         mut self,
         partial_byte: u8,
@@ -607,6 +626,9 @@ pub trait Hash: AlgorithmInfo {
 
     /// [`do_final_partial_bits_out`](Self::do_final_partial_bits_out) for a hash held as
     /// `Box<dyn Hash>`; see [`do_final_out_boxed`](Self::do_final_out_boxed).
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_final_partial_bits_out_boxed(
         mut self: Box<Self>,
         partial_byte: u8,
@@ -619,7 +641,9 @@ pub trait Hash: AlgorithmInfo {
 
 /// The one-shot form of a hash that takes no parameters: `SHA256::hash(msg)`.
 ///
-/// Both functions run [`Hash::do_update`] then [`Hash::do_final`] on a [`Default`] instance.
+/// Both functions run [`Hash::do_update`] then [`Hash::finish_into`] on a [`Default`] instance,
+/// which is finished where it sits rather than moved into a consuming final after it has
+/// absorbed the message.
 /// Implemented by the hashes whose `Default` is the function itself (SHA-2, SHA-3, SHAKE, SM3,
 /// Ascon); the parameterised ones (cSHAKE, KMAC, TupleHash, ParallelHash, Ascon-CXOF) and the
 /// factories offer an instance method `hash(self, data)` instead. Kept off [`Hash`] because
@@ -631,17 +655,19 @@ pub trait HashOneShot: Hash + Default {
     fn hash_out(data: &[u8], output: &mut [u8]) -> usize {
         let mut h = Self::default();
         h.do_update(data);
-        h.do_final_out(output)
+        h.finish_into(&FinishToken::new(), output)
     }
 
     /// Hashes `data` and returns the digest.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn hash(data: &[u8]) -> Vec<u8> {
         let mut h = Self::default();
         h.do_update(data);
-        h.do_final()
+        let mut output = vec![0u8; h.output_len()];
+        h.finish_into(&FinishToken::new(), &mut output);
+        output
     }
 }
 
@@ -697,14 +723,15 @@ pub const KDF_ONE_SHOT_MAX_LEN: usize = 1024;
 /// own strength bound, half a hash output for a hash-based KDF, and otherwise
 /// [`KeyType::Unknown`] with no strength; its strength is the least of the inputs' strongest,
 /// the function's and the length's, so a `CryptographicRandom` output carries a strength
-/// whenever its length can hold one, 14 bytes for the least; a shorter one carries none. A key
+/// whenever its length can hold one, 14 bytes for the least; a shorter one carries none, and
+/// neither does the output of a function that claims no strength (one over a legacy hash). A key
 /// with no strength (a [`KeyType::SharedSecret`] whose producer set none, a key
 /// too short to carry 112 bits) credits nothing. The count is of the keys as given: the same key
 /// passed twice in `ikms` counts twice, which is the caller's to avoid. `fixed_info` is context
 /// and credits nothing. A [`KeyType::Zeroized`] or [`KeyType::Unknown`] input is derived from
 /// and yields `Unknown` output rather than an error, since a KDF cannot tell such bytes from
 /// random ones. [`crate::hazmat::label_kdf_output`] is the rule as code, for an implementation
-/// to call.
+/// to call, and [`crate::hazmat::KdfCredit`] the same for one that takes its keys one at a time.
 ///
 /// An instance holds only what it was made from (an HKDF's salt): one that has also absorbed
 /// input through a streaming API is refused by the derivations. A zero-length derivation is
@@ -743,12 +770,12 @@ pub trait KDF: AlgorithmInfo {
     ) -> Result<usize, KDFError>;
 
     /// One-shot: `len` bytes, at most [`KDF_ONE_SHOT_MAX_LEN`], as new key material. Provided
-    /// over [`derive_key_out`](Self::derive_key_out). Only available with the `std` feature.
+    /// over [`derive_key_out`](Self::derive_key_out). Only available with the `alloc` feature.
     ///
     /// # Errors
     /// [`KDFError::InvalidLength`] if `len` exceeds [`KDF_ONE_SHOT_MAX_LEN`], else as
     /// [`derive_key_out`](Self::derive_key_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn derive_key(
         &self,
         ikm: &dyn KeyMaterialTrait,
@@ -758,17 +785,18 @@ pub trait KDF: AlgorithmInfo {
         if len > KDF_ONE_SHOT_MAX_LEN {
             return Err(KDFError::InvalidLength(ONE_SHOT_TOO_LONG));
         }
-        let mut output_key = KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new();
-        self.derive_key_out(ikm, fixed_info, len, &mut output_key)?;
-        Ok(Box::new(output_key))
+        // Derived into the box, so that no copy of the key is left where it was made.
+        let mut output_key = Box::new(KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new());
+        self.derive_key_out(ikm, fixed_info, len, &mut *output_key)?;
+        Ok(output_key)
     }
 
     /// One-shot over [`derive_key_from_multiple_out`](Self::derive_key_from_multiple_out). Only
-    /// available with the `std` feature.
+    /// available with the `alloc` feature.
     ///
     /// # Errors
     /// As [`derive_key`](Self::derive_key).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn derive_key_from_multiple(
         &self,
         ikms: &[&dyn KeyMaterialTrait],
@@ -778,15 +806,16 @@ pub trait KDF: AlgorithmInfo {
         if len > KDF_ONE_SHOT_MAX_LEN {
             return Err(KDFError::InvalidLength(ONE_SHOT_TOO_LONG));
         }
-        let mut output_key = KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new();
-        self.derive_key_from_multiple_out(ikms, fixed_info, len, &mut output_key)?;
-        Ok(Box::new(output_key))
+        // Derived into the box, as in `derive_key`.
+        let mut output_key = Box::new(KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new());
+        self.derive_key_from_multiple_out(ikms, fixed_info, len, &mut *output_key)?;
+        Ok(output_key)
     }
 }
 
 /// The one-shots' refusal of a length past [`KDF_ONE_SHOT_MAX_LEN`]; the `_out` forms take any
 /// length the function and the buffer allow.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 const ONE_SHOT_TOO_LONG: &str =
     "the KDF one-shots derive at most KDF_ONE_SHOT_MAX_LEN bytes; use the _out form for more";
 
@@ -1086,6 +1115,9 @@ pub trait MACGenerator<const MAC_LEN: usize>: AlgorithmInfo {
 
     /// [`do_final_out`](Self::do_final_out) for a worker held as `Box<dyn MACGenerator>`. The box
     /// is consumed, and nothing is moved out of it: the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_final_out_boxed(mut self: Box<Self>, out: &mut [u8; MAC_LEN]) -> usize {
         self.finish_mac_into(&FinishToken::new(), out)
     }
@@ -1123,6 +1155,9 @@ pub trait MACVerifier<const MAC_LEN: usize>: AlgorithmInfo {
 
     /// [`do_verify_final`](Self::do_verify_final) for a worker held as `Box<dyn MACVerifier>`.
     /// The box is consumed, and nothing is moved out of it: the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_verify_final_boxed(mut self: Box<Self>, mac: &[u8; MAC_LEN]) -> Result<(), MACError> {
         self.finish_mac_verify(&FinishToken::new(), mac)
     }
@@ -1200,10 +1235,10 @@ pub trait PublicKey<const PK_LEN: usize>: PartialEq + Eq + Clone + Debug + Displ
 /// requirements of SP 800-90A.
 /// Note: this interface produces bytes. If you want a [`KeyMaterialTrait`], then use [`KeyMaterial::from_rng`].
 ///
-/// Implementors are expected to also implement [`Default`] (default-construction should produce a
-/// securely OS-seeded instance), but this is intentionally *not* a supertrait bound: requiring
-/// `Default` would make `RNG` not dyn-compatible, and `&mut dyn RNG` is needed so RNG instances
-/// can be handed around as trait objects.
+/// Where an operating system is available, implementors are expected to also implement
+/// [`Default`], default-construction producing a securely OS-seeded instance.
+// `Default` is not a supertrait: it would make `RNG` not dyn-compatible, and `&mut dyn RNG` is
+// how RNG instances are handed around.
 pub trait RNG {
     // TODO: add back once we figure out streaming interaction with entropy sources.
     // fn add_seed_bytes(&mut self, additional_seed: &[u8]) -> Result<(), RNGError>;
@@ -1230,6 +1265,52 @@ pub trait RNG {
     //      then have `RNG: Algorithm`, then delete this function.
     fn security_strength(&self) -> SecurityStrength;
 }
+
+/// Draws from any [`RNG`] that refuse a short one: a fixed-length array returned by value, or
+/// the whole of a caller's buffer.
+///
+/// Implemented for every `RNG`, a `dyn RNG` included, so `rng.next_array::<12>()` works on a
+/// `&mut dyn RNG`.
+///
+/// # 🚨 Security Considerations 🚨
+/// The array is returned by value: it is moved, may be copied on the way, and is never wiped.
+/// Use it for public values such as nonces, salts, IVs and test data, never for a secret. A secret
+/// is drawn into a [`KeyMaterial`] with [`RNG::fill_keymaterial_out`], or into a [`Secret`] with
+/// [`next_bytes_exact_out`](Self::next_bytes_exact_out).
+// A trait of its own because a generic method on `RNG` would make that trait not dyn-compatible.
+pub trait RNGExt: RNG {
+    /// Returns `N` bytes from one call to [`RNG::next_bytes_out`]. The array is built on the
+    /// caller's stack, so a large `N` costs that much stack.
+    ///
+    /// # Errors
+    /// The RNG's own error; [`RNGError::GenericError`] if it reports fewer than `N` bytes
+    /// written. A short draw never returns a partly filled array.
+    fn next_array<const N: usize>(&mut self) -> Result<[u8; N], RNGError> {
+        let mut out = [0u8; N];
+        self.next_bytes_exact_out(&mut out)?;
+        Ok(out)
+    }
+
+    /// Fills the whole of `out` from one call to [`RNG::next_bytes_out`]. Returns `out.len()`.
+    ///
+    /// # Errors
+    /// The RNG's own error; [`RNGError::GenericError`] if it reports fewer bytes written than
+    /// `out` holds. `out` is zeroized on either, so a short draw never leaves a partial one.
+    fn next_bytes_exact_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
+        out.fill(0);
+        let result = match self.next_bytes_out(out) {
+            Ok(written) if written == out.len() => return Ok(written),
+            Ok(_) => Err(RNGError::GenericError("the RNG wrote fewer bytes than it was asked for")),
+            Err(e) => Err(e),
+        };
+        for byte in out.iter_mut() {
+            zeroize_in_place(byte);
+        }
+        result
+    }
+}
+
+impl<T: RNG + ?Sized> RNGExt for T {}
 
 /// The signing half of a signature in progress: the streaming worker a signing key hands out
 /// through [`SigningKey`](crate::signature_key::SigningKey) or
@@ -1267,6 +1348,9 @@ pub trait SignatureSigner<const SIG_LEN: usize>: AlgorithmInfo {
 
     /// [`do_final_out`](Self::do_final_out) for a worker held as `Box<dyn SignatureSigner>`. The
     /// box is consumed, and nothing is moved out of it: the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_final_out_boxed(
         mut self: Box<Self>,
         output: &mut [u8; SIG_LEN],
@@ -1306,6 +1390,9 @@ pub trait SignatureVerifier: AlgorithmInfo {
 
     /// [`do_verify_final`](Self::do_verify_final) for a worker held as
     /// `Box<dyn SignatureVerifier>`. The box is consumed, and nothing is moved out of it.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_verify_final_boxed(mut self: Box<Self>, sig: &[u8]) -> Result<(), SignatureError> {
         self.finish_signature_verify(&FinishToken::new(), sig)
     }
@@ -1422,12 +1509,12 @@ pub trait Suspendable<const SERIALIZED_STATE_LEN: usize>: Sized {
 /// decryptor releases may be only partly data. A padding scheme's final block carries
 /// `data_len < BLOCK_LEN` bytes of plaintext and the rest padding, and an authenticated cipher may
 /// release nothing at all once it has checked the tag. So
-/// [`do_decrypt_final`](Self::do_decrypt_final) returns the buffer *and* how much of it is data,
-/// and the one-shot length helper is an upper bound rather than an exact count.
+/// [`do_decrypt_final_out`](Self::do_decrypt_final_out) returns how much of the final buffer is
+/// data, and the one-shot length helper is an upper bound rather than an exact count.
 ///
 /// The one-shots are the key's, provided over these streaming methods. An implementor writes
 /// only [`update_out_len`](Self::do_decrypt_out_len), [`do_update_out`](Self::do_decrypt_out),
-/// [`finish_decrypt`](Self::finish_decrypt) and
+/// [`finish_decrypt_into`](Self::finish_decrypt_into) and
 /// [`decrypt_out_len`](Self::decrypt_out_len); the constructor is the key's, and never part of
 /// the trait.
 pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: usize>:
@@ -1484,11 +1571,11 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     /// Streaming, allocating: as [`do_decrypt_out`](Self::do_decrypt_out), returning the
     /// plaintext released by this call as a `Vec<u8>` of exactly
     /// [`do_decrypt_out_len`](Self::do_decrypt_out_len) bytes -- which may be empty, if the whole
-    /// of `ciphertext` was held back. Only available with the `std` feature.
+    /// of `ciphertext` was held back. Only available with the `alloc` feature.
     ///
     /// # Errors
     /// As [`do_decrypt_out`](Self::do_decrypt_out), except that the buffer is always large enough.
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn do_decrypt(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>, SymmetricCipherError> {
         let needed = self.do_decrypt_out_len(ciphertext.len());
         let mut plaintext = vec![0u8; needed];
@@ -1498,9 +1585,10 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     }
 
     /// Finishes the decryption, consuming the decryptor: processes whatever was held back, checks
-    /// it -- padding, tag -- and returns the final buffer together with the number of leading
-    /// bytes of it that are plaintext. The remainder of the buffer is not data and must not be
-    /// used.
+    /// it -- padding, tag -- and writes the plaintext part of the final buffer into `plaintext`.
+    /// Returns the number of bytes written. The entire output buffer is zeroized before the
+    /// plaintext is written, so any bytes past that count will be 0, and it is left zeroized on
+    /// every error.
     ///
     /// # Errors
     /// [`SymmetricCipherError::DataNotBlockAligned`] if a block cipher's ciphertext was not a whole
@@ -1509,34 +1597,6 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     /// [`SymmetricCipherError::PaddingError`] or
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the check fails. In every error case the
     /// caller learns only that decryption failed, not where.
-    fn do_decrypt_final(mut self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>
-    where
-        Self: Sized,
-    {
-        self.finish_decrypt(&FinishToken::new())
-    }
-
-    /// [`do_decrypt_final`](Self::do_decrypt_final) for a worker held as
-    /// `Box<dyn SymmetricCipherDecryptor>`, which cannot call a method that takes `self` by
-    /// value. The box is consumed, so a stored worker is finished exactly once, and nothing is
-    /// moved out of it: the worker is wiped where it sits.
-    fn do_decrypt_final_boxed(
-        mut self: Box<Self>,
-    ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
-        self.finish_decrypt(&FinishToken::new())
-    }
-
-    /// Finishes the decryption where the worker sits: the one finishing method an implementor
-    /// writes, with [`do_decrypt_final`](Self::do_decrypt_final)'s contract. Callable only by
-    /// the provided finals; see [`FinishToken`].
-    fn finish_decrypt(
-        &mut self,
-        token: &FinishToken,
-    ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>;
-
-    /// As [`do_decrypt_final`](Self::do_decrypt_final), writing the data part of the final buffer
-    /// into `plaintext`. Returns the number of bytes written. The entire output buffer is zeroized
-    /// before the plaintext is written, so any bytes past that count will be 0.
     fn do_decrypt_final_out(
         mut self,
         plaintext: &mut [u8; FINAL_LEN],
@@ -1544,10 +1604,64 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     where
         Self: Sized,
     {
-        plaintext.fill(0);
-        let (buffer, data_len) = self.finish_decrypt(&FinishToken::new())?;
-        plaintext[..data_len].copy_from_slice(&buffer[..data_len]);
-        Ok(data_len)
+        zeroize_on_err(self.finish_decrypt_into(&FinishToken::new(), plaintext), plaintext)
+    }
+
+    /// [`do_decrypt_final_out`](Self::do_decrypt_final_out) for a worker held as
+    /// `Box<dyn SymmetricCipherDecryptor>`. The box is consumed, and nothing is moved out of it:
+    /// the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
+    fn do_decrypt_final_out_boxed(
+        mut self: Box<Self>,
+        plaintext: &mut [u8; FINAL_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        zeroize_on_err(self.finish_decrypt_into(&FinishToken::new(), plaintext), plaintext)
+    }
+
+    /// Finishes the decryption where the worker sits, writing into `out`: the one finishing
+    /// method an implementor writes, with [`do_decrypt_final_out`](Self::do_decrypt_final_out)'s
+    /// contract. Callable only by the provided finals; see [`FinishToken`].
+    fn finish_decrypt_into(
+        &mut self,
+        token: &FinishToken,
+        out: &mut [u8; FINAL_LEN],
+    ) -> Result<usize, SymmetricCipherError>;
+
+    /// As [`do_decrypt_final_out`](Self::do_decrypt_final_out), returning the final buffer
+    /// together with the number of leading bytes of it that are plaintext; the rest is 0.
+    ///
+    /// The plaintext is returned by value, so the copies of it the move leaves on the stack are
+    /// not wiped. [`do_decrypt_final_out`](Self::do_decrypt_final_out) writes straight into the
+    /// caller's buffer and leaves no copy.
+    ///
+    /// # Errors
+    /// As [`do_decrypt_final_out`](Self::do_decrypt_final_out).
+    fn do_decrypt_final(mut self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>
+    where
+        Self: Sized,
+    {
+        let mut plaintext = [0u8; FINAL_LEN];
+        let data_len = self.finish_decrypt_into(&FinishToken::new(), &mut plaintext)?;
+        Ok((plaintext, data_len))
+    }
+
+    /// [`do_decrypt_final`](Self::do_decrypt_final) for a worker held as
+    /// `Box<dyn SymmetricCipherDecryptor>`, which cannot call a method that takes `self` by
+    /// value. The box is consumed, so a stored worker is finished exactly once, and nothing is
+    /// moved out of it: the worker is wiped where it sits. The plaintext is returned by value, as
+    /// from [`do_decrypt_final`](Self::do_decrypt_final);
+    /// [`do_decrypt_final_out_boxed`](Self::do_decrypt_final_out_boxed) leaves no copy.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
+    fn do_decrypt_final_boxed(
+        mut self: Box<Self>,
+    ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
+        let mut plaintext = [0u8; FINAL_LEN];
+        let data_len = self.finish_decrypt_into(&FinishToken::new(), &mut plaintext)?;
+        Ok((plaintext, data_len))
     }
 
     /// An upper bound on the plaintext recovered from `ciphertext_len` bytes of ciphertext, i.e.
@@ -1565,7 +1679,7 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
 ///
 /// This is the layer a caller with *data* uses, as opposed to the block-aligned
 /// [`BlockCipherEncryptor`] a mode implements. Its shape is that of the padding adapters in
-/// `bouncycastle_cipher::padding`, which are its first implementors: an authenticated cipher or a stream
+/// `bouncycastle_symmetric::padding`, which are its first implementors: an authenticated cipher or a stream
 /// cipher fits the same shape, with the tag or nothing in place of the final padded block.
 ///
 /// `FINAL_LEN` is the fixed length of what [`do_encrypt_final`](Self::do_encrypt_final) produces
@@ -1576,7 +1690,7 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
 ///
 /// Init data (an IV or nonce) is drawn by the key's `create_encryptor` and returned, never
 /// supplied, for the same reason as in [`BlockCipherEncryptor`]. Everything is `no_std`-friendly
-/// except the allocating [`do_encrypt`](Self::do_encrypt), which sits behind the `std` feature.
+/// except the allocating [`do_encrypt`](Self::do_encrypt), which sits behind the `alloc` feature.
 ///
 /// An implementor writes only [`update_out_len`](Self::do_encrypt_out_len),
 /// [`do_update_out`](Self::do_encrypt_out),
@@ -1630,11 +1744,11 @@ pub trait SymmetricCipherEncryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     /// Streaming, allocating: as [`do_encrypt_out`](Self::do_encrypt_out), returning the
     /// ciphertext released by this call as a `Vec<u8>` of exactly
     /// [`do_encrypt_out_len`](Self::do_encrypt_out_len) bytes -- which may be empty, if the whole
-    /// of `plaintext` was buffered. Only available with the `std` feature.
+    /// of `plaintext` was buffered. Only available with the `alloc` feature.
     ///
     /// # Errors
     /// As [`do_encrypt_out`](Self::do_encrypt_out), except that the buffer is always large enough.
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn do_encrypt(&mut self, plaintext: &[u8]) -> Result<Vec<u8>, SymmetricCipherError> {
         let needed = self.do_encrypt_out_len(plaintext.len());
         let mut ciphertext = vec![0u8; needed];
@@ -1665,6 +1779,9 @@ pub trait SymmetricCipherEncryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     /// `Box<dyn SymmetricCipherEncryptor>`, which cannot call a method that takes `self` by
     /// value. The box is consumed, so a stored worker is finished exactly once, and nothing is
     /// moved out of it: the worker is wiped where it sits.
+    ///
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_encrypt_final_boxed(
         mut self: Box<Self>,
     ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
@@ -1722,9 +1839,9 @@ pub trait SymmetricCipherEncryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
 pub trait XOFSqueezer {
     /// Produces the next `num_bytes` bytes of the output stream.
     ///
-    /// Provided over [`do_output_out`](Self::do_output_out). Only available with the `std`
+    /// Provided over [`do_output_out`](Self::do_output_out). Only available with the `alloc`
     /// feature.
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
         let mut out = vec![0u8; num_bytes];
         self.do_output_out(&mut out);
@@ -1740,8 +1857,8 @@ pub trait XOFSqueezer {
     /// Consumes self, so this must be the final call to this object. Provided over
     /// [`do_output_final_out`](Self::do_output_final_out).
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn do_output_final(self, num_bytes: usize) -> Vec<u8>
     where
         Self: Sized,
@@ -1824,6 +1941,13 @@ pub trait XOF: Hash {
         num_bits: usize,
     ) -> Result<Self::Squeezer, HashError>;
 
+    /// Ends the input where the value sits and makes the final read of `output.len()` bytes, the
+    /// bytes [`into_squeezer`](Self::into_squeezer) and then
+    /// [`XOFSqueezer::do_output_final_out`] would give: the one method an implementor writes for
+    /// the one-shots, which are provided over it. `output` is zeroized first; returns the number
+    /// of bytes written. Callable only by those one-shots; see [`FinishToken`].
+    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize;
+
     /// One-shot: absorbs `data` and produces `result_len` bytes.
     ///
     /// A one-shot names its length and never comes back, so this is
@@ -1831,28 +1955,39 @@ pub trait XOF: Hash {
     /// [`do_output`](XOFSqueezer::do_output)'s: where an implementation binds the length it is
     /// asked for, this binds `result_len`. For SHAKE and cSHAKE the two are the same bytes.
     ///
-    /// The default absorbs and reads in the obvious way; override it only where the type can do
-    /// better, as SHAKE does.
+    /// Provided over [`finish_xof_into`](Self::finish_xof_into), so the value that has absorbed
+    /// `data` is finished where it sits, not moved into a squeezer.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     fn xof(mut self, data: &[u8], result_len: usize) -> Vec<u8>
     where
         Self: Sized,
     {
         self.do_update(data);
-        self.into_squeezer().do_output_final(result_len)
+        let mut output = vec![0u8; result_len];
+        self.finish_xof_into(&FinishToken::new(), &mut output);
+        output
     }
 
     /// One-shot: absorbs `data` and fills `output`, which is zeroized first. Returns the number of
     /// bytes written.
     ///
-    /// A final read of `output.len()` bytes, and defaulted as [`xof`](Self::xof) is.
+    /// A final read of `output.len()` bytes, provided as [`xof`](Self::xof) is.
     fn xof_out(mut self, data: &[u8], output: &mut [u8]) -> usize
     where
         Self: Sized,
     {
         self.do_update(data);
-        self.into_squeezer().do_output_final_out(output)
+        self.finish_xof_into(&FinishToken::new(), output)
     }
+}
+
+/// Zeroizes `out` if `result` is an error, behind the `finish_` method that should already have:
+/// a decrypting final releases nothing on failure even from an implementor that left data there.
+fn zeroize_on_err<T, E>(result: Result<T, E>, out: &mut [u8]) -> Result<T, E> {
+    if result.is_err() {
+        out.fill(0);
+    }
+    result
 }

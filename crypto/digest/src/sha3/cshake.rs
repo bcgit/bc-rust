@@ -3,14 +3,14 @@
 use crate::sha3::keccak::{INPUT_AFTER_FINISH, SHA3_FAMILY_STATE_LEN};
 use crate::sha3::shake::{SHAKEBorrowedSqueezer, SHAKEInternal, SHAKESqueezer};
 use crate::sha3::{SHAKE128Params, SHAKE256Params, SHAKEParams};
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
 };
-#[cfg(feature = "std")]
-use std::vec::Vec;
 
 // imports needed for docs
 #[allow(unused_imports)]
@@ -224,9 +224,15 @@ impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for CSHAKEInternal<PARAMS
 }
 
 /// The absorbing phase. Once output begins the sponge is a [`SHAKESqueezer`] -- the domain suffix
-/// is in, and nothing cSHAKE-specific remains -- so it suspends and resumes as one.
+/// is in, and nothing cSHAKE-specific remains -- so it suspends and resumes as one. A value that
+/// has been finished where it sits (`finish_squeezer`, [`Hash::finish_into`]) is not suspended:
+/// as with KMACXOF, TupleHashXOF and ParallelHashXOF, `suspend` panics.
 impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_CSHAKE_STATE_LEN> for CSHAKEInternal<PARAMS> {
+    /// # Panics
+    /// If the value has been finished through a [`FinishToken`]: no type resumes the state it
+    /// would write.
     fn suspend(self) -> [u8; SUSPENDED_CSHAKE_STATE_LEN] {
+        self.assert_not_finished();
         suspend_component(&self)
     }
 
@@ -364,6 +370,11 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
         assert!(!self.shake.is_squeezing(), "{}", INPUT_AFTER_FINISH);
     }
 
+    /// Whether this value has lent out its squeezer.
+    pub(in crate::sha3) fn is_lent(&self) -> bool {
+        self.lent
+    }
+
     /// Panics if this value has lent out its squeezer.
     pub(in crate::sha3) fn assert_not_lent(&self) {
         assert!(!self.lent, "{}", INPUT_AFTER_FINISH);
@@ -372,6 +383,10 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
 
 impl<PARAMS: SHAKEParams> XOF for CSHAKEInternal<PARAMS> {
     type Squeezer = SHAKESqueezer<PARAMS>;
+
+    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.finish_squeezer(token).do_output_final_out(output)
+    }
 
     fn into_squeezer(self) -> Self::Squeezer {
         let (suffix, bits) = self.suffix();
@@ -618,17 +633,19 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
-        self.do_final()
+        let mut output = alloc::vec![0u8; self.output_len()];
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), &mut output);
+        output
     }
 
     /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
     pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.do_final_out(output)
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), output)
     }
 }
 

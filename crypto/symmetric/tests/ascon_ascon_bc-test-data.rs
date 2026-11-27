@@ -8,7 +8,6 @@
 //! These full sweeps (1025–1089 cases each) complement the small embedded vector sets in the
 //! per-primitive test files.
 
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -23,6 +22,7 @@ use bouncycastle_symmetric::ascon::AsconCXof128;
 use bouncycastle_symmetric::ascon::AsconHash256;
 use bouncycastle_symmetric::ascon::AsconXof128;
 use bouncycastle_symmetric::ascon::{Ascon_AEAD128, AsconAEAD128Key};
+use bouncycastle_symmetric::{Decrypting, Encrypting};
 use std::collections::BTreeMap;
 
 const TEST_DATA_DIR: &str = "crypto/ascon";
@@ -88,7 +88,7 @@ fn to_16(bytes: &[u8], what: &str) -> [u8; 16] {
 /// Build a `KeyMaterial<16>` for a KAT key. The NIST LWC vectors include an all-zero key
 /// (Count=1), which `KeyMaterial::from_bytes_as_type` would otherwise tag
 /// `KeyType::Zeroized` / `SecurityStrength::None`; force the type/strength the way a caller
-/// who knows the provenance of the key would (see `cli/src/helpers.rs::parse_seed`).
+/// who knows the provenance of the key would (see `cli/src/helpers/mod.rs::parse_seed`).
 fn key_material(key: &[u8; 16]) -> KeyMaterial<16> {
     let mut km = KeyMaterial::<16>::from_bytes_as_type(key, KeyType::SymmetricCipherKey).unwrap();
 

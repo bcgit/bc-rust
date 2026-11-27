@@ -80,22 +80,28 @@
 //!
 //! | Algorithm                 | Peak stack memory usage (kB) | Throughput (ops/s)  |
 //! |---------------------------|-----------------------------|---------------------|
-//! | MLDSA44_lowmemory/KeyGen  | 12.0 (40.8)                 | 11,800     (11,300) |
-//! | MLDSA65_lowmemory/KeyGen  | 12.9 (63.8)                 | 5,500      (7,000)  |
-//! | MLDSA87_lowmemory/KeyGen  | 15.3 (99.5)                 | 3,300      (4,200)  |
-//! | MLDSA44_lowmemory/Sign    | 20.0 (76.2)                 | 850        (4,000)  |
-//! | MLDSA65_lowmemory/Sign    | 23.3 (112.7)                | 580        (2,900)  |
-//! | MLDSA87_lowmemory/Sign    | 27.3 (165.9)                | 315        (2,000)  |
-//! | MLDSA44_lowmemory/Verify  | 16.6 (58.6)                 | 10,100     (14,000) |
-//! | MLDSA65_lowmemory/Verify  | 18.2 (88.8)                 | 6,300      (8,400)  |
-//! | MLDSA87_lowmemory/Verify  | 20.1 (133.2)                | 3,500      (5,000)  |
+//! | MLDSA44_lowmemory/KeyGen  | 15.4 (71.4)                 | 11,200     (12,800) |
+//! | MLDSA65_lowmemory/KeyGen  | 19.3 (107.0)                | 5,900      (7,800)  |
+//! | MLDSA87_lowmemory/KeyGen  | 22.5 (158.0)                | 3,600      (4,700)  |
+//! | MLDSA44_lowmemory/KeyGen, `keygen_out` | 13.8 (41.9)    |                     |
+//! | MLDSA65_lowmemory/KeyGen, `keygen_out` | 16.4 (65.6)    |                     |
+//! | MLDSA87_lowmemory/KeyGen, `keygen_out` | 18.3 (102.0)   |                     |
+//! | MLDSA44_lowmemory/Sign    | 20.0 (67.8)                 | 1,100      (4,500)  |
+//! | MLDSA65_lowmemory/Sign    | 23.3 (106.8)                | 650        (3,200)  |
+//! | MLDSA87_lowmemory/Sign    | 27.3 (158.6)                | 370        (2,000)  |
+//! | MLDSA44_lowmemory/Verify  | 16.6 (58.6)                 | 11,300     (15,400) |
+//! | MLDSA65_lowmemory/Verify  | 18.2 (88.8)                 | 6,900      (8,500)  |
+//! | MLDSA87_lowmemory/Verify  | 20.1 (133.2)                | 3,400      (5,200)  |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the [`pqc::mldsa`](crate::mldsa) module.
-//! The memory figures were measured on 2026-11-21 with `mem_usage_benches/src/bench_mldsa_mem_usage.rs`
+//! The memory figures were measured on 2026-11-21 (the KeyGen and Sign rows on 2026-11-24) with `mem_usage_benches/src/bench_mldsa_mem_usage.rs`
 //! under `valgrind --tool=massif --heap=no --stacks=yes`; the method is the one the
-//! [`pqc::mlkem_lowmemory`](crate::mlkem_lowmemory) module docs describe. The throughput figures come from this module's
-//! criterion benches, run on a developer workstation when the module was written and not re-measured
-//! since, so that column is indicative only. Regenerate both with those harnesses after a change to
+//! [`pqc::mlkem_lowmemory`](crate::mlkem_lowmemory) module docs describe. The throughput figures come from the two modules'
+//! criterion benches on 2026-11-24, on a developer desktop shared with other work, where a figure
+//! moves by up to 15% between runs, so that column is indicative only. The `keygen_out` rows
+//! generate into keys the caller holds, which leaves no copy of the private key behind. Both
+//! KeyGen forms run in a frame of their own and leave the keys in storage the caller holds, the
+//! by-value form's result being moved there, so the two compare like with like. Regenerate both with those harnesses after a change to
 //! the signing or verifying path.
 //!
 //! # Usage Examples

@@ -38,6 +38,7 @@ mod sha1_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
 mod sm2_cmd;
+mod sm2_encryption_cmd;
 mod sm3_cmd;
 mod tdes2_cbc_cmd;
 mod tdes2_cfb8_cmd;
@@ -75,18 +76,19 @@ use crate::rsasve_cmd::RSASVEAction;
 use crate::sha2_cmd::SHA2Variant;
 use crate::sha3_cmd::{SHA3Variant, Strength};
 use crate::sm2_cmd::SM2Action;
-use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::aes::{AES_GCM_SIV_128, AES_GCM_SIV_256};
-use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle::camellia::hazmat::{
-    Camellia128Internal, Camellia192Internal, Camellia256Internal,
-};
-use bouncycastle::concatkdf::{
+use crate::sm2_encryption_cmd::SM2EncryptionAction;
+use bouncycastle::digest::concatkdf::{
     ConcatKDF_SHA3_256, ConcatKDF_SHA3_384, ConcatKDF_SHA3_512, ConcatKDF_SHA256, ConcatKDF_SHA384,
     ConcatKDF_SHA512,
 };
-use bouncycastle::sm4::hazmat::SM4Internal;
-use bouncycastle::x963kdf::{X963KDF_SHA256, X963KDF_SHA384, X963KDF_SHA512};
+use bouncycastle::digest::x963kdf::{X963KDF_SHA256, X963KDF_SHA384, X963KDF_SHA512};
+use bouncycastle::symmetric::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::symmetric::aes::{AES_GCM_SIV_128, AES_GCM_SIV_256};
+use bouncycastle::symmetric::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
+use bouncycastle::symmetric::camellia::hazmat::{
+    Camellia128Internal, Camellia192Internal, Camellia256Internal,
+};
+use bouncycastle::symmetric::sm4::hazmat::SM4Internal;
 use clap::{Parser, Subcommand};
 use helpers::block_mode_helpers::{CipherDirection, DecryptOnlyAction};
 
@@ -2271,7 +2273,7 @@ enum Subcommands {
         prf: pbkdf2_cmd::Pbkdf2Prf,
 
         /// A file containing the password (raw bytes; hex with --hex-input). Stdin when absent.
-        #[arg(short, long)]
+        #[arg(long)]
         password_file: Option<String>,
 
         /// The salt in hex.
@@ -3048,6 +3050,56 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SM3 {
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt value in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
+
+        /// An Input Keying Material in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the input keying material in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform HKDF-RIPEMD160 (RFC 5869 extract-then-expand) of the provided input keying material:
+    ///     OKM = HKDF-Expand(HKDF-Extract(salt, ikm), info, len)
+    /// A legacy construction, for the protocols that require it.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HKDF_RIPEMD160 {
         /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
         /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
         /// command history.
@@ -4856,8 +4908,8 @@ enum Subcommands {
         x: bool,
     },
 
-    /// RSA-1024 signature verification (RFC 8017 Section 8.2), PKCS#1 v1.5 only. Verification-only: this
-    /// crate has no RSA-1024 private key type at all. See rsa-2048 for --scheme/--hash.
+    /// RSA-1024 signature verification (RFC 8017 Section 8.2), PKCS#1 v1.5 only. Verification-only: the
+    /// library has no RSA-1024 private key type at all. See rsa-2048 for --scheme/--hash.
     RSA_1024 {
         #[arg(long, value_enum)]
         /// The signature scheme: only `pkcs1v15` is available at this modulus size.
@@ -4876,8 +4928,8 @@ enum Subcommands {
         sigfile: Option<String>,
     },
 
-    /// RSA-1536 signature verification (RFC 8017 Section 8.2), PKCS#1 v1.5 only. Verification-only: this
-    /// crate has no RSA-1536 private key type at all. See rsa-2048 for --scheme/--hash.
+    /// RSA-1536 signature verification (RFC 8017 Section 8.2), PKCS#1 v1.5 only. Verification-only: the
+    /// library has no RSA-1536 private key type at all. See rsa-2048 for --scheme/--hash.
     RSA_1536 {
         #[arg(long, value_enum)]
         /// The signature scheme: only `pkcs1v15` is available at this modulus size.
@@ -4900,7 +4952,7 @@ enum Subcommands {
     /// RSASSA-PSS (RFC 8017 Section 8.1, or RFC 8702 Section 3.2.1 with `--hash shake128`), selected by
     /// `--scheme`/`--hash`. PSS draws a fresh salt from the OS RNG each time it signs. `keygen`
     /// (FIPS 186-5 A.1.3, e = 65537) writes the private key to stdout and the public key to
-    /// `--pkfile`. Private/public key files use this crate's own raw fixed-width encoding (see
+    /// `--pkfile`. Private/public key files use the library's own raw fixed-width encoding (see
     /// `RsaPrivateComponents`/`RsaPublicComponents`'s `# Encoding` docs), not PEM or ASN.1 DER.
     RSA_2048 {
         action: RSAAction,
@@ -5050,6 +5102,33 @@ enum Subcommands {
 
         #[arg(short)]
         /// Output in hex format.
+        x: bool,
+    },
+
+    /// SM2 public key encryption with SM3 (GB/T 32918.4-2016), on key files in sm2's formats;
+    /// use a key pair other than the signing one. The whole input is read before anything is
+    /// written. The ciphertext is `C1 || C3 || C2`, the standard's order, unless `--c1c2c3`.
+    /// Stdin is raw bytes for both encrypt and decrypt, whatever --hex-input says; a ciphertext
+    /// that does not decrypt is one error, whatever is wrong with it.
+    SM2_ENCRYPTION {
+        action: SM2EncryptionAction,
+
+        #[arg(long)]
+        /// The private key file for decrypt and pk-from-sk (raw bytes; hex with --hex-input)
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file for encrypt (raw bytes; hex with --hex-input)
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// Write and read the ciphertext as `C1 || C2 || C3`, the order of
+        /// draft-shen-sm2-ecdsa-02 and the default of Bouncy Castle Java's SM2Engine. A
+        /// ciphertext does not say which order it is in.
+        c1c2c3: bool,
+
+        #[arg(short)]
+        /// Output in hex format, followed by a newline for encrypt and decrypt.
         x: bool,
     },
 
@@ -8646,6 +8725,28 @@ fn run() {
             *len,
             *x,
         ),
+        Some(Subcommands::HKDF_RIPEMD160 {
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            secret_salt,
+            len,
+            x,
+        }) => hkdf_cmd::hkdf_cmd(
+            HKDFVariant::RIPEMD160,
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            *secret_salt,
+            *len,
+            *x,
+        ),
         Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
         }
@@ -8844,9 +8945,11 @@ fn run() {
             mlkem_cmd::mlkem_hkdf_cmd(
                 &mlkem_cmd::MLKEM512_SET,
                 std::marker::PhantomData::<
-                    bouncycastle::mlkem::KdfParams<
-                        bouncycastle::hkdf::HkdfDescription<bouncycastle::sha2::SHA256>,
-                        { bouncycastle::mlkem::MLKEM512_HKDF_SHA256_SS_LEN },
+                    bouncycastle::pqc::mlkem::KdfParams<
+                        bouncycastle::digest::hkdf::HkdfDescription<
+                            bouncycastle::digest::sha2::SHA256,
+                        >,
+                        { bouncycastle::pqc::mlkem::MLKEM512_HKDF_SHA256_SS_LEN },
                     >,
                 >,
                 action,
@@ -8874,9 +8977,11 @@ fn run() {
             mlkem_cmd::mlkem_hkdf_cmd(
                 &mlkem_cmd::MLKEM768_SET,
                 std::marker::PhantomData::<
-                    bouncycastle::mlkem::KdfParams<
-                        bouncycastle::hkdf::HkdfDescription<bouncycastle::sha2::SHA512>,
-                        { bouncycastle::mlkem::MLKEM768_HKDF_SHA512_SS_LEN },
+                    bouncycastle::pqc::mlkem::KdfParams<
+                        bouncycastle::digest::hkdf::HkdfDescription<
+                            bouncycastle::digest::sha2::SHA512,
+                        >,
+                        { bouncycastle::pqc::mlkem::MLKEM768_HKDF_SHA512_SS_LEN },
                     >,
                 >,
                 action,
@@ -8904,9 +9009,11 @@ fn run() {
             mlkem_cmd::mlkem_hkdf_cmd(
                 &mlkem_cmd::MLKEM1024_SET,
                 std::marker::PhantomData::<
-                    bouncycastle::mlkem::KdfParams<
-                        bouncycastle::hkdf::HkdfDescription<bouncycastle::sha2::SHA512>,
-                        { bouncycastle::mlkem::MLKEM1024_HKDF_SHA512_SS_LEN },
+                    bouncycastle::pqc::mlkem::KdfParams<
+                        bouncycastle::digest::hkdf::HkdfDescription<
+                            bouncycastle::digest::sha2::SHA512,
+                        >,
+                        { bouncycastle::pqc::mlkem::MLKEM1024_HKDF_SHA512_SS_LEN },
                     >,
                 >,
                 action,
@@ -9098,6 +9205,9 @@ fn run() {
         }
         Some(Subcommands::SM2 { action, idfile, skfile, pkfile, sigfile, x }) => {
             sm2_cmd::sm2_cmd(action, idfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::SM2_ENCRYPTION { action, skfile, pkfile, c1c2c3, x }) => {
+            sm2_encryption_cmd::sm2_encryption_cmd(action, skfile, pkfile, *c1c2c3, *x);
         }
         Some(Subcommands::RIPEMD128 { x }) => {
             ripemd_cmd::ripemd_cmd(RIPEMDVariant::RIPEMD128, *x);

@@ -4,14 +4,15 @@
 
 use crate::helpers::kem_helpers::{decaps_cmd, encaps_cmd};
 use crate::helpers::{
-    println_stdout, read_input_file, read_secret_file_or_stdin, write_bytes_or_hex,
+    finish_stdout, println_stdout, read_input_file, read_secret_file_or_stdin, write_bytes_or_hex,
     write_private_key, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::PublicKey;
-use bouncycastle::ed::x448::{
+use bouncycastle::ec::ed::x448::{
     DHKEM_SS_LEN, POINT_LEN, SCALAR_LEN, X448PrivateKey, X448PublicKey, keygen_out,
+    keypair_consistency_check,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
@@ -48,7 +49,10 @@ pub(crate) fn x448_cmd(
                 eprintln!("Error: key generation failed: {e:?}");
                 exit(-1);
             });
-            write_private_key(&sk, output_hex);
+            let written = write_private_key(&sk, output_hex);
+            // `exit` runs no destructors, so the key is dropped before a failed write exits.
+            drop(sk);
+            finish_stdout(written);
         }
         X448Action::PkFromSk => {
             // The private key is dropped before the write, which ends the process on a closed
@@ -56,7 +60,8 @@ pub(crate) fn x448_cmd(
             let pk = {
                 let mut sk = X448PrivateKey::zeroized();
                 load_sk(skfile, &mut sk);
-                sk.pk()
+                // A decoded key is filled, so it has a public key.
+                sk.pk().unwrap()
             };
             write_bytes_or_hex(&pk.encode(), output_hex);
         }
@@ -66,7 +71,7 @@ pub(crate) fn x448_cmd(
             let matches = {
                 let mut sk = X448PrivateKey::zeroized();
                 load_sk(skfile, &mut sk);
-                sk.pk() == pk
+                keypair_consistency_check(&pk, &sk).is_ok()
             };
             if matches {
                 println_stdout("SUCCESS: pk and sk match.");
@@ -87,7 +92,9 @@ pub(crate) fn x448_cmd(
                 eprintln!("Error: key agreement failed: {e:?}");
                 exit(-1);
             });
-            write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
+            let written = write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
+            drop(z);
+            finish_stdout(written);
         }
         X448Action::Encaps => {
             encaps_cmd::<X448PublicKey, POINT_LEN, POINT_LEN, DHKEM_SS_LEN>(

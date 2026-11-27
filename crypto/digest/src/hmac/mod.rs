@@ -59,7 +59,7 @@
 //! 2. Implement [`HMACParams`] for that hash type, supplying the HMAC's name, claimed security
 //!    strength and OID, plus `KeyMaterial<{OUTPUT_LEN}>` as the key type that
 //!    [`HmacKey::keygen_from_rng`] returns, which is also what fixes the tag length of the MAC
-//!    roles. This allows this crate to provide blanket [`Algorithm`], [`AlgorithmOID`] and role
+//!    roles. This allows this module to provide blanket [`Algorithm`], [`AlgorithmOID`] and role
 //!    impls.
 //! 3. Publish a type alias for the instantiation, `HMAC<SHA256, Dir>`.
 //!
@@ -83,6 +83,12 @@
 //!
 //! [`HMACParams`] is deliberately **not** sealed, so the same recipe works for a hash function
 //! defined in any other crate. Simply follow the recipe above!
+//!
+//! # Memory Usage
+//!
+//! HMAC allocates nothing. The sizes of a key and of a worker depend on the hash, and are tabulated
+//! with the instantiations: see the Memory Usage sections of [`crate::sha2::hmac`] and
+//! [`crate::sha3::hmac`].
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -111,7 +117,8 @@
 //!   values need to be treated and protected the same as secret keys"). [`HmacKey`] and the worker
 //!   hold them as hash states, which the hash modules zeroize on drop; neither has a `Debug` that
 //!   prints them. The padded key block they are built from is a [`Secret`] scratch, zeroized when
-//!   construction returns.
+//!   construction returns, and the stack a worker uses to take the inner state and to finish a
+//!   tag is overwritten before it returns.
 //!
 //! [`Secret`]: bouncycastle_utils::secret::Secret
 //! [`MacVerificationKey::verify`]: bouncycastle_core::symmetric_key::MacVerificationKey::verify
@@ -121,7 +128,7 @@ pub mod hazmat;
 
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError};
-use bouncycastle_core::hazmat::WithoutCollisionResistance;
+use bouncycastle_core::hazmat::{WithoutCollisionResistance, do_hazardous_operations};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
@@ -129,6 +136,7 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, FinishToken, HashAlgParams, HashOneShot, MACGenerator, MACVerifier,
     RNG,
 };
+use bouncycastle_utils::stack_wipe::{in_wiped_frame, wipe_stack_below};
 use bouncycastle_utils::{ct, secret::Secret};
 use core::fmt::{Debug, Display, Formatter};
 use core::marker::PhantomData;
@@ -143,9 +151,9 @@ use core::marker::PhantomData;
 /// [`HmacKey::keygen_from_rng`] can be impl'd generically rather than being written out once
 /// per hash.
 ///
-/// Each hash crate is expected to implement this trait for its own hash types and publishes the resulting type
-/// alias. For example,`HMAC_SHA256` lives in `bouncycastle_digest::sha2::hmac` and `HMAC_SHA3_256` in
-/// `bouncycastle_digest::sha3::hmac`.
+/// Each hash module is expected to implement this trait for its own hash types and publishes the
+/// resulting type alias. For example,`HMAC_SHA256` lives in `bouncycastle_digest::sha2::hmac` and
+/// `HMAC_SHA3_256` in `bouncycastle_digest::sha3::hmac`.
 ///
 /// The block length and the generated-key length do not need to be restated here since they are already
 /// carried by the hash itself as [`HashAlgParams::BLOCK_LEN`] and [`HashAlgParams::OUTPUT_LEN`].
@@ -165,9 +173,6 @@ pub trait HMACParams: HashOneShot + HashAlgParams + Clone {
 
     /// The name of the HMAC over this hash, as reported by [`Algorithm::ALG_NAME`].
     const HMAC_ALG_NAME: &'static str;
-    /// The name of HKDF (RFC 5869) over this hash, as reported by `bouncycastle_digest::hkdf::HKDF`'s
-    /// [`Algorithm::ALG_NAME`].
-    const HKDF_ALG_NAME: &'static str;
     /// The strength claimed by the HMAC over this hash, as reported by
     /// [`Algorithm::MAX_SECURITY_STRENGTH`].
     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength;
@@ -182,7 +187,6 @@ pub trait HMACParams: HashOneShot + HashAlgParams + Clone {
 impl<H: HMACParams> HMACParams for WithoutCollisionResistance<H> {
     type MACKey = H::MACKey;
     const HMAC_ALG_NAME: &'static str = H::HMAC_ALG_NAME;
-    const HKDF_ALG_NAME: &'static str = H::HKDF_ALG_NAME;
     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = H::HMAC_MAX_SECURITY_STRENGTH;
     const HMAC_OID: &'static [u32] = H::HMAC_OID;
     const HMAC_OID_DER: &'static [u8] = H::HMAC_OID_DER;
@@ -203,13 +207,33 @@ impl<HASH: HMACParams, Dir> AlgorithmOID for HMAC<'_, HASH, Dir> {
 /// The scratch the pad blocks are built in must hold one block of the underlying hash: per RFC 2104
 /// Section 2 step (1) the key is zero-padded to B bytes, and only a key longer than B is pre-hashed
 /// first (Section 3). The scratch is sliced to the hash's own block. HKDF sizes the MAC-key copies
-/// it hands this crate from the same constant.
+/// it hands this module from the same constant.
 pub const LARGEST_HASHER_BLOCK_LEN: usize = 144;
 
 /// The largest output length across the supported hashes (SHA-512, SHA3-512), which sizes the key
 /// [`FromAnyKeyMaterial::generate`] draws before trimming it to the hash's own output length, and
 /// the scratch the inner digest is finished into.
 const LARGEST_HASHER_OUTPUT_LEN: usize = 64;
+
+/// How much stack [`wipe_stack_below`] overwrites when an [`HmacKey`] is made, and again after a
+/// key longer than the block is hashed, in 64-bit words: more than either leaves written below
+/// the frame that wipes, with room for a compiler that lays the frames out less tightly. In the
+/// x86-64 release build the key's own frame is 1448 bytes for HMAC-SHA3 (1032 for SHA-512, 632
+/// for SHA-256), the absorbing below it adds little (the permutation and the compressions wipe
+/// their own frames), and the deepest write that differs between two keys is about 1320 bytes
+/// down; hashing a long key writes up to 1504 bytes below the key's frame, and is wiped where it
+/// ends. An unoptimised build's frames are not covered.
+const KEY_WIPED_STACK_WORDS: usize = 256;
+
+/// How much stack [`wipe_stack_below`] overwrites after a worker takes the key's inner pad
+/// state, in 64-bit words. In the x86-64 release build the clone's frame is at most 216 bytes
+/// (SHA-512's), and 16 words clear every hash.
+const LOAD_WIPED_STACK_WORDS: usize = 32;
+
+/// How much stack [`wipe_stack_below`] overwrites after a tag is finished, in 64-bit words. In
+/// the x86-64 release build 48 clear RIPEMD-160 (40 leave four bytes in its final's frame, below
+/// the 312 of the finishing frame) and 32 clear SHA-2 and SM3; SHA-3 leaves nothing.
+const FINISH_WIPED_STACK_WORDS: usize = 64;
 
 /*** Key ***/
 
@@ -237,9 +261,9 @@ impl<HASH: HMACParams> Clone for HmacKey<HASH> {
 
 impl<HASH: HMACParams> HmacKey<HASH> {
     /// RFC 2104 Section 2 steps (1), (2) and (5), plus Section 3's pre-hash of a key longer than
-    /// the block, with both pad blocks absorbed so that the states are ready for steps (4) and (7).
-    /// No key checks: the callers do those.
-    fn from_key_bytes(key_bytes: &[u8]) -> Self {
+    /// the block, absorbed into the key's two states where they sit, so that they are ready for
+    /// steps (4) and (7). No key checks: the callers do those.
+    fn absorb_pads(&mut self, key_bytes: &[u8]) {
         // The pad scratch and the output scratch are sized for the library's hashes; a foreign
         // `HMACParams` hash past either bound is a compile error, not a panic at the first key.
         const { assert!(HASH::BLOCK_LEN <= LARGEST_HASHER_BLOCK_LEN) };
@@ -253,6 +277,9 @@ impl<HASH: HMACParams> HmacKey<HASH> {
         if key_bytes.len() > block_len {
             let output_len = HASH::default().output_len();
             HASH::hash_out(key_bytes, &mut k[..output_len]);
+            // The hash of the key is the key: the stack hashing it used is overwritten here,
+            // where it ends, and not left to the caller's wipe, which is sized for the pads.
+            wipe_stack_below::<KEY_WIPED_STACK_WORDS>();
         } else {
             k[..key_bytes.len()].copy_from_slice(key_bytes);
         }
@@ -260,22 +287,46 @@ impl<HASH: HMACParams> HmacKey<HASH> {
         // Step (2): "XOR ... the B byte string computed in step (1) with ipad", absorbed into the
         // inner hash; step (5): the same with opad, absorbed into the outer hash. Section 4: these
         // two block compressions are what the key saves on every message.
-        let mut inner = HASH::default();
-        let mut outer = HASH::default();
         for byte in k[..block_len].iter_mut() {
             *byte ^= IPAD_BYTE;
         }
-        inner.do_update(&k[..block_len]);
+        self.inner.do_update(&k[..block_len]);
         for byte in k[..block_len].iter_mut() {
             *byte ^= IPAD_BYTE ^ OPAD_BYTE; // undo ipad, apply opad
         }
-        outer.do_update(&k[..block_len]);
-
-        Self { inner, outer }
+        self.outer.do_update(&k[..block_len]);
     }
 
     /// The key-type check and, unless `allow_weak_keys`, the strength check, then the pads.
+    ///
+    /// The pad states are key-equivalent (RFC 2104 Section 4). They are built, and the result
+    /// made, in [`Self::checked_in_own_frame`], which leaves copies of them in its frame and its
+    /// callees'; that stack is overwritten here. The result is written straight to the
+    /// caller's, not held in this frame across the wipe, which would leave a copy of both pad
+    /// states above the stack the wipe reaches.
     fn from_key_material_checked(
+        key: &dyn KeyMaterialTrait,
+        allow_weak_keys: bool,
+    ) -> Result<Self, MACError> {
+        in_wiped_frame::<KEY_WIPED_STACK_WORDS, _>(|| {
+            Self::checked_in_own_frame(key, allow_weak_keys)
+        })
+    }
+
+    /// [`Self::from_key_material_checked`] without its wipe, for HKDF, whose operations each run
+    /// in a frame of their own and overwrite the stack below it afterwards, which covers this.
+    /// Only for such a caller: elsewhere the pad states' copies are left on the stack.
+    pub(crate) fn from_key_material_unwiped(
+        key: &dyn KeyMaterialTrait,
+        allow_weak_keys: bool,
+    ) -> Result<Self, MACError> {
+        Self::checked_in_own_frame(key, allow_weak_keys)
+    }
+
+    /// [`Self::from_key_material_checked`]'s work. Never inlined, so that its frame lies below
+    /// its caller's, where the caller's wipe reaches it.
+    #[inline(never)]
+    fn checked_in_own_frame(
         key: &dyn KeyMaterialTrait,
         allow_weak_keys: bool,
     ) -> Result<Self, MACError> {
@@ -284,17 +335,22 @@ impl<HASH: HMACParams> HmacKey<HASH> {
                 "Key type must be a MAC key.",
             )));
         }
-        // A key of no security strength is refused whatever the HMAC claims: for an HMAC that
-        // itself claims none (a legacy hash), `<` alone would accept every key.
+        // The bar is the HMAC's own claim, as `keygen_from_rng`'s is, not the hash's collision
+        // strength: SP 800-107r1 Section 5.3.4 bounds an HMAC key's effective strength by 2C, twice
+        // the chaining value's length, so the two are separate claims. A key of no security strength is
+        // refused whatever the HMAC claims: for an HMAC that itself claims none (a legacy hash),
+        // `<` alone would accept every key.
         if !allow_weak_keys
-            && (key.security_strength() < HASH::MAX_SECURITY_STRENGTH
+            && (key.security_strength() < HASH::HMAC_MAX_SECURITY_STRENGTH
                 || key.security_strength() == SecurityStrength::None)
         {
             return Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(
                 "HmacKey: provided key has a lower security strength than the instantiated HMAC",
             )));
         }
-        Ok(Self::from_key_bytes(key.ref_to_bytes()))
+        let mut key_states = Self { inner: HASH::default(), outer: HASH::default() };
+        key_states.absorb_pads(key.ref_to_bytes());
+        Ok(key_states)
     }
 
     /// Generates a fresh key for this HMAC from `rng`: [`HMACParams::MACKey`] bytes (the hash's
@@ -303,22 +359,28 @@ impl<HASH: HMACParams> HmacKey<HASH> {
     ///
     /// # Errors
     /// [`RNGError::SecurityStrengthInsufficientForAlgorithm`] if `rng` is instantiated below
-    /// [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`], or whatever the RNG returns.
+    /// [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`]; [`RNGError::GenericError`] if it fills less
+    /// than the whole key; or whatever the RNG returns.
     pub fn keygen_from_rng(rng: &mut dyn RNG) -> Result<HASH::MACKey, RNGError> {
         if rng.security_strength() < HASH::HMAC_MAX_SECURITY_STRENGTH {
             return Err(RNGError::SecurityStrengthInsufficientForAlgorithm);
         }
         let mut key = HASH::MACKey::default();
-        rng.fill_keymaterial_out(&mut key)?;
-        key.set_key_type(KeyType::MACKey)?;
+        // The count is the key's length, so a short one is a short key, which HMAC would take.
+        if rng.fill_keymaterial_out(&mut key)? != key.capacity() {
+            return Err(RNGError::GenericError("the RNG wrote fewer bytes than it was asked for"));
+        }
+        // An RNG types its draw as it likes (`FixedSeedRNG`'s is a `Seed`), and turning one key
+        // type into another is a hazardous operation; drawn for this purpose, it is a MAC key.
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey))?;
         Ok(key)
     }
 }
 
 impl<HASH: HMACParams> FromAnyKeyMaterial for HmacKey<HASH> {
     /// Builds the key from material tagged [`KeyType::MACKey`] (or [`KeyType::Zeroized`], for an
-    /// all-zero key) whose security strength is at least the HMAC's and is not
-    /// [`SecurityStrength::None`].
+    /// all-zero key) whose security strength is at least
+    /// [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`] and is not [`SecurityStrength::None`].
     ///
     /// # Errors
     /// [`MACError::KeyMaterialError`] with [`KeyMaterialError::InvalidKeyType`] or
@@ -356,10 +418,26 @@ impl<HASH: HMACParams> FromAnyKeyMaterial for HmacKey<HASH> {
 
 impl<HASH: HMACParams> HmacKey<HASH> {
     /// `H` after absorbing `K XOR ipad`, ready for the text: the start of RFC 2104 Section 2
-    /// step (4). What a worker's updates feed; `finish_out` is its other half. The pair is
-    /// reachable outside the crate only through [`hazmat`].
+    /// step (4), returned for [`hazmat`]; `finish_out` is its other half. A worker takes it
+    /// through [`Self::load_inner_state`] instead.
     pub(in crate::hmac) fn inner_state(&self) -> HASH {
         self.inner.clone()
+    }
+
+    /// [`Self::inner_state`] written over `hasher` where it sits, rather than returned: the
+    /// pad state is key-equivalent (RFC 2104 Section 4), and a returned one leaves copies in the
+    /// caller's frame. The clone is made in [`Self::load_inner_state_in_own_frame`], and the
+    /// stack it used is overwritten here.
+    fn load_inner_state(&self, hasher: &mut HASH) {
+        self.load_inner_state_in_own_frame(hasher);
+        wipe_stack_below::<LOAD_WIPED_STACK_WORDS>();
+    }
+
+    /// [`Self::load_inner_state`]'s clone. Never inlined, so that the copy of the pad state the
+    /// clone passes through lies below its caller's frame, where the caller's wipe reaches it.
+    #[inline(never)]
+    fn load_inner_state_in_own_frame(&self, hasher: &mut HASH) {
+        hasher.clone_from(&self.inner);
     }
 
     /// RFC 2104 Section 2 steps (4), (6) and (7) over an inner hash that has absorbed the text:
@@ -368,6 +446,21 @@ impl<HASH: HMACParams> HmacKey<HASH> {
     /// first [`HashAlgParams::OUTPUT_LEN`] bytes. Returns the number of bytes written. Neither
     /// hash is moved; `token` is the one a worker's final was given, or [`hazmat`]'s.
     pub(in crate::hmac) fn finish_out(
+        &self,
+        token: &FinishToken,
+        inner: &mut HASH,
+        out: &mut [u8],
+    ) -> usize {
+        let n = self.finish_out_in_own_frame(token, inner, out);
+        wipe_stack_below::<FINISH_WIPED_STACK_WORDS>();
+        n
+    }
+
+    /// [`Self::finish_out`]'s work. Never inlined, so that the copies of the outer pad state and
+    /// of the inner digest that it and the hashes' finals leave lie below its caller's frame,
+    /// where the caller's wipe reaches them.
+    #[inline(never)]
+    fn finish_out_in_own_frame(
         &self,
         token: &FinishToken,
         inner: &mut HASH,
@@ -429,8 +522,14 @@ where
 /// cloneable::<HMAC<'static, SHA256, Encrypting>>();
 /// ```
 pub struct HMAC<'k, HASH: HMACParams, Dir> {
-    /// RFC 2104 Section 2 steps (3)-(4): `H(K XOR ipad, text)` in progress.
+    /// RFC 2104 Section 2 steps (3)-(4): `H(K XOR ipad, text)` in progress, once `keyed`; the
+    /// hash's initial state until then.
     hasher: HASH,
+    /// Whether `hasher` holds the key's inner pad state. The worker is returned by value, and
+    /// moved by its callers; it takes the pad state at its first update or at its final, where
+    /// it sits, so that a move before then copies no key-equivalent state. A move after the
+    /// first update (a consuming `do_final`, say) does copy it, into the caller's frame.
+    keyed: bool,
     /// The key, for `H` after absorbing `K XOR opad` at step (7).
     key: &'k HmacKey<HASH>,
     dir: PhantomData<Dir>,
@@ -453,13 +552,22 @@ const IPAD_BYTE: u8 = 0x36;
 const OPAD_BYTE: u8 = 0x5C;
 
 impl<'k, HASH: HMACParams, Dir> HMAC<'k, HASH, Dir> {
-    /// A worker at the start of step (3), over a clone of the key's inner pad state.
+    /// A worker at the start of step (3), not yet holding the key's inner pad state.
     fn new(key: &'k HmacKey<HASH>) -> Self {
-        Self { hasher: key.inner.clone(), key, dir: PhantomData }
+        Self { hasher: HASH::default(), keyed: false, key, dir: PhantomData }
+    }
+
+    /// Puts the key's inner pad state in `hasher`, the first time it is called.
+    fn ensure_keyed(&mut self) {
+        if !self.keyed {
+            self.key.load_inner_state(&mut self.hasher);
+            self.keyed = true;
+        }
     }
 
     /// Step (3): the text, in pieces.
     fn absorb(&mut self, data: &[u8]) {
+        self.ensure_keyed();
         self.hasher.do_update(data)
     }
 
@@ -477,6 +585,7 @@ impl<'k, HASH: HMACParams, Dir> HMAC<'k, HASH, Dir> {
                 "HMACParams::MACKey must be KeyMaterial<OUTPUT_LEN>"
             )
         };
+        self.ensure_keyed();
         self.key.finish_out(token, &mut self.hasher, out)
     }
 }

@@ -211,8 +211,8 @@ excellent features system. Speaking of features, most rust applications are perf
 standard runtime library (libstd); after all it brings great convenience features such as dynamically-sized arrays
 (Vec), stack overflow protection, and so forth. But when you get down to devices so small that they don't offer dynamic
 memory allocation (heap memory), then libstd doesn't work -- so no Vec for you! BC-Rust is designed towards a no_std
-build: the algorithm crates already declare `#![no_std]`, and what remains is in `bouncycastle-core`, where a `std`
-feature gates the allocating convenience APIs. For example, most of the public APIs in BC-Rust are twinned into a more
+build: the algorithm crates and `bouncycastle-core` declare `#![no_std]`, and an `alloc` feature, on by default, gates
+the allocating convenience APIs. For example, most of the public APIs in BC-Rust are twinned into a more
 ergonomic version that will return the result in a newly-allocated Vec of bytes, and also a version that takes a mutable
 slice of memory into which to write the result, as exemplified by the one-shot hash trait:
 
@@ -246,7 +246,7 @@ This alpha release includes the following cryptographic primitives:
 * MACs and KDFs: HMAC, HKDF, CMAC, GMAC, Poly1305, PBKDF2, scrypt, the SP 800-56C and X9.63 KDFs, and the SP 800-108
   KDFs
 * The NIST HashDRBG random number generator
-* Block ciphers (AES, ARIA, Camellia, SM4, Triple-DES) under the usual modes, including GCM, GCM-SIV, CCM and key
+* Block ciphers (AES, ARIA, Camellia, SM4, Triple-DES) under the usual modes, including GCM, GCM-SIV, CCM, XTS and key
   wrap, plus ChaCha20-Poly1305 and Ascon
 * Signatures (Ed25519, Ed448, ML-DSA, ECDSA, SM2, RSA)
 * Key Establishment (X25519, X448, ML-KEM, ECDH, RSA, and HPKE over them)

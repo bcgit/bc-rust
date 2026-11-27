@@ -10,7 +10,7 @@
 //! followed by one block of padding, computed here from the permutation.
 
 mod common;
-use bouncycastle::sm4::hazmat::SM4Internal;
+use bouncycastle::symmetric::sm4::hazmat::SM4Internal;
 use common::{
     Framing, KEY16, KEY32, any_input_length, large_payload_on_an_error_path, listed_in_help,
     pkcs7_block, round_trips, run_err, run_ok, tohex, unhex, wrong_key_lengths,

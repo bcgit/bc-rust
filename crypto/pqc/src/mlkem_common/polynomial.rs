@@ -3,6 +3,7 @@
 
 use crate::mlkem_common::params::MLKEMParamsBase;
 use crate::mlkem_common::{N, q, q_inv};
+use bouncycastle_utils::secret::ZeroizablePrimitive;
 use core::ops::{Index, IndexMut};
 
 /// A polynomial over the ML-KEM ring.
@@ -26,6 +27,11 @@ impl Default for Polynomial {
     }
 }
 
+/// So that a secret polynomial can be held in a `Secret` and wiped.
+impl ZeroizablePrimitive for Polynomial {
+    const ZEROED: Self = Self::new();
+}
+
 /// Convenience function to avoid ".0" all over the place.
 impl Index<usize> for Polynomial {
     type Output = i16;
@@ -47,25 +53,21 @@ impl Polynomial {
         Self { coeffs: [0i16; N] }
     }
 
-    /// Encodes a 32-byte message `m` into a `Polynomial`, implementing the message
-    /// encoding step of K-PKE.Encrypt `Decompress_1(ByteDecode_1(m))`,
-    /// (FIPS 203, Alg. 14). Each message bit becomes one coefficient: `Decompress_1`
+    /// Adds the encoding of a 32-byte message `m` to `self`: the message encoding step of
+    /// K-PKE.Encrypt, 𝜇 ← Decompress_1(ByteDecode_1(𝑚)), and its addition at line 21 (FIPS 203,
+    /// Alg. 14), without 𝜇 held anywhere. Each message bit becomes one coefficient: `Decompress_1`
     /// (§4.2.1) maps bit `1` to `⌈q/2⌉ = (q + 1) / 2 = 1665` (for `q = 3329`) and bit
     /// `0` to `0`, placing a set bit at the point farthest from `0` to maximize the
     /// decryption noise margin. The mapping is computed branchlessly (constant-time)
-    /// via a bit-derived all-ones / all-zeros mask, and bits are read LSB-first. This
-    /// is the exact inverse of [`to_msg`].
-    pub fn from_msg(m: &[u8; 32]) -> Self {
-        let mut w = Polynomial::new();
-
+    /// via a bit-derived all-ones / all-zeros mask, and bits are read LSB-first. No reduction,
+    /// as [`add`](Self::add).
+    pub fn add_msg(&mut self, m: &[u8; 32]) {
         for (i, b) in m.iter().enumerate() {
             for j in 0..8 {
                 let mask = -(((*b >> j) & 1) as i16);
-                w[8 * i + j] = mask & ((q + 1) / 2);
+                self[8 * i + j] += mask & ((q + 1) / 2);
             }
         }
-
-        w
     }
 
     /// Decodes a `Polynomial` into its 32-byte message `m`, implementing the message
@@ -76,14 +78,16 @@ impl Polynomial {
     /// branchlessly and the bits are packed LSB-first.
     /// Coefficients are expected to already be canonical in `[0, q]`: the unsigned
     /// interval test is not periodic mod `q`, so the caller reduces beforehand (`poly_reduce()`
-    /// in `pke_decrypt`) and no reduction is repeated here.
-    pub fn to_msg(self) -> [u8; 32] {
+    /// in `pke_decrypt_out`) and no reduction is repeated here.
+    ///
+    /// Into `msg`, which the caller holds: the message is secret.
+    pub fn to_msg_out(&self, msg: &mut [u8; 32]) {
         const LOWER: i32 = q as i32 >> 2; // ⌊q/4⌋     = 832
         const UPPER: i32 = q as i32 - LOWER; // q - ⌊q/2⌋ = 2497
 
-        let mut msg = [0u8; 32];
+        msg.fill(0);
 
-        // No reduction here: the only caller, pke_decrypt, reduces every coefficient immediately
+        // No reduction here: the only caller, pke_decrypt_out, reduces every coefficient immediately
         // before this call (see the type's docs on the canonical range).
 
         // for (i, item) in msg.iter_mut().enumerate().take(N/8) {
@@ -94,13 +98,10 @@ impl Polynomial {
                 msg[i] |= (t << j) as u8;
             }
         }
-
-        msg
     }
 
     /// Multiplication of two polynomials in the NTT domain, in place: `self` becomes
-    /// MultiplyNTTs(self, b) (FIPS 203 Algorithm 11). See [`base_mult_montgomery`] for the form
-    /// that returns a new polynomial.
+    /// MultiplyNTTs(self, b) (FIPS 203 Algorithm 11).
     ///
     /// Borrowed from:
     /// <https://github.com/pq-crystals/kyber/blob/main/ref/poly.c#L290>
@@ -329,14 +330,6 @@ impl Polynomial {
             self[i] = mul_mont(self[i], ZETAS_INV[127]);
         }
     }
-}
-
-/// [`Polynomial::base_mult_montgomery`] into a new polynomial: MultiplyNTTs(a, b).
-#[must_use]
-pub fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
-    let mut r = *a;
-    r.base_mult_montgomery(b);
-    r
 }
 
 /// The twiddle factors 𝜁^BitRev7(𝑖) of FIPS 203 Appendix A, in Montgomery form.

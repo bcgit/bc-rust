@@ -1,7 +1,8 @@
 //! The cipher, MAC, KEM, key-agreement and signature worker traits are dyn-compatible: a worker
 //! can be held as a trait object (issue #173), as can a hash or XOF, since `Clone` lives on the
 //! types rather than on `Hash`.
-//! So is the in-place AEAD key role pair, which names no worker type.
+//! So is the in-place AEAD key role pair, which names no worker type, and so is `RNG`, whose
+//! generic draw lives on `RNGExt` for that reason.
 //! The functions take trait objects and do nothing; compiling them is the test.
 //!
 //! A worker held as `Box<dyn ..>` is finished through the `_boxed` twin of its consuming final,
@@ -15,8 +16,8 @@ use bouncycastle_core::symmetric_key::{AeadInPlaceDecryptionKey, AeadInPlaceEncr
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor, Hash,
     KEMDecapsulator, KEMEncapsulator, KeyAgreement, KeyUnwrapper, KeyWrapper, MACGenerator,
-    MACVerifier, SignatureSigner, SignatureVerifier, StreamCipherDecryptor, StreamCipherEncryptor,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor, XOF, XOFSqueezer,
+    MACVerifier, RNG, SignatureSigner, SignatureVerifier, StreamCipherDecryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor, XOF, XOFSqueezer,
 };
 
 fn symmetric(
@@ -42,6 +43,7 @@ fn kem(_: &dyn KEMEncapsulator<1088, 32>, _: &dyn KEMDecapsulator<1088, 32>) {}
 /// The peer key type is a parameter of the worker trait, so the object type names it.
 fn key_agreement(_: &dyn KeyAgreement<[u8; 65], 32>) {}
 fn hash(_: &mut dyn Hash) {}
+fn rng(_: &mut dyn RNG) {}
 /// A XOF names its squeezer type, so the object type is `dyn XOF<Squeezer = S>`.
 fn xof<S: XOFSqueezer>(_: &mut dyn XOF<Squeezer = S>, _: &mut dyn XOFSqueezer) {}
 
@@ -121,6 +123,7 @@ fn the_worker_traits_are_dyn_compatible() {
         kem as fn(_, _),
         key_agreement as fn(_),
         hash as fn(_),
+        rng as fn(_),
         aead_in_place as fn(_, _),
     );
     fn reference_xof<S: XOFSqueezer>() {

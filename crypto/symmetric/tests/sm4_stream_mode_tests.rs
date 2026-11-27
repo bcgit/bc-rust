@@ -19,7 +19,7 @@
 //!   pin [`reference_ctr`], written straight from the Sec 8.7.1 equations over the permutation, and
 //!   `SM4Key<CTR>` is then required to agree with that same reference on the counter blocks it does
 //!   produce. Everything internal to the mode -- the counter increment, the short final block, the
-//!   chunking -- is covered by the ACVP vectors in `bouncycastle_cipher::modes`.
+//!   chunking -- is covered by the ACVP vectors in `bouncycastle_symmetric::modes`.
 //!
 //! The draft defines SM4-CFB-8 (Sec 8.5.1) but publishes no example of it, so `SM4Key<CFB8>` is
 //! pinned the same way: against [`reference_cfb8`], the Sec 8.5.2 equations at `s = 8` evaluated
@@ -27,7 +27,6 @@
 //!
 //! All vector values are transcribed from the downloaded text of the draft.
 
-use bouncycastle_cipher::modes::{CFB, CFB8, CTR, OFB};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
@@ -37,6 +36,7 @@ use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_symmetric::modes::{CFB, CFB8, CTR, OFB};
 use bouncycastle_symmetric::sm4::hazmat::SM4Internal;
 use bouncycastle_symmetric::sm4::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, SM4Key};
 
@@ -361,7 +361,7 @@ fn the_cfb8_key_agrees_with_the_equations() {
 
 /// The counter limit, through a key: under `CTR<15>` the counter is one byte, so the 256th block
 /// is the last the mode will produce, and the byte after it is refused rather than repeating the
-/// keystream (`bouncycastle_cipher::modes::Ctr`'s rule, pinned here on an SM4 key so that the
+/// keystream (`bouncycastle_symmetric::modes::Ctr`'s rule, pinned here on an SM4 key so that the
 /// key-object path reaches it).
 #[test]
 fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {

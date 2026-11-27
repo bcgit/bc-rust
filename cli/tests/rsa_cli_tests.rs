@@ -2,7 +2,7 @@
 //! subprocess (the harness is the one `aes_cbc_cli_tests.rs` documents): the behaviour worth
 //! testing is the command-line contract -- key/signature file loading, the streamed stdin message,
 //! exit codes -- none of which is reachable from the library API. What the library computes is
-//! cross-checked by verifying the CLI's signatures with `bouncycastle_rsa`'s own
+//! cross-checked by verifying the CLI's signatures with `bouncycastle_modexp::rsa`'s own
 //! `VerifyingKey` impls (and, for the deterministic PKCS#1 v1.5 case, comparing bytes).
 //!
 //! `CARGO_BIN_EXE_bc-rust` is set by cargo for integration tests and points at the binary for the
@@ -10,14 +10,14 @@
 
 use bouncycastle::core::signature_key::{DeterministicOneShotSigningKey, OneShotVerifyingKey};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
-use bouncycastle::rsa::RSA2048;
-use bouncycastle::rsa::keys::{
+use bouncycastle::modexp::rsa::RSA2048;
+use bouncycastle::modexp::rsa::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,
 };
-use bouncycastle::rsa::rsa_2048::{
+use bouncycastle::modexp::rsa::rsa_2048::{
     RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256, RSASSA_PSS_SHAKE128,
 };
-use bouncycastle::rsa::rsassa::RsaSignatureAlgorithm;
+use bouncycastle::modexp::rsa::rsassa::RsaSignatureAlgorithm;
 use std::io::{ErrorKind, Write};
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
@@ -27,8 +27,8 @@ use std::thread;
 /// The path to the binary under test, resolved by cargo.
 const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
 
-/// The genuine RSA-2048 CRT key `bouncycastle_rsa`'s own crate docs use (Wycheproof
-/// `rsa_pkcs1_2048_sig_gen_test.json`'s SHA-256 group, factored as `rsa_2048_pkcs1_v1_5_tests.rs`
+/// The genuine RSA-2048 CRT key `bouncycastle_modexp::rsa`'s own module docs use (Wycheproof
+/// `rsa_pkcs1_2048_sig_gen_test.json`'s SHA-256 group, factored as `rsa_rsa_2048_pkcs1_v1_5_tests.rs`
 /// describes), in the CLI's `p || q || dP || dQ || qInv || e` key-file layout, hex.
 const SK_2048_HEX: &str = concat!(
     "dc431050f782e894fb5248247d98cb7d58b8d1e24f3b55d041c56e4de086b0d5",
@@ -65,7 +65,7 @@ const PK_2048_HEX: &str = concat!(
     "5d12569a62807d3b9a02e5a530e773066f453d1f5b4c2e9cf7820283f742b9d5",
     "0000000000010001",
 );
-/// The RSA-1024 public key from `bouncycastle_rsa`'s crate docs (Wycheproof
+/// The RSA-1024 public key from `bouncycastle_modexp::rsa`'s module docs (Wycheproof
 /// `rsa_pkcs1_1024_sig_gen_test.json`'s first group), `n || e`.
 const PK_1024_HEX: &str = concat!(
     "ac9048a7a4f560af91b4fcaf62a14595cb9ca9ec12000fc845e48572113cab28",

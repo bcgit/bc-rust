@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks that the AES round-key widening (`PlaneWord::splat` in crypto/aes/src/bitslice.rs) and
+# Checks that the AES round-key widening (`PlaneWord::splat` in crypto/symmetric/src/aes/bitslice.rs) and
 # the TDES round function (`spread` in crypto/symmetric/src/tdes/des.rs) compile to no multiply, call or
 # branch on the targets whose multiply is not fixed-latency.
 # Builds dev_scripts/aes_ct_harness with the nightly toolchain and `-Zbuild-std=core` (the

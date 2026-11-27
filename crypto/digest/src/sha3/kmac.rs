@@ -56,6 +56,9 @@
 //! assert_ne!(bound[..16], first[..]);
 //! ```
 
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 use crate::sha3::cshake::{
     CSHAKE_COMPONENT_LEN, CSHAKEBorrowedSqueezer, CSHAKEInternal, CSHAKESqueezer,
 };
@@ -65,21 +68,18 @@ use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, Suspendab
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
+use bouncycastle_core::traits::XOFSqueezer;
 use bouncycastle_core::traits::{
     Algorithm, FinishToken, Hash, MACGenerator, MACVerifier, RNG, Suspendable, XOF,
 };
-// Named only by the doc links below.
-#[cfg(doc)]
-use bouncycastle_core::traits::XOFSqueezer;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,
 };
 use core::marker::PhantomData;
-#[cfg(feature = "std")]
-use std::vec::Vec;
 
 /// The name of the KMAC128 algorithm (NIST SP 800-185 Sec 4).
 pub const KMAC128_NAME: &str = "KMAC128";
@@ -176,6 +176,9 @@ pub type KMAC256Key<const MAC_LEN: usize = 64> = KMACKeyInternal<SHAKE256Params,
 /// The key binding shared by KMAC and KMACXOF: the key-type check and, unless `allow_weak_key`,
 /// the strength check, then Sec 4.3 step 1's `bytepad(encode_string(K), rate)` absorbed into a
 /// cSHAKE under `"KMAC"` and `customization`.
+///
+/// The keyed sponge inverts to the key (the permutation is public), so the constructors build
+/// the value that holds it through [`keyed_in_own_frame`].
 fn keyed_cshake<PARAMS: SHAKEParams>(
     key: &dyn KeyMaterialTrait,
     customization: &[u8],
@@ -201,6 +204,28 @@ fn keyed_cshake<PARAMS: SHAKEParams>(
     Ok(cshake)
 }
 
+/// Runs `build`, which makes a value holding a keyed sponge, in a frame of its own, and
+/// overwrites the stack it used, where moving the sponge into the value leaves copies of it,
+/// before the value is handed on.
+fn keyed_in_own_frame<T>(build: impl FnOnce() -> T) -> T {
+    let value = run_in_own_frame(build);
+    wipe_stack_below::<KEYED_WIPED_STACK_WORDS>();
+    value
+}
+
+/// Never inlined, so that `build`'s frame lies below its caller's, where the caller's wipe
+/// reaches it.
+#[inline(never)]
+fn run_in_own_frame<T>(build: impl FnOnce() -> T) -> T {
+    build()
+}
+
+/// How much stack [`wipe_stack_below`] overwrites after a keyed sponge is built, in 64-bit
+/// words: more than the build leaves written below the frame that wipes (about 950 bytes in the
+/// x86-64 release build), with room for a compiler that lays the frames out less tightly. An
+/// unoptimised build's frames are not covered.
+const KEYED_WIPED_STACK_WORDS: usize = 192;
+
 impl<PARAMS: SHAKEParams, const MAC_LEN: usize> KMACKeyInternal<PARAMS, MAC_LEN> {
     /// The MAC's bounds on `L`, a compile-time error where a key type is used: from
     /// [`KMAC_MIN_OUTPUT_LEN`] to [`KMAC_MAX_OUTPUT_LEN`]. It is evaluated when a constructor is
@@ -224,7 +249,7 @@ impl<PARAMS: SHAKEParams, const MAC_LEN: usize> KMACKeyInternal<PARAMS, MAC_LEN>
     /// this KMAC's security strength.
     pub fn with_params(key: &dyn KeyMaterialTrait, customization: &[u8]) -> Result<Self, MACError> {
         const { Self::LEN_CHECK };
-        Ok(Self { cshake: keyed_cshake(key, customization, false)? })
+        keyed_in_own_frame(|| Ok(Self { cshake: keyed_cshake(key, customization, false)? }))
     }
 
     /// As [`with_params`](Self::with_params) without the strength check.
@@ -236,7 +261,7 @@ impl<PARAMS: SHAKEParams, const MAC_LEN: usize> KMACKeyInternal<PARAMS, MAC_LEN>
         customization: &[u8],
     ) -> Result<Self, MACError> {
         const { Self::LEN_CHECK };
-        Ok(Self { cshake: keyed_cshake(key, customization, true)? })
+        keyed_in_own_frame(|| Ok(Self { cshake: keyed_cshake(key, customization, true)? }))
     }
 }
 
@@ -476,7 +501,9 @@ impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
     ) -> Result<Self, MACError> {
         // The key binding is identical to KMAC's; only the length encoding differs, and that is
         // applied when output begins.
-        Ok(Self { cshake: keyed_cshake(key, customization, allow_weak_key)? })
+        keyed_in_own_frame(|| {
+            Ok(Self { cshake: keyed_cshake(key, customization, allow_weak_key)? })
+        })
     }
 }
 
@@ -563,6 +590,10 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
 impl<PARAMS: SHAKEParams> XOF for KMACXOFInternal<PARAMS> {
     type Squeezer = CSHAKESqueezer<PARAMS>;
 
+    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.finish_squeezer(token).do_output_final_out(output)
+    }
+
     /// The `right_encode(L)` of Sec 4.3.1 step 1 is not absorbed here: which `L` it carries depends
     /// on how the first output is read, so [`CSHAKESqueezer`] decides it.
     ///
@@ -609,16 +640,18 @@ impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
-        self.do_final()
+        let mut output = alloc::vec![0u8; self.output_len()];
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), &mut output);
+        output
     }
 
     /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
     pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.do_final_out(output)
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), output)
     }
 }

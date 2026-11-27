@@ -1,14 +1,14 @@
 //! Type alias for SM4 in GCM (NIST SP 800-38D over the SM4 permutation; RFC 8998 Sec 3.5.1's
 //! `AEAD_SM4_GCM`). The docs are on [`SM4_GCM`], which the module root re-exports.
 
+use crate::modes::Gcm;
 use crate::sm4::hazmat::SM4Internal;
-use bouncycastle_cipher::modes::Gcm;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_cipher::modes::GCM_NONCE_LEN;
+use crate::modes::GCM_NONCE_LEN;
 #[allow(unused_imports)]
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use crate::{Decrypting, Encrypting};
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey};
 #[allow(unused_imports)]
@@ -19,7 +19,7 @@ use bouncycastle_core::traits::{
 
 /// SM4 in GCM with a 128-bit tag.
 ///
-/// See `bouncycastle_cipher::modes::gcm` for the construction. The alias is an authenticated
+/// See `bouncycastle_symmetric::modes::gcm` for the construction. The alias is an authenticated
 /// cipher: encryption produces a tag as well as a ciphertext, and decryption either returns the
 /// plaintext or fails the tag check. Both directions implement [`AEADCipherEncryptor`] /
 /// [`AEADCipherDecryptor`], which keep the tag detached, and [`SymmetricCipherEncryptor`] /
@@ -32,7 +32,7 @@ use bouncycastle_core::traits::{
 /// The nonce is [`GCM_NONCE_LEN`] (12 bytes) and the tag 16, which is what RFC 8998 Sec 3.5.1
 /// fixes for `AEAD_SM4_GCM`: "The nonce length is 12 octets. The authentication tag length is 16
 /// octets." For a shorter tag, name the key's mode as `GCM<12>` and so on, within the `12..=16`
-/// bytes `Gcm` accepts. The RFC's Appendix A.1 vector is pinned in `tests/rfc8998_tests.rs`.
+/// bytes `Gcm` accepts. The RFC's Appendix A.1 vector is pinned in `tests/sm4_rfc8998_tests.rs`.
 ///
 /// # Usage Examples
 ///
@@ -40,7 +40,7 @@ use bouncycastle_core::traits::{
 ///
 /// ```
 /// use bouncycastle_symmetric::sm4::SM4Key;
-/// use bouncycastle_cipher::modes::GCM;
+/// use bouncycastle_symmetric::modes::GCM;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 /// use bouncycastle_rng::HashDRBG_SHA512;
@@ -69,12 +69,12 @@ use bouncycastle_core::traits::{
 /// ```
 ///
 /// Through the `_with_aad` one-shots the tag is appended to the ciphertext, and the streaming
-/// methods take the data in pieces; `bouncycastle_aes::gcm` shows both, and they are the same
+/// methods take the data in pieces; `bouncycastle_symmetric::aes::gcm` shows both, and they are the same
 /// calls on this key.
 ///
 /// # 🚨 Security Considerations 🚨
 ///
-/// All security considerations from `bouncycastle_cipher::modes::gcm` apply, above all that a
+/// All security considerations from `bouncycastle_symmetric::modes::gcm` apply, above all that a
 /// nonce repeated under one key lets an attacker recover the hash subkey and forge tags, which
 /// RFC 8998 Sec 3.5.1 restates for `AEAD_SM4_GCM`: "Using the same nonce for two different
 /// messages encrypted with the same key destroys the security properties of GCM mode."

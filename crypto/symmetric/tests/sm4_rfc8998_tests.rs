@@ -6,12 +6,12 @@
 //! key, nonce, plaintext and associated data. All values are transcribed from the downloaded text
 //! of the RFC.
 
-use bouncycastle_cipher::modes::{CCM, GCM};
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, FromKeyMaterial,
 };
+use bouncycastle_symmetric::modes::{CCM, GCM};
 use bouncycastle_symmetric::sm4::{KEY_LEN, SM4Key};
 
 const NONCE: &str = "00001234567800000000ABCD";

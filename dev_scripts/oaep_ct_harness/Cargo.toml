@@ -8,8 +8,8 @@ publish = false
 
 [dependencies]
 bouncycastle-utils = { path = "../../crypto/utils" }
-# eme_oaep.rs names two traits of bouncycastle-core, which is not yet no_std; the stub supplies
-# them under that name so the file builds for the bare-metal targets.
+# eme_oaep.rs names two traits of bouncycastle-core; the stub supplies them under that name,
+# reduced to what that file uses, so the harness's hash need not implement the rest of `Hash`.
 bouncycastle-core = { package = "oaep_ct_stub_core", path = "stub_core" }
 
 [profile.release]

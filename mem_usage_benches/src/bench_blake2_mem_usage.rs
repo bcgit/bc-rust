@@ -25,14 +25,14 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::blake2::{
-    BLAKE2b_512, BLAKE2b_512_MAC, BLAKE2b_512_MACKey, BLAKE2s_256, BLAKE2s_256_MAC,
-    BLAKE2s_256_MACKey, SUSPENDED_BLAKE2B_512_STATE_LEN, SUSPENDED_BLAKE2S_256_STATE_LEN,
-};
 use bouncycastle::core::direction::Encrypting;
 use bouncycastle::core::key_material::{KeyMaterial256, KeyMaterial512, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::{Hash, HashOneShot, MACGenerator, Suspendable};
+use bouncycastle::digest::blake2::{
+    BLAKE2b_512, BLAKE2b_512_MAC, BLAKE2b_512_MACKey, BLAKE2s_256, BLAKE2s_256_MAC,
+    BLAKE2s_256_MACKey, SUSPENDED_BLAKE2B_512_STATE_LEN, SUSPENDED_BLAKE2S_256_STATE_LEN,
+};
 
 /// A 1 KiB message: 8 BLAKE2b blocks, 16 BLAKE2s blocks.
 const MSG: [u8; 1024] = [0xA5; 1024];

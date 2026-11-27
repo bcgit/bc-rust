@@ -19,6 +19,7 @@
 //! point) plus the ordinary case, before any of this was ported here.
 
 use crate::hazmat::sm2::Sm2FieldElement;
+use crate::hazmat::sm2_domain::B_LIMBS;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
 
@@ -44,6 +45,17 @@ impl Sm2JacobianPoint {
         Self { x, y, z: Sm2FieldElement::ONE }
     }
 
+    /// `y^2 == x^3 - 3x + b` for the affine `(x, y)`: the curve-membership check of
+    /// [`crate::hazmat::sm2_sec1::decode`] and of [`crate::hazmat::sm2_mul::multiply_point`]'s
+    /// debug assertion, on public points only.
+    pub(crate) fn is_on_curve(x: &Sm2FieldElement, y: &Sm2FieldElement) -> bool {
+        let lhs = y.mul(y);
+        let x_cubed = x.mul(x).mul(x);
+        let three_x = x.add(x).add(x);
+        let rhs = x_cubed.sub(&three_x).add(&Sm2FieldElement::from_limbs(B_LIMBS));
+        lhs == rhs
+    }
+
     /// TRUE iff this is the point at infinity.
     pub fn is_infinity(&self) -> Condition<u64> {
         self.z.is_zero()
@@ -62,9 +74,35 @@ impl Sm2JacobianPoint {
         Some((self.x.mul(&z_inv2), self.y.mul(&z_inv3)))
     }
 
+    /// The affine `(x, y)`, `(X * Z^-2, Y * Z^-3)`, computed without the identity branch of
+    /// [`Self::to_affine`]: for a point the caller knows is not the identity (`[k]Q` for `k` in
+    /// `[1, n-1]` and a `Q` of order `n`), whose coordinates came from a secret. The identity,
+    /// whose `Z` inverts to `0`, comes out as `(0, 0)`, which is not a point on the curve. The
+    /// inverse and its powers are zeroized here; the inversion's own intermediates are the
+    /// field's. The caller owns the result and scrubs it when it is done.
+    pub fn affine_of_nonidentity(&self) -> (Sm2FieldElement, Sm2FieldElement) {
+        let mut z_inv = self.z.invert();
+        let mut z_inv2 = z_inv.square();
+        let mut z_inv3 = z_inv2.mul(&z_inv);
+        let affine = (self.x.mul(&z_inv2), self.y.mul(&z_inv3));
+        z_inv.zeroize();
+        z_inv2.zeroize();
+        z_inv3.zeroize();
+        affine
+    }
+
     /// `-self`: negating the `Y` coordinate, per SP 800-186 Appendix A.1.1 (`-P = (x, -y)`).
     pub fn negate(&self) -> Self {
         Self { x: self.x, y: self.y.negate(), z: self.z }
+    }
+
+    /// Overwrites all three coordinates with zero (which is not the identity's encoding), for
+    /// scrubbing a secret-derived point before it goes out of scope; see
+    /// [`Sm2FieldElement::zeroize`].
+    pub fn zeroize(&mut self) {
+        self.x.zeroize();
+        self.y.zeroize();
+        self.z.zeroize();
     }
 
     /// `2 * self`, via the curve's `a = -3` Jacobian doubling shortcut. Total: correct (and, since
@@ -256,7 +294,7 @@ impl Sm2JacobianPoint {
 }
 
 /// Selects `a` if `cond` is TRUE, else `b`, over every coordinate of a point.
-fn select_point(
+pub(crate) fn select_point(
     cond: Condition<u64>,
     a: &Sm2JacobianPoint,
     b: &Sm2JacobianPoint,
@@ -325,6 +363,26 @@ mod tests {
                 a.add_affine(&g.x, &g.y, Condition::<u64>::TRUE).to_affine(),
                 a.to_affine(),
                 "add_affine with the identity flag must return self"
+            );
+        }
+    }
+
+    /// As `add`'s in `sm2_point_tests.rs`: a point plus its negation is `(1, 1, 0)`, and not
+    /// the generic formula's `Z = 0` result, which still carries the operands' `Y`.
+    #[test]
+    fn add_affine_of_the_opposite_point_is_the_canonical_identity() {
+        let g = Sm2JacobianPoint::from_affine(
+            Sm2FieldElement::from_limbs(G_X_LIMBS),
+            Sm2FieldElement::from_limbs(G_Y_LIMBS),
+        );
+        let z = Sm2FieldElement::from_limbs(G_Y_LIMBS);
+        let z2 = z.mul(&z);
+        let scaled_g = Sm2JacobianPoint { x: g.x.mul(&z2), y: g.y.mul(&z2.mul(&z)), z };
+        for a in [g, scaled_g] {
+            let sum = a.add_affine(&g.x, &g.y.negate(), Condition::<u64>::FALSE);
+            assert_eq!(
+                (sum.x, sum.y, sum.z),
+                (Sm2FieldElement::ONE, Sm2FieldElement::ONE, Sm2FieldElement::ZERO)
             );
         }
     }

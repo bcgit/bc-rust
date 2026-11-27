@@ -8,8 +8,9 @@
 //! supplies on stdin, of any length the modulus and hash allow.
 
 use crate::helpers::{
-    decode_hex_arg, println_stdout, read_input_file, read_input_file_or_stdin, read_secret_file,
-    read_secret_stdin, write_bytes_or_hex, write_bytes_or_hex_to_file, write_private_key,
+    WriteError, decode_hex_arg, finish_stdout, read_input_file, read_input_file_or_stdin,
+    read_secret_file, read_secret_stdin, try_write_bytes_or_hex, try_write_bytes_or_hex_to_file,
+    try_write_stdout, write_bytes_or_hex, write_bytes_or_hex_to_file, write_private_key,
     write_secret_bytes_or_hex,
 };
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
@@ -17,12 +18,12 @@ use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::key_transport_key::{KeyTransportDecryptingKey, KeyTransportEncryptingKey};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::digest::sha1::SHA1;
+use bouncycastle::digest::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use bouncycastle::modexp::rsa::rsaes_oaep::{OaepHash, OaepParams};
+use bouncycastle::modexp::rsa::rsasve::{RSASVE, RsaKEMPrivateKey, RsaKEMPublicKey};
+use bouncycastle::modexp::rsa::size::{RsaSigningSize, RsaSize};
+use bouncycastle::modexp::rsa::{RSA2048, RSA3072, RSA4096, RSA8192};
 use bouncycastle::rng::HashDRBG_SHA512;
-use bouncycastle::rsa::rsaes_oaep::{OaepHash, OaepParams};
-use bouncycastle::rsa::rsasve::{RSASVE, RsaKEMPrivateKey, RsaKEMPublicKey};
-use bouncycastle::rsa::size::{RsaSigningSize, RsaSize};
-use bouncycastle::rsa::{RSA2048, RSA3072, RSA4096, RSA8192};
-use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use clap::ValueEnum;
 use std::process::exit;
 
@@ -145,8 +146,11 @@ fn run<K, H, M, const N: usize, const PK_LEN: usize, const SK_LEN: usize>(
                     eprintln!("Error: {alg_name} key generation failed: {e:?}");
                     exit(-1);
                 });
-            write_bytes_or_hex_to_file(&pk.encode(), pkfile, args.output_hex);
-            write_private_key(&sk, args.output_hex);
+            let written = try_write_bytes_or_hex_to_file(&pk.encode(), pkfile, args.output_hex)
+                .and_then(|()| write_private_key(&sk, args.output_hex).map_err(WriteError::from));
+            // `exit` runs no destructors, so the key is dropped before a failed write exits.
+            drop(sk);
+            finish_stdout(written);
         }
         RSAOAEPAction::Encaps => {
             let pk = load_pk(read_input_file_or_stdin(args.pkfile));
@@ -155,17 +159,20 @@ fn run<K, H, M, const N: usize, const PK_LEN: usize, const SK_LEN: usize>(
                     eprintln!("Error: {alg_name} encapsulation failed: {e:?}");
                     exit(-1);
                 });
-            match args.ctfile {
-                Some(ctfile) => {
-                    write_bytes_or_hex_to_file(&ct, ctfile, args.output_hex);
-                    write_secret_bytes_or_hex(key.ref_to_bytes(), args.output_hex);
-                }
-                None => {
-                    write_bytes_or_hex(&ct, true);
-                    println_stdout("");
-                    write_secret_bytes_or_hex(key.ref_to_bytes(), true);
-                }
-            }
+            let written = match args.ctfile {
+                Some(ctfile) => try_write_bytes_or_hex_to_file(&ct, ctfile, args.output_hex)
+                    .and_then(|()| {
+                        write_secret_bytes_or_hex(key.ref_to_bytes(), args.output_hex)
+                            .map_err(WriteError::from)
+                    }),
+                None => try_write_bytes_or_hex(&ct, true)
+                    .and_then(|()| try_write_stdout(b"\n"))
+                    .and_then(|()| write_secret_bytes_or_hex(key.ref_to_bytes(), true))
+                    .map_err(WriteError::from),
+            };
+            // `exit` runs no destructors, so the key is dropped before a failed write exits.
+            drop(key);
+            finish_stdout(written);
         }
         RSAOAEPAction::Decaps => {
             let ct = load_ct();
@@ -178,7 +185,9 @@ fn run<K, H, M, const N: usize, const PK_LEN: usize, const SK_LEN: usize>(
                 eprintln!("Error: {alg_name} decryption failed.");
                 exit(-1);
             });
-            write_secret_bytes_or_hex(key.ref_to_bytes(), args.output_hex);
+            let written = write_secret_bytes_or_hex(key.ref_to_bytes(), args.output_hex);
+            drop(key);
+            finish_stdout(written);
         }
         RSAOAEPAction::Transport => {
             // stdin carries the key, so the public key must come from its file.
@@ -210,7 +219,9 @@ fn run<K, H, M, const N: usize, const PK_LEN: usize, const SK_LEN: usize>(
                 eprintln!("Error: {alg_name} decryption failed.");
                 exit(-1);
             }
-            write_secret_bytes_or_hex(key.ref_to_bytes(), args.output_hex);
+            let written = write_secret_bytes_or_hex(key.ref_to_bytes(), args.output_hex);
+            drop(key);
+            finish_stdout(written);
         }
     }
 }

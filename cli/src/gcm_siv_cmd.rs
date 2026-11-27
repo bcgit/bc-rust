@@ -19,12 +19,12 @@
 
 use std::process::exit;
 
-use bouncycastle::aes::{GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::symmetric_key::{
     AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, FromKeyMaterial,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
+use bouncycastle::symmetric::aes::{GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN};
 
 use crate::helpers;
 use crate::helpers::aead_cipher_helpers::load_aad;

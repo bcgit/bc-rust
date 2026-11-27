@@ -1,10 +1,10 @@
 //! The encryption and decryption algorithm (GB/T 32907-2016, as described in
 //! draft-ribose-cfrg-sm4-10 Sec 6 and Sec 7), and the public engine type.
 
+use crate::modes::ModeNames;
 use crate::sm4::sbox::tau;
 use crate::sm4::schedule::{RoundKeys, expand};
 use crate::sm4::{BLOCK_LEN, KEY_LEN, LANES};
-use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

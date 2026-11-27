@@ -16,8 +16,8 @@ use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
 use crate::ascon::ASCON_CXOF128_NAME;
 use crate::ascon::sponge::{RATE, Sponge};
-#[cfg(feature = "std")]
-use std::vec::Vec;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 
 /// Maximum customization-string length in bytes (2048 bits, per SP 800-232 §5.3).
 const MAX_CUSTOMIZATION_BYTES: usize = 256;
@@ -89,7 +89,7 @@ impl AsconCXof128 {
     }
 
     /// Produces the next `output.len()` bytes of the XOF stream; the absorb phase was ended by
-    /// [`XOF::into_squeezer`] or by the hash final.
+    /// [`XOF::into_squeezer`], [`XOF::finish_xof_into`] or the hash final.
     fn squeeze_into(&mut self, output: &mut [u8]) -> usize {
         output.fill(0);
         self.sponge.squeeze(output);
@@ -182,6 +182,11 @@ impl Hash for AsconCXof128 {
 
 impl XOF for AsconCXof128 {
     type Squeezer = AsconCXof128Squeezer;
+
+    fn finish_xof_into(&mut self, _token: &FinishToken, output: &mut [u8]) -> usize {
+        self.sponge.finish_absorb();
+        self.squeeze_into(output)
+    }
 
     fn into_squeezer(mut self) -> Self::Squeezer {
         // The squeezer is squeezing from the start, so a squeezer suspended before its first
@@ -342,16 +347,18 @@ impl AsconCXof128 {
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
-        self.do_final()
+        let mut output = alloc::vec![0u8; self.output_len()];
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), &mut output);
+        output
     }
 
     /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
     pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.do_final_out(output)
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), output)
     }
 }

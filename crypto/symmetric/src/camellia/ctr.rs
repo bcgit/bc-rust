@@ -3,7 +3,7 @@
 
 use crate::camellia::BLOCK_LEN;
 use crate::camellia::hazmat::{Camellia128Internal, Camellia192Internal, Camellia256Internal};
-use bouncycastle_cipher::modes::Ctr;
+use crate::modes::Ctr;
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -13,11 +13,11 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// The nonce length these aliases use, leaving a 4-byte counter.
 pub const CTR_NONCE_LEN: usize = 12;
 
-/// Camellia-128 in CTR mode with a 12-byte nonce. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// Camellia-128 in CTR mode with a 12-byte nonce. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`]; the wrong direction is a compile error, not a runtime
 /// check.
 ///
-/// See `bouncycastle_cipher::modes::ctr` for the construction. The aliases are stream ciphers:
+/// See `bouncycastle_symmetric::modes::ctr` for the construction. The aliases are stream ciphers:
 /// the data is a `&mut [u8]` of any length, encrypted or decrypted in place. They come from a key,
 /// [`Camellia128Key<CTR>`](crate::camellia::Camellia128Key) and friends, through the
 /// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the nonce is drawn from the
@@ -35,13 +35,13 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// same 16-byte counter block differently -- a 4-octet nonce, an 8-octet IV and a 4-octet block
 /// counter that starts at **one** rather than zero, which is the IPsec convention rather than a
 /// property of Camellia. Its nine test vectors therefore begin one block into the keystream these
-/// keys generate, so `tests/stream_mode_tests.rs` uses them to pin a reference CTR built from the
-/// SP 800-38A Sec 6.5 equations over the permutation, and holds the keys to that reference on the
-/// counter blocks they do produce.
+/// keys generate, so `tests/camellia_stream_mode_tests.rs` uses them to pin a reference CTR built
+/// from the SP 800-38A Sec 6.5 equations over the permutation, and holds the keys to that reference
+/// on the counter blocks they do produce.
 ///
 /// ```
 /// use bouncycastle_symmetric::camellia::Camellia128Key;
-/// use bouncycastle_cipher::modes::CTR;
+/// use bouncycastle_symmetric::modes::CTR;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

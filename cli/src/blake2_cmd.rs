@@ -1,7 +1,9 @@
 //! BLAKE2b-512 and BLAKE2s-256 (RFC 7693): the unkeyed hashes and their built-in keyed (MAC) mode.
 
-use bouncycastle::blake2::{BLAKE2b_512, BLAKE2b_512_MACKey, BLAKE2s_256, BLAKE2s_256_MACKey};
 use bouncycastle::core::symmetric_key::FromAnyKeyMaterial;
+use bouncycastle::digest::blake2::{
+    BLAKE2b_512, BLAKE2b_512_MACKey, BLAKE2s_256, BLAKE2s_256_MACKey,
+};
 
 use crate::helpers::{load_mac_key, stream_hash};
 use crate::mac_cmd::do_mac_with_key;

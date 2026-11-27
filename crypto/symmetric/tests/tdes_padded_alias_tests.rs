@@ -3,19 +3,19 @@
 //! The aliases are only type aliases, so what is worth testing is that both parameters actually
 //! select: the direction picks the encryptor or the decryptor, and the padding scheme changes the
 //! behaviour rather than being decorative. The mode and the padding layer are tested in
-//! `bouncycastle-cipher`; this checks the wiring between them and the 8-byte block, through the
+//! `bouncycastle_symmetric::modes`; this checks the wiring between them and the 8-byte block, through the
 //! key that hands the aliases out. Which type each alias resolves to is pinned in
-//! `alg_name_tests.rs`.
+//! `tdes_alg_name_tests.rs`.
 
-use bouncycastle_cipher::modes::CBC;
-use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
+use bouncycastle_symmetric::modes::CBC;
+use bouncycastle_symmetric::modes::hazmat::ecb::ECB;
+use bouncycastle_symmetric::padding::{NoPadding, PKCS7};
 use bouncycastle_symmetric::tdes::hazmat::TDESInternal;
 use bouncycastle_symmetric::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
 

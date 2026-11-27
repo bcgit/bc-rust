@@ -163,7 +163,6 @@ fn designers_hmac_ripemd160() {
 fn names_strengths_and_oids() {
     assert_eq!(HMAC_RIPEMD160::<Encrypting>::ALG_NAME, HMAC_RIPEMD160_NAME);
     assert_eq!(HMAC_RIPEMD160_NAME, "HMAC-RIPEMD160");
-    assert_eq!(<RIPEMD160 as HMACParams>::HKDF_ALG_NAME, "HKDF-RIPEMD160");
     // The strength is half the hash's output length in bits, 80, which below 112 is None.
     assert_eq!(HMAC_RIPEMD160::<Encrypting>::MAX_SECURITY_STRENGTH, SecurityStrength::None);
     assert_eq!(HMAC_RIPEMD160::<Decrypting>::MAX_SECURITY_STRENGTH, SecurityStrength::None);
@@ -236,7 +235,6 @@ fn hmac_over_the_collision_resistance_wrapper_is_hmac_over_the_hash() {
     type W = WithoutCollisionResistance<RIPEMD160>;
 
     assert_eq!(<W as HMACParams>::HMAC_ALG_NAME, "HMAC-RIPEMD160");
-    assert_eq!(<W as HMACParams>::HKDF_ALG_NAME, "HKDF-RIPEMD160");
     assert_eq!(<W as HMACParams>::HMAC_MAX_SECURITY_STRENGTH, SecurityStrength::None);
     assert_eq!(<W as HMACParams>::HMAC_OID, <RIPEMD160 as HMACParams>::HMAC_OID);
     assert_eq!(<W as HMACParams>::HMAC_OID_DER, <RIPEMD160 as HMACParams>::HMAC_OID_DER);

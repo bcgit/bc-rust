@@ -1,20 +1,20 @@
 //! Type alias for SM4 in CFB mode (draft-ribose-cfrg-sm4-10 Sec 8.5; NIST SP 800-38A Sec 6.3),
 //! full-block segment. The docs are on [`SM4_CFB`], which the module root re-exports.
 
+use crate::modes::Cfb;
 use crate::sm4::BLOCK_LEN;
 use crate::sm4::hazmat::SM4Internal;
-use bouncycastle_cipher::modes::Cfb;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
 
-/// SM4 in CFB128 mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// SM4 in CFB128 mode. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`]; the wrong direction is a compile error, not a runtime
 /// check.
 ///
-/// See `bouncycastle_cipher::modes::cfb` for the construction. The alias is a stream cipher: the
+/// See `bouncycastle_symmetric::modes::cfb` for the construction. The alias is a stream cipher: the
 /// data is a `&mut [u8]` of any length, encrypted or decrypted in place. It comes from a key,
 /// [`SM4Key<CFB>`](crate::sm4::SM4Key), through the [`SymmetricEncryptionKey`] /
 /// [`SymmetricDecryptionKey`] pair; the IV is one block, drawn from the caller's RNG by encryption
@@ -27,13 +27,13 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// Sec 8.5 says the plaintext "must be a multiple of the block size". `Cfb` accepts any length and
 /// treats a short tail as a final segment of `s = 8r`, which is what every streaming CFB128
-/// implementation does; see "The final partial segment" in the `bouncycastle_cipher::modes::Cfb`
+/// implementation does; see "The final partial segment" in the `bouncycastle_symmetric::modes::Cfb`
 /// docs for why that is well defined. On whole blocks -- the only lengths the draft's Appendix
 /// A.2.4 vectors cover -- the two readings coincide.
 ///
 /// ```
 /// use bouncycastle_symmetric::sm4::SM4Key;
-/// use bouncycastle_cipher::modes::CFB;
+/// use bouncycastle_symmetric::modes::CFB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

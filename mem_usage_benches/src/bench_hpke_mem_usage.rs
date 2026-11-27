@@ -9,8 +9,9 @@
 //!
 //! Make sure you build in release mode!
 //!
-//! The crate docs' stack table is the deepest frame chain from each [`measure`] instance down,
-//! as for the ECC CDH harness; `main` calls every bench for that build so none is dead-stripped.
+//! The `hpke` module docs' stack table is the deepest frame chain from each [`measure`] instance
+//! down, as for the ECC CDH harness; `main` calls every bench for that build so none is
+//! dead-stripped.
 //!
 //! Note: print!() forces the compiler not to optimize away the actual code. The name of the bench
 //! goes to stderr so that the junk on stdout can be piped to /dev/null.
@@ -23,17 +24,17 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::aes::AES128Key;
-use bouncycastle::cipher::modes::GCM;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
-use bouncycastle::ed::x25519::{X25519PrivateKey, X25519PublicKey};
-use bouncycastle::hpke::{
+use bouncycastle::digest::sha2::SHA256;
+use bouncycastle::ec::ed::x25519::{X25519PrivateKey, X25519PublicKey};
+use bouncycastle::hybrid::hpke::{
     HpkeAuthRecipient, HpkeAuthSender, HpkeContext, HpkeParams, HpkeRecipient, HpkeSender, NT,
     Recipient, Sender,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
-use bouncycastle::sha2::SHA256;
+use bouncycastle::symmetric::aes::AES128Key;
+use bouncycastle::symmetric::modes::GCM;
 
 type Params<'p> = HpkeParams<'p, SHA256, AES128Key<GCM>>;
 
@@ -72,7 +73,7 @@ const ENC: [u8; 32] = [
 /// A sender's context, made out of line.
 #[inline(never)]
 fn sender() -> HpkeContext<Sender, SHA256, AES128Key<GCM>> {
-    let pk = load_sk().pk();
+    let pk = load_sk().pk().unwrap();
     pk.setup_sender(&mut HashDRBG_SHA512::new_from_os(), Params::new(b"info")).unwrap().1
 }
 
@@ -86,7 +87,7 @@ fn recipient() -> HpkeContext<Recipient, SHA256, AES128Key<GCM>> {
 fn bench_hpke_setup_sender() {
     eprintln!("HPKE/SetupSender");
 
-    let pk = load_sk().pk();
+    let pk = load_sk().pk().unwrap();
     measure(|| {
         let (enc, _context) =
             pk.setup_sender(&mut HashDRBG_SHA512::new_from_os(), Params::new(b"info")).unwrap();
@@ -112,7 +113,7 @@ fn bench_hpke_setup_auth_sender() {
     eprintln!("HPKE/SetupAuthSender");
 
     let sk = load_sk();
-    let pk = sk.pk();
+    let pk = sk.pk().unwrap();
     measure(|| {
         let (enc, _context) = pk
             .setup_auth_sender(&mut HashDRBG_SHA512::new_from_os(), &sk, Params::new(b"info"))
@@ -126,7 +127,7 @@ fn bench_hpke_setup_auth_recipient() {
     eprintln!("HPKE/SetupAuthRecipient");
 
     let sk = load_sk();
-    let pk = sk.pk();
+    let pk = sk.pk().unwrap();
     measure(|| {
         let context = sk.setup_auth_recipient(&ENC, &pk, Params::new(b"info")).unwrap();
         let mut out = KeyMaterial::<32>::new();

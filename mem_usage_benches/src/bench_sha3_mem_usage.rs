@@ -27,12 +27,16 @@
 
 use bouncycastle::core::direction::Encrypting;
 use bouncycastle::core::traits::{Hash, HashOneShot, Suspendable, XOF, XOFSqueezer};
-use bouncycastle::sha3::kmac::{KMAC128, KMAC128Key, KMAC256, KMAC256Key, KMACXOF128, KMACXOF256};
-use bouncycastle::sha3::parallelhash::{
+use bouncycastle::digest::sha3::kmac::{
+    KMAC128, KMAC128Key, KMAC256, KMAC256Key, KMACXOF128, KMACXOF256,
+};
+use bouncycastle::digest::sha3::parallelhash::{
     ParallelHash128, ParallelHash256, ParallelHashXOF128, ParallelHashXOF256,
 };
-use bouncycastle::sha3::tuplehash::{TupleHash128, TupleHash256, TupleHashXOF128, TupleHashXOF256};
-use bouncycastle::sha3::{
+use bouncycastle::digest::sha3::tuplehash::{
+    TupleHash128, TupleHash256, TupleHashXOF128, TupleHashXOF256,
+};
+use bouncycastle::digest::sha3::{
     CSHAKE128, CSHAKE256, CSHAKESqueezer, SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128,
     SHAKE128Params, SHAKE256, SHAKE256Params, SHAKESqueezer, SUSPENDED_SHA3_STATE_LEN,
 };

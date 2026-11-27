@@ -112,7 +112,8 @@ pub(in crate::camellia) fn flinv(flinv_in: u64, ke: u64) -> u64 {
 /// The RFC writes the 18 or 24 rounds out longhand; this is the same sequence as a loop over a
 /// public round counter. The four blocks are processed together only because [`f`] is: the
 /// F-function's argument is formed per block, all four go through the S-box layer in one pass,
-/// and everything else is per block. `tests/rfc3713_tests.rs` pins the result in every lane.
+/// and everything else is per block. `tests/camellia_rfc3713_tests.rs` pins the result in every
+/// lane.
 pub(in crate::camellia) fn rounds(
     blocks: &mut [Block; LANES],
     num_rounds: usize,

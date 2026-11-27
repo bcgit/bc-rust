@@ -1,7 +1,7 @@
 //! Suspend/resume for the SP 800-185 functions: round trips in each phase, the rejections that
 //! keep one function's state out of another, and the field checks of each layout.
 //!
-//! Offsets used below, from the layouts in the crate: 3 version bytes, then the variant tag at
+//! Offsets used below, from the layouts in the module: 3 version bytes, then the variant tag at
 //! 3, the sponge's `squeezing` flag at 404 (tag + 400 bytes of Keccak state), the cSHAKE
 //! `customized` byte at 405, and whatever the function adds from 406.
 
@@ -151,36 +151,78 @@ fn each_type_rejects_the_others() {
     }
     let mut x = CSHAKE128::new(b"", b"S");
     x.do_update(PART1);
-    rejected::<_, CSHAKE256>(x.clone().suspend(), "a cSHAKE128 state in cSHAKE256");
-    rejected::<_, KMACXOF128>(x.clone().suspend(), "a cSHAKE128 state in KMACXOF128");
-    rejected::<_, TupleHashXOF128>(x.clone().suspend(), "a cSHAKE128 state in TupleHashXOF128");
-    rejected::<_, CSHAKESqueezer<SHAKE128Params>>(x.suspend(), "a cSHAKE128 state in a squeezer");
+    rejected::<SUSPENDED_CSHAKE_STATE_LEN, CSHAKE256>(
+        x.clone().suspend(),
+        "a cSHAKE128 state in cSHAKE256",
+    );
+    rejected::<SUSPENDED_KMACXOF_STATE_LEN, KMACXOF128>(
+        x.clone().suspend(),
+        "a cSHAKE128 state in KMACXOF128",
+    );
+    rejected::<SUSPENDED_TUPLEHASHXOF_STATE_LEN, TupleHashXOF128>(
+        x.clone().suspend(),
+        "a cSHAKE128 state in TupleHashXOF128",
+    );
+    rejected::<SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN, CSHAKESqueezer<SHAKE128Params>>(
+        x.suspend(),
+        "a cSHAKE128 state in a squeezer",
+    );
 
     let mut k = KMACXOF128::new(&key(), b"", false).unwrap();
     k.do_update(PART1);
-    rejected::<_, CSHAKE128>(k.clone().suspend(), "a KMACXOF128 state in cSHAKE128");
-    rejected::<_, TupleHashXOF128>(k.clone().suspend(), "a KMACXOF128 state in TupleHashXOF128");
-    rejected::<_, KMACXOF256>(k.clone().suspend(), "a KMACXOF128 state in KMACXOF256");
+    rejected::<SUSPENDED_CSHAKE_STATE_LEN, CSHAKE128>(
+        k.clone().suspend(),
+        "a KMACXOF128 state in cSHAKE128",
+    );
+    rejected::<SUSPENDED_TUPLEHASHXOF_STATE_LEN, TupleHashXOF128>(
+        k.clone().suspend(),
+        "a KMACXOF128 state in TupleHashXOF128",
+    );
+    rejected::<SUSPENDED_KMACXOF_STATE_LEN, KMACXOF256>(
+        k.clone().suspend(),
+        "a KMACXOF128 state in KMACXOF256",
+    );
     let squeezer = k.into_squeezer();
-    rejected::<_, KMACXOF128>(squeezer.clone().suspend(), "an unbound squeezer in KMACXOF128");
-    rejected::<_, CSHAKE128>(squeezer.suspend(), "an unbound squeezer in cSHAKE128");
+    rejected::<SUSPENDED_KMACXOF_STATE_LEN, KMACXOF128>(
+        squeezer.clone().suspend(),
+        "an unbound squeezer in KMACXOF128",
+    );
+    rejected::<SUSPENDED_CSHAKE_STATE_LEN, CSHAKE128>(
+        squeezer.suspend(),
+        "an unbound squeezer in cSHAKE128",
+    );
 
     let k_key = KMAC128Key::<32>::from_key_material(&key()).unwrap();
 
     let mut k = k_key.create_generator();
     k.do_update(PART1);
-    rejected::<_, TupleHash128>(k.clone().suspend(), "a KMAC128 state in TupleHash128");
-    rejected::<_, KMAC256<Encrypting>>(k.suspend(), "a KMAC128 state in KMAC256");
+    rejected::<SUSPENDED_TUPLEHASH_STATE_LEN, TupleHash128>(
+        k.clone().suspend(),
+        "a KMAC128 state in TupleHash128",
+    );
+    rejected::<SUSPENDED_KMAC_STATE_LEN, KMAC256<Encrypting>>(
+        k.suspend(),
+        "a KMAC128 state in KMAC256",
+    );
     let mut t = TupleHash128::new(b"", 32).unwrap();
     t.do_update(PART1);
-    rejected::<_, KMAC128<Encrypting>>(t.suspend(), "a TupleHash128 state in KMAC128");
+    rejected::<SUSPENDED_KMAC_STATE_LEN, KMAC128<Encrypting>>(
+        t.suspend(),
+        "a TupleHash128 state in KMAC128",
+    );
 
     let mut p = ParallelHash128::new(nz(8), b"", 32).unwrap();
     p.do_update(PART1);
-    rejected::<_, ParallelHash256>(p.suspend(), "a ParallelHash128 state in ParallelHash256");
+    rejected::<SUSPENDED_PARALLELHASH_STATE_LEN, ParallelHash256>(
+        p.suspend(),
+        "a ParallelHash128 state in ParallelHash256",
+    );
     let mut p = ParallelHashXOF128::new(nz(8), b"");
     p.do_update(PART1);
-    rejected::<_, ParallelHashXOF256>(p.suspend(), "a ParallelHashXOF128 state in 256");
+    rejected::<SUSPENDED_PARALLELHASHXOF_STATE_LEN, ParallelHashXOF256>(
+        p.suspend(),
+        "a ParallelHashXOF128 state in 256",
+    );
 }
 
 /// The shortest KMAC the floor allows suspends and resumes in both directions, and its state
@@ -222,10 +264,16 @@ fn corrupt_fields_are_rejected() {
     let good = c.suspend();
     let mut bad = good;
     bad[CUSTOMIZED] = 2;
-    rejected::<_, CSHAKE128>(bad, "a customized byte that is neither 0 nor 1");
+    rejected::<SUSPENDED_CSHAKE_STATE_LEN, CSHAKE128>(
+        bad,
+        "a customized byte that is neither 0 nor 1",
+    );
     let mut bad = good;
     bad[SQUEEZING_FLAG] = 1;
-    rejected::<_, CSHAKE128>(bad, "a squeezing sponge in an absorbing cSHAKE");
+    rejected::<SUSPENDED_CSHAKE_STATE_LEN, CSHAKE128>(
+        bad,
+        "a squeezing sponge in an absorbing cSHAKE",
+    );
 
     let k_key = KMAC128Key::<32>::from_key_material(&key()).unwrap();
 
@@ -234,20 +282,32 @@ fn corrupt_fields_are_rejected() {
     let good = k.suspend();
     let mut bad = good;
     bad[CUSTOMIZED] = 0;
-    rejected::<_, KMAC128<Encrypting>>(bad, "a KMAC claiming an empty function name");
+    rejected::<SUSPENDED_KMAC_STATE_LEN, KMAC128<Encrypting>>(
+        bad,
+        "a KMAC claiming an empty function name",
+    );
     // The output length is the trailing u64, and it is the type's: a state written at any other
     // length is another function's, and the type that wrote it is the one that resumes it.
     let output_len = good.len() - 8;
     assert_eq!(good[output_len..], 32u64.to_le_bytes(), "KMAC128Key's default length");
     let mut bad = good;
     bad[output_len..].copy_from_slice(&0u64.to_le_bytes());
-    rejected::<_, KMAC128<Encrypting>>(bad, "a KMAC claiming a zero output length");
+    rejected::<SUSPENDED_KMAC_STATE_LEN, KMAC128<Encrypting>>(
+        bad,
+        "a KMAC claiming a zero output length",
+    );
     let mut bad = good;
     bad[output_len..].copy_from_slice(&(u64::MAX / 4).to_le_bytes());
-    rejected::<_, KMAC128<Encrypting>>(bad, "a KMAC whose output length in bits overflows a u64");
+    rejected::<SUSPENDED_KMAC_STATE_LEN, KMAC128<Encrypting>>(
+        bad,
+        "a KMAC whose output length in bits overflows a u64",
+    );
     let mut other = good;
     other[output_len..].copy_from_slice(&(KMAC_MIN_OUTPUT_LEN as u64).to_le_bytes());
-    rejected::<_, KMAC128<Encrypting>>(other, "a 4-byte KMAC state in the 32-byte type");
+    rejected::<SUSPENDED_KMAC_STATE_LEN, KMAC128<Encrypting>>(
+        other,
+        "a 4-byte KMAC state in the 32-byte type",
+    );
     assert!(
         KMAC128::<Encrypting, KMAC_MIN_OUTPUT_LEN>::from_suspended(other).is_ok(),
         "... which the 4-byte type resumes"
@@ -261,7 +321,10 @@ fn corrupt_fields_are_rejected() {
     k.do_update(PART1);
     let mut bad = k.into_squeezer().suspend();
     bad[CUSTOMIZED] = 0;
-    rejected::<_, CSHAKESqueezer<SHAKE128Params>>(bad, "a squeezer claiming no function name");
+    rejected::<SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN, CSHAKESqueezer<SHAKE128Params>>(
+        bad,
+        "a squeezer claiming no function name",
+    );
 
     // ParallelHash: outer cSHAKE 3..406, inner SHAKE 406..808, then block_size, block_fill, blocks.
     const INNER_SQUEEZING_FLAG: usize = 406 + 1 + 400;
@@ -274,27 +337,39 @@ fn corrupt_fields_are_rejected() {
     assert_eq!(&good[BLOCK_FILL..BLOCK_FILL + 8], &5u64.to_le_bytes(), "21 bytes = 2 blocks + 5");
     let mut bad = good;
     bad[BLOCK_SIZE..BLOCK_SIZE + 8].copy_from_slice(&0u64.to_le_bytes());
-    rejected::<_, ParallelHash128>(bad, "a block size of zero");
+    rejected::<SUSPENDED_PARALLELHASH_STATE_LEN, ParallelHash128>(bad, "a block size of zero");
     let mut bad = good;
     bad[BLOCK_FILL..BLOCK_FILL + 8].copy_from_slice(&8u64.to_le_bytes());
-    rejected::<_, ParallelHash128>(bad, "a fill equal to the block size");
+    rejected::<SUSPENDED_PARALLELHASH_STATE_LEN, ParallelHash128>(
+        bad,
+        "a fill equal to the block size",
+    );
     let mut bad = good;
     bad[INNER_SQUEEZING_FLAG] = 1;
-    rejected::<_, ParallelHash128>(bad, "an inner sponge that is squeezing");
+    rejected::<SUSPENDED_PARALLELHASH_STATE_LEN, ParallelHash128>(
+        bad,
+        "an inner sponge that is squeezing",
+    );
     let mut bad = good;
     bad[CUSTOMIZED] = 0;
-    rejected::<_, ParallelHash128>(bad, "a ParallelHash claiming an empty function name");
+    rejected::<SUSPENDED_PARALLELHASH_STATE_LEN, ParallelHash128>(
+        bad,
+        "a ParallelHash claiming an empty function name",
+    );
     // The output length is the trailing u64, bounded as `new` bounds it.
     let output_len = good.len() - 8;
     let mut bad = good;
     bad[output_len..].copy_from_slice(&u64::MAX.to_le_bytes());
-    rejected::<_, ParallelHash128>(
+    rejected::<SUSPENDED_PARALLELHASH_STATE_LEN, ParallelHash128>(
         bad,
         "a ParallelHash whose output length in bits overflows a u64",
     );
     let mut bad = good;
     bad[output_len..].copy_from_slice(&(PARALLELHASH_MAX_OUTPUT_LEN as u64 + 1).to_le_bytes());
-    rejected::<_, ParallelHash128>(bad, "a ParallelHash output length one above the cap");
+    rejected::<SUSPENDED_PARALLELHASH_STATE_LEN, ParallelHash128>(
+        bad,
+        "a ParallelHash output length one above the cap",
+    );
     let mut edge = good;
     edge[output_len..].copy_from_slice(&(PARALLELHASH_MAX_OUTPUT_LEN as u64).to_le_bytes());
     assert!(ParallelHash128::from_suspended(edge).is_ok(), "the cap itself resumes");
@@ -314,16 +389,22 @@ fn corrupt_fields_are_rejected() {
     let output_len = good.len() - 8;
     let mut bad = good;
     bad[output_len..].copy_from_slice(&u64::MAX.to_le_bytes());
-    rejected::<_, TupleHash128>(bad, "a TupleHash whose output length in bits overflows a u64");
+    rejected::<SUSPENDED_TUPLEHASH_STATE_LEN, TupleHash128>(
+        bad,
+        "a TupleHash whose output length in bits overflows a u64",
+    );
     let mut bad = good;
     bad[output_len..].copy_from_slice(&(TUPLEHASH_MAX_OUTPUT_LEN as u64 + 1).to_le_bytes());
-    rejected::<_, TupleHash128>(bad, "a TupleHash output length one above the cap");
+    rejected::<SUSPENDED_TUPLEHASH_STATE_LEN, TupleHash128>(
+        bad,
+        "a TupleHash output length one above the cap",
+    );
     let mut edge = good;
     edge[output_len..].copy_from_slice(&(TUPLEHASH_MAX_OUTPUT_LEN as u64).to_le_bytes());
     assert!(TupleHash128::from_suspended(edge).is_ok(), "the cap itself resumes");
 }
 
-/// Every type in the crate writes a different variant tag, so no state can be misread as
+/// Every type in the module writes a different variant tag, so no state can be misread as
 /// another's: the six FIPS 202 types and the eight SP 800-185 types at each width.
 #[test]
 fn state_tags_are_distinct() {

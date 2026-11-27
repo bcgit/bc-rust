@@ -133,7 +133,7 @@ fn test_constants() {
     assert_eq!(SHA1::BLOCK_LEN, 64);
     assert_eq!(SHA1::new().block_bitlen(), 512);
     assert_eq!(SHA1::new().output_len(), 20);
-    // The crate docs' Memory Usage table.
+    // The module docs' Memory Usage table.
     assert_eq!(core::mem::size_of::<SHA1>(), 104);
 }
 
@@ -167,11 +167,12 @@ fn partial_bits() {
             matches!(sha1.do_final_partial_bits(0xFF, bad), Err(HashError::InvalidLength(_))),
             "n={bad}"
         );
-        let mut out = [0u8; 20];
+        let mut out = [0xA5u8; 36];
         assert!(matches!(
             SHA1::new().do_final_partial_bits_out(0xFF, bad, &mut out),
             Err(HashError::InvalidLength(_))
         ));
+        assert_eq!(out, [0u8; 36]);
     }
 
     for n in 1..=7usize {
@@ -259,4 +260,19 @@ fn suspendable_state() {
     assert!(with_counts(max, 63).is_ok());
     assert!(matches!(with_counts(max + 1, 0), Err(SuspendableError::InvalidData)));
     assert!(matches!(with_counts(u64::MAX, 63), Err(SuspendableError::InvalidData)));
+}
+
+/// A block compressed out of the buffer is not left in it: a suspended state carries no 8 bytes
+/// of it, only the bytes still buffered.
+#[test]
+fn suspended_state_carries_no_compressed_block() {
+    use bouncycastle_core::traits::Suspendable;
+    let msg: Vec<u8> = (0..84).map(|i| (i as u8).wrapping_mul(29) ^ 0x5A).collect();
+    let mut h = SHA1::new();
+    h.do_update(&msg[..10]);
+    h.do_update(&msg[10..]);
+    let state = h.suspend();
+    for w in msg[..64].windows(8) {
+        assert!(!state.windows(8).any(|s| s == w));
+    }
 }

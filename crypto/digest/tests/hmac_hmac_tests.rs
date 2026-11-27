@@ -849,4 +849,16 @@ mod hmac_tests {
         HmacKey::<SHA256>::keygen_from_rng(&mut ok_rng)
             .expect("a 128-bit RNG is sufficient for a 128-bit HMAC");
     }
+
+    /// An RNG that fills one byte less than the key has not drawn it: refused, not returned as
+    /// a shorter key, which HMAC would accept.
+    #[test]
+    fn keygen_refuses_a_short_draw() {
+        use bouncycastle_core_test_framework::ShortRNG;
+        assert_eq!(
+            HmacKey::<SHA256>::keygen_from_rng(&mut ShortRNG),
+            Err(RNGError::GenericError("the RNG wrote fewer bytes than it was asked for"))
+        );
+        assert!(HmacKey::<SHA512>::keygen_from_rng(&mut ShortRNG).is_err());
+    }
 }

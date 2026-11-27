@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks that the private-key operations of bouncycastle-rsa leave nothing of the key on the
+# Checks that the private-key operations of bouncycastle_modexp::rsa leave nothing of the key on the
 # stack they used, over dev_scripts/rsa_stack_harness: for each operation it paints the stack,
 # runs the operation, copies the dead stack out and searches the copy for the words of every
 # secret the operation handled (the key's components as limbs and as encoded bytes, the

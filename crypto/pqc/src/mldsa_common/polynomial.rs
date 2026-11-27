@@ -24,6 +24,11 @@ pub struct Polynomial {
     pub coeffs: [i32; N],
 }
 
+/// So that a secret polynomial can be held in a `Secret` and wiped.
+impl ZeroizablePrimitive for Polynomial {
+    const ZEROED: Self = Self::new();
+}
+
 /// Convenience function to avoid ".0" all over the place.
 impl Index<usize> for Polynomial {
     type Output = i32;

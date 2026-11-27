@@ -4,13 +4,15 @@
 //! expansion steps".
 //!
 //! This is a utility module and is not intended to be used directly. It provides [`HKDF`] -- the
-//! construction, generic over any hash that implements [`HMACParams`], the extension point through
-//! which a hash declares the metadata from which the HMAC and HKDF instances are built.
+//! construction, generic over any hash that implements [`HKDFParams`], which names the HKDF over
+//! a hash that already has an HMAC ([`HMACParams`]).
 //! The library provides the following concrete instantiations of HKDF:
 //!
-//! | Hash family | Instantiations                                                           |
-//! |-------------|--------------------------------------------------------------------------|
+//! | Hash family | Instantiations                                                                   |
+//! |-------------|----------------------------------------------------------------------------------|
 //! | SHA-2       | `bouncycastle_digest::sha2::hkdf` -- `HKDF_SHA256`, `HKDF_SHA384`, `HKDF_SHA512` |
+//! | SM3         | `bouncycastle_digest::sm3::hkdf` -- `HKDF_SM3`                                   |
+//! | RIPEMD      | `bouncycastle_digest::ripemd::hkdf` -- `HKDF_RIPEMD160`                          |
 //!
 //! An algorithm that derives its output through HKDF (a KEM such as ML-KEM-512-HKDF-SHA256) is
 //! made from an [`HkdfDescription`], the hash and the salt as readable fields, as the KDF of a
@@ -19,11 +21,11 @@
 //!
 //! # Instantiating HKDF over a hash
 //!
-//! HKDF uses HMAC as its underlying primitive, so it works with exactly the hashes HMAC works with:
-//! [`HKDF`] needs [`HMACParams`], which also carries the HKDF name ([`HMACParams::HKDF_ALG_NAME`]).
-//! There is no separate HKDF params trait -- HKDF has no per-hash OIDs -- so an instantiation is just
-//! a type alias.
-//!
+//! HKDF uses HMAC as its underlying primitive, so it works with the hashes HMAC works with:
+//! [`HKDFParams`] has [`HMACParams`] as its supertrait and adds only the HKDF's name, HKDF
+//! having no per-hash OID. This module implements it for the library's SHA-2, SHA-3, SM3 and
+//! RIPEMD-160 hashes; for one of those an instantiation is just a type alias, and for a hash of
+//! your own it is the one-line impl first.
 //!
 //! One limitation to be aware of when instantiating over a hash of your own: the extract phase
 //! writes its pseudorandom key into a [`MAX_HMAC_OUTPUT_LEN`]-byte buffer, so the hash's output
@@ -32,9 +34,8 @@
 //! ## Worked example
 //!
 //! As an example, the [`sha2`](crate::sha2) module instantiates HKDF-SHA256, HKDF-SHA384 and
-//! HKDF-SHA512 this way. The library does not ship HKDF-SHA224, so that makes a good illustration of
-//! adding one -- for a hash in this library or for a hash of your own, the shape is identical:
-//!
+//! HKDF-SHA512 this way. The library does not ship an HKDF-SHA224 alias, so that makes a good
+//! illustration of adding one:
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
@@ -45,14 +46,19 @@
 //! #[allow(non_camel_case_types)]
 //! pub type HKDF_SHA224 = HKDF<SHA224>;
 //!
-//! pub const HKDF_SHA224_NAME: &str = "HKDF-SHA224";
-//!
 //! // That is all it takes: the KDF trait and the extract/expand API are now available.
 //! let ikm = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
 //!             KeyType::Seed).unwrap();
 //! let okm = HKDF_SHA224::new().derive_key(&ikm, b"extra input", 28).unwrap();
 //! ```
+//!
+//! # Memory Usage
+//!
+//! The [`HKDF`] object uses no heap memory, and the `*_out` methods allocate nothing; the
+//! `Box<dyn KeyMaterialTrait>`-returning one-shots of the `KDF` trait allocate their output. The
+//! object's size depends on the hash and is tabulated with the instantiations: see the Memory
+//! Usage sections of [`crate::sha2::hkdf`], [`crate::sm3::hkdf`] and [`crate::ripemd::hkdf`].
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -78,21 +84,31 @@
 //!   of bytes, so the hash sets the bar: a 16-byte `CryptographicRandom` key seeds HKDF-SHA256
 //!   and derives a `CryptographicRandom` key at 128 bits, but through HKDF-SHA512 the same key
 //!   derives `Unknown` output. Choosing the stronger hash does not strengthen the label.
+//! * Over a hash that claims no strength (RIPEMD-160) a seeded output is `CryptographicRandom`
+//!   with [`SecurityStrength::None`]. A PRK so labelled has no strength for
+//!   [`HKDF::expand_out`] to credit, so the two steps by hand give `Unknown` output where
+//!   [`HKDF::extract_and_expand_out`] and the [`KDF`] derivations, which type the output from
+//!   the keys that went in, give `CryptographicRandom`.
 //! * RFC 5869 Section 3.1 recommends a random salt where one is available. SP 800-56Cr2 permits an
 //!   all-zero salt, and the extract phase accepts one, but a salt that the caller believes to be
 //!   random and is not provides none of the benefit the recommendation is aimed at.
 
 use crate::hmac::hazmat as hmac_hazmat;
 use crate::hmac::{HMACParams, HmacKey, LARGEST_HASHER_BLOCK_LEN};
+use crate::ripemd::RIPEMD160;
+use crate::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use crate::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+use crate::sm3::SM3;
 use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hazmat::{
+    KdfCredit, WithoutCollisionResistance, do_hazardous_operations, label_kdf_output,
+};
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
 use bouncycastle_core::traits::{Algorithm, KDF};
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::{max, min};
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 use core::marker::PhantomData;
 // Imports needed only for docs
 #[allow(unused_imports)]
@@ -111,6 +127,81 @@ use bouncycastle_core::traits::XOF;
 ///       and declare `prk: &mut KeyMaterial<H::OUTPUT_LEN>` instead of this hack.
 pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 
+/// How much stack [`wipe_stack_below`] overwrites after each HKDF operation, which runs in a frame
+/// of its own (the `*_in_own_frame` functions, `expand_fill`), in 64-bit words, for a hash whose
+/// state is at most [`SMALL_HASH_STATE_LEN`] bytes (SHA-2, SM3, RIPEMD-160): more than an
+/// operation leaves written below the frame that wipes, with room for a compiler that lays the
+/// frames out less tightly. In the x86-64 release build 384 words clear every such hash with
+/// rustc 1.88 and nightly (320 leave 48 bytes of a `KDF` derivation over SHA-384 or SHA-512;
+/// HMAC's finishing wipes its own frames), and rustc 1.100 needs 452 for a `KDF` derivation over
+/// SHA-512. 504 rather than 512: under massif, `bench_mlkem_mem_usage`'s HKDF rows read 2.5 to
+/// 4 kB deeper with a 4096-byte wipe than with 4032. An unoptimised build's frames are not covered.
+const HKDF_WIPED_STACK_WORDS: usize = 504;
+
+/// As [`HKDF_WIPED_STACK_WORDS`], for a hash with a larger state (SHA-3): 768 words clear
+/// SHA3-224 and SHA3-256, and a `KDF` derivation over SHA3-384 or SHA3-512 needs 960 (896 leave
+/// 8 bytes) in the x86-64 release build.
+const HKDF_LARGE_STATE_WIPED_STACK_WORDS: usize = 1152;
+
+/// The hash state size, in bytes, up to which [`HKDF_WIPED_STACK_WORDS`] is enough. The depth an
+/// operation writes to follows the size of the hash: its frames hold copies of hash states and of
+/// [`HmacKey`]s, two states each, so SHA-3's 400-odd bytes of sponge reach further than SHA-512's
+/// 200-odd. The block length does not order them the same way (SHA3-512's is shorter than
+/// SHA-512's).
+const SMALL_HASH_STATE_LEN: usize = 256;
+
+/*** Parameters ***/
+
+/// A hash HKDF is instantiated over: one with an HMAC ([`HMACParams`]), plus the name the
+/// instantiation reports. Implemented here for the library's SHA-2, SHA-3, SM3 and RIPEMD-160
+/// hashes; not sealed, so a hash defined elsewhere implements it the same way.
+pub trait HKDFParams: HMACParams {
+    /// The name of HKDF (RFC 5869) over this hash, as reported by [`Algorithm::ALG_NAME`].
+    const HKDF_ALG_NAME: &'static str;
+}
+
+impl HKDFParams for SHA224 {
+    const HKDF_ALG_NAME: &'static str = crate::sha2::hkdf::HKDF_SHA224_NAME;
+}
+impl HKDFParams for SHA256 {
+    const HKDF_ALG_NAME: &'static str = crate::sha2::hkdf::HKDF_SHA256_NAME;
+}
+impl HKDFParams for SHA384 {
+    const HKDF_ALG_NAME: &'static str = crate::sha2::hkdf::HKDF_SHA384_NAME;
+}
+impl HKDFParams for SHA512 {
+    const HKDF_ALG_NAME: &'static str = crate::sha2::hkdf::HKDF_SHA512_NAME;
+}
+impl HKDFParams for SHA512_224 {
+    const HKDF_ALG_NAME: &'static str = crate::sha2::hkdf::HKDF_SHA512_224_NAME;
+}
+impl HKDFParams for SHA512_256 {
+    const HKDF_ALG_NAME: &'static str = crate::sha2::hkdf::HKDF_SHA512_256_NAME;
+}
+impl HKDFParams for SHA3_224 {
+    const HKDF_ALG_NAME: &'static str = crate::sha3::hmac::HKDF_SHA3_224_NAME;
+}
+impl HKDFParams for SHA3_256 {
+    const HKDF_ALG_NAME: &'static str = crate::sha3::hmac::HKDF_SHA3_256_NAME;
+}
+impl HKDFParams for SHA3_384 {
+    const HKDF_ALG_NAME: &'static str = crate::sha3::hmac::HKDF_SHA3_384_NAME;
+}
+impl HKDFParams for SHA3_512 {
+    const HKDF_ALG_NAME: &'static str = crate::sha3::hmac::HKDF_SHA3_512_NAME;
+}
+impl HKDFParams for SM3 {
+    const HKDF_ALG_NAME: &'static str = crate::sm3::hkdf::HKDF_SM3_NAME;
+}
+impl HKDFParams for RIPEMD160 {
+    const HKDF_ALG_NAME: &'static str = crate::ripemd::hkdf::HKDF_RIPEMD160_NAME;
+}
+
+/// HKDF over [`WithoutCollisionResistance<H>`] is HKDF over `H`, as its HMAC is.
+impl<H: HKDFParams> HKDFParams for WithoutCollisionResistance<H> {
+    const HKDF_ALG_NAME: &'static str = H::HKDF_ALG_NAME;
+}
+
 /*** Types ***/
 /// The generic HKDF construction (RFC 5869).
 ///
@@ -118,12 +209,22 @@ pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 /// ones). The concrete instantiations over the library's own hashes, along with their name constants,
 /// live in the hash modules -- see `bouncycastle_digest::sha2::hkdf::HKDF_SHA256` and
 /// `bouncycastle_digest::sha2::hkdf::HKDF_SHA512`.
-#[derive(Clone)]
-pub struct HKDF<H: HMACParams> {
+///
+/// Not `Clone`: mid-extract it holds the salt key's pad states and an inner hash that has
+/// absorbed the IKM, and keyed workers do not clone. A second derivation comes from the salt.
+///
+/// ```compile_fail
+/// # use bouncycastle_digest::hkdf::HKDF;
+/// # use bouncycastle_digest::sha2::SHA256;
+/// fn cloneable<T: Clone>() {}
+/// cloneable::<HKDF<SHA256>>();
+/// ```
+pub struct HKDF<H: HKDFParams> {
     // Optional because the extract-phase HMAC cannot be keyed until the salt is provided.
     // None must correspond to a state of Uninitialized.
     hmac: Option<HkdfExtract<H>>,
-    entropy: HkdfEntropyTracker<H>,
+    /// What the salt, if typed [`KeyType::MACKey`], and the IKMs given as keys have credited.
+    credit: KdfCredit,
     state: HkdfStates,
     /// Whether the extract phase has absorbed input keying material through the streaming API,
     /// which `Initialized` alone does not say: the [`KDF`] derivations refuse such an instance.
@@ -133,8 +234,7 @@ pub struct HKDF<H: HMACParams> {
 /// The extract phase's HMAC, held as its two halves: the salt key and the inner hash absorbing
 /// the IKM. An `HMAC` worker borrows its key, and a struct cannot borrow from itself, so the
 /// phase is run through `bouncycastle_digest::hmac::hazmat`'s `inner_state` and `finish_out` instead.
-#[derive(Clone)]
-struct HkdfExtract<H: HMACParams> {
+struct HkdfExtract<H: HKDFParams> {
     key: HmacKey<H>,
     inner: H,
 }
@@ -160,90 +260,59 @@ enum HkdfStates {
     TakingAdditionalInfo,
 }
 
-#[derive(Clone)]
-struct HkdfEntropyTracker<H: HMACParams> {
-    _phantomhash: PhantomData<H>,
-    entropy: usize,
-    security_strength: SecurityStrength,
-}
-
-impl<H: HMACParams> HkdfEntropyTracker<H> {
-    /// The most the label can say: the hash's collision strength, half its output, which is
-    /// also [`Algorithm::MAX_SECURITY_STRENGTH`] of the hash, the HMAC and this HKDF. Library
-    /// policy: SP 800-56Cr2 Table 4 allows HMAC-hash extraction up to the full output length
-    /// (112 <= s <= 256 for SHA-256), so this is the conservative choice, and it is why a
-    /// 192- or 256-bit secret is paired with HKDF-SHA512. No input raises the label past it.
-    const MAX_STRENGTH: SecurityStrength = SecurityStrength::from_bytes(H::OUTPUT_LEN / 2);
-
-    fn new() -> Self {
-        Self { _phantomhash: PhantomData, entropy: 0, security_strength: SecurityStrength::None }
-    }
-
-    /// Takes in a KeyMaterial that is being mixed and figures out how much entropy to credit.
-    /// Returns the amount of entropy credited: the key's bytes when it is full-entropy material
-    /// with a strength, nothing otherwise (see [`KDF`]'s entropy accounting).
-    fn credit_entropy(&mut self, key: &(impl KeyMaterialTrait + ?Sized)) -> usize {
-        if !key.is_full_entropy() || key.security_strength() == SecurityStrength::None {
-            return 0;
-        }
-        let additional_entropy = key.key_len();
-        // Saturating: the counter is bookkeeping.
-        self.entropy = self.entropy.saturating_add(additional_entropy);
-        self.security_strength = *max(&self.security_strength, &key.security_strength());
-        self.security_strength = *min(&self.security_strength, &Self::MAX_STRENGTH);
-        additional_entropy
-    }
-
-    pub fn get_entropy(&self) -> usize {
-        self.entropy
-    }
-
-    // Library policy, not a rule from a standard: the output is credited as CryptographicRandom
-    // once at least OUTPUT_LEN / 2 bytes of typed key material with a strength have gone in, the
-    // bytes that carry the most this label can say (`MAX_STRENGTH`). SP 800-133r2 Section 6.3
-    // (method 3, note (g)) asks that the component keys' min-entropies sum to at least the
-    // min-entropy the output needs; this counts bytes of material typed as key rather than
-    // min-entropy, and the same key given twice counts twice. The threshold is the strength
-    // bound rather than the full output length so that one 32-byte key, a KEM shared secret say,
-    // seeds HKDF-SHA512 as it does HKDF-SHA256; the output's own strength stays capped by what
-    // was credited, as `credit_entropy` records, and is never None once seeded.
-    pub fn is_fully_seeded(&self) -> bool {
-        self.entropy >= H::OUTPUT_LEN / 2
-    }
-
-    /// [`KeyType::CryptographicRandom`] once at least `OUTPUT_LEN / 2` bytes of typed key material
-    /// have been credited (see [`Self::is_fully_seeded`]), else [`KeyType::Unknown`].
-    fn get_output_key_type(&self) -> KeyType {
-        if self.is_fully_seeded() { KeyType::CryptographicRandom } else { KeyType::Unknown }
-    }
-
-    /// For the expand phase, whose only input is the PRK: [`KeyType::CryptographicRandom`] when
-    /// the PRK was credited at all (it is HashLen bytes, so any credit is a full seeding), else
-    /// [`KeyType::Unknown`].
-    fn get_output_key_type_of_prk(&self) -> KeyType {
-        if self.entropy > 0 { KeyType::CryptographicRandom } else { KeyType::Unknown }
-    }
-}
-
-/// The name is [`HMACParams::HKDF_ALG_NAME`]; the strength is the hash's, which the extract
+/// The name is [`HKDFParams::HKDF_ALG_NAME`]; the strength is the hash's, which the extract
 /// and expand HMACs cannot exceed.
-impl<H: HMACParams> Algorithm for HKDF<H> {
+impl<H: HKDFParams> Algorithm for HKDF<H> {
     const ALG_NAME: &'static str = H::HKDF_ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = H::MAX_SECURITY_STRENGTH;
 }
 
-impl<H: HMACParams> Default for HKDF<H> {
+impl<H: HKDFParams> Default for HKDF<H> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<H: HMACParams> HKDF<H> {
+impl<H: HKDFParams> HKDF<H> {
+    /// The credited bytes that seed a derivation, as `seed_len` of the [`KDF`] trait's rule.
+    /// Library policy, not a rule from a standard: the output is credited as
+    /// CryptographicRandom once at least OUTPUT_LEN / 2 bytes of typed key material with a
+    /// strength have gone in, the bytes that carry the most the label can say
+    /// (`MAX_STRENGTH`). SP 800-133r2 Section 6.3 (method 3, note (g)) asks that the component
+    /// keys' min-entropies sum to at least the min-entropy the output needs; this counts bytes
+    /// of material typed as key rather than min-entropy, and the same key given twice counts
+    /// twice. The threshold is the strength bound rather than the full output length so that
+    /// one 32-byte key, a KEM shared secret say, seeds HKDF-SHA512 as it does HKDF-SHA256.
+    const SEED_LEN: usize = H::OUTPUT_LEN / 2;
+
+    /// The most the label can say, as `max_strength` of the [`KDF`] trait's rule: the strength
+    /// half a hash output of bytes holds, which for each of the library's hashes is also
+    /// [`Algorithm::MAX_SECURITY_STRENGTH`] of the hash, the HMAC and this HKDF. Library
+    /// policy: SP 800-56Cr2 Table 4 allows HMAC-hash extraction up to the full output length
+    /// (112 <= s <= 256 for SHA-256), so this is the conservative choice, and it is why a
+    /// 192- or 256-bit secret is paired with HKDF-SHA512. No input raises the label past it,
+    /// and for a hash whose half output is under 112 bits (RIPEMD-160) it is
+    /// [`SecurityStrength::None`], so a seeded output of that hash carries no strength.
+    const MAX_STRENGTH: SecurityStrength = SecurityStrength::from_bytes(H::OUTPUT_LEN / 2);
+
+    /// Overwrites the stack an operation's own-frame function used, by the hash's class (see
+    /// [`SMALL_HASH_STATE_LEN`]). The branch is on a constant, so only one wipe is compiled in.
+    /// Inlined, so that the wipe's frames start at the caller's stack pointer, where the
+    /// operation's frame did, and not below a frame of this.
+    #[inline(always)]
+    fn wipe_below() {
+        if size_of::<H>() <= SMALL_HASH_STATE_LEN {
+            wipe_stack_below::<HKDF_WIPED_STACK_WORDS>();
+        } else {
+            wipe_stack_below::<HKDF_LARGE_STATE_WIPED_STACK_WORDS>();
+        }
+    }
+
     /// Get a new, uninstantiated HKDF object.
     pub fn new() -> Self {
         Self {
             hmac: None,
-            entropy: HkdfEntropyTracker::new(),
+            credit: KdfCredit::new(),
             state: HkdfStates::Uninitialized,
             ikm_absorbed: false,
         }
@@ -264,12 +333,12 @@ impl<H: HMACParams> HKDF<H> {
 
     /// Returns the amount of entropy currently credited from the keys inputted so far.
     pub fn get_entropy(&self) -> usize {
-        self.entropy.get_entropy()
+        self.credit.credited()
     }
 
     /// Check whether the entropy input so far met the threshold for this object to be considered fully seeded
     pub fn is_fully_seeded(&self) -> bool {
-        self.entropy.is_fully_seeded()
+        self.credit.credited() >= Self::SEED_LEN
     }
 
     /// RFC 5869 Section 2.2:
@@ -290,8 +359,8 @@ impl<H: HMACParams> HKDF<H> {
     /// The salt can be of any [`KeyType`] but [`KeyType::Unknown`], which is refused as
     /// [`KeyMaterialError::InvalidKeyType`]; the IKM can be of any type, and credits entropy only
     /// when it is a full-entropy one. The salt credits entropy only when it is typed
-    /// [`KeyType::MACKey`], a secret salt; see the crate's Security Considerations. The type of the
-    /// output is set from what was credited.
+    /// [`KeyType::MACKey`], a secret salt; see the module's Security Considerations. The type of
+    /// the output is set from what was credited.
     /// The output KeyMaterial will be of fixed size, with a capacity large enough to cover any
     /// underlying hash function, but the actual key length will be appropriate to the underlying hash function.
     ///
@@ -317,12 +386,24 @@ impl<H: HMACParams> HKDF<H> {
     ) -> Result<usize, MACError> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
         prk.zeroize();
-        // PRK = HMAC-Hash(salt, IKM)
+        let result = Self::extract_in_own_frame(salt, ikm, prk);
+        Self::wipe_below();
+        result
+    }
 
+    /// [`Self::extract_out`]'s work. Never inlined, so that what it leaves of the salt key, the
+    /// IKM and the PRK lies below its caller's frame, where the caller's wipe reaches it.
+    #[inline(never)]
+    fn extract_in_own_frame(
+        salt: &(impl KeyMaterialTrait + ?Sized),
+        ikm: &(impl KeyMaterialTrait + ?Sized),
+        prk: &mut KeyMaterial<MAX_HMAC_OUTPUT_LEN>,
+    ) -> Result<usize, MACError> {
+        // PRK = HMAC-Hash(salt, IKM)
         let mut hkdf = Self::new();
-        hkdf.do_extract_init(salt)?;
+        hkdf.do_extract_init_inner(salt)?;
         hkdf.do_extract_update_key(ikm)?;
-        let bytes_written = hkdf.do_extract_final_out(prk)?;
+        let bytes_written = hkdf.do_extract_final_in_own_frame(prk)?;
 
         Ok(bytes_written)
     }
@@ -372,6 +453,36 @@ impl<H: HMACParams> HKDF<H> {
     ) -> Result<usize, KDFError> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
         okm.zeroize();
+        let written = Self::expand_fill(prk.ref_to_bytes(), info, L, okm);
+        Self::wipe_below();
+        let written = written?;
+        // The output is the KDF's, not the PRK's: the [`KDF`] trait's rule with the PRK as the
+        // one key. It is at least HashLen bytes, so a PRK that credits at all seeds the output.
+        let labelled = label_kdf_output(&[prk], written, Self::SEED_LEN, Self::MAX_STRENGTH, okm);
+        if labelled.is_err() {
+            okm.zeroize();
+        }
+        labelled?;
+        Ok(written)
+    }
+
+    /// RFC 5869 Section 2.3 with `prk` as the PRK: checks the lengths and writes the first `L`
+    /// octets of T to the front of `okm`'s buffer, which the caller has zeroized and which is
+    /// left for the caller to type, its length included. Returns `L`.
+    ///
+    /// # Errors
+    /// [`KDFError::InvalidLength`] as [`Self::expand_out`] documents; `okm` is left zeroized.
+    ///
+    /// Never inlined, so that what it leaves of the PRK, its pad states and T lies below its
+    /// caller's frame, where the caller's wipe reaches it.
+    #[allow(non_snake_case)] // for L
+    #[inline(never)]
+    fn expand_fill(
+        prk: &[u8],
+        info: &[u8],
+        L: usize,
+        okm: &mut (impl KeyMaterialTrait + ?Sized),
+    ) -> Result<usize, KDFError> {
         // RFC 5869 Section 2.3:
         //    N = ceil(L/HashLen)
         //    T = T(1) | T(2) | T(3) | ... | T(N)
@@ -404,14 +515,11 @@ impl<H: HMACParams> HKDF<H> {
         }
 
         // RFC 5869 Section 2.3: "PRK  a pseudorandom key of at least HashLen octets".
-        if prk.key_len() < hash_len {
+        if prk.len() < hash_len {
             return Err(KDFError::InvalidLength(
                 "HKDF-Expand: PRK must be at least HashLen bytes (RFC 5869 Sec 2.3)",
             ));
         }
-
-        let mut entropy = HkdfEntropyTracker::<H>::new();
-        entropy.credit_entropy(prk);
 
         #[allow(non_snake_case)]
         let N = L.div_ceil(hash_len) as u8;
@@ -422,7 +530,7 @@ impl<H: HMACParams> HKDF<H> {
         // The PRK, re-typed as the MAC key it is (see mac_key_copy). One key object for the whole
         // expansion: the pads are computed once here, before any byte of `okm` is written, and each
         // block's HMAC starts from a clone of them.
-        let prk_key = HmacKey::<H>::from_key_material(&Self::mac_key_copy(prk.ref_to_bytes())?)?;
+        let prk_key = HmacKey::<H>::from_key_material_unwiped(&Self::mac_key_copy(prk)?, false)?;
 
         // T(i) is output key material, so it zeroizes on drop.
         #[allow(non_snake_case)]
@@ -475,22 +583,6 @@ impl<H: HMACParams> HKDF<H> {
         }
         filled?;
 
-        // The output is the KDF's, not the PRK's: fresh pseudorandom keying material when the PRK
-        // was credited (full-entropy with a strength), else Unknown, since computation happened
-        // even when the PRK was zeroized.
-        do_hazardous_operations(okm, |okm| {
-            okm.set_key_type(entropy.get_output_key_type_of_prk())?;
-            okm.set_key_len(bytes_written)?;
-            if okm.key_type() <= KeyType::Unknown {
-                okm.set_security_strength(SecurityStrength::None)
-            } else {
-                okm.set_security_strength(*min(
-                    &SecurityStrength::from_bytes(okm.key_len()),
-                    &entropy.security_strength,
-                ))
-            }
-        })?;
-
         Ok(bytes_written)
     }
 
@@ -506,8 +598,58 @@ impl<H: HMACParams> HKDF<H> {
     ) -> Result<usize, KDFError> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
         okm.zeroize();
-        let prk = Self::extract(salt, ikm)?;
-        Self::expand_out(&prk, info, L, okm)
+        let result = Self::extract_and_expand_in_own_frame(salt, ikm, info, L, okm);
+        Self::wipe_below();
+        result
+    }
+
+    /// [`Self::extract_and_expand_out`]'s work, on an `okm` the caller has zeroized. Never
+    /// inlined, so that what it leaves of the salt key, the IKM, the PRK and T lies below its
+    /// caller's frame, where the caller's wipe reaches it.
+    #[allow(non_snake_case)]
+    #[inline(never)]
+    fn extract_and_expand_in_own_frame(
+        salt: &(impl KeyMaterialTrait + ?Sized),
+        ikm: &(impl KeyMaterialTrait + ?Sized),
+        info: &[u8],
+        L: usize,
+        okm: &mut (impl KeyMaterialTrait + ?Sized),
+    ) -> Result<usize, KDFError> {
+        let mut hkdf = Self::new();
+        hkdf.do_extract_init_inner(salt)?;
+        hkdf.do_extract_update_key(ikm)?;
+        // `do_extract_init` has set it.
+        let HkdfExtract { key, inner } = hkdf.hmac.as_mut().unwrap();
+        Self::extract_then_expand_out(key, inner, &hkdf.credit, info, L, okm)
+    }
+
+    /// Extract-then-expand as one derivation: RFC 5869 Section 2.2's `PRK = HMAC-Hash(salt,
+    /// IKM)` finished from `inner`, which has absorbed the IKM under the salt `key`, then
+    /// Section 2.3's expansion of it into `okm`, which the caller has zeroized. Returns `L`.
+    ///
+    /// The output is typed once, by the [`KDF`] trait's rule from `credit`, the account of the
+    /// salt and the IKMs, and not through a typed PRK: a PRK carries what was credited only as
+    /// its type and strength, and under a hash whose `MAX_STRENGTH` is none (RIPEMD-160) a
+    /// seeded PRK has no strength for [`Self::expand_out`] to credit.
+    #[allow(non_snake_case)] // for L
+    fn extract_then_expand_out(
+        key: &HmacKey<H>,
+        inner: &mut H,
+        credit: &KdfCredit,
+        info: &[u8],
+        L: usize,
+        okm: &mut (impl KeyMaterialTrait + ?Sized),
+    ) -> Result<usize, KDFError> {
+        // The PRK is keying material in flight; a stack scratch, zeroized on drop.
+        let mut prk: Secret<[u8; MAX_HMAC_OUTPUT_LEN]> = Secret::new();
+        let prk_len = hmac_hazmat::finish_out(key, inner, &mut prk[..H::OUTPUT_LEN]);
+        let written = Self::expand_fill(&prk[..prk_len], info, L, okm)?;
+        let labelled = credit.label_output(written, Self::SEED_LEN, Self::MAX_STRENGTH, okm);
+        if labelled.is_err() {
+            okm.zeroize();
+        }
+        labelled?;
+        Ok(written)
     }
 
     /// The salt as the MAC key it is: RFC 5869 Section 2.2, `PRK = HMAC-Hash(salt, IKM)`.
@@ -567,14 +709,27 @@ impl<H: HMACParams> HKDF<H> {
         &mut self,
         salt: &(impl KeyMaterialTrait + ?Sized),
     ) -> Result<usize, MACError> {
+        let result = self.do_extract_init_inner(salt);
+        Self::wipe_below();
+        result
+    }
+
+    /// [`Self::do_extract_init`]'s work. Never inlined, so that the copies of the salt key's pad
+    /// states that moving it into `self` leaves lie below its caller's frame, where the caller's
+    /// wipe reaches them.
+    #[inline(never)]
+    fn do_extract_init_inner(
+        &mut self,
+        salt: &(impl KeyMaterialTrait + ?Sized),
+    ) -> Result<usize, MACError> {
         if self.state >= HkdfStates::Initialized {
             return Err(MACError::InvalidState("Initialized twice"));
         };
 
         // The salt is often empty or short, so HMAC's key-strength check is skipped; the entropy
-        // tracker below accounts for it.
+        // credit below accounts for it.
         let salt_key = Self::salt_as_mac_key(salt)?;
-        let key = HmacKey::<H>::from_key_material_allow_weak(&salt_key)?;
+        let key = HmacKey::<H>::from_key_material_unwiped(&salt_key, true)?;
         let inner = hmac_hazmat::inner_state(&key);
         self.hmac = Some(HkdfExtract { key, inner });
 
@@ -583,7 +738,7 @@ impl<H: HMACParams> HKDF<H> {
         // caller has not marked as a key credits nothing, or a public salt alone would label the
         // PRK full-entropy key material. A MACKey salt is SP 800-56Cr2 Section 5.1's secret salt.
         let additional_entropy =
-            if salt.key_type() == KeyType::MACKey { self.entropy.credit_entropy(salt) } else { 0 };
+            if salt.key_type() == KeyType::MACKey { self.credit.credit(salt) } else { 0 };
         self.state = HkdfStates::Initialized;
 
         Ok(additional_entropy)
@@ -613,7 +768,7 @@ impl<H: HMACParams> HKDF<H> {
         debug_assert_eq!(self.state, HkdfStates::Initialized);
         debug_assert!(self.hmac.is_some());
 
-        let additional_entropy = self.entropy.credit_entropy(ikm);
+        let additional_entropy = self.credit.credit(ikm);
         self.hmac.as_mut().unwrap().inner.do_update(ikm.ref_to_bytes());
         self.ikm_absorbed = true;
 
@@ -657,6 +812,19 @@ impl<H: HMACParams> HKDF<H> {
         mut self,
         prk: &mut KeyMaterial<MAX_HMAC_OUTPUT_LEN>,
     ) -> Result<usize, MACError> {
+        let result = self.do_extract_final_in_own_frame(prk);
+        Self::wipe_below();
+        result
+    }
+
+    /// [`Self::do_extract_final_out`]'s work, on the instance where it sits. Never inlined, so
+    /// that what it leaves of the PRK lies below its caller's frame, where the caller's wipe
+    /// reaches it.
+    #[inline(never)]
+    fn do_extract_final_in_own_frame(
+        &mut self,
+        prk: &mut KeyMaterial<MAX_HMAC_OUTPUT_LEN>,
+    ) -> Result<usize, MACError> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
         prk.zeroize();
         if self.state == HkdfStates::Uninitialized {
@@ -666,23 +834,20 @@ impl<H: HMACParams> HKDF<H> {
         };
         debug_assert!(self.hmac.is_some());
 
-        let output_key_type = self.entropy.get_output_key_type();
-
         let mut bytes_written = 0;
         let HkdfExtract { key, inner } = self.hmac.as_mut().unwrap();
-        do_hazardous_operations(prk, |okm| {
-            bytes_written = hmac_hazmat::finish_out(key, inner, okm.ref_to_bytes_mut()?);
-            okm.set_key_len(bytes_written)?;
-            okm.set_key_type(output_key_type)?;
-            if output_key_type <= KeyType::Unknown {
-                okm.set_security_strength(SecurityStrength::None)
-            } else {
-                okm.set_security_strength(*min(
-                    &SecurityStrength::from_bytes(okm.key_len()),
-                    &self.entropy.security_strength,
-                ))
-            }
-        })?;
+        let filled = do_hazardous_operations(prk, |prk| {
+            bytes_written = hmac_hazmat::finish_out(key, inner, prk.ref_to_bytes_mut()?);
+            Ok(())
+        });
+        // What the PRK can claim is the [`KDF`] trait's rule over what was credited.
+        let labelled = filled.and_then(|()| {
+            self.credit.label_output(bytes_written, Self::SEED_LEN, Self::MAX_STRENGTH, prk)
+        });
+        if labelled.is_err() {
+            prk.zeroize();
+        }
+        labelled?;
         // By RFC5869, the output size of prk is HashLen denotes the length of the
         //                hash function output in octets
         debug_assert_eq!(prk.key_len(), H::OUTPUT_LEN);
@@ -703,7 +868,7 @@ impl<H: HMACParams> HKDF<H> {
 /// [`KDF::derive_key_from_multiple_out`], or by using the [`HKDF`] impl directly.
 ///
 /// Entropy tracking: this implementation will map entropy from the input keys to the output key.
-impl<H: HMACParams> KDF for HKDF<H> {
+impl<H: HKDFParams> KDF for HKDF<H> {
     /// Extract-then-expand with the salt this instance was made with ([`HKDF::new_with_salt`]),
     /// or RFC 5869 Section 2.2's absent salt for one from [`HKDF::new`]: `ikm` is the IKM,
     /// `fixed_info` the expand phase's `info`.
@@ -733,6 +898,24 @@ impl<H: HMACParams> KDF for HKDF<H> {
         output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         output_key.zeroize();
+        let result = self.derive_in_own_frame(ikms, fixed_info, len, output_key);
+        Self::wipe_below();
+        result
+    }
+}
+
+impl<H: HKDFParams> HKDF<H> {
+    /// [`KDF::derive_key_from_multiple_out`]'s work, on an `output_key` the caller has zeroized.
+    /// Never inlined, so that what it leaves of the IKMs, the PRK and T lies below its caller's
+    /// frame, where the caller's wipe reaches it.
+    #[inline(never)]
+    fn derive_in_own_frame(
+        &self,
+        ikms: &[&dyn KeyMaterialTrait],
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut dyn KeyMaterialTrait,
+    ) -> Result<usize, KDFError> {
         if ikms.is_empty() {
             return Err(KDFError::InvalidLength("a derivation from no keys is refused"));
         }
@@ -741,16 +924,27 @@ impl<H: HMACParams> KDF for HKDF<H> {
                 "a KDF instance holds its salt and nothing else; this HKDF has absorbed input keying material",
             )));
         }
-        // The extract runs on a copy, so the instance and its salt serve every derivation.
-        let mut hkdf = self.clone();
-        if hkdf.state == HkdfStates::Uninitialized {
-            hkdf.do_extract_init(&KeyMaterial0::new())?;
-        }
+        // The extract runs over the salt key where it sits, so the instance serves every
+        // derivation and no second copy of the key's pad states is made: what a derivation makes
+        // is the inner hash and the count of what was credited, which start from the instance's
+        // (the refusal above means its own inner hash has absorbed nothing). An instance never
+        // keyed takes RFC 5869 Section 2.2's absent salt, as `do_extract_init` builds it.
+        let absent_salt;
+        let key = match &self.hmac {
+            Some(extract) => &extract.key,
+            None => {
+                let no_salt = Self::salt_as_mac_key(&KeyMaterial0::new())?;
+                absent_salt = HmacKey::<H>::from_key_material_unwiped(&no_salt, true)?;
+                &absent_salt
+            }
+        };
+        let mut inner = hmac_hazmat::inner_state(key);
+        let mut credit = self.credit;
         for ikm in ikms {
-            hkdf.do_extract_update_key(*ikm)?;
+            credit.credit(*ikm);
+            inner.do_update(ikm.ref_to_bytes());
         }
-        let prk = hkdf.do_extract_final()?;
-        Self::expand_out(&prk, fixed_info, len, output_key)
+        Self::extract_then_expand_out(key, &mut inner, &credit, fixed_info, len, output_key)
     }
 }
 
@@ -762,15 +956,15 @@ impl<H: HMACParams> KDF for HKDF<H> {
 /// [`HKDF`] with the salt through [`engine`](KdfDescription::engine) for each derivation, as
 /// [`HKDF::new_with_salt`] does, and a key held where the secret must not leave reads the salt
 /// and hands the device the same derivation. The salt is typed as the caller's material is: a
-/// [`KeyType::MACKey`] salt is the secret salt the crate's Security Considerations describe,
+/// [`KeyType::MACKey`] salt is the secret salt the module's Security Considerations describe,
 /// credited by the engine; any other type but [`KeyType::Unknown`], which is refused, is RFC
 /// 5869's non-secret random value.
-pub struct HkdfDescription<'s, H: HMACParams> {
+pub struct HkdfDescription<'s, H: HKDFParams> {
     salt: Option<&'s dyn KeyMaterialTrait>,
     _hash: PhantomData<H>,
 }
 
-impl<'s, H: HMACParams> HkdfDescription<'s, H> {
+impl<'s, H: HKDFParams> HkdfDescription<'s, H> {
     /// HKDF over `H` with the salt absent: RFC 5869 Section 2.2's "string of HashLen zeros".
     pub const fn new() -> Self {
         Self { salt: None, _hash: PhantomData }
@@ -796,28 +990,28 @@ impl<'s, H: HMACParams> HkdfDescription<'s, H> {
     }
 }
 
-impl<H: HMACParams> Default for HkdfDescription<'_, H> {
+impl<H: HKDFParams> Default for HkdfDescription<'_, H> {
     fn default() -> Self {
         Self::new()
     }
 }
 
 // Written out rather than derived: a derive would demand `H: Clone` of the hash.
-impl<H: HMACParams> Clone for HkdfDescription<'_, H> {
+impl<H: HKDFParams> Clone for HkdfDescription<'_, H> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<H: HMACParams> Copy for HkdfDescription<'_, H> {}
+impl<H: HKDFParams> Copy for HkdfDescription<'_, H> {}
 
 /// The engine's name and strength, [`HKDF`]'s.
-impl<H: HMACParams> Algorithm for HkdfDescription<'_, H> {
+impl<H: HKDFParams> Algorithm for HkdfDescription<'_, H> {
     const ALG_NAME: &'static str = H::HKDF_ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = H::MAX_SECURITY_STRENGTH;
 }
 
-impl<H: HMACParams> KdfDescription for HkdfDescription<'_, H> {
+impl<H: HKDFParams> KdfDescription for HkdfDescription<'_, H> {
     type Engine = HKDF<H>;
 
     /// [`HKDF::new_with_salt`] with the salt, or [`HKDF::new`] without one.
@@ -826,64 +1020,5 @@ impl<H: HMACParams> KdfDescription for HkdfDescription<'_, H> {
             Some(salt) => HKDF::new_with_salt(salt).map_err(KDFError::MACError),
             None => Ok(HKDF::new()),
         }
-    }
-}
-
-// Because this struct is not public, the tests have to go here.
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::sha2::{SHA256, SHA512};
-    use bouncycastle_core::key_material::KeyMaterial512;
-
-    #[test]
-    fn test_entropy_tracker() {
-        let mut entropy = HkdfEntropyTracker::<SHA256>::new();
-
-        assert_eq!(entropy.get_entropy(), 0);
-        assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
-
-        // A key too short to carry a strength (8 bytes is 64 bits, below 112) credits nothing.
-        let key = KeyMaterial512::from_bytes_as_type(
-            b"\x00\x01\x02\x03\x04\x05\x06\x07",
-            KeyType::CryptographicRandom,
-        )
-        .unwrap();
-        assert_eq!(key.security_strength(), SecurityStrength::None);
-        assert_eq!(entropy.credit_entropy(&key), 0);
-        assert_eq!(entropy.get_entropy(), 0);
-        assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
-
-        // The threshold is half the hash output: 16 bytes for SHA-256, 32 for SHA-512; two
-        // distinct 14-byte keys (112 bits each) reach it.
-        let key1 =
-            KeyMaterial512::from_bytes_as_type(&[0x5A; 14], KeyType::CryptographicRandom).unwrap();
-        let key2 =
-            KeyMaterial512::from_bytes_as_type(&[0xA5; 14], KeyType::CryptographicRandom).unwrap();
-        assert_eq!(entropy.credit_entropy(&key1), 14);
-        assert_eq!(entropy.get_entropy(), 14);
-        assert_eq!(entropy.is_fully_seeded(), false);
-        assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
-
-        assert_eq!(entropy.credit_entropy(&key2), 14);
-        assert_eq!(entropy.get_entropy(), 28);
-        assert_eq!(entropy.is_fully_seeded(), true);
-        assert_eq!(entropy.get_output_key_type(), KeyType::CryptographicRandom);
-        assert_eq!(entropy.security_strength, SecurityStrength::_112bit);
-
-        let mut entropy = HkdfEntropyTracker::<SHA512>::new();
-        let key1 =
-            KeyMaterial512::from_bytes_as_type(&[0x5A; 16], KeyType::CryptographicRandom).unwrap();
-        let key2 =
-            KeyMaterial512::from_bytes_as_type(&[0xA5; 16], KeyType::CryptographicRandom).unwrap();
-        entropy.credit_entropy(&key1);
-        assert_eq!(entropy.get_entropy(), 16);
-        assert_eq!(entropy.is_fully_seeded(), false);
-        assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
-
-        entropy.credit_entropy(&key2);
-        assert_eq!(entropy.get_entropy(), 32);
-        assert_eq!(entropy.is_fully_seeded(), true);
-        assert_eq!(entropy.get_output_key_type(), KeyType::CryptographicRandom);
     }
 }

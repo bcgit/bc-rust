@@ -30,14 +30,17 @@
 //! the AEAD one-shots. That is below the floor of the process's own start-up that
 //! `bench_aes_mem_usage` describes, so the massif number is the floor, not a measurement.
 //!
-//! The numbers in the crate docs come from the compiler instead, read the way
+//! The numbers in the `ascon` module docs come from the compiler instead, read the way
 //! `bench_aes_mem_usage` does: `-C remark=prologepilog` gives each function's frame and
-//! `--emit=asm` its calls, after LTO, and a figure is the deepest chain of frames below the entry
-//! point plus 8 bytes of return address per call. The panic and unwind paths (`unwrap_failed`,
-//! `panic_fmt`, `slice_index_fail`, `_Unwind_Resume`) are not followed, since valid input never
-//! reaches them. A tail call adds nothing, libc's `memcpy` counts as its return address only, and
-//! the `&mut dyn RNG` call is to `FixedNonce::next_bytes_out`. The figures are for x86-64 Linux;
-//! the Windows x64 calling convention reserves more per frame, so measure on Linux to compare.
+//! `--emit=asm` its calls, after LTO, and a figure counts from the call into the entry point: its
+//! return address and frame, then the deepest chain of frames below it plus 8 bytes of return
+//! address per call. The panic and unwind paths (`unwrap_failed`, `panic_fmt`, `slice_index_fail`,
+//! `_Unwind_Resume`) are not followed, since valid input never reaches them. A tail call pushes no
+//! return address and its target's frame replaces the caller's, libc's `memcpy` counts as its
+//! return address only, and so does the `&mut dyn RNG` call to `FixedNonce::next_bytes_out`. The
+//! figures are the same with every bench called from `main` and with one alone, and are for
+//! x86-64 Linux; the Windows x64 calling convention reserves more per frame, so measure on Linux
+//! to compare.
 //! Cross-compiling is enough, because the remarks and the asm are written before the link (which
 //! then fails without a Linux linker):
 //!
@@ -56,12 +59,6 @@
 
 use core::hint::black_box;
 
-use bouncycastle::ascon::{ASCON_AEAD128_KEY_LEN, ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN};
-use bouncycastle::ascon::{Ascon_AEAD128, AsconAEAD128Key};
-use bouncycastle::ascon::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
-use bouncycastle::ascon::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};
-use bouncycastle::ascon::{AsconXof128, AsconXof128Squeezer, SUSPENDED_ASCON_XOF128_STATE_LEN};
-use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::{HashError, RNGError, SymmetricCipherError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
@@ -70,6 +67,18 @@ use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Hash, HashOneShot, RNG, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor, XOF, XOFSqueezer,
 };
+use bouncycastle::symmetric::ascon::{
+    ASCON_AEAD128_KEY_LEN, ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN,
+};
+use bouncycastle::symmetric::ascon::{Ascon_AEAD128, AsconAEAD128Key};
+use bouncycastle::symmetric::ascon::{
+    AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN,
+};
+use bouncycastle::symmetric::ascon::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};
+use bouncycastle::symmetric::ascon::{
+    AsconXof128, AsconXof128Squeezer, SUSPENDED_ASCON_XOF128_STATE_LEN,
+};
+use bouncycastle::symmetric::{Decrypting, Encrypting};
 
 type Enc = Ascon_AEAD128<Encrypting>;
 type Dec = Ascon_AEAD128<Decrypting>;

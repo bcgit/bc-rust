@@ -12,7 +12,9 @@
 
 use crate::helpers::aead_cipher_helpers::{decrypt_aead, encrypt_aead, load_aad};
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
-use bouncycastle::chacha20_poly1305_aead::{ChaCha20Poly1305Key, KEY_LEN, NONCE_LEN, TAG_LEN};
+use bouncycastle::symmetric::chacha20_poly1305_aead::{
+    ChaCha20Poly1305Key, KEY_LEN, NONCE_LEN, TAG_LEN,
+};
 
 pub(crate) fn chacha20_poly1305_cmd(
     action: &CipherDirection,

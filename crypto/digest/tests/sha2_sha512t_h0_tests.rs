@@ -1,7 +1,7 @@
 //! FIPS 180-4 s. 5.3.6 known-answer tests for the SHA-512/t IV Generation Function.
 //!
 //! The initial hash value H(0) for SHA-512/224 and SHA-512/256 is not stored as a literal in this
-//! crate: it is produced by the IV Generation Function (FIPS 180-4 s. 5.3.6), evaluated at compile
+//! module: it is produced by the IV Generation Function (FIPS 180-4 s. 5.3.6), evaluated at compile
 //! time. These tests pin what that function produces against the words the standard lists in
 //! s. 5.3.6.1 and s. 5.3.6.2.
 //!
@@ -11,9 +11,9 @@
 //! `bouncycastle_utils::suspendable_state::add_lib_ver`) followed by the eight 64-bit chaining
 //! words, little-endian.
 //!
-//! Note that a wrong H(0) is also caught end-to-end by the CAVP vectors in `sha2_bc-test-data.rs`,
-//! since every SHA-512/224 and SHA-512/256 digest would then differ. These tests localize such a
-//! failure to the IV Generation Function itself.
+//! Note that a wrong H(0) is also caught end-to-end by the CAVP vectors in
+//! `sha2_sha2_bc-test-data.rs`, since every SHA-512/224 and SHA-512/256 digest would then differ.
+//! These tests localize such a failure to the IV Generation Function itself.
 
 use bouncycastle_core::traits::Suspendable;
 use bouncycastle_digest::sha2::{SHA512_224, SHA512_256, SUSPENDED_SHA512_STATE_LEN};

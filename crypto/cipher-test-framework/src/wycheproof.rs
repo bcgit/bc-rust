@@ -9,12 +9,6 @@
 
 use crate::Permutation;
 use crate::material::{cipher_key, mac_key};
-use bouncycastle_cipher::BlockCipherKey;
-use bouncycastle_cipher::modes::hazmat::gcm_siv::GcmSivPermutation;
-use bouncycastle_cipher::modes::{
-    CBC, CCM, CMAC, GCM, GCM_NONCE_LEN, GCM_SIV, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN, GMAC,
-};
-use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::Mode;
@@ -28,6 +22,12 @@ use bouncycastle_core::traits::{
     MACGenerator, MACVerifier, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
+use bouncycastle_symmetric::BlockCipherKey;
+use bouncycastle_symmetric::modes::hazmat::gcm_siv::GcmSivPermutation;
+use bouncycastle_symmetric::modes::{
+    CBC, CCM, CMAC, GCM, GCM_NONCE_LEN, GCM_SIV, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN, GMAC,
+};
+use bouncycastle_symmetric::padding::PKCS7;
 use core::ops::Add;
 
 const BLOCK_LEN: usize = 16;

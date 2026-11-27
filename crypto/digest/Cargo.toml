@@ -6,61 +6,64 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-# `std` gates scrypt's [`KDF`] and `KdfDescription` impls, which allocate the working memory, and
-# BLAKE3's and SHA-3's `Vec`-returning one-shots; without it `scrypt` is the caller-supplied-memory function
-# alone, and the other modules are unchanged. That is a narrower API, not yet a `no_std` build: `bouncycastle-core` still links
-# `std`, and the forwarding below changes nothing while the workspace dependency on `core` keeps
-# its default features.
+# `alloc` gates scrypt's [`KDF`] and `KdfDescription` impls, which allocate the working memory, and
+# BLAKE3's and SHA-3's `Vec`-returning one-shots, and turns on `bouncycastle-core`'s; without it
+# `scrypt` is the caller-supplied-memory function alone, and the crate and what it depends on
+# link no allocator. `std` implies `alloc` and gates nothing of its own: it is a forward.
 default = ["std"]
-std = ["bouncycastle-core/std"]
+std = ["alloc", "bouncycastle-core/std"]
+alloc = ["bouncycastle-core/alloc"]
 
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
+# The tests, benches and doc examples use the `Vec` one-shots.
+bouncycastle-core = { workspace = true, features = ["std"] }
 bouncycastle-core-test-framework.workspace = true
-bouncycastle-rng.workspace = true
+# The tests and doc examples seed a DRBG from the operating system.
+bouncycastle-rng = { workspace = true, features = ["std"] }
 criterion.workspace = true
 
-# scrypt's trait-path tests; `scrypt_scrypt_caller_memory_tests` runs with and without `std`.
+# scrypt's trait-path tests; `scrypt_scrypt_caller_memory_tests` runs with and without `alloc`.
 [[test]]
 name = "scrypt_scrypt_tests"
-required-features = ["std"]
+required-features = ["alloc"]
 
 # BLAKE3's tests use its `Vec`-returning one-shots.
 [[test]]
 name = "blake3_blake3_tests"
-required-features = ["std"]
+required-features = ["alloc"]
 
 # These SHA-3 tests use the `Vec`-returning one-shots.
 [[test]]
 name = "sha3_cshake_tests"
-required-features = ["std"]
+required-features = ["alloc"]
 
 [[test]]
 name = "sha3_finish_squeezer_tests"
-required-features = ["std"]
+required-features = ["alloc"]
 
 [[test]]
 name = "sha3_kmac_tests"
-required-features = ["std"]
+required-features = ["alloc"]
 
 [[test]]
 name = "sha3_parallelhash_bc-test-data"
-required-features = ["std"]
+required-features = ["alloc"]
 
 [[test]]
 name = "sha3_parallelhash_tests"
-required-features = ["std"]
+required-features = ["alloc"]
 
 [[test]]
 name = "sha3_tuplehash_bc-test-data"
-required-features = ["std"]
+required-features = ["alloc"]
 
 [[test]]
 name = "sha3_tuplehash_tests"
-required-features = ["std"]
+required-features = ["alloc"]
 
 [[bench]]
 name = "blake2_blake2_benches"
@@ -88,6 +91,10 @@ harness = false
 
 [[bench]]
 name = "sm3_hkdf_sm3_benches"
+harness = false
+
+[[bench]]
+name = "ripemd_hkdf_ripemd160_benches"
 harness = false
 
 [[bench]]
@@ -125,7 +132,7 @@ harness = false
 [[bench]]
 name = "sha3_sha3_benches"
 harness = false
-required-features = ["std"]
+required-features = ["alloc"]
 
 [[bench]]
 name = "sha3_hmac_sha3_benches"

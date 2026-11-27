@@ -17,7 +17,7 @@
 /// three bytes at a time before releasing them -- more than the tag the decryptor has to hold
 /// back anyway -- the property `TestFrameworkAEADCipher::test_key` cannot pin on its own, since
 /// a key's workers might hold back nothing but the tag (Ascon-AEAD128 holds back
-/// nothing else). Modelled on the toy permutations `crypto/cipher/tests/modes/common/mod.rs` uses for
+/// nothing else). Modelled on the toy permutations `crypto/symmetric/tests/modes/common/mod.rs` uses for
 /// the equivalent block-cipher property.
 ///
 /// The toy's "ciphertext" is the plaintext with a per-byte counter XORed in, released three
@@ -166,19 +166,21 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
             Ok(self.0.update_out(ciphertext, plaintext))
         }
         /// The last `TAG_LEN` held-back bytes are the tag, the rest ciphertext.
-        fn finish_decrypt(
+        fn finish_decrypt_into(
             &mut self,
             _token: &FinishToken,
-        ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
+            out: &mut [u8; FINAL_LEN],
+        ) -> Result<usize, SymmetricCipherError> {
+            out.fill(0);
             let Some(n) = self.0.held_len.checked_sub(TAG_LEN) else {
                 return Err(SymmetricCipherError::DecryptionFailed);
             };
-            let mut out = [0u8; FINAL_LEN];
-            self.0.finish(n, &mut out);
+            self.0.finish(n, out);
             if self.0.held[n..n + TAG_LEN] != toy_tag(self.0.len_seen - TAG_LEN) {
+                out.fill(0);
                 return Err(SymmetricCipherError::AEADTagCheckFailed);
             }
-            Ok((out, n))
+            Ok(n)
         }
         fn decrypt_out_len(ciphertext_len: usize) -> usize {
             ciphertext_len.saturating_sub(TAG_LEN)

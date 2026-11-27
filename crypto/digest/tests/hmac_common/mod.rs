@@ -1,4 +1,4 @@
-//! Helpers shared by this crate's known-answer test files.
+//! Helpers shared by the hmac module's known-answer test files.
 
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};

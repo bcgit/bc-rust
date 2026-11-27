@@ -8,7 +8,7 @@
 //! RFC 5528's nine Camellia-CTR vectors divide the counter block differently -- a 4-octet nonce, an
 //! 8-octet IV and a counter starting at one -- so they are not ones these commands can produce (see
 //! the `Camellia_CTR_128` docs). Instead the commands are required to agree with
-//! `bouncycastle_cipher::modes::Ctr` over the Camellia permutation, which
+//! `bouncycastle_symmetric::modes::Ctr` over the Camellia permutation, which
 //! `crypto/symmetric/tests/camellia_stream_mode_tests.rs` pins against the SP 800-38A Sec 6.5 equations, RFC
 //! 5528's vectors included.
 
@@ -30,8 +30,8 @@ const KEY_256: &str = "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30
 /// `Ctr` over Camellia under that nonce.
 #[test]
 fn a_supplied_nonce_is_used_and_not_written() {
-    use bouncycastle::camellia::Camellia128Key;
-    use bouncycastle::cipher::modes::CTR;
+    use bouncycastle::symmetric::camellia::Camellia128Key;
+    use bouncycastle::symmetric::modes::CTR;
 
     let nonce = "000102030405060708090a0b";
     let plaintext = pseudo_random(37, 5);
@@ -54,8 +54,8 @@ fn a_supplied_nonce_is_used_and_not_written() {
 /// What each command emits must be exactly what `Ctr` over the matching permutation produces.
 #[test]
 fn the_commands_are_ctr_over_camellia() {
-    use bouncycastle::camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
-    use bouncycastle::cipher::modes::CTR;
+    use bouncycastle::symmetric::camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
+    use bouncycastle::symmetric::modes::CTR;
 
     for len in [1usize, 5, 16, 17, 64] {
         let plaintext = pseudo_random(len, len as u32);

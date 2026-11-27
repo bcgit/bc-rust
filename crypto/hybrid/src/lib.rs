@@ -16,6 +16,13 @@
 //! # 🚨 Security Considerations 🚨
 //!
 //! Each construction has its own; see [the `hpke` module's](hpke#-security-considerations-).
+//!
+//! # Features
+//!
+//! `alloc`, and `std`, which is on by default and implies it, turn on the features of those names
+//! in `bouncycastle-core`, `bouncycastle-digest`, `bouncycastle-symmetric` and `bouncycastle-ec`:
+//! the allocating one-shots and `_boxed` finals of the core traits. The crate has nothing of its
+//! own behind either, and without them needs no allocator.
 
 #![no_std]
 #![forbid(unsafe_code)]

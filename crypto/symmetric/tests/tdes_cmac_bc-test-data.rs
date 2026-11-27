@@ -1,7 +1,7 @@
 //! Known-answer tests against the NIST ACVP `CMAC-TDES` vectors from the `bc-test-data` repo:
 //! `CMAC-TDES.4014545` (keying option 1, three-key, generate and verify) and
 //! `CMAC-TDES.4014546` (keying option 2, two-key, verify only), both through the generic
-//! `bouncycastle_cipher::BlockCipherKey`, the one key with a MAC role over TDEA.
+//! `bouncycastle_symmetric::BlockCipherKey`, the one key with a MAC role over TDEA.
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
 //! relative to the root of this git project. If it is missing, the test prints a warning and
@@ -13,11 +13,11 @@
 //! refusal), so its verify cases run through the key's `verify` alone, which takes the full
 //! tag: the truncated two-key groups are counted and skipped.
 
-use bouncycastle_cipher::BlockCipherKey;
-use bouncycastle_cipher::modes::CMAC;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
+use bouncycastle_symmetric::BlockCipherKey;
+use bouncycastle_symmetric::modes::CMAC;
 use bouncycastle_symmetric::tdes::BLOCK_LEN;
 use bouncycastle_symmetric::tdes::hazmat::{TDES2Internal, TDESInternal};
 use std::collections::BTreeMap;

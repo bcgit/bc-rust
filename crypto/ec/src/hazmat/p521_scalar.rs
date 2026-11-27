@@ -144,7 +144,7 @@ impl P521ScalarField {
     /// wrapped in [`bouncycastle_utils::secret::Secret`] -- that would cost its `Copy`, its `const
     /// ZERO`/`ONE`, and a scrub on every intermediate including the public ones. The trade is that
     /// scrubbing is the caller's job, on every path out of the function; see
-    /// `bouncycastle_ecdsa`'s `sign_with_k` for the intended use.
+    /// `crate::ecdsa`'s `sign_with_k` for the intended use.
     ///
     /// This does not reach values the compiler kept in registers or spilled itself, and is
     /// defence in depth rather than a guarantee.
@@ -380,16 +380,13 @@ fn redc(t: &[u64; 18]) -> [u64; 9] {
 /// array is always `< 2n`, making a single conditional subtraction sufficient), P-521's `n` is
 /// `2^521`-ish while this type's storage is a full `2^576`-wide `[u64; 9]` -- a 55-bit gap a caller
 /// can easily fill (e.g. [`P521Scalar::from_be_bytes`]'s 66-byte/528-bit SEC 1 input, or simply any
-/// `[u64; 9]` passed to `from_limbs`). An earlier version of this function assumed the gap couldn't
-/// be filled and used a single conditional subtraction unconditionally; that assumption was false
-/// (a raw `[u64; 9]` can represent values up to `2^576 - 1`), so it under-reduced any input `>=
-/// 2n` -- caught not by this crate's own property tests (whose pseudorandom `[u64; 9]` values
-/// happened to make the bug's output still self-consistent, see `p521_scalar_tests.rs`'s docs) but
-/// by real ECDSA verification math in the wycheproof P-521 suite, where a legitimately-bounded
-/// scalar's `redc` calls took a code path this crate's own tests never reached.
+/// `[u64; 9]` passed to `from_limbs`). A single conditional subtraction would under-reduce any
+/// input `>= 2n`, and such inputs are reached in practice: ECDSA verification in the wycheproof
+/// P-521 suite gets there through `redc`, on a path pseudorandom `[u64; 9]` property tests do not
+/// take (see `p521_scalar_tests.rs`'s docs).
 ///
-/// The fix: split `limbs` into `hi = limbs >> 521` (the excess, `< 2^55`) and `lo = limbs mod
-/// 2^521` (`< 2^521`), then fold via `value ≡ hi * (2^521 mod n) + lo (mod n)`
+/// So `limbs` is split into `hi = limbs >> 521` (the excess, `< 2^55`) and `lo = limbs mod
+/// 2^521` (`< 2^521`), then folded via `value ≡ hi * (2^521 mod n) + lo (mod n)`
 /// ([`TWO_POW_521_MOD_N_LIMBS`]). Verified (not checked in) against 300,000 random 9-limb trials
 /// plus boundary cases (`n`, `n-1`, `2n-1`, all-ones, max-`hi`-with-max-`lo`) that the folded sum
 /// is always `< 2n`, so the single conditional subtraction below remains valid -- the same
@@ -505,7 +502,7 @@ impl P521PublicScalar {
 // tail above) runs unconditionally, but a non-zero carry actually reaching those limbs is rare --
 // verified, when that tail was still a `while carry != 0` loop, by instrumenting it with an
 // unconditional `panic!` and confirming it fired during real signature verification (the
-// wycheproof P-521 suite in `bouncycastle-ecdsa`) -- and this crate's own tests never happened to
+// wycheproof P-521 suite in `crate::ecdsa`) -- and this crate's own tests never happened to
 // produce one: not `algebraic_identities_over_many_pseudorandom_values`
 // (hundreds of thousands of `redc` calls via `invert`'s ~585 multiplications per iteration, over
 // 1000 iterations, all with uniformly random `< n` operands), nor any of this module's other
@@ -554,12 +551,21 @@ impl SecretScalar for P521Scalar {
         P521Scalar::from_borrowed_limbs(limbs)
     }
 
+    fn from_borrowed_limbs_into(limbs: &[u64; 9], out: &mut Self) {
+        reduce_wide_into(limbs, &mut out.0);
+    }
+
     fn from_be_bytes(bytes: &[u8; 66]) -> Self {
         P521Scalar::from_be_bytes(bytes)
     }
 
     fn to_be_bytes(&self) -> [u8; 66] {
         P521Scalar::to_be_bytes(self)
+    }
+
+    #[inline(never)]
+    fn to_be_bytes_into(&self, out: &mut [u8; 66]) {
+        crate::hazmat::p521_sec1::be_bytes_from_limbs_into(self.limbs(), out)
     }
 }
 

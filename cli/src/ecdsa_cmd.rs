@@ -1,26 +1,26 @@
-//! Generic CLI wiring for every ECDSA curve in `bouncycastle-ecdsa`: one instantiation of
+//! Generic CLI wiring for every ECDSA curve in `bouncycastle_ec::ecdsa`: one instantiation of
 //! [`ecdsa_cmd`] per curve, rather than the per-curve match block `mldsa_cmd.rs`/`mlkem_cmd.rs`
 //! duplicate seven and three times respectively. That duplication is warranted for them -- each
 //! parameter set is its own concrete algorithm with its own quirks (a hash-then-sign variant, a
 //! from-seed variant, a bespoke consistency-check API) -- but every ECDSA curve implements the
-//! identical `Signer`/`SignatureVerifier`/`PrivateKey`/`PublicKey`/
+//! identical `SigningKey`/`DeterministicSigningKey`/`VerifyingKey`/`PrivateKey`/`PublicKey`/
 //! `DerivePublicKey` trait shape with no per-curve deviation, so a single generic function bound
 //! over those traits, monomorphised once per curve below, covers all seven without repeating the
 //! same match block.
 //!
-//! Each curve has two signer types, `ECDSA*` (random `k`) and `ECDetDSA*` (RFC 6979), identical in
-//! trait shape; `--deterministic` picks which one [`ecdsa_cmd`] is instantiated over.
+//! Each key signs through both `SigningKey` (random `k`) and `DeterministicSigningKey` (RFC 6979);
+//! `--deterministic` picks which one [`ecdsa_cmd`] calls.
 //!
-//! `ctx` is not exposed as a CLI flag here: ECDSA has no context input, and `bouncycastle_ecdsa`
+//! `ctx` is not exposed as a CLI flag here: ECDSA has no context input, and `bouncycastle_ec::ecdsa`
 //! refuses a non-empty one, so a `--ctxfile` flag could only fail -- every call below passes
-//! `None` directly instead. `SM2` (`sm2_cmd.rs`) is the curve this crate
+//! `None` directly instead. `SM2` (`sm2_cmd.rs`) is the curve this command
 //! does NOT cover: its `ctx` is mandatory (it carries the signer's identity `IDA`) and its
 //! `derive_pk` is a bespoke inherent method rather than an implementation of `DerivePublicKey`, so
 //! it needs its own command function and its own `--idfile` flag.
 
 use crate::helpers::{
-    println_stdout, read_input_file, read_secret_file, read_secret_file_or_stdin, stream_stdin,
-    write_bytes_or_hex, write_private_key,
+    finish_stdout, flush_stdout, println_stdout, read_input_file, read_secret_file,
+    read_secret_file_or_stdin, stream_stdin, write_bytes_or_hex, write_private_key,
 };
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
@@ -28,15 +28,15 @@ use bouncycastle::core::signature_key::{
     DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
 use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier};
+use bouncycastle::digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle::ec::curve::Curve;
-use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
-use bouncycastle::ecdsa::ecdsa::{
+use bouncycastle::ec::ecdsa::ecdsa::{
     ECDSABp256r1, ECDSABp384r1, ECDSABp512r1, ECDSAP256, ECDSAP384, ECDSAP521, ECDSASecp256K1,
 };
-use bouncycastle::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
-use bouncycastle::ecdsa::keys_common::DerivePublicKey;
+use bouncycastle::ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
+use bouncycastle::ec::ecdsa::keys_common::DerivePublicKey;
+use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle::rng::HashDRBG_SHA512;
-use bouncycastle::sha2::{SHA256, SHA384, SHA512};
 use clap::ValueEnum;
 use std::process::exit;
 
@@ -79,21 +79,36 @@ pub(crate) fn ecdsa_cmd<
     match action {
         ECDSAAction::Keygen => {
             let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
-            write_private_key(&sk, output_hex);
+            let written = write_private_key(&sk, output_hex);
+            // `exit` runs no destructors, so the key is dropped before a failed write exits.
+            drop(sk);
+            finish_stdout(written);
         }
         ECDSAAction::PkFromSk => {
-            let sk =
-                parse_sk::<SK, SK_LEN>(read_secret_file_or_stdin(skfile).ref_to_bytes(), alg_name);
-            write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
+            // `exit` runs no destructors, so the key is dropped before the write, which ends
+            // the process on a failure.
+            let pk = {
+                let sk = parse_sk::<SK, SK_LEN>(
+                    read_secret_file_or_stdin(skfile).ref_to_bytes(),
+                    alg_name,
+                );
+                sk.derive_pk()
+            };
+            write_bytes_or_hex(&pk.encode(), output_hex);
         }
         ECDSAAction::CheckConsistency => {
-            let sk =
-                parse_sk::<SK, SK_LEN>(read_secret_file_or_stdin(skfile).ref_to_bytes(), alg_name);
-
             let pk_bytes = require_file(pkfile, "pkfile");
             let pk = parse_pk::<PK, PK_LEN>(&pk_bytes, alg_name);
 
-            if sk.derive_pk() == pk {
+            // As above: the key is dropped before either branch can exit.
+            let matches = {
+                let sk = parse_sk::<SK, SK_LEN>(
+                    read_secret_file_or_stdin(skfile).ref_to_bytes(),
+                    alg_name,
+                );
+                sk.derive_pk() == pk
+            };
+            if matches {
                 println_stdout("SUCCESS: pk and sk match.");
             } else {
                 eprintln!("FAILURE: pk and sk do not match.");
@@ -101,22 +116,29 @@ pub(crate) fn ecdsa_cmd<
             }
         }
         ECDSAAction::Sign => {
-            let sk =
-                parse_sk::<SK, SK_LEN>(require_secret(skfile, "skfile").ref_to_bytes(), alg_name);
+            // The key is dropped before the signature is written; see `PkFromSk`.
+            let sig = {
+                let sk = parse_sk::<SK, SK_LEN>(
+                    require_secret(skfile, "skfile").ref_to_bytes(),
+                    alg_name,
+                );
 
-            // stream the message from stdin; ECDSA has no context string
-            let sig = if deterministic {
-                let mut signer = sk.create_signer_deterministic(None).unwrap();
-                stream_stdin(|chunk| signer.do_update(chunk));
-                signer.do_final().unwrap()
-            } else {
-                let mut signer =
-                    sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), None).unwrap();
-                stream_stdin(|chunk| signer.do_update(chunk));
-                signer.do_final().unwrap()
+                // stream the message from stdin; ECDSA has no context string
+                if deterministic {
+                    let mut signer = sk.create_signer_deterministic(None).unwrap();
+                    stream_stdin(|chunk| signer.do_update(chunk));
+                    signer.do_final().unwrap()
+                } else {
+                    let mut signer =
+                        sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), None).unwrap();
+                    stream_stdin(|chunk| signer.do_update(chunk));
+                    signer.do_final().unwrap()
+                }
             };
 
             write_bytes_or_hex(&sig, output_hex);
+            // A short signature is held in std's stdout buffer; see `write_stdout`.
+            flush_stdout();
         }
         ECDSAAction::Verify => {
             let pk_bytes = require_file(pkfile, "pkfile");

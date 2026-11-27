@@ -6,7 +6,7 @@
 //! nothing, the round trip under a drawn nonce, and that the mode has no other commands.
 //!
 //! The known answers are RFC 8452 Appendix C.1 and C.2, the vector of each with an 18-byte
-//! plaintext and 20 bytes of AAD, copied from `crypto/aes/tests/gcm_siv_rfc8452_tests.rs`, which
+//! plaintext and 20 bytes of AAD, copied from `crypto/symmetric/tests/aes_gcm_siv_rfc8452_tests.rs`, which
 //! runs the whole appendix.
 
 mod common;

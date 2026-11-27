@@ -69,19 +69,19 @@
 //! (spec s. 5.4).
 //!
 //! Peak stack per call, measured by painting the stack below a non-inlined call into the operation
-//! (the object and the output buffer included, the 4 KiB input static; release build with thin
-//! LTO, x86_64, rustc 1.97.0-nightly):
+//! (the object and the output buffer included, the 4 KiB input static, and the stack wipe after
+//! compressing, 1 KiB or 512 bytes; release build with thin LTO, x86_64, rustc 1.97.0-nightly):
 //!
 //! | Operation                                              | Stack   |
 //! |--------------------------------------------------------|---------|
-//! | [`BLAKE3`] hash, one-shot or streaming                 | 6864 B  |
-//! | [`BLAKE3`] XOF, 512 bytes of output                    | 5552 B  |
-//! | [`BLAKE3`] `suspend`, `from_suspended`, finish         | 11696 B |
-//! | [`BLAKE3Squeezer`] `suspend`, `from_suspended`, output | 5648 B  |
-//! | [`BLAKE3KeyedHashKey`] from key material               | 104 B   |
-//! | [`BLAKE3KeyedHashKey`] `mac_out`                       | 5080 B  |
-//! | [`BLAKE3KeyedHash`] `into_squeezer`, 512 bytes         | 5576 B  |
-//! | [`BLAKE3DeriveKey`] `new`, `hash_out`                  | 10592 B |
+//! | [`BLAKE3`] hash, one-shot or streaming                 | 4920 B  |
+//! | [`BLAKE3`] XOF, 512 bytes of output                    | 5784 B  |
+//! | [`BLAKE3`] `suspend`, `from_suspended`, finish         | 11432 B |
+//! | [`BLAKE3Squeezer`] `suspend`, `from_suspended`, output | 5688 B  |
+//! | [`BLAKE3KeyedHashKey`] from key material               | 456 B   |
+//! | [`BLAKE3KeyedHashKey`] `mac_out`                       | 3064 B  |
+//! | [`BLAKE3KeyedHash`] `into_squeezer`, 512 bytes         | 5816 B  |
+//! | [`BLAKE3DeriveKey`] `new`, `hash_out`                  | 6280 B  |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -94,10 +94,16 @@
 //! * The `derive_key` context string must be hardcoded, globally unique and application-specific,
 //!   never variable data (s. 6.2); see [`BLAKE3DeriveKey`].
 //! * BLAKE3 is byte-oriented: a partial final byte is refused.
-//! * State and buffers are zeroized on drop; there are no data-dependent branches or table
+//! * State and buffers are zeroized on drop, and each operation that compresses (an update that
+//!   fills a block, a final, a squeezer read) runs in a frame of its own whose stack is overwritten
+//!   afterwards, sized for an optimised build. There are no data-dependent branches or table
 //!   lookups.
 //! * The `keyed_hash` and `derive_key` workers are not suspendable: their states hold key
 //!   material.
+//! * `into_squeezer` moves the hasher, and a move wipes nothing: a copy of its chaining values
+//!   may stay on the stack. One that has absorbed a secret, or is keyed, is finished with
+//!   `finish_squeezer` instead ([`BLAKE3KeyedHash::finish_squeezer`]), which leaves it where it
+//!   sits, to be dropped.
 //!
 //! # Suspending and resuming execution
 //!

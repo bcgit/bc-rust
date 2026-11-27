@@ -2,11 +2,11 @@
 //! `Camellia*Key<KW>`, via the shared runner. Requires the Wycheproof repository at
 //! `../wycheproof`; absent, the tests warn and pass.
 
-use bouncycastle_cipher::modes::KW;
 use bouncycastle_cipher_test_framework::wycheproof;
 use bouncycastle_symmetric::camellia::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal,
 };
+use bouncycastle_symmetric::modes::KW;
 
 #[test]
 fn wycheproof_camellia_kw() {

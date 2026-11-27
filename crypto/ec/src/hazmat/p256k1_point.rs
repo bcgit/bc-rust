@@ -138,12 +138,8 @@ impl P256K1JacobianPoint {
         let h_is_zero = h.is_zero();
         let r_is_zero = r.is_zero();
         let is_same_point = h_is_zero & r_is_zero;
-        // Dropping the `!` here (making `is_opposite_point` collapse onto `is_same_point`) is an
-        // accepted mutant, not a bug: when `h == 0`, `generic_add`'s own `z3 = h*self.z*other.z` is
-        // already `0` regardless of `r`, so `generic` is already infinity-representing in the true
-        // opposite-point case (`h == 0, r != 0`) even without this override selecting
-        // `Self::INFINITY` explicitly -- see `crate::hazmat::p521_point`'s identical case for the
-        // full argument.
+        // The opposite-point case selects the canonical identity `(1, 1, 0)`: the generic formula's
+        // result there also has Z = 0, but not that X and Y.
         let is_opposite_point = h_is_zero & !r_is_zero;
         let doubled = self.double();
 
@@ -339,6 +335,26 @@ mod tests {
                 a.add_affine(&g.x, &g.y, Condition::<u64>::TRUE).to_affine(),
                 a.to_affine(),
                 "add_affine with the identity flag must return self"
+            );
+        }
+    }
+
+    /// As `add`'s in `p256k1_point_tests.rs`: a point plus its negation is `(1, 1, 0)`, and not
+    /// the generic formula's `Z = 0` result, which still carries the operands' `Y`.
+    #[test]
+    fn add_affine_of_the_opposite_point_is_the_canonical_identity() {
+        let g = P256K1JacobianPoint::from_affine(
+            P256K1FieldElement::from_limbs(G_X_LIMBS),
+            P256K1FieldElement::from_limbs(G_Y_LIMBS),
+        );
+        let z = P256K1FieldElement::from_limbs(G_Y_LIMBS);
+        let z2 = z.mul(&z);
+        let scaled_g = P256K1JacobianPoint { x: g.x.mul(&z2), y: g.y.mul(&z2.mul(&z)), z };
+        for a in [g, scaled_g] {
+            let sum = a.add_affine(&g.x, &g.y.negate(), Condition::<u64>::FALSE);
+            assert_eq!(
+                (sum.x, sum.y, sum.z),
+                (P256K1FieldElement::ONE, P256K1FieldElement::ONE, P256K1FieldElement::ZERO)
             );
         }
     }

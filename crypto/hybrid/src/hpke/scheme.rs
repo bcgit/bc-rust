@@ -12,19 +12,19 @@
 //! (Sections 5.1.3 and 5.1.4), which also take the sender's key pair, are [`HpkeAuthSender`]
 //! and [`HpkeAuthRecipient`], on keys whose KEM has `AuthEncap` and `AuthDecap`.
 
-use bouncycastle_aes::{AES128Key, AES256Key};
-use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::errors::{KEMError, KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{HashAlgParams, RNG};
-use bouncycastle_dhkem::hazmat::{self as labeled, MAX_NH};
-use bouncycastle_dhkem::{AuthDecapsulatingKey, AuthEncapsulatingKey, HpkeKem};
 use bouncycastle_digest::hmac::HMACParams;
 use bouncycastle_digest::sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_ec::dhkem::hazmat::{self as labeled, MAX_NH};
+use bouncycastle_ec::dhkem::{AuthDecapsulatingKey, AuthEncapsulatingKey, HpkeKem};
+use bouncycastle_symmetric::aes::{AES128Key, AES256Key};
 use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20Poly1305Key;
+use bouncycastle_symmetric::modes::GCM;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 
@@ -337,9 +337,9 @@ pub struct Recipient;
 /// Similarly, the recipient's context MUST NOT be used for encryption"):
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES128Key;
-/// use bouncycastle_cipher::modes::GCM;
-/// use bouncycastle_ed::x25519::keygen;
+/// use bouncycastle_symmetric::aes::AES128Key;
+/// use bouncycastle_symmetric::modes::GCM;
+/// use bouncycastle_ec::ed::x25519::keygen;
 /// use bouncycastle_hybrid::hpke::{HpkeParams, HpkeSender};
 /// use bouncycastle_rng::HashDRBG_SHA512;
 /// use bouncycastle_digest::sha2::SHA256;
@@ -353,6 +353,18 @@ pub struct Recipient;
 /// ```
 ///
 /// The key, the base nonce and the exporter secret are wiped when the context is dropped.
+///
+/// Not `Clone`: two copies of a sender's context would seal two messages under one nonce.
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_symmetric::aes::AES128Key;
+/// use bouncycastle_symmetric::modes::GCM;
+/// use bouncycastle_hybrid::hpke::{HpkeContext, Sender};
+/// use bouncycastle_digest::sha2::SHA256;
+///
+/// fn cloneable<T: Clone>() {}
+/// cloneable::<HpkeContext<Sender, SHA256, AES128Key<GCM>>>();
+/// ```
 ///
 /// # 🚨 Security Considerations 🚨
 ///
@@ -502,10 +514,10 @@ impl<Dir, H: HpkeKdf, A: HpkeAead> HpkeContext<Dir, H, A> {
     /// 8161 bytes under HKDF-SHA256 (255 * 32 = 8160) does not build:
     ///
     /// ```compile_fail
-    /// use bouncycastle_aes::AES128Key;
-    /// use bouncycastle_cipher::modes::GCM;
+    /// use bouncycastle_symmetric::aes::AES128Key;
+    /// use bouncycastle_symmetric::modes::GCM;
     /// use bouncycastle_core::key_material::KeyMaterial;
-    /// use bouncycastle_ed::x25519::keygen;
+    /// use bouncycastle_ec::ed::x25519::keygen;
     /// use bouncycastle_hybrid::hpke::{HpkeParams, HpkeSender};
     /// use bouncycastle_rng::HashDRBG_SHA512;
     /// use bouncycastle_digest::sha2::SHA256;

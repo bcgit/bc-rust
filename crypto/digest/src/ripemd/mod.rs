@@ -55,6 +55,9 @@
 //! ## HMAC
 //! See [hmac].
 //!
+//! ## HKDF
+//! See [hkdf].
+//!
 //! # Memory Usage
 //!
 //! No heap memory is used by the algorithm itself; the `Vec<u8>`-returning convenience methods
@@ -69,16 +72,19 @@
 //!
 //! Per-call stack usage does not depend on the data length. Measured as the deepest frame chain
 //! from the call into each entry point in the release build (x86-64 Linux, rustc 1.97.0-nightly,
-//! return addresses included; see `mem_usage_benches/src/bench_ripemd_mem_usage.rs`), in bytes:
+//! return addresses included; see `mem_usage_benches/src/bench_ripemd_mem_usage.rs`), in bytes.
+//! The deepest frame below the hashing entry points is the 64-word stack wipe that follows each
+//! compression, 544 bytes with its return address:
 //!
-//! | Entry point                                   | RIPEMD-128 | RIPEMD-160 | RIPEMD-256 | RIPEMD-320 |
-//! |-----------------------------------------------|------------|------------|------------|------------|
-//! | `do_update`                                   | 248        | 264        | 248        | 264        |
-//! | `do_final_out`                                | 256        | 272        | 256        | 320        |
-//! | `do_final_partial_bits_out`                   | 256        | 272        | 256        | 320        |
-//! | `hash_out` (one-shot)                         | 560        | 512        | 608        | 608        |
-//! | `suspend` / `from_suspended`                  | 8 / 144    | 8 / 8      | 8 / 192    | 8 / 8      |
-//! | `HmacKey::from_key_material` / `mac_out`      |            | 880 / 816  |            |            |
+//! | Entry point                                   | RIPEMD-128 | RIPEMD-160  | RIPEMD-256 | RIPEMD-320 |
+//! |-----------------------------------------------|------------|-------------|------------|------------|
+//! | `do_update`                                   | 600        | 600         | 600        | 600        |
+//! | `do_final_out`                                | 640        | 640         | 640        | 688        |
+//! | `do_final_partial_bits_out`                   | 688        | 688         | 688        | 736        |
+//! | `hash_out` (one-shot)                         | 832        | 768         | 864        | 832        |
+//! | `suspend` / `from_suspended`                  | 8 / 144    | 8 / 8       | 8 / 192    | 8 / 8      |
+//! | `HmacKey::from_key_material` / `mac_out`      |            | 2832 / 1216 |            |            |
+//! | `HKDF_RIPEMD160::extract_and_expand_out`      |            | 4432        |            |            |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -95,8 +101,9 @@
 //! * All four are Merkle-Damgard constructions and so are subject to length extension:
 //!   `H(k || m)` is not a secure MAC. Use HMAC ([`ripemd::hmac`](crate::ripemd::hmac)) for keyed hashing.
 //! * The chaining variable and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
-//!   zeroized on drop. Transient copies (the line variables and message words) in registers and
-//!   stack locals during compression are not zeroized.
+//!   zeroized on drop. The compression function runs in a frame of its own, and the stack it used,
+//!   where the line variables and message words are spilled, is overwritten after it returns (in
+//!   an optimised build; an unoptimised build's frames are larger than the overwrite).
 //! * The implementation contains no data-dependent branches or table lookups.
 //! * Message length: a message of 2^61 bytes or more is hashed with its bit length reduced
 //!   modulo 2^64, as RFC 1320 Sec 3.2 specifies.
@@ -125,6 +132,7 @@ mod common;
 mod ripemd128;
 mod ripemd160;
 
+pub mod hkdf;
 pub mod hmac;
 
 use self::common::BLOCK_LEN;

@@ -3,8 +3,8 @@
 # DHKEM(X448, HKDF-SHA512) encapsulation (RFC 9180).
 #
 # The known answers are copied by a script from the in-tree tests: the key agreement is RFC 7748
-# Section 6.2 (crypto/ed/tests/x448_tests.rs); the decapsulation is the first kem_id 33 entry of
-# the vectors RFC 9180 Appendix A cites (crypto/ed/tests/x448_dhkem_tests.rs). Hex keys and
+# Section 6.2 (crypto/ec/tests/ed_x448_tests.rs); the decapsulation is the first kem_id 33 entry of
+# the vectors RFC 9180 Appendix A cites (crypto/ec/tests/ed_x448_dhkem_tests.rs). Hex keys and
 # ciphertexts are read under --hex-input; without it they are raw bytes.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

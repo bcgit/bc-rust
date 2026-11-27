@@ -98,8 +98,8 @@ way when adding a harness, or `cargo test --workspace` fails to compile them.
 
 The workspace has four top-level kinds of member:
 
-1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework` and `cipher-test-framework` described below. Most are one primitive each; some, such as `cipher`, hold generic building blocks (modes, padding) as sub-modules; `pqc`, `digest`, `symmetric` and `hybrid` are family crates, holding their primitives as modules (see [the layout below](#sub-crate-layout-convention)). The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is named `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`; the two test frameworks, `cli` and `mem_usage_benches` are `publish = false`, which works because every dev-dependency is path-only and so is dropped from a packaged crate.
-2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::sm3`, `bouncycastle::pqc`), and of a family crate's primitive modules under the names they had as crates (`bouncycastle::mlkem` is `bouncycastle_pqc::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
+1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework` and `cipher-test-framework` described below. Most are one primitive each; `pqc`, `digest`, `symmetric`, `ec`, `modexp` and `hybrid` are family crates, holding their primitives as modules (see [the layout below](#sub-crate-layout-convention)). The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is named `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`; the two test frameworks, `cli` and `mem_usage_benches` are `publish = false`, which works because every dev-dependency is path-only and so is dropped from a packaged crate.
+2. `src/` — the umbrella `bouncycastle` crate, which is just one `pub use` re-export per library crate (`bouncycastle::core`, `::digest`, `::rng`, `::symmetric`, `::ec`, `::pqc`, `::modexp`, `::hybrid`), so a primitive has one path, through its family (`bouncycastle::pqc::mlkem` is `bouncycastle_pqc::mlkem`); there are no flat aliases such as `bouncycastle::mlkem`. It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
 3. `cli/` — the `bc-rust` binary built on top of `bouncycastle`, exposing every primitive as a streaming stdin→stdout subcommand using `clap`.
 4. `mem_usage_benches/` — stand-alone binary crates that measure peak stack usage of algorithms (cannot be done via criterion).
 
@@ -107,7 +107,7 @@ The workspace has four top-level kinds of member:
 
 - `crypto/core` defines the abstract traits (`Hash`, `KDF`, `MACGenerator` / `MACVerifier`, `KEM`, `Signature`, `RNG`, `Algorithm`, `HashAlgParams`, …), error enums (`HashError`, `KDFError`, `KEMError`, `MACError`, `RNGError`, `SignatureError`), and the `KeyMaterial` / `KeyType` wrapper that all sensitive byte buffers are required to use (see `Secret` super-trait requirement in QUALITY_AND_STYLE.md).
 - `crypto/core-test-framework` contains the shared per-trait test suite (`hash.rs`, `kdf.rs`, `kem.rs`, `mac.rs`, `signature.rs`). New implementations of a core trait must be exercised through this framework — it's how trait conformance and error-condition coverage stay consistent across implementations.
-- `crypto/cipher-test-framework` holds the suites every block cipher crate runs over `BlockCipherKey<P, M>`: the keys under every mode through the core suites, the padded and stream-mode wiring checks, and the Wycheproof runners, each generic over the permutation and run at one key length per call. It is a sibling of `core-test-framework` rather than part of it because it names `bouncycastle-cipher`'s types, and that crate's own tests depend on the core framework. A new block cipher's `mode_key_tests.rs`, `padded_alias_tests.rs`, `stream_mode_alias_tests.rs` and `*_wycheproof.rs` are calls into it; what stays in the crate is the cipher's own known answers, aliases and sizes.
+- `crypto/cipher-test-framework` holds the suites every block cipher crate runs over `BlockCipherKey<P, M>`: the keys under every mode through the core suites, the padded and stream-mode wiring checks, and the Wycheproof runners, each generic over the permutation and run at one key length per call. It is a sibling of `core-test-framework` rather than part of it because it names `bouncycastle-symmetric`'s types (`BlockCipherKey`, `modes`, `padding`), and that crate's own tests depend on the core framework. A new block cipher's `mode_key_tests.rs`, `padded_alias_tests.rs`, `stream_mode_alias_tests.rs` and `*_wycheproof.rs` are calls into it; what stays in the crate is the cipher's own known answers, aliases and sizes.
 - There is no factory crate: `bouncycastle-factory` (string-name enums such as `HashFactory` and `MACFactory`) was removed in November 2026, unused inside the workspace. Algorithms are named by type.
 
 Trait/CLI is the standard layering: a new algorithm typically requires (a) the primitive crate, (b) implementing the relevant `core` trait, (c) a CLI subcommand in `cli/src/*_cmd.rs` registered in `cli/src/main.rs`.
@@ -119,18 +119,24 @@ A typical primitive crate looks like:
 ```
 crypto/<name>/
   Cargo.toml          # depends on bouncycastle-core; dev-deps on core-test-framework, rng, criterion
-  src/lib.rs          # must contain #![forbid(unsafe_code)], #![forbid(missing_docs)], aim for #![no_std]
+  src/lib.rs          # must contain #![no_std], #![forbid(unsafe_code)], #![forbid(missing_docs)]
   src/*.rs            # implementation
   tests/*.rs          # integration tests, usually driven via core-test-framework
   benches/*.rs        # criterion benches (declared as [[bench]] with harness=false)
 ```
 
 A family crate holds its primitives as modules, each with the layout it had as a crate:
-`bouncycastle-hybrid` (`crypto/hybrid`: `hpke`), `bouncycastle-digest` (`crypto/digest`: `blake2`,
+`bouncycastle-hybrid` (`crypto/hybrid`: `hpke`), `bouncycastle-modexp` (`crypto/modexp`: `rsa`),
+`bouncycastle-digest` (`crypto/digest`: `blake2`,
 `blake3`, `concatkdf`, `hkdf`, `hmac`, `pbkdf2`, `ripemd`, `scrypt`, `sha1`, `sha2`, `sha3`, `sm3`,
-`x963kdf`), `bouncycastle-symmetric`
-(`crypto/symmetric`: `aria`, `ascon`, `camellia`, `chacha20`, `chacha20_poly1305_aead`, `kbkdf`,
-`poly1305`, `sm4`, `tdes`) and `bouncycastle-pqc` (`crypto/pqc`: `mldsa`,
+`x963kdf`), `bouncycastle-ec` (`crypto/ec`: `dhkem`, `eccdh`, `ecdsa`, `ed`, `sm2`, beside the
+curve arithmetic at the crate root), `bouncycastle-symmetric`
+(`crypto/symmetric`: `aes`, `aria`, `ascon`, `camellia`, `chacha20`, `chacha20_poly1305_aead`,
+`kbkdf`, `poly1305`, `sm4`, `tdes`, under the block cipher modes, padding, stream helpers and
+`BlockCipherKey` at its root, which live in the private module `src/framework/` and are
+re-exported from `lib.rs`, so their paths are `bouncycastle_symmetric::modes` and the like; their
+tests are `tests/modes/`, `tests/padding/` and the unprefixed files) and `bouncycastle-pqc`
+(`crypto/pqc`: `mldsa`,
 `mldsa_lowmemory`, `mlkem`, `mlkem_lowmemory`, and the `mldsa_common` / `mlkem_common` modules the
 two forms of each share).
 
@@ -146,11 +152,38 @@ crypto/<family>/
 ```
 
 Inside a family crate `pub(crate)` reaches every primitive in it, so an item private to one
-primitive is `pub(in crate::<module>)`. A module prefix is also a prefix of its siblings' (`mldsa_`
+primitive is `pub(in crate::<module>)`, and one private to the symmetric framework is
+`pub(in crate::framework)` (`pub(in crate::framework::modes)` within the modes: a restriction
+names the defining path, not the re-export). A module prefix is also a prefix of its siblings'
+(`mldsa_`
 of `mldsa_lowmemory_` and `mldsa_common_`), so select one module's test files by name rather than
-by a `--test 'mldsa_*'` glob.
+by a `--test 'mldsa_*'` glob. In `crypto/ec` the `sm2_` prefix is shared by the SM2 curve's
+arithmetic tests at the root (`sm2_field_tests.rs`) and the `sm2` module's (`sm2_sm2_tests.rs`).
 
-`#![no_std]` is the long-term goal but the `core` crate still has a `Vec`-removal TODO blocking it (see the comment at the top of `crypto/core/src/lib.rs`). Don't add new `Vec` usage where a const-sized array would do.
+Every library crate is `#![no_std]` (the two test frameworks are not), and the workspace dependency table takes every
+one that has features with `default-features = false`, so a `--no-default-features` build of a library crate, or of the
+umbrella, has no `std` and no allocator. Each of `core`, `digest`, `symmetric`, `ec`, `pqc`, `modexp`, `hybrid`, `rng`
+and the umbrella has `default = ["std"]`, `std` implying `alloc`, and both forwarding to the crates below, except that
+`rng`'s forward to nothing (see the third point). `alloc` gates everything that needs a heap (the `Vec`-, `String`- and
+`Box`-returning one-shots and the `_boxed` finals in `core`, scrypt's `KDF` impl and the `Vec` one-shots in `digest` and
+`symmetric`, `Sp80090ADrbg::generate` in `rng`). Nothing is gated on `std` alone except `bouncycastle-rng`'s
+constructors that seed from the operating system (`new`, `new_from_os`, `Default`) and its optional `getrandom`
+dependency, so without `std` a DRBG is seeded by the caller (`hazmat::NewUninitialized`, then `instantiate`) and there
+is no fallback seed. The umbrella, `cli`, `mem_usage_benches` and the two test frameworks turn `std` on. What follows
+from that:
+
+- A crate whose tests, benches or doc examples use a gated API names the feature under `[dev-dependencies]`
+  (`bouncycastle-core = { workspace = true, features = ["std"] }`), never on its normal dependency; a test that needs a
+  feature of its own crate carries `required-features = ["alloc"]`.
+- A crate that depends on another library crate forwards its `std` and `alloc` to it, and never names a feature on
+  the dependency itself.
+- Nothing a crate dev-depends on may turn that crate's own features back on, or its `--no-default-features` test
+  build stops being one: check with `cargo tree -p <crate> --no-default-features -e features -i <crate>`, which
+  lists the features the crate is built with (the uninverted tree does not show them). `bouncycastle-rng`'s `std`
+  and `alloc` forward to no other crate for that reason: `core` and `digest` dev-depend on it (with `std`, for the
+  OS-seeded DRBG their tests draw from), and it uses nothing that is gated in either.
+- New code gets no `Vec` where a const-sized array would do; what allocates goes behind `alloc` and imports from
+  `alloc::`, not `std::`.
 
 ## Project-specific conventions
 
@@ -259,7 +292,7 @@ What that taught, as mechanics for the next trait that sheds a constructor:
 - **The key length stops at the key.** `BlockPermutation<BLOCK_LEN>` carries the block methods
   and `ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` adds only `new`, so a worker and a mode's
   `Mode<P>` impl bound on the former and never name a key length; the GCM, GMAC and CMAC impls
-  are generic in `cipher` for that reason. `KEY_LEN` stays on the mode traits' worker-producing
+  are generic in `bouncycastle_symmetric::modes` for that reason. `KEY_LEN` stays on the mode traits' worker-producing
   halves as the tie between a key's length and its permutation's, through
   `P: ElectronicCodeBook<KEY_LEN, ..>`, which is what keeps a key object's role impls to the one
   length. A mode that must know the block length (`CMAC<BLOCK_LEN>`, `CTR<N, BLOCK_LEN>`) takes
@@ -269,7 +302,7 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   wrong type is rejected" belongs to the construction suite, once, not to each mode's tests.
   Known-answer suites pin their IV through `create_encryptor_nonce`.
 - **Workers borrow the key.** The role and mode traits hand out workers through a generic
-  associated type with a lifetime, `type Encryptor<'k>`, and the cipher-crate workers hold
+  associated type with a lifetime, `type Encryptor<'k>`, and the `bouncycastle_symmetric::modes` workers hold
   `&'k` to the mode's key state, so `create_encryptor` copies no schedule and a worker cannot
   outlive its key. Spell the mode traits' GAT bound `where P: 'k`, not `where Self::KeyState: 'k`:
   rustc rejects a generic impl whose key state is a struct over `P` (E0276) under the latter. A
@@ -362,7 +395,7 @@ direction in the worker types. Mechanics to reuse:
 - **Two traits with a `do_update` each need two types.** A type implementing both makes
   `w.do_update(..)` ambiguous wherever both traits are in scope, so every MAC worker carries
   `Dir` (`HMAC<'k, H, Dir>`, `Poly1305<Dir>`) and implements one trait per marker. The
-  markers live in `core::direction` so that crates `cipher` does not reach can name them.
+  markers live in `core::direction` so that crates `bouncycastle-symmetric` does not reach can name them.
 - **A const the parameters already spell as a type reaches a const parameter through an
   associated-type equality bound.** `HmacKey<H>: MacGenerationKey<N> where
   H: HMACParams<MACKey = KeyMaterial<N>>`: the solver normalizes `MACKey` and unifies `N`, so
@@ -386,9 +419,10 @@ end its message, and took `Clone` off the cipher workers. QUALITY_AND_STYLE.md h
 - **A by-value final is not in the vtable.** `do_final(self)` cannot be called on `Box<dyn ..>`,
   and a `self: Box<Self>` twin written as a forward moves the worker out of its box, leaving the
   heap block unwiped. Each worker trait therefore has a required `&mut self` finishing method
-  (`finish_into`, `finish_encrypt`, `finish_mac_into`, `finish_signature_verify`, ...; `Hash`
-  has a second for a partial last byte); the consuming finals and their `_boxed` twins are
-  provided over it, and an implementor writes only the `finish_` methods.
+  (`finish_into`, `finish_encrypt`, `finish_decrypt_into`, `finish_mac_into`,
+  `finish_signature_verify`, ...; `Hash` has a second for a partial last byte); the consuming
+  finals and their `_boxed` twins are provided over it, and an implementor writes only the
+  `finish_` methods.
 - **The token guards against accidents, not against intent.** The `finish_` methods take a
   `&FinishToken` whose constructor is private to `core`, so only a provided final calls them.
   Code that owns a worker without being one (a KDF's block loop, `MuBuilder::do_final`,
@@ -399,13 +433,13 @@ end its message, and took `Clone` off the cipher workers. QUALITY_AND_STYLE.md h
   `do_*_final` no longer compiles, the `finish_` method being the required one; convert a
   branch's workers before it merges a release tip that has the token (`feature/rsa-sig`'s
   signers and verifiers had to be).
-- **Not-`Clone` is asserted at compile time, per crate.** `crypto/aes/tests/worker_not_clone_tests.rs`
-  lists the cipher crate's workers over the AES permutation and fails to compile if one becomes
+- **Not-`Clone` is asserted at compile time, per crate.** `crypto/symmetric/tests/aes_worker_not_clone_tests.rs`
+  lists the `bouncycastle_symmetric::modes` workers over the AES permutation and fails to compile if one becomes
   `Clone`; add a new mode's workers to it. A worker in its own crate is asserted there, by the
   same test (Ascon) or a doctest (ChaCha20, Poly1305). A wrapper over another worker must be
   named over a `Clone` inner type, or a derived `Clone`, being conditional, passes unnoticed.
-  Check a new assertion by putting `Clone` back on the type. `Tkw`, `HMAC`, the BLAKE MACs
-  and `HpkeContext` are not `Clone` but have no assertion yet.
+  Check a new assertion by putting `Clone` back on the type. `Tkw` is in that test over TDEA;
+  `HMAC`, `HKDF`, the BLAKE MACs and `HpkeContext` carry `compile_fail` doctests.
 - **`git stash create` fails with an intent-to-add file in the tree;** stage the file before
   pushing a work-in-progress tree to apollo for a mutants run.
 
@@ -418,7 +452,7 @@ software key builds the engine from it. If the description trait or a descriptio
 modified, that property is the one to preserve: every constructor parameter of the KDF
 (HKDF's salt, and whatever a later KDF takes) stays a readable field of the description, never
 only inside the engine it builds, and a parameter with no readable form is a design error, not
-an implementation detail. `crypto/eccdh/tests/token_key_tests.rs` is the check: a key holding no
+an implementation detail. `crypto/ec/tests/eccdh_token_key_tests.rs` is the check: a key holding no
 material agrees through the same parameters as the software key by reading them.
 
 ## Working from specifications
@@ -469,12 +503,15 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 ## CI
 
-Eight workflows under `.github/workflows/`, all triggered by pull requests:
+Twelve workflows under `.github/workflows/`, all triggered by pull requests:
 
-- `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then
-  `cargo test -p bouncycastle-digest --no-default-features` on the crate's unit tests and scrypt's
-  caller-memory tests (the vector suites need bc-test-data, which that job does not check out),
-  since `--all-features` never builds a crate with a default feature off.
+- `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then, since
+  `--all-features` never builds a crate with a default feature off: `cargo check -p <crate>
+  --no-default-features`, and again with `--features alloc`, for each `#![no_std]` library crate
+  (host target, so it catches a use of `std`, or of `alloc` outside the feature, but not a
+  bare-metal link), `bouncycastle-core`'s and `bouncycastle-rng`'s tests with neither feature and
+  with `alloc` alone, and `cargo test -p bouncycastle-digest --no-default-features` on the crate's unit tests and scrypt's
+  caller-memory tests (the vector suites need bc-test-data, which that job does not check out).
 - `rust-test.yml`: `cargo test --all` on stable, with `bcgit/bc-test-data` and `C2SP/wycheproof`
   checked out beside the repository. Wycheproof is pinned to a commit (`ref:` in the workflow), so
   that a change upstream does not fail an unrelated PR: a vector suite that is strict about the
@@ -484,30 +521,84 @@ Eight workflows under `.github/workflows/`, all triggered by pull requests:
 - `rust-docs.yml`: `cargo doc --all` on stable.
 - `aes-ct-asm.yml`: `dev_scripts/check_aes_ct_asm.sh` on **nightly** with `rust-src`: builds
   `dev_scripts/aes_ct_harness` for thumbv6m and riscv32i and greps the assembly of the AES round-key
-  widening for a multiply, call or branch (see the comment on `PlaneWord::splat` in the aes crate).
+  widening for a multiply, call or branch (see the comment on `PlaneWord::splat` in `crypto/symmetric/src/aes/bitslice.rs`).
+- `no-std.yml`: the bare-metal build check on **nightly** with `rust-src`: `cargo check -Zbuild-std=core
+  --target thumbv6m-none-eabi --no-default-features` on the nine library crates and the umbrella, which
+  fails on a use of `std` or of an allocator, since `-Zbuild-std=core` builds no `alloc`, and on a path to
+  `getrandom`, which has no backend for that target.
 - `oaep-ct.yml`: `dev_scripts/check_oaep_ct.sh` with valgrind and **nightly** `rust-src`: runs
   `dev_scripts/oaep_ct_harness` (the EME-OAEP decode, included by path) under memcheck with the encoded
   message undefined, with a variable-time control, and greps its thumbv6m and riscv32i assembly for a
   multiply, divide or unexpected call.
-- `rsa-ct-stack.yml`: two checks of `crypto/rsa`, on the runner's stable toolchain. `dev_scripts/check_rsa_ct.sh`
+- `rsa-ct-stack.yml`: two checks of `crypto/modexp`'s `rsa` module, on the runner's stable toolchain. `dev_scripts/check_rsa_ct.sh`
   with valgrind runs `dev_scripts/rsa_ct_harness` (the Montgomery setup over a secret modulus, the checked
-  CRT and a key constructor's congruences; the last two through the crate's `ct_harness` module, which exists
+  CRT and a key constructor's congruences; the last two through the module's `ct_harness`, which exists
   only under `--cfg bouncycastle_rsa_ct_harness`) under memcheck with the key undefined, with controls that must
   be reported. `dev_scripts/check_rsa_stack.sh` runs `dev_scripts/rsa_stack_harness`, which paints the stack, runs
   each private-key operation and searches what it used for the key and what was derived from it. The second is
   sized by measurement for an x86-64 release build, so a new compiler that lays frames out deeper fails it: that
   is the check working, and the fix is to re-measure the wipe sizes, not to drop the step.
+- `sm2-stack.yml`: `dev_scripts/check_sm2_stack.sh` on stable, as a matrix over an x86-64 and an arm64 runner
+  (`ubuntu-latest`, `ubuntu-24.04-arm`), since the two lay their frames out differently, over
+  `dev_scripts/sm2_stack_harness`, which paints the stack, runs each form of SM2 encryption and decryption and each
+  handling of the private key, and checks what it used two ways: a search for the key, `k`, the shared point, the
+  key stream and the message, and a comparison of two runs over different secrets, which must leave the same bytes.
+  Sized by measurement like the RSA one, and failing for the same reason: re-measure `WIPED_STACK_WORDS` and
+  `KEY_WIPED_STACK_WORDS` in `crypto/ec/src/sm2/encryption_core.rs`, or `WIPED_STACK_WORDS` in `keys.rs` and
+  `sm2.rs` for the signing key and signing (the harness reports the depth with the wipe's body taken out).
+- `ecdsa-stack.yml`: `dev_scripts/check_ecdsa_stack.sh`, the same shape and matrix over
+  `dev_scripts/ecdsa_stack_harness`, which runs ECDSA's and ECC CDH's key decoding, encoding, generation and
+  `derive_pk`, the drawing of `k`, the one-shots and the signers' finals, on all seven curves, ECC CDH's agreement
+  (raw and through its KDFs), DHKEM over the NIST curves and X448 with its labeled HKDF steps, and, in its `ed`
+  module, Ed25519's and Ed448's key generation, decoding, copies, encodings and every form of signing and X25519's
+  and X448's keys and agreement (X25519's DHKEM, and the comparison of its scalar multiplications, are reported,
+  not failed), searching for the keys, `k` or EdDSA's `r` and prefix, the RNG's output, the DH products and the
+  derived secrets and comparing two runs over different keys. Its wipes scale with the curve's limb count:
+  re-measure `DECODE_STACK_*`, `ENCODE_STACK_*`, `DERIVE_STACK_*`, `AGREE_STACK_*` and `KEYGEN_STACK_*` in
+  `crypto/ec/src/curve.rs`, `SIGN_STACK_*` in `crypto/ec/src/ecdsa/ecdsa.rs`, and the fixed
+  `LABELED_STACK_WORDS` and `DERIVE_KEY_PAIR_STACK_WORDS` in `crypto/ec/src/dhkem/`, `WIPED_STACK_WORDS` in
+  `crypto/ec/src/ed/{ed25519,ed448}/{point,scalar}.rs` and `x448.rs`, `BY_VALUE_STACK_WORDS` in
+  `crypto/ec/src/ed/{ed25519,ed448}/keys.rs`, `x25519.rs` and `x448.rs`, and `KEYGEN_STACK_WORDS` in the two
+  `keys.rs`.
+- `symmetric-stack.yml`: `dev_scripts/check_symmetric_stack.sh`, the same shape and matrix over
+  `dev_scripts/symmetric_stack_harness`, which runs HMAC's key construction, one-shots and streaming
+  workers (SHA-256, SHA-512, SHA3-256, SM3, RIPEMD-160), HKDF's extract, expand and `KDF` derivation,
+  BLAKE3's three modes with its squeezer, and AES-GCM-SIV's encryption and decryption, searching for
+  the keys, pad states, PRK and OKM, chaining values, derived keys, POLYVAL state and message, and
+  comparing two runs over different secrets (an HMAC worker's by-value final, PBKDF2 and an AES
+  key's construction are reported, not failed). Re-measure `KEY_WIPED_STACK_WORDS`,
+  `LOAD_WIPED_STACK_WORDS` and `FINISH_WIPED_STACK_WORDS` in `crypto/digest/src/hmac/mod.rs`,
+  `HKDF_WIPED_STACK_WORDS` and `HKDF_LARGE_STATE_WIPED_STACK_WORDS` in `crypto/digest/src/hkdf/mod.rs`,
+  `WIPED_STACK_WORDS`, `BLOCK_WIPED_STACK_WORDS` and `KEY_WIPED_STACK_WORDS` in
+  `crypto/digest/src/blake3/blake3.rs`, the hashes' `COMPRESS_WIPED_STACK_WORDS` and Keccak's
+  `WIPED_STACK_WORDS`, and `WIPED_STACK_WORDS` in `crypto/symmetric/src/framework/modes/gcm_siv.rs`
+  (`STACK_DETAIL=1` prints how far below the call each finding lies).
 - `publish_doc_benches_to_ghpages.yaml`: builds rustdoc and runs `quality_stats.sh`; on `main` it also
   publishes docs and code stats to GitHub Pages (`https://bcgit.github.io/bc-rust/`). Its bench step is
   commented out because the benches are too slow on the hosted runner, so benchmark figures come from a
   developer's machine, not CI.
 
+A stack check's pass on x86-64 does not carry to another target: how deep the frames a wipe must
+reach go is the target's. That is why the SM2, ECDSA and symmetric stack checks run on arm64 as
+well, and why a target they do not run on is not covered by them. The wipe itself
+(`bouncycastle_utils::stack_wipe`) writes every byte from its caller's stack pointer down to the
+depth asked for, checked on x86-64, aarch64, thumbv6m and riscv32i: one frame holds an array of
+that size, and a leaf that saves no callee-saved register then writes the 128 bytes directly
+below the caller, where that frame keeps its return address, saved registers and padding. That
+holds while the leaf stays one and the first frame keeps under 128 bytes above its array (at
+most 40 measured). The SM2 and ECDSA harnesses run each operation with the callee-saved
+registers zeroed (`dev_scripts/stack_scrubbed_call.rs`): arm64 has ten, and the harness's own
+copies of a key otherwise reached the stack through a library frame's register saves. Their
+`STACK_DETAIL=1` prints how far below the call each finding lies.
+
 `cargo test --all` is the workspace run, so a failing test does block a PR; what CI does not run is
 `cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.
 
-The gitea origin has its own copies of five of the pull-request checks under `.gitea/workflows/`
-(there is no Pages job, and `oaep-ct.yml` and `rsa-ct-stack.yml` have no gitea copy). They differ from the GitHub ones in two ways: the toolchain is installed
-with `rustup` in a shell step, and the test job takes its vectors from the runner's read-only
+The gitea origin has its own copies of the eleven pull-request checks under `.gitea/workflows/`
+(there is no Pages job). They differ from the GitHub ones in four ways: the toolchain is installed
+with `rustup` in a shell step; valgrind is installed with or without `sudo`, whichever the
+runner's container allows; `sm2-stack.yml`, `ecdsa-stack.yml` and `symmetric-stack.yml` run on
+x86-64 only, there being no arm64 runner; and the test job takes its vectors from the runner's read-only
 `/bc-test-data` and `/wycheproof` mounts, failing if either is missing. Wycheproof's are read out
 of the mounted clone at the pinned commit (`git archive`), wherever the clone's `HEAD` is, so the
 runner's clone needs a fetch only when the pin moves past what it holds. The pin is therefore

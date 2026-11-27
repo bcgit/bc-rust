@@ -59,8 +59,8 @@ mod mldsa_tests {
     use bouncycastle_core::traits::{
         Hash, PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier, Suspendable,
     };
-    use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::signature::*;
+    use bouncycastle_core_test_framework::{DUMMY_SEED, FailingRNG};
     use bouncycastle_pqc::mldsa_lowmemory::{
         MLDSA_TR_LEN, MLDSA44, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65, MLDSA65PrivateKey,
         MLDSA65PublicKey, MLDSA87, MLDSA87PrivateKey, MLDSA87PublicKey, MuBuilder,
@@ -161,7 +161,7 @@ mod mldsa_tests {
 
     #[test]
     fn test_framework_signature() {
-        let tf = TestFrameworkSignature::new(true);
+        let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
 
         tf.test_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(
             || MLDSA44::keygen(&mut DefaultRNG::default()),
@@ -180,7 +180,7 @@ mod mldsa_tests {
     /// The deterministic variant, through the framework's suite, on the seed key.
     #[test]
     fn test_framework_deterministic_signature() {
-        let tf = TestFrameworkSignature::new(true);
+        let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
         tf.test_deterministic_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
         tf.test_deterministic_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_SIG_LEN>(|| MLDSA65::keygen(&mut DefaultRNG::default()), false);
         tf.test_deterministic_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_SIG_LEN>(|| MLDSA87::keygen(&mut DefaultRNG::default()), false);
@@ -204,7 +204,7 @@ mod mldsa_tests {
     #[test]
     #[ignore]
     fn test_framework_signature_extensive() {
-        let tf = TestFrameworkSignature::new(true);
+        let tf = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Bound);
 
         tf.test_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(
             || MLDSA44::keygen(&mut DefaultRNG::default()),
@@ -1010,6 +1010,19 @@ mod mldsa_tests {
 
         sk.sign_mu_out(&mu, &mut FixedSeedRNG::new([1u8; 32]), &mut sig_buf).unwrap();
         pk.verify(msg, None, &sig_buf).unwrap();
+    }
+
+    #[test]
+    fn sign_mu_out_clears_the_output_when_the_rng_fails() {
+        let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
+        let mu = pk.compute_mu(b"message", None).unwrap();
+
+        let mut sig_buf = [0xA5u8; MLDSA44_SIG_LEN];
+        assert!(matches!(
+            sk.sign_mu_out(&mu, &mut FailingRNG, &mut sig_buf),
+            Err(SignatureError::RNGError(_))
+        ));
+        assert_eq!(sig_buf, [0u8; MLDSA44_SIG_LEN]);
     }
 
     #[test]

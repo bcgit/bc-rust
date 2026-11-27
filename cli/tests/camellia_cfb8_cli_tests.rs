@@ -8,7 +8,7 @@
 //!
 //! There is no published Camellia CFB8 vector -- OpenSSL's `evpciph_camellia.txt` says in as many
 //! words that it does not carry `CFB{1,8}-CAMELLIAxxx` -- so instead the commands are required to
-//! agree with `bouncycastle_cipher::modes::Cfb8` over the Camellia permutation, which
+//! agree with `bouncycastle_symmetric::modes::Cfb8` over the Camellia permutation, which
 //! `crypto/symmetric/tests/camellia_stream_mode_tests.rs` pins against the SP 800-38A Sec 6.3 equations at
 //! `s = 8`.
 
@@ -27,8 +27,8 @@ const KEY_256: &str = "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30
 /// take the IV the CLI generated, hand the body to the library, and the plaintext must come back.
 #[test]
 fn the_commands_are_cfb8_over_camellia() {
-    use bouncycastle::camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
-    use bouncycastle::cipher::modes::CFB8;
+    use bouncycastle::symmetric::camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
+    use bouncycastle::symmetric::modes::CFB8;
 
     for len in [1usize, 5, 16, 17, 64] {
         let plaintext = pseudo_random(len, len as u32);
@@ -69,8 +69,8 @@ fn the_commands_are_cfb8_over_camellia() {
 /// that IV.
 #[test]
 fn a_supplied_iv_is_used_and_not_written() {
-    use bouncycastle::camellia::Camellia128Key;
-    use bouncycastle::cipher::modes::CFB8;
+    use bouncycastle::symmetric::camellia::Camellia128Key;
+    use bouncycastle::symmetric::modes::CFB8;
 
     let iv = "000102030405060708090a0b0c0d0e0f";
     let plaintext = pseudo_random(37, 5);

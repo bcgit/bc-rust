@@ -2,6 +2,7 @@ use crate::sha2::SHA256InitValue;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, HashOneShot, Suspendable};
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
@@ -32,105 +33,135 @@ pub(in crate::sha2) const SHA256_H0: [u32; 8] = [
     0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19,
 ];
 
-/// FIPS 180-4 s. 4.1.2 (4.2) Ch(x, y, z) = (x AND y) XOR (NOT x AND z)
-/// Mutants note: the two masks are disjoint, so `^` and `|` give identical results here; a
-/// surviving `^`/`|` swap in this function is an equivalent mutant, not a missing test.
-#[inline]
+/// FIPS 180-4 s. 4.1.2 (4.2) Ch(x, y, z) = (x AND y) XOR (NOT x AND z), written as
+/// ((y XOR z) AND x) XOR z: each bit of x selects y (x = 1) or z (x = 0) either way.
+#[inline(always)]
 const fn ch(x: u32, y: u32, z: u32) -> u32 {
-    (x & y) ^ (!x & z)
+    ((y ^ z) & x) ^ z
 }
 
-/// FIPS 180-4 s. 4.1.2 (4.3) Maj(x, y, z) = (x AND y) XOR (x AND z) XOR (y AND z).
-/// Written in the equivalent form (x AND y) OR (z AND (x XOR y)), which saves an operation.
-/// Mutants note: the two masks are disjoint, so `^` and `|` give identical results here; a
-/// surviving `^`/`|` swap in this function is an equivalent mutant, not a missing test.
-#[inline]
-const fn maj(x: u32, y: u32, z: u32) -> u32 {
-    (x & y) | (z & (x ^ y))
-}
+// The four functions below fold each sum of rotations into nested rotations, using
+// ROTR^n(x) XOR ROTR^n(y) = ROTR^n(x XOR y): fewer instructions on a target whose rotate
+// overwrites its operand, the same result.
 
 /// FIPS 180-4 s. 4.1.2 (4.4) Sigma0(x) = ROTR2(x) XOR ROTR13(x) XOR ROTR22(x)
-#[inline]
+/// = ROTR2(x XOR ROTR11(x XOR ROTR9(x)))
+#[inline(always)]
 const fn sum0(x: u32) -> u32 {
-    x.rotate_right(2) ^ x.rotate_right(13) ^ x.rotate_right(22)
+    ((x.rotate_right(9) ^ x).rotate_right(11) ^ x).rotate_right(2)
 }
 
 /// FIPS 180-4 s. 4.1.2 (4.5) Sigma1(x) = ROTR6(x) XOR ROTR11(x) XOR ROTR25(x)
-#[inline]
+/// = ROTR6(x XOR ROTR5(x XOR ROTR14(x)))
+#[inline(always)]
 const fn sum1(x: u32) -> u32 {
-    x.rotate_right(6) ^ x.rotate_right(11) ^ x.rotate_right(25)
+    ((x.rotate_right(14) ^ x).rotate_right(5) ^ x).rotate_right(6)
 }
 
 /// FIPS 180-4 s. 4.1.2 (4.6) sigma0(x) = ROTR7(x) XOR ROTR18(x) XOR SHR3(x)
-#[inline]
+/// = ROTR7(x XOR ROTR11(x)) XOR SHR3(x)
+#[inline(always)]
 const fn theta0(x: u32) -> u32 {
-    x.rotate_right(7) ^ x.rotate_right(18) ^ (x >> 3)
+    (x.rotate_right(11) ^ x).rotate_right(7) ^ (x >> 3)
 }
 
 /// FIPS 180-4 s. 4.1.2 (4.7) sigma1(x) = ROTR17(x) XOR ROTR19(x) XOR SHR10(x)
-#[inline]
+/// = ROTR17(x XOR ROTR2(x)) XOR SHR10(x)
+#[inline(always)]
 const fn theta1(x: u32) -> u32 {
-    x.rotate_right(17) ^ x.rotate_right(19) ^ (x >> 10)
+    (x.rotate_right(2) ^ x).rotate_right(17) ^ (x >> 10)
+}
+
+/// FIPS 180-4 s. 6.2.2 step 1 for 16 <= t <= 63: W_t = sigma1(W_t-2) + W_t-7 + sigma0(W_t-15) +
+/// W_t-16, with its operands named by their offset from W_t-16.
+#[inline(always)]
+const fn schedule(w_t16: u32, w_t15: u32, w_t7: u32, w_t2: u32) -> u32 {
+    theta1(w_t2).wrapping_add(w_t7).wrapping_add(theta0(w_t15)).wrapping_add(w_t16)
+}
+
+/// FIPS 180-4 s. 6.2.2 step 3, one round, with `kw` = K_t + W_t. The caller renames the working
+/// variables instead of moving them (h = g, g = f, ...), so the spec's new e lands in `d` and its
+/// new a in `h`.
+///
+/// Maj(a, b, c) is computed as ((a XOR b) AND (b XOR c)) XOR b: where a = b that is b, the
+/// majority, and otherwise c, which breaks the tie. b XOR c is this round's `c_xor_b`, the a XOR b
+/// that the previous round returned (its a and b are this round's b and c), and this round's
+/// a XOR b is returned for the next.
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+const fn round(
+    a: u32,
+    b: u32,
+    c_xor_b: u32,
+    d: &mut u32,
+    e: u32,
+    f: u32,
+    g: u32,
+    h: &mut u32,
+    kw: u32,
+) -> u32 {
+    // T1 = h + Sigma1(e) + Ch(e, f, g) + K_t + W_t
+    let t1 = h.wrapping_add(sum1(e)).wrapping_add(ch(e, f, g)).wrapping_add(kw);
+    // e = d + T1
+    *d = d.wrapping_add(t1);
+    // a = T1 + T2, where T2 = Sigma0(a) + Maj(a, b, c)
+    let a_xor_b = a ^ b;
+    *h = t1.wrapping_add(sum0(a)).wrapping_add((a_xor_b & c_xor_b) ^ b);
+    a_xor_b
 }
 
 /// FIPS 180-4 s. 6.2.2, one iteration of the outer loop: absorbs a single 512-bit message block
-/// into the hash value `s` (H(i-1) in, H(i) out).
+/// into the hash value `s` (H(i-1) in, H(i) out), with `w` as the message schedule's storage.
 ///
 /// Written as a `const fn` (hence `while` rather than `for` loops) to match the SHA-512 side, so the
 /// two compression functions can be read side by side against s. 6.2.2 and s. 6.4.2.
-#[inline]
-const fn compress_block(s: &mut [u32; 8], block: &[u8; 64]) {
-    // FIPS 180-4 s. 6.2.2 step 1: prepare the message schedule {W_t}.
-    let mut x = [0u32; 64];
-    // FIPS 180-4 s. 6.2.2 step 1: W_t = M_t(i) for 0 <= t <= 15 (s. 5.2.1: sixteen big-endian 32-bit words).
+#[inline(always)]
+const fn compress_block(s: &mut [u32; 8], block: &[u8; 64], w: &mut [u32; 16]) {
+    // FIPS 180-4 s. 6.2.2 step 1: the message schedule {W_t}, held as the sixteen most recent words:
+    // W_t is in w[t mod 16], and replaces W_t-16 there, which is the last word it depends on.
+    // W_t = M_t(i) for 0 <= t <= 15 (s. 5.2.1: sixteen big-endian 32-bit words).
     let (words, _remainder) = block.as_chunks::<4>();
     let mut i = 0;
     while i < 16 {
-        x[i] = u32::from_be_bytes(words[i]);
-        i += 1;
-    }
-    // FIPS 180-4 s. 6.2.2 step 1: W_t = sigma1(W_t-2) + W_t-7 + sigma0(W_t-15) + W_t-16 for 16 <= t <= 63.
-    while i < 64 {
-        x[i] = theta1(x[i - 2])
-            .wrapping_add(x[i - 7])
-            .wrapping_add(theta0(x[i - 15]))
-            .wrapping_add(x[i - 16]);
+        w[i] = u32::from_be_bytes(words[i]);
         i += 1;
     }
 
     // FIPS 180-4 s. 6.2.2 step 2: initialize the working variables a..h with H(i-1).
     let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = *s;
+    // b XOR c for the first round's Maj (see `round`).
+    let mut bc = b ^ c;
 
-    // FIPS 180-4 s. 6.2.2 step 3: for t = 0 to 63, one round. The spec rotates the working variables
-    // (h = g, g = f, ...); here the rotation is done by renaming the variables passed to the macro
-    // instead, eight rounds at a time, which is equivalent and avoids the moves. The spec's T1 lands
-    // in the "$h" position, "$d" becomes d + T1, and T1 + T2 is then computed in place.
-    macro_rules! sha256_round {
-        ($a:ident,$b:ident,$c:ident,$d:ident,$e:ident,$f:ident,$g:ident,$h:ident,$t:ident) => {
-            // FIPS 180-4 s. 6.2.2 step 3: T1 = h + Sigma1(e) + Ch(e, f, g) + K_t + W_t
-            $h = $h
-                .wrapping_add(sum1($e))
-                .wrapping_add(ch($e, $f, $g))
-                .wrapping_add(SHA256_K[$t])
-                .wrapping_add(x[$t]);
-            // FIPS 180-4 s. 6.2.2 step 3: e = d + T1
-            $d = $d.wrapping_add($h);
-            // FIPS 180-4 s. 6.2.2 step 3: a = T1 + T2, where T2 = Sigma0(a) + Maj(a, b, c)
-            $h = $h.wrapping_add(sum0($a)).wrapping_add(maj($a, $b, $c));
-            $t += 1;
-        };
-    }
-
+    // FIPS 180-4 s. 6.2.2 step 3, eight rounds at a time: rounds t..t+7 read W_t..W_t+7 from one
+    // half of `w`, `p`, and the other half, `q`, holds W_t-8..W_t-1. Before them, for t = 8 to 48,
+    // the words W_t+8..W_t+15 that the next eight rounds read are computed into `q`, in place of
+    // W_t-8..W_t-1, which are their W_t-16 terms; each of their operands is either in `p`, in `q`
+    // and not yet overwritten, or computed earlier in the same batch. Computing them a batch
+    // ahead, away from the rounds that read them, is what lets an out-of-order core run them
+    // alongside the rounds.
     let mut t: usize = 0;
     while t < 64 {
-        sha256_round!(a, b, c, d, e, f, g, h, t);
-        sha256_round!(h, a, b, c, d, e, f, g, t);
-        sha256_round!(g, h, a, b, c, d, e, f, t);
-        sha256_round!(f, g, h, a, b, c, d, e, t);
-        sha256_round!(e, f, g, h, a, b, c, d, t);
-        sha256_round!(d, e, f, g, h, a, b, c, t);
-        sha256_round!(c, d, e, f, g, h, a, b, t);
-        sha256_round!(b, c, d, e, f, g, h, a, t);
+        let p = t & 8;
+        let q = p ^ 8;
+        if t >= 8 && t < 56 {
+            w[q] = schedule(w[q], w[q + 1], w[p + 1], w[p + 6]);
+            w[q + 1] = schedule(w[q + 1], w[q + 2], w[p + 2], w[p + 7]);
+            w[q + 2] = schedule(w[q + 2], w[q + 3], w[p + 3], w[q]);
+            w[q + 3] = schedule(w[q + 3], w[q + 4], w[p + 4], w[q + 1]);
+            w[q + 4] = schedule(w[q + 4], w[q + 5], w[p + 5], w[q + 2]);
+            w[q + 5] = schedule(w[q + 5], w[q + 6], w[p + 6], w[q + 3]);
+            w[q + 6] = schedule(w[q + 6], w[q + 7], w[p + 7], w[q + 4]);
+            w[q + 7] = schedule(w[q + 7], w[p], w[q], w[q + 5]);
+        }
+        bc = round(a, b, bc, &mut d, e, f, g, &mut h, SHA256_K[t].wrapping_add(w[p]));
+        bc = round(h, a, bc, &mut c, d, e, f, &mut g, SHA256_K[t + 1].wrapping_add(w[p + 1]));
+        bc = round(g, h, bc, &mut b, c, d, e, &mut f, SHA256_K[t + 2].wrapping_add(w[p + 2]));
+        bc = round(f, g, bc, &mut a, b, c, d, &mut e, SHA256_K[t + 3].wrapping_add(w[p + 3]));
+        bc = round(e, f, bc, &mut h, a, b, c, &mut d, SHA256_K[t + 4].wrapping_add(w[p + 4]));
+        bc = round(d, e, bc, &mut g, h, a, b, &mut c, SHA256_K[t + 5].wrapping_add(w[p + 5]));
+        bc = round(c, d, bc, &mut f, g, h, a, &mut b, SHA256_K[t + 6].wrapping_add(w[p + 6]));
+        bc = round(b, c, bc, &mut e, f, g, h, &mut a, SHA256_K[t + 7].wrapping_add(w[p + 7]));
+        t += 8;
     }
 
     // FIPS 180-4 s. 6.2.2 step 4: H_j(i) = (working variable j) + H_j(i-1).
@@ -158,13 +189,36 @@ impl<PARAMS: SHA256InitValue> Sha256State<PARAMS> {
         Self { _params: core::marker::PhantomData, h }
     }
 
+    /// Compresses `blocks` in a frame of its own and overwrites the stack that frame used: the
+    /// message schedule and the working variables spilled there are the message and the
+    /// chaining value of whatever is hashed, an HMAC key or a private key among them.
     fn compress(&mut self, blocks: &[[u8; 64]]) {
-        // FIPS 180-4 s. 6.2.2: each message block M(1), ..., M(N) is processed in order.
-        for block in blocks {
-            compress_block(&mut self.h, block);
+        // Only to save the wipe; mutants note: deleting it is an equivalent mutant.
+        if blocks.is_empty() {
+            return;
         }
+        compress_blocks(&mut self.h, blocks);
+        wipe_stack_below::<COMPRESS_WIPED_STACK_WORDS>();
     }
 }
+
+/// FIPS 180-4 s. 6.2.2: each message block M(1), ..., M(N) is processed in order. Never inlined,
+/// so that its frame lies below its caller's, where [`Sha256State::compress`]'s wipe reaches it.
+#[inline(never)]
+fn compress_blocks(h: &mut [u32; 8], blocks: &[[u8; 64]]) {
+    // The message schedule, zeroized on drop: it holds the last block's words (W_48..W_63).
+    let mut w = Secret::<[u32; 16]>::new();
+    for block in blocks {
+        compress_block(h, block, &mut w);
+    }
+}
+
+/// How much stack [`wipe_stack_below`] overwrites after [`compress_blocks`], in 64-bit words:
+/// more than that frame uses for the working variables and other values it spills, measured at
+/// 208 bytes with the return address and red zone on x86-64 (release profile; 224 under the
+/// `mutants` profile), 216 on thumbv6m and 192 on riscv32i (release, nightly
+/// `-Zbuild-std=core`). An unoptimised build's frame is not covered.
+const COMPRESS_WIPED_STACK_WORDS: usize = 32;
 
 /// Internal struct for SHA256.
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
@@ -306,6 +360,9 @@ impl<PARAMS: SHA256InitValue> Hash for SHA256Internal<PARAMS> {
             block = &block[available..];
 
             self.state.compress(slice::from_ref(&self.x_buf));
+            // Not left where a clone or a suspended state would carry it. Once per call at
+            // most: whole blocks after this one are compressed from `block`.
+            self.x_buf.fill(0);
         }
 
         // FIPS 180-4 s. 5.2.1: the message is parsed into 512-bit blocks; a partial trailing block waits in x_buf.
@@ -334,6 +391,8 @@ impl<PARAMS: SHA256InitValue> Hash for SHA256Internal<PARAMS> {
         num_partial_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
+        // Cleared before the check, so that a refused call leaves nothing stale in the buffer.
+        output.fill(0);
         if num_partial_bits > 7 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }

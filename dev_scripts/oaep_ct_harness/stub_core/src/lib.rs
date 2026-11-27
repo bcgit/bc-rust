@@ -1,4 +1,4 @@
-//! The two `bouncycastle_core::traits` names `crypto/rsa/src/eme_oaep.rs` imports, reduced to
+//! The two `bouncycastle_core::traits` names `crypto/modexp/src/rsa/eme_oaep.rs` imports, reduced to
 //! what that file uses of them.
 #![no_std]
 #![forbid(unsafe_code)]

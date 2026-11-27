@@ -78,15 +78,15 @@
 
 pub mod hazmat;
 
-use bouncycastle_cipher::stream::StreamCipher;
-use bouncycastle_cipher::stream::hazmat::stream_cipher_over;
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use crate::stream::StreamCipher;
+use crate::stream::hazmat::stream_cipher_over;
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
-use bouncycastle_core::traits::RNG;
+use bouncycastle_core::traits::{RNG, RNGExt};
 use hazmat::{ChaCha20KeyState, ChaCha20KeyStream};
 
 /// Key length in bytes.
@@ -149,8 +149,7 @@ impl SymmetricEncryptionKey<KEY_LEN, NONCE_LEN, 0> for ChaCha20Key {
         &'k self,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
-        let mut nonce = [0u8; NONCE_LEN];
-        rng.next_bytes_out(&mut nonce)?;
+        let nonce = rng.next_array::<NONCE_LEN>()?;
         Ok((stream_cipher_over(ChaCha20KeyStream::start_at(&self.state, &nonce, 0)), nonce))
     }
 

@@ -35,7 +35,7 @@
 //!
 //! A bit-oriented message (FIPS 180-4 s. 5.1) is finished with
 //! [`do_final_partial_bits`](Hash::do_final_partial_bits), the trailing bits being the most
-//! significant bits of the last byte, as in the SHA-2 crate. A computation in progress can be
+//! significant bits of the last byte, as in the SHA-2 module. A computation in progress can be
 //! suspended and resumed through [`Suspendable`], also as there.
 //!
 //! # Memory Usage
@@ -52,17 +52,17 @@
 //!
 //! Per-call stack usage does not depend on the data length. The figures are the frames the
 //! compiler reports for the release build (x86-64 Linux, rustc 1.97.0-nightly), summed down
-//! each entry point's deepest call path with a return address per call; the compression
-//! function, with its 80-word message schedule, is 264 bytes of every one (see
-//! `mem_usage_benches/src/bench_sha1_mem_usage.rs`):
+//! each entry point's deepest call path with a return address per call. The deepest frame of
+//! each is the 64-word stack wipe that follows the compression, 544 bytes with its return
+//! address (see `mem_usage_benches/src/bench_sha1_mem_usage.rs`):
 //!
-//! | Entry point                              | Stack   |
-//! |------------------------------------------|---------|
-//! | `SHA1::do_update`                        | 328 B   |
-//! | `SHA1::do_final_out`                     | 352 B   |
-//! | `SHA1::do_final_partial_bits_out`        | 376 B   |
-//! | `SHA1::hash_out` (one-shot)              | 584 B   |
-//! | `SHA1::suspend` / `SHA1::from_suspended` | 8 / 8 B |
+//! | Entry point                              | Stack    |
+//! |------------------------------------------|----------|
+//! | `SHA1::do_update`                        | 592 B    |
+//! | `SHA1::do_final_out`                     | 624 B    |
+//! | `SHA1::do_final_partial_bits_out`        | 672 B    |
+//! | `SHA1::hash_out` (one-shot)              | 752 B    |
+//! | `SHA1::suspend` / `SHA1::from_suspended` | 8 / 16 B |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -81,8 +81,9 @@
 //! * SHA-1 is a Merkle-Damgard construction and is subject to length extension: `H(k || m)` is
 //!   not a MAC.
 //! * The hash value and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
-//!   zeroized on drop. The message schedule and working variables on the stack during
-//!   compression are not zeroized.
+//!   zeroized on drop. The compression function runs in a frame of its own, and the stack it used,
+//!   where the message schedule and working variables are spilled, is overwritten after it returns
+//!   (in an optimised build; an unoptimised build's frames are larger than the overwrite).
 //! * The implementation contains no data-dependent branches or table lookups.
 //! * Message length: FIPS 180-4 permits messages shorter than 2^64 bits, so this implementation
 //!   supports 2^61 - 1 bytes.

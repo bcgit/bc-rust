@@ -243,6 +243,49 @@ mod test_key_material {
         ));
     }
 
+    /// An RNG that writes one byte fewer than asked for has not drawn the key: `from_rng` and
+    /// `from_rng_as_type` refuse it rather than return a key whose last byte is zero.
+    #[test]
+    fn from_rng_refuses_a_short_draw() {
+        use bouncycastle_core::errors::RNGError;
+
+        struct ShortRNG;
+        impl RNG for ShortRNG {
+            fn add_seed_keymaterial(&mut self, _: &dyn KeyMaterialTrait) -> Result<(), RNGError> {
+                Ok(())
+            }
+            fn next_int(&mut self) -> Result<u32, RNGError> {
+                Ok(0x5a5a_5a5a)
+            }
+            fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
+                out.fill(0);
+                let written = out.len().saturating_sub(1);
+                out[..written].fill(0x5a);
+                Ok(written)
+            }
+            fn fill_keymaterial_out(
+                &mut self,
+                _: &mut dyn KeyMaterialTrait,
+            ) -> Result<usize, RNGError> {
+                Err(RNGError::GenericError("draws bytes only"))
+            }
+            fn security_strength(&self) -> SecurityStrength {
+                SecurityStrength::_256bit
+            }
+        }
+
+        assert!(matches!(
+            KeyMaterial256::from_rng(&mut ShortRNG),
+            Err(KeyMaterialError::GenericError(_))
+        ));
+        assert!(matches!(
+            KeyMaterial512::from_rng_as_type(&mut ShortRNG, 28, KeyType::MACKey),
+            Err(KeyMaterialError::GenericError(_))
+        ));
+        // Nothing is drawn for no bytes, so none are missing.
+        assert_eq!(KeyMaterial0::from_rng(&mut ShortRNG).unwrap().key_len(), 0);
+    }
+
     /// The material carries the RNG's strength, capped at what the key length can carry: the
     /// default DRBG is 256-bit, so 32 bytes keep that and 16 bytes are a 128-bit key.
     #[test]

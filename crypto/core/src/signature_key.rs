@@ -52,7 +52,7 @@
 
 use crate::errors::SignatureError;
 use crate::traits::{
-    Algorithm, AlgorithmOID, CollisionResistantHash, HashAlgParams, HashOneShot, RNG,
+    Algorithm, AlgorithmOID, CollisionResistantHash, FinishToken, HashAlgParams, HashOneShot, RNG,
     SignatureSigner, SignatureVerifier,
 };
 
@@ -275,7 +275,7 @@ pub fn sign_out_with_signer<S: SignatureSigner<SIG_LEN>, const SIG_LEN: usize>(
     output.fill(0);
     let mut signer = signer?;
     signer.do_update(msg);
-    signer.do_final_out(output)
+    signer.finish_signature_into(&FinishToken::new(), output)
 }
 
 /// Checks `sig` over `msg` through `verifier`: the body of [`OneShotVerifyingKey::verify`] for a
@@ -291,7 +291,7 @@ pub fn verify_with_verifier<V: SignatureVerifier>(
     sig: &[u8],
 ) -> Result<(), SignatureError> {
     verifier.do_update(msg);
-    verifier.do_verify_final(sig)
+    verifier.finish_signature_verify(&FinishToken::new(), sig)
 }
 
 /// A signature algorithm that signs a digest of the message, made with a hash the algorithm

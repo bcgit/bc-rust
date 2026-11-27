@@ -24,8 +24,8 @@ pub mod padded;
 pub mod stream;
 pub mod wycheproof;
 
-use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_symmetric::modes::ModeNames;
 
 /// What every suite here asks of the permutation: a 128-bit block, the key length the suite is
 /// instantiated at, and the mode names.

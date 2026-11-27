@@ -56,7 +56,7 @@
 use crate::errors::{KeyMaterialError, SuspendableError};
 use crate::hazmat::do_hazardous_operations;
 use crate::security_strength::SecurityStrength;
-use crate::traits::RNG;
+use crate::traits::{RNG, RNGExt};
 use bouncycastle_utils::{ct, min, secret::Secret};
 
 use core::cmp::{Ordering, PartialOrd};
@@ -342,6 +342,9 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
     /// what `KEY_LEN` bytes can carry; a `KeyMaterial<0>` comes back [`KeyType::Zeroized`]
     /// without consulting the RNG, so an RNG that would refuse (reseed required) is not reported
     /// for it.
+    ///
+    /// # Errors
+    /// As [`KeyMaterial::from_rng_as_type`].
     pub fn from_rng(rng: &mut (impl RNG + ?Sized)) -> Result<Self, KeyMaterialError> {
         Self::from_rng_as_type(rng, KEY_LEN, KeyType::CryptographicRandom)
     }
@@ -355,7 +358,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
     ///
     /// # Errors
     /// [`KeyMaterialError::InputDataLongerThanKeyCapacity`] if `len` exceeds `KEY_LEN`;
-    /// [`KeyMaterialError::GenericError`] if the RNG fails.
+    /// [`KeyMaterialError::GenericError`] if the RNG fails or writes fewer than `len` bytes.
     pub fn from_rng_as_type(
         rng: &mut (impl RNG + ?Sized),
         len: usize,
@@ -370,7 +373,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
         }
 
         do_hazardous_operations(&mut key, |key| {
-            rng.next_bytes_out(&mut key.ref_to_bytes_mut()?[..len])
+            rng.next_bytes_exact_out(&mut key.ref_to_bytes_mut()?[..len])
                 .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
             key.set_key_len(len)?;
             key.set_key_type(key_type)?;

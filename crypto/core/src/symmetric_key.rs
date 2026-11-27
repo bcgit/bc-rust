@@ -54,13 +54,15 @@ use crate::errors::{MACError, SymmetricCipherError};
 // implement `AeadInPlaceEncryptionKey` / `AeadInPlaceDecryptionKey` with.
 use crate::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 pub use crate::provided::{decrypt_detached_inplace, encrypt_detached_inplace};
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use crate::traits::AEADEncryptedTuple;
 use crate::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
-    KeyUnwrapper, KeyWrapper, MACGenerator, MACVerifier, RNG, StreamCipherDecryptor,
+    FinishToken, KeyUnwrapper, KeyWrapper, MACGenerator, MACVerifier, RNG, StreamCipherDecryptor,
     StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
+#[cfg(feature = "alloc")]
+use alloc::{vec, vec::Vec};
 use bouncycastle_utils::secret::Secret;
 
 /// Construction of a key object from exactly `KEY_LEN` bytes of key material.
@@ -193,7 +195,7 @@ pub trait AeadEncryptionKey<
     ///
     /// # Errors
     /// As [`encrypt_with_aad_out`](Self::encrypt_with_aad_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn encrypt_with_aad(
         &self,
         rng: &mut dyn RNG,
@@ -235,7 +237,7 @@ pub trait AeadEncryptionKey<
     ///
     /// # Errors
     /// As [`encrypt_detached_out`](Self::encrypt_detached_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn encrypt_detached(
         &self,
         rng: &mut dyn RNG,
@@ -282,7 +284,7 @@ pub trait AeadEncryptionKey<
     ///
     /// # Errors
     /// As [`encrypt_with_aad_nonce_out`](Self::encrypt_with_aad_nonce_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn encrypt_with_aad_nonce(
         &self,
         nonce: &[u8; NONCE_LEN],
@@ -326,7 +328,7 @@ pub trait AeadEncryptionKey<
     ///
     /// # Errors
     /// As [`encrypt_detached_nonce_out`](Self::encrypt_detached_nonce_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn encrypt_detached_nonce(
         &self,
         nonce: &[u8; NONCE_LEN],
@@ -392,7 +394,7 @@ pub trait AeadDecryptionKey<
     ///
     /// # Errors
     /// As [`decrypt_with_aad_out`](Self::decrypt_with_aad_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn decrypt_with_aad(
         &self,
         nonce: &[u8; NONCE_LEN],
@@ -438,7 +440,7 @@ pub trait AeadDecryptionKey<
     ///
     /// # Errors
     /// As [`decrypt_detached_out`](Self::decrypt_detached_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn decrypt_detached(
         &self,
         nonce: &[u8; NONCE_LEN],
@@ -523,7 +525,7 @@ pub trait AeadDeclaredEncryptionKey<
     ///
     /// # Errors
     /// As [`encrypt_with_aad_out`](Self::encrypt_with_aad_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn encrypt_with_aad(
         &self,
         rng: &mut dyn RNG,
@@ -563,7 +565,7 @@ pub trait AeadDeclaredEncryptionKey<
     ///
     /// # Errors
     /// As [`encrypt_detached_out`](Self::encrypt_detached_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn encrypt_detached(
         &self,
         rng: &mut dyn RNG,
@@ -605,7 +607,7 @@ pub trait AeadDeclaredEncryptionKey<
     ///
     /// # Errors
     /// As [`encrypt_with_aad_nonce_out`](Self::encrypt_with_aad_nonce_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn encrypt_with_aad_nonce(
         &self,
         nonce: &[u8; NONCE_LEN],
@@ -644,7 +646,7 @@ pub trait AeadDeclaredEncryptionKey<
     ///
     /// # Errors
     /// As [`encrypt_detached_nonce_out`](Self::encrypt_detached_nonce_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn encrypt_detached_nonce(
         &self,
         nonce: &[u8; NONCE_LEN],
@@ -715,7 +717,7 @@ pub trait AeadDeclaredDecryptionKey<
     ///
     /// # Errors
     /// As [`decrypt_with_aad_out`](Self::decrypt_with_aad_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn decrypt_with_aad(
         &self,
         nonce: &[u8; NONCE_LEN],
@@ -756,7 +758,7 @@ pub trait AeadDeclaredDecryptionKey<
     ///
     /// # Errors
     /// As [`decrypt_detached_out`](Self::decrypt_detached_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn decrypt_detached(
         &self,
         nonce: &[u8; NONCE_LEN],
@@ -917,7 +919,7 @@ pub trait SymmetricEncryptionKey<
     ///
     /// # Errors
     /// As [`encrypt_out`](Self::encrypt_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn encrypt(
         &self,
         rng: &mut dyn RNG,
@@ -975,7 +977,7 @@ pub trait SymmetricEncryptionKey<
     ///
     /// # Errors
     /// As [`encrypt_nonce_out`](Self::encrypt_nonce_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn encrypt_nonce(
         &self,
         init_data: &[u8; INIT_DATA_LEN],
@@ -1053,7 +1055,7 @@ pub trait SymmetricDecryptionKey<
     ///
     /// # Errors
     /// As [`decrypt_out`](Self::decrypt_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn decrypt(
         &self,
         init_data: &[u8; INIT_DATA_LEN],
@@ -1213,7 +1215,7 @@ pub trait MacGenerationKey<const MAC_LEN: usize> {
     fn mac_out(&self, data: &[u8], out: &mut [u8; MAC_LEN]) -> usize {
         let mut generator = self.create_generator();
         generator.do_update(data);
-        generator.do_final_out(out)
+        generator.finish_mac_into(&FinishToken::new(), out)
     }
 
     /// One-shot: the tag of `data`.
@@ -1242,7 +1244,7 @@ pub trait MacVerificationKey<const MAC_LEN: usize> {
     fn verify(&self, data: &[u8], mac: &[u8; MAC_LEN]) -> Result<(), MACError> {
         let mut verifier = self.create_verifier();
         verifier.do_update(data);
-        verifier.do_verify_final(mac)
+        verifier.finish_mac_verify(&FinishToken::new(), mac)
     }
 }
 
@@ -1284,7 +1286,7 @@ pub trait NonceMacGenerationKey<const NONCE_LEN: usize, const MAC_LEN: usize> {
         out.fill(0);
         let (mut generator, nonce) = self.create_generator(rng)?;
         generator.do_update(data);
-        Ok((generator.do_final_out(out), nonce))
+        Ok((generator.finish_mac_into(&FinishToken::new(), out), nonce))
     }
 
     /// One-shot: the nonce drawn from `rng` and the tag of `data` under it, in that order, as
@@ -1312,7 +1314,7 @@ pub trait NonceMacGenerationKey<const NONCE_LEN: usize, const MAC_LEN: usize> {
     ) -> usize {
         let mut generator = self.create_generator_nonce(nonce);
         generator.do_update(data);
-        generator.do_final_out(out)
+        generator.finish_mac_into(&FinishToken::new(), out)
     }
 
     /// One-shot: the tag of `data` under `nonce`.
@@ -1347,7 +1349,7 @@ pub trait NonceMacVerificationKey<const NONCE_LEN: usize, const MAC_LEN: usize> 
     ) -> Result<(), MACError> {
         let mut verifier = self.create_verifier(nonce);
         verifier.do_update(data);
-        verifier.do_verify_final(mac)
+        verifier.finish_mac_verify(&FinishToken::new(), mac)
     }
 }
 
@@ -1416,7 +1418,7 @@ pub trait KeyWrappingKey<const KEK_LEN: usize> {
     ///
     /// # Errors
     /// As [`wrap_out`](Self::wrap_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn wrap(&self, plaintext: &[u8]) -> Result<Vec<u8>, SymmetricCipherError> {
         let wrapper = self.create_wrapper();
         let mut ciphertext = vec![0u8; wrapper.wrap_out_len(plaintext.len())];
@@ -1488,7 +1490,7 @@ pub trait KeyUnwrappingKey<const KEK_LEN: usize> {
     ///
     /// # Errors
     /// As [`unwrap_out`](Self::unwrap_out).
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn unwrap(&self, ciphertext: &[u8]) -> Result<Vec<u8>, SymmetricCipherError> {
         let unwrapper = self.create_unwrapper();
         let mut plaintext = vec![0u8; unwrapper.unwrap_out_max_len(ciphertext.len())];

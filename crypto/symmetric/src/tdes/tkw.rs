@@ -1,16 +1,16 @@
 //! Type aliases for TDEA Key Wrap, TKW (NIST SP 800-38F Sec 7). The docs are on [`TDES_TKW`],
 //! which the module root re-exports.
 
+use crate::Decrypting;
+use crate::modes::Tkw;
 use crate::tdes::hazmat::{TDES2Internal, TDESInternal};
-use bouncycastle_cipher::Decrypting;
-use bouncycastle_cipher::modes::Tkw;
 
-/// TDEA Key Wrap: the `Tkw` worker of `bouncycastle-cipher` over the three-key TDEA
+/// TDEA Key Wrap: the `Tkw` worker of `bouncycastle_symmetric::modes` over the three-key TDEA
 /// permutation, which implements `KeyWrapper` and `KeyUnwrapper`, from a `TDES3Key<TKW>` of
 /// `KeyType::SymmetricCipherKey` material through `KeyWrappingKey` and `KeyUnwrappingKey`. It
 /// wraps data that is a whole number of 4-byte semiblocks, at least 8 bytes, to one semiblock
 /// more; the construction, the one-shots and the security notes are those of
-/// [`bouncycastle_cipher::modes::tkw`], and the API is that of `AES_KW_128` in `bouncycastle-aes`
+/// [`crate::modes::tkw`], and the API is that of `AES_KW_128` in `bouncycastle_symmetric::aes`
 /// at half the width.
 ///
 /// SP 800-38F Sec 8: TKW is "approved to support legacy systems but should not be used for new
@@ -23,7 +23,7 @@ use bouncycastle_cipher::modes::Tkw;
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES3Key;
-/// use bouncycastle_cipher::modes::TKW;
+/// use bouncycastle_symmetric::modes::TKW;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 ///
@@ -43,7 +43,7 @@ use bouncycastle_cipher::modes::Tkw;
 /// assert_eq!(kek.unwrap(&wrapped).expect("unwrapping"), [0x5Au8; 24]);
 /// ```
 ///
-/// `Dir` is [`Encrypting`](bouncycastle_cipher::Encrypting) for the wrapper and [`Decrypting`]
+/// `Dir` is [`Encrypting`](crate::Encrypting) for the wrapper and [`Decrypting`]
 /// for the unwrapper, as for the cipher modes.
 ///
 /// # Memory Usage
@@ -61,7 +61,7 @@ pub type TDES_TKW<'k, Dir> = Tkw<'k, TDESInternal, Dir>;
 ///
 /// ```compile_fail
 /// use bouncycastle_symmetric::tdes::TDES2Key;
-/// use bouncycastle_cipher::modes::TKW;
+/// use bouncycastle_symmetric::modes::TKW;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyWrappingKey};
 ///
@@ -79,7 +79,7 @@ pub type TDES_TKW<'k, Dir> = Tkw<'k, TDESInternal, Dir>;
 ///
 /// ```compile_fail
 /// use bouncycastle_symmetric::tdes::TDES2Key;
-/// use bouncycastle_cipher::modes::TKW;
+/// use bouncycastle_symmetric::modes::TKW;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey};
 /// use bouncycastle_core::traits::KeyWrapper;
@@ -96,7 +96,7 @@ pub type TDES_TKW<'k, Dir> = Tkw<'k, TDESInternal, Dir>;
 ///
 /// ```compile_fail
 /// use bouncycastle_symmetric::tdes::TDES2Key;
-/// use bouncycastle_cipher::modes::TKW;
+/// use bouncycastle_symmetric::modes::TKW;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey};
 /// use bouncycastle_core::traits::KeyWrapper;
@@ -115,7 +115,7 @@ pub type TDES_TKW<'k, Dir> = Tkw<'k, TDESInternal, Dir>;
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES2Key;
-/// use bouncycastle_cipher::modes::TKW;
+/// use bouncycastle_symmetric::modes::TKW;
 /// use bouncycastle_core::errors::SymmetricCipherError;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey};

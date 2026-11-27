@@ -79,7 +79,7 @@ pub trait Check {
     fn check<P: Prf>(&self, r: &Record);
 }
 
-/// Hands every record over a PRF the crate has to `check`, and counts the others, so that a
+/// Hands every record over a PRF the module has to `check`, and counts the others, so that a
 /// change in what is skipped is noticed: returns (checked, HMAC-SHA1 records, CMAC-TDEA records).
 pub fn check_each(records: &[Record], check: &impl Check) -> (usize, usize, usize) {
     let (mut checked, mut sha1, mut tdea) = (0, 0, 0);

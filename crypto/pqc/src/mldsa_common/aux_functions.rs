@@ -14,7 +14,7 @@ use crate::mldsa_common::polynomial::Polynomial;
 use crate::mldsa_common::{G, H, N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, d, q};
 use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
-use bouncycastle_utils::secret::ZeroizablePrimitive;
+use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
 /// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)
 /// Output: An integer modulo 𝑞, or `None` for ⊥.
@@ -308,9 +308,9 @@ pub fn bit_unpack_eta<P: MLDSAParamsBase>(v: &[u8]) -> Polynomial {
 /// Input: 𝑎, 𝑏 ∈ ℕ and a byte string 𝑣 of length 32 ⋅ bitlen (𝑎 + 𝑏).
 /// Output: A polynomial 𝑤 ∈ 𝑅 with coefficients in [𝑏 − 2𝑐 + 1, 𝑏], where 𝑐 = bitlen (𝑎 + 𝑏).
 /// When 𝑎 + 𝑏 + 1 is a power of 2, the coefficients are in [−𝑎, 𝑏].
-pub fn bit_unpack_t0(a: &[u8; POLY_T0PACKED_LEN]) -> Polynomial {
-    let mut t0 = Polynomial::new();
-
+///
+/// Into `t0`, every coefficient of which it writes.
+pub fn bit_unpack_t0_out(a: &[u8; POLY_T0PACKED_LEN], t0: &mut Polynomial) {
     for i in 0..N / 8 {
         t0[8 * i] = ((a[13 * i] as i32) | ((a[13 * i + 1] as i32) << 8)) & 0x1FFF;
         t0[8 * i + 1] = ((((a[13 * i + 1] as i32) >> 5) | (a[13 * i + 2] as i32) << 3)
@@ -338,7 +338,13 @@ pub fn bit_unpack_t0(a: &[u8; POLY_T0PACKED_LEN]) -> Polynomial {
         t0[8 * i + 6] = (1 << (d - 1)) - t0[8 * i + 6];
         t0[8 * i + 7] = (1 << (d - 1)) - t0[8 * i + 7];
     }
+}
 
+/// [`bit_unpack_t0_out`] into a fresh polynomial.
+#[must_use]
+pub fn bit_unpack_t0(a: &[u8; POLY_T0PACKED_LEN]) -> Polynomial {
+    let mut t0 = Polynomial::new();
+    bit_unpack_t0_out(a, &mut t0);
     t0
 }
 
@@ -347,13 +353,12 @@ pub fn bit_unpack_t0(a: &[u8; POLY_T0PACKED_LEN]) -> Polynomial {
 /// Output: A polynomial 𝑤 ∈ 𝑅 with coefficients in [𝑏 − 2𝑐 + 1, 𝑏], where 𝑐 = bitlen (𝑎 + 𝑏).
 /// When 𝑎 + 𝑏 + 1 is a power of 2, the coefficients are in [−𝑎, 𝑏].
 ///
-/// Note: caller is responsible for ensuring correct input array size
+/// Note: caller is responsible for ensuring correct input array size. Into `w`, every
+/// coefficient of which it writes; see [`bit_unpack_gamma1`] for the form that returns it.
 // `match P::gamma1` folds away per monomorphization, so each 𝛾1 compiles to just its own arm,
 // leaving no dispatch at runtime.
 #[inline(always)]
-pub fn bit_unpack_gamma1<P: MLDSAParamsBase>(v: &[u8]) -> Polynomial {
-    let mut w = Polynomial::new();
-
+pub fn bit_unpack_gamma1_out<P: MLDSAParamsBase>(v: &[u8], w: &mut Polynomial) {
     match P::gamma1 {
         // MLDSA-44
         GAMMA1_2_POW_17 => {
@@ -395,7 +400,14 @@ pub fn bit_unpack_gamma1<P: MLDSAParamsBase>(v: &[u8]) -> Polynomial {
             panic!("Invalid gamma1 value")
         }
     };
+}
 
+/// [`bit_unpack_gamma1_out`] into a fresh polynomial.
+#[inline(always)]
+#[must_use]
+pub fn bit_unpack_gamma1<P: MLDSAParamsBase>(v: &[u8]) -> Polynomial {
+    let mut w = Polynomial::new();
+    bit_unpack_gamma1_out::<P>(v, &mut w);
     w
 }
 
@@ -515,8 +527,14 @@ pub fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 /// This is supposed to take a rho: `[u8; 66]`, which is: 𝜌||IntegerToBytes(𝑠, 1)||IntegerToBytes(𝑟, 1)
 /// but to avoid needing to copy bytes and allocate more memory,
 /// that is split into a `[u8; 64]` and a `[u8; 2]`
-pub fn rej_bounded_poly<P: MLDSAParamsBase>(rho: &[u8; 64], nonce: &[u8; 2]) -> Polynomial {
-    let mut a = Polynomial::new();
+///
+/// Into `a`, which the caller holds: it is a polynomial of 𝐬1 or 𝐬2, so secret, and so is the
+/// squeezed stream, which is held in a `Secret`. Every coefficient of `a` is written.
+pub fn rej_bounded_poly_out<P: MLDSAParamsBase>(
+    rho: &[u8; 64],
+    nonce: &[u8; 2],
+    a: &mut Polynomial,
+) {
     let mut j: usize = 0;
     let mut h = H::new();
     h.do_update(rho);
@@ -530,9 +548,9 @@ pub fn rej_bounded_poly<P: MLDSAParamsBase>(rho: &[u8; 64], nonce: &[u8; 2]) -> 
     // 272 is exactly two SHAKE256 blocks (2 × 136), so filling the buffer costs two permutations
     // with nothing stranded in the sponge's output queue, and it covers the whole polynomial in a
     // single squeeze almost always.
-    let mut z_arr = [0u8; 272];
+    let mut z_arr = Secret::<[u8; 272]>::new();
     let mut h = h.finish_squeezer(&finish_token());
-    h.do_output_out(&mut z_arr);
+    h.do_output_out(&mut *z_arr);
     let mut idx: usize = 0;
 
     while j < N {
@@ -552,19 +570,20 @@ pub fn rej_bounded_poly<P: MLDSAParamsBase>(rho: &[u8; 64], nonce: &[u8; 2]) -> 
 
         idx += 1;
         if idx == z_arr.len() {
-            h.do_output_out(&mut z_arr);
+            h.do_output_out(&mut *z_arr);
             idx = 0;
         }
     }
-
-    a
 }
 
 /// One coordinate of Algorithm 34 ExpandMask(𝜌, 𝜇): the polynomial 𝐲\[𝑟] for `nonce` = 𝜇 + 𝑟,
 /// with coefficients between −𝛾1 + 1 and 𝛾1.
 /// Input: A seed 𝜌 ∈ 𝔹64 and a nonnegative integer 𝜇 + 𝑟.
 /// Output: One polynomial of 𝐲 ∈ 𝑅ℓ.
-pub fn expand_mask_poly<P: MLDSAParamsBase>(rho: &[u8; 64], nonce: u16) -> Polynomial {
+///
+/// Into `y_r`, which the caller holds: 𝐲 is secret, and so are the squeezed bytes it is unpacked
+/// from, which are held in a `Secret`. Every coefficient of `y_r` is written.
+pub fn expand_mask_poly_out<P: MLDSAParamsBase>(rho: &[u8; 64], nonce: u16, y_r: &mut Polynomial) {
     // 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
     //  ▷ 𝛾1 is always a power of 2
     // 3: 𝜌′ ← 𝜌||IntegerToBytes(𝜇 + 𝑟, 2)
@@ -574,12 +593,12 @@ pub fn expand_mask_poly<P: MLDSAParamsBase>(rho: &[u8; 64], nonce: u16) -> Polyn
     let mut h = H::new();
     h.do_update(rho);
     h.do_update(&nonce.to_le_bytes());
-    let mut v = <P::PolyZPacked as ZeroizablePrimitive>::ZEROED;
+    let mut v = Secret::<P::PolyZPacked>::new();
     let mut h = h.finish_squeezer(&finish_token());
-    h.do_output_out(v.as_mut());
+    h.do_output_out((*v).as_mut());
 
     // 5: 𝐲[𝑟] ← BitUnpack(𝑣, 𝛾1 − 1, 𝛾1)
-    bit_unpack_gamma1::<P>(v.as_ref())
+    bit_unpack_gamma1_out::<P>((*v).as_ref(), y_r);
 }
 
 /// Algorithm 35 Power2Round(𝑟)

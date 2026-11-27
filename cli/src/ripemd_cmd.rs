@@ -1,5 +1,5 @@
 use crate::helpers::stream_hash;
-use bouncycastle::ripemd::{RIPEMD128, RIPEMD160, RIPEMD256, RIPEMD320};
+use bouncycastle::digest::ripemd::{RIPEMD128, RIPEMD160, RIPEMD256, RIPEMD320};
 
 pub(crate) enum RIPEMDVariant {
     RIPEMD128,

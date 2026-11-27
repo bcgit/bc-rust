@@ -1,9 +1,9 @@
 //! Known-answer tests for [`reduce_wide_bits_mod_n_minus_1`] (FIPS 186-5 Appendix A.4.1 steps
 //! 3-5): `x = bits2int(X)`, `x = x mod (n-1)`, `x = x + 1`. Expected values computed independently
 //! in Python via `(int.from_bytes(bytes, 'big') % (n - 1)) + 1` with `n` from SEC 2 v2 §2.4.1,
-//! not derived from this crate's own reduction code -- see `extra_bits_tests.rs`'s docs for why
-//! this independent-reference pinning matters. Inputs are the 40 bytes (320 bits) `keys_p256k1`
-//! and `ecdsa_p256k1` actually draw, except where a shorter input is the point.
+//! not derived from this crate's own reduction code -- see `p256_extra_bits_tests.rs`'s docs for
+//! why this independent-reference pinning matters. Inputs are the 40 bytes (320 bits) key
+//! generation and randomised signing actually draw, except where a shorter input is the point.
 
 use bouncycastle_core::hex::decode as hex_decode;
 use bouncycastle_ec::hazmat::p256k1_extra_bits::reduce_wide_bits_mod_n_minus_1;

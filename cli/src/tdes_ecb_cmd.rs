@@ -23,10 +23,10 @@ use crate::helpers::block_mode_helpers::{
     CipherDirection, TDEA_LIMIT, decrypt_stream, encrypt_stream_bounded, load_key_object,
     start_encryptor,
 };
-use bouncycastle::cipher::modes::hazmat::ecb::ECB;
-use bouncycastle::cipher::padding::NoPadding;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
+use bouncycastle::symmetric::modes::hazmat::ecb::ECB;
+use bouncycastle::symmetric::padding::NoPadding;
+use bouncycastle::symmetric::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
 
 /// Names the mode in error messages.
 const MODE: &str = "ECB";

@@ -1,7 +1,7 @@
 //! Generic behaviour tests for the signature role traits of `bouncycastle_core::signature_key`
 //! and the workers they produce.
 
-use crate::{DUMMY_SEED, FailingRNG};
+use crate::{DUMMY_SEED, FailingRNG, ShortRNG};
 use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::signature_key::{
@@ -32,17 +32,6 @@ pub struct TestFrameworkSignature {
 }
 
 impl TestFrameworkSignature {
-    /// For an algorithm that binds the context into the signature (`true`,
-    /// [`CtxBehaviour::Bound`]) or takes none and refuses one (`false`,
-    /// [`CtxBehaviour::Refused`]).
-    pub fn new(alg_accepts_ctx: bool) -> Self {
-        Self::with_ctx_behaviour(if alg_accepts_ctx {
-            CtxBehaviour::Bound
-        } else {
-            CtxBehaviour::Refused
-        })
-    }
-
     /// For an algorithm with the given treatment of the context.
     pub fn with_ctx_behaviour(ctx: CtxBehaviour) -> Self {
         Self { ctx }
@@ -264,6 +253,13 @@ impl TestFrameworkSignature {
         ));
         assert_eq!(out, [0u8; SIG_LEN]);
         assert!(matches!(sk.sign(&mut FailingRNG, MSG, None), Err(SignatureError::RNGError(_))));
+        // ... and when it writes fewer bytes than it was asked for
+        let mut out = [0xA5u8; SIG_LEN];
+        assert!(matches!(
+            sk.sign_out(&mut ShortRNG, MSG, None, &mut out),
+            Err(SignatureError::RNGError(_))
+        ));
+        assert_eq!(out, [0u8; SIG_LEN]);
 
         // no context and the empty context are the same
         let sig_empty = sk.sign(rng, MSG, Some(&[])).unwrap();

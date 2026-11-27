@@ -28,7 +28,7 @@ use bouncycastle::core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
 use bouncycastle::core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
-use bouncycastle::ed::ed448::{Ed448PrivateKey, Ed448PublicKey, keygen, keygen_out};
+use bouncycastle::ec::ed::ed448::{Ed448PrivateKey, Ed448PublicKey, keygen, keygen_out};
 use std::hint::black_box;
 
 /// The private key of RFC 8032 Section 7.4's "256 octets" vector.
@@ -148,8 +148,8 @@ fn bench_ed448_keygen_out() {
 
     let mut sk = Ed448PrivateKey::zeroized();
     measure(|| {
-        let pk = keygen_out(&mut FixedSeedRNG::new(black_box(SK)), &mut sk).unwrap();
-        print!("{:x?}", pk.encode());
+        keygen_out(&mut FixedSeedRNG::new(black_box(SK)), &mut sk).unwrap();
+        print!("{:x?}", sk.pk().unwrap().encode());
     });
 }
 

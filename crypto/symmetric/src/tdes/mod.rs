@@ -14,7 +14,7 @@
 //!
 //! ## Modes of operation
 //!
-//! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
+//! A key is built once, under a mode from `bouncycastle_symmetric::modes`, and used for as many
 //! messages as the data limit allows: `CBC<PKCS7>` for CBC (SP 800-38A Sec 6.2) with PKCS#7
 //! padding, `CFB` for CFB64 (Sec 6.3), `CFB8` for the `s = 8` segment size, a different and
 //! non-interoperable mode costing one TDES call per byte, `OFB` for OFB (Sec 6.4), `CTR<6, 8>`
@@ -33,13 +33,13 @@
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
 //! padding scheme to bridge the difference; the CFB modes, OFB and CTR are stream ciphers and take
-//! any length with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the
+//! any length with no padding at all. See the `bouncycastle_symmetric::modes` module docs for the
 //! comparison, and [`TDES_CBC`] for why the scheme is named in the type.
 //!
 //! ```
 //! use bouncycastle_symmetric::tdes::TDES3Key;
-//! use bouncycastle_cipher::modes::CBC;
-//! use bouncycastle_cipher::padding::PKCS7;
+//! use bouncycastle_symmetric::modes::CBC;
+//! use bouncycastle_symmetric::padding::PKCS7;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 //! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -120,13 +120,13 @@
 //! verification as "Legacy use", and `CMAC`'s generating constructor carries the same compile-time
 //! check, so a two-key key under CMAC verifies tags and cannot produce them. [`TDESKey`] carries no
 //! MAC role at all; CMAC over either bundle is reached through the generic
-//! `bouncycastle_cipher::BlockCipherKey` (`BlockCipherKey<TDES2Internal, CMAC<8>>`), a hazmat type
+//! `bouncycastle_symmetric::BlockCipherKey` (`BlockCipherKey<TDES2Internal, CMAC<8>>`), a hazmat type
 //! name.
 //!
 //! ```
 //! use bouncycastle_symmetric::tdes::TDES2Key;
-//! use bouncycastle_cipher::modes::CBC;
-//! use bouncycastle_cipher::padding::NoPadding;
+//! use bouncycastle_symmetric::modes::CBC;
+//! use bouncycastle_symmetric::padding::NoPadding;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 //!
@@ -183,7 +183,7 @@
 //!
 //! For every TDEA mode the key's state is the expanded engine itself, and the workers a key hands
 //! out borrow it, so `create_encryptor` and `create_decryptor` copy no schedule. That is the
-//! shape `bouncycastle-aes` has, and [`TDESKey`] is generic over the engine for the same reason
+//! shape `bouncycastle_symmetric::aes` has, and [`TDESKey`] is generic over the engine for the same reason
 //! `AESKey` is over its parameters.
 //!
 //! # Memory Usage
@@ -234,14 +234,14 @@
 //! 3TDEA at 112 bits of security, which is what [`TDESInternal`] reports as its maximum strength.
 //!
 //! This module exists so that data and protocols that still depend on TDEA can be handled. Do not
-//! choose it for a new design; use AES from `bouncycastle-aes`.
+//! choose it for a new design; use AES from `bouncycastle_symmetric::aes`.
 //!
 //! `BlockPermutation::DECRYPT_ONLY` records this library's policy, not NIST's status: it is set
 //! for two-key TDEA alone. Three-key TDEA encryption, which SP 800-131A Rev 2 also disallows
 //! after 2023, stays available here because the OpenSSL provider this library serves exposes it,
 //! and three-key TKW wrapping, the one SP 800-38F key wrap over TDEA, and three-key CMAC
 //! generation (Table 9: "Deprecated through 2023, Disallowed after 2023", reachable only through
-//! `bouncycastle_cipher::BlockCipherKey`) are kept on the same terms; a deployment that must not
+//! `bouncycastle_symmetric::BlockCipherKey`) are kept on the same terms; a deployment that must not
 //! encrypt, wrap or generate tags under TDEA should not use [`TDES3Key`]'s encrypting and
 //! wrapping roles or a `BlockCipherKey<TDESInternal, CMAC<8>>`.
 //!

@@ -1,23 +1,23 @@
 //! Type aliases for TDES in CFB mode (NIST SP 800-38A Sec 6.3), full-block segment. The docs are on
 //! [`TDES_CFB`], which the module root re-exports.
 
+use crate::Decrypting;
+use crate::modes::Cfb;
 use crate::tdes::BLOCK_LEN;
 use crate::tdes::hazmat::{TDES2Internal, TDESInternal};
-use bouncycastle_cipher::Decrypting;
-use bouncycastle_cipher::modes::Cfb;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
 
-/// TDES in CFB64 mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// TDES in CFB64 mode. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`]; the wrong direction is a compile error, not a runtime
 /// check.
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES3Key;
-/// use bouncycastle_cipher::modes::CFB;
+/// use bouncycastle_symmetric::modes::CFB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -52,7 +52,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// assert_eq!(rest, [1u8; 30]);
 /// ```
 ///
-/// See `bouncycastle_cipher::modes::cfb` for the construction. The aliases are stream ciphers:
+/// See `bouncycastle_symmetric::modes::cfb` for the construction. The aliases are stream ciphers:
 /// the data is a `&mut [u8]` of any length, encrypted or decrypted in place. They come from a key,
 /// [`TDES3Key<CFB>`](crate::tdes::TDES3Key), through the [`SymmetricEncryptionKey`] /
 /// [`SymmetricDecryptionKey`] pair; the IV is one block (8 bytes), drawn from the caller's RNG by
@@ -62,7 +62,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// that SP 800-38A Appendix E says is "equivalent to the CFB mode in this recommendation, with the
 /// TDEA as the underlying block cipher". SP 800-38A's `s = 8` variant is a different,
 /// non-interoperable mode with its own alias, [`TDES_CFB8`](crate::tdes::TDES_CFB8); `s = 1` is not
-/// implemented. See the `bouncycastle_cipher::modes::Cfb` docs.
+/// implemented. See the `bouncycastle_symmetric::modes::Cfb` docs.
 #[allow(non_camel_case_types)]
 pub type TDES_CFB<'k, Dir> = Cfb<'k, TDESInternal, Dir, BLOCK_LEN>;
 
@@ -72,7 +72,7 @@ pub type TDES_CFB<'k, Dir> = Cfb<'k, TDESInternal, Dir, BLOCK_LEN>;
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES2Key;
-/// use bouncycastle_cipher::modes::CFB;
+/// use bouncycastle_symmetric::modes::CFB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 ///

@@ -2,21 +2,21 @@
 //! module root re-exports.
 
 use crate::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle_cipher::modes::Cmac;
+use crate::modes::Cmac;
 
-/// ARIA-128 in CMAC: the `Cmac` worker of `bouncycastle-cipher` over the ARIA permutation, a
+/// ARIA-128 in CMAC: the `Cmac` worker of `bouncycastle_symmetric::modes` over the ARIA permutation, a
 /// `MACGenerator` (`Dir = Encrypting`) or `MACVerifier` (`Dir = Decrypting`) with a 16-byte tag,
 /// from an `ARIA128Key<CMAC>` of `KeyType::MACKey` material through `MacGenerationKey` and
 /// `MacVerificationKey`. The construction, the key requirements and the security considerations
-/// are those of [`bouncycastle_cipher::modes::cmac`] and, alias for alias, of `AES_CMAC_128` in
-/// `bouncycastle-aes`; only the permutation differs.
+/// are those of [`crate::modes::cmac`] and, alias for alias, of `AES_CMAC_128` in
+/// `bouncycastle_symmetric::aes`; only the permutation differs.
 /// RFC 5794 Appendix B names it `id-aria128-cmac`.
 ///
 /// # Usage Examples
 ///
 /// ```
 /// use bouncycastle_symmetric::aria::ARIA256Key;
-/// use bouncycastle_cipher::modes::CMAC;
+/// use bouncycastle_symmetric::modes::CMAC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 /// use bouncycastle_core::traits::MACGenerator;

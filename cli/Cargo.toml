@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 clap = { version = "4.5.51", features = ["derive"] }
 
-bouncycastle.workspace = true
+bouncycastle = { workspace = true, features = ["std"] }
 bouncycastle-utils.workspace = true
 
 [[bin]]

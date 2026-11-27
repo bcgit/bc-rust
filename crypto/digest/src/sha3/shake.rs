@@ -9,8 +9,6 @@ use bouncycastle_core::traits::{
     Algorithm, FinishToken, Hash, HashOneShot, Suspendable, XOF, XOFSqueezer,
 };
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
-#[cfg(feature = "std")]
-use std::vec::Vec;
 
 /// Internal struct for SHAKE. Use [`SHAKE128`](crate::sha3::SHAKE128) or [`SHAKE256`](crate::sha3::SHAKE256);
 /// the parameter trait is sealed.
@@ -66,21 +64,10 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         self.keccak.squeezing
     }
 
-    #[cfg(feature = "std")]
-    fn hash_internal(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
-        self.keccak.absorb(data);
-        self.into_squeezer().do_output(result_len)
-    }
-
-    fn hash_internal_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.keccak.absorb(data);
-        self.into_squeezer().do_output_out(output)
-    }
-
     /// Ends absorbing with a caller-chosen domain separator and returns the squeezing half.
     ///
     /// SHAKE uses "1111" (FIPS 202 s. 6.2), but cSHAKE uses "00" (SP 800-185 s. 3.3, the `00` in
-    /// the `KECCAK[c](... || X || 00, L)` branch), so the suffix cannot be baked in here. Crate
+    /// the `KECCAK[c](... || X || 00, L)` branch), so the suffix cannot be baked in here. Module
     /// internal: callers outside pick a function, and the function picks its own separator.
     ///
     /// Panics, as [`Hash::do_update`] does, on a value that has been finished already; otherwise
@@ -425,6 +412,10 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
 impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
     type Squeezer = SHAKESqueezer<PARAMS>;
 
+    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.finish_squeezer(token).do_output_final_out(output)
+    }
+
     fn into_squeezer(self) -> Self::Squeezer {
         // The SHAKE domain separator, "1111" (FIPS 202 s. 6.2).
         self.into_squeezer_with_suffix(0x0F, 4)
@@ -437,16 +428,6 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
     ) -> Result<Self::Squeezer, HashError> {
         // The SHAKE domain separator, "1111" (FIPS 202 s. 6.2).
         self.into_squeezer_partial_bits_with_suffix(partial_byte, num_bits, 0x0F, 4)
-    }
-
-    #[cfg(feature = "std")]
-    fn xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
-        self.hash_internal(data, result_len)
-    }
-
-    fn xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        // hash_internal_out zeroizes `output` before writing.
-        self.hash_internal_out(data, output)
     }
 }
 

@@ -1,5 +1,5 @@
 //! Key-bundle handling: what the engines' `KeyExpansion::new` accepts and rejects, and why.
-//! The keys at the crate root run these checks through it, see `mode_key_tests.rs`.
+//! The keys at the module root run these checks through it, see `tdes_mode_key_tests.rs`.
 //!
 //! * The 4 weak, 12 semi-weak and 48 possibly weak DEA keys listed in SP 800-67r2 Sec 3.3.2, all
 //!   rejected in any component position, and shown to be exactly the 64 keys the engine's
@@ -174,7 +174,7 @@ fn every_listed_weak_key_is_rejected_in_every_position() {
 
 #[test]
 fn the_three_lists_are_exactly_the_period_four_keys() {
-    // The engine detects a weak key structurally: C0 and D0 each have period 4 (see the crate's
+    // The engine detects a weak key structurally: C0 and D0 each have period 4 (see `tdes`'s
     // `schedule` module). That is 8 x 8 = 64 keys, and PC-1 is a bijection on the non-parity bits,
     // so this reconstructs all 64 from the eight 28-bit patterns and checks they are precisely the
     // 64 keys the spec lists -- which also proves the transcription above.

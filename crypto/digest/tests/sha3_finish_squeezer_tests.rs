@@ -1,7 +1,6 @@
-//! `finish_squeezer` on SHAKE, cSHAKE and KMACXOF: the squeezing half lent out where the sponge
-//! sits must produce the stream `XOF::into_squeezer` does, however it is read. The official
-//! vectors are run through it in `shake_bc-test-data.rs`, `cshake_bc-test-data.rs` and
-//! `kmac_bc-test-data.rs`.
+//! `finish_squeezer` on SHAKE, cSHAKE, KMACXOF, TupleHashXOF and ParallelHashXOF: the squeezing
+//! half lent out where the sponge sits must produce the stream `XOF::into_squeezer` does, however
+//! it is read. The official vectors are run through it in the `sha3_*_bc-test-data.rs` files.
 
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::hazmat::finish_token;
@@ -424,6 +423,28 @@ fn a_finished_shake_suspends_as_its_squeezer() {
     assert_eq!(resumed.do_output(64), expected.do_output(64));
 }
 
+/// A cSHAKE finished where it sits is not suspended, as KMACXOF, TupleHashXOF and
+/// ParallelHashXOF are not: no type resumes the state it would write.
+#[test]
+fn a_finished_cshake_is_not_suspended() {
+    let mut cshake = CSHAKE128::new(b"name", b"custom");
+    cshake.do_update(b"abc");
+    let _ = cshake.finish_squeezer(&finish_token()).do_output(8);
+    refused("cSHAKE128 suspend after finish_squeezer", || cshake.suspend());
+
+    let mut cshake = CSHAKE256::new(b"name", b"custom");
+    let mut out = [0u8; 64];
+    cshake.finish_into(&finish_token(), &mut out);
+    refused("cSHAKE256 suspend after finish_into", || cshake.suspend());
+
+    // Unfinished, it still suspends and resumes.
+    let mut cshake = CSHAKE128::new(b"name", b"custom");
+    cshake.do_update(b"abc");
+    let state = cshake.clone().suspend();
+    let mut resumed = CSHAKE128::from_suspended(state).unwrap();
+    assert_eq!(resumed.into_squeezer().do_output(32), cshake.into_squeezer().do_output(32));
+}
+
 /// The same rule after a hash final taken where the value sits, which is how the library's own
 /// code finishes a hash it holds.
 #[test]
@@ -443,4 +464,111 @@ fn a_value_finished_by_finish_into_takes_nothing() {
     let mut kmac = KMACXOF256::new(&key(), b"", false).unwrap();
     kmac.finish_into(&token, &mut out);
     refused("KMACXOF256 after finish_into", || kmac.do_update(b"more"));
+}
+
+// ---- TupleHashXOF and ParallelHashXOF ------------------------------------------------------
+
+use bouncycastle_digest::sha3::parallelhash::{
+    ParallelHash128, ParallelHash256, ParallelHashXOF128, ParallelHashXOF256,
+};
+use bouncycastle_digest::sha3::tuplehash::{
+    TupleHash128, TupleHash256, TupleHashXOF128, TupleHashXOF256,
+};
+use core::num::NonZeroUsize;
+
+fn block(n: usize) -> NonZeroUsize {
+    NonZeroUsize::new(n).unwrap()
+}
+
+/// Read with `do_output`, the `right_encode(0)` streams of SP 800-185 Sec 5.3.1 and 6.3.1. Each
+/// `do_update` is a tuple element for TupleHash, and fills 7- and 200-byte blocks for
+/// ParallelHash, so the short last block is flushed by the borrow.
+#[test]
+fn tuplehashxof_and_parallelhashxof_match_into_squeezer() {
+    matches_into_squeezer(
+        || TupleHashXOF128::new(b"custom"),
+        |x| Box::new(x.finish_squeezer(&finish_token())),
+    );
+    matches_into_squeezer(
+        || TupleHashXOF256::new(b""),
+        |x| Box::new(x.finish_squeezer(&finish_token())),
+    );
+    for b in [7, 200] {
+        matches_into_squeezer(
+            || ParallelHashXOF128::new(block(b), b"custom"),
+            |x| Box::new(x.finish_squeezer(&finish_token())),
+        );
+        matches_into_squeezer(
+            || ParallelHashXOF256::new(block(b), b""),
+            |x| Box::new(x.finish_squeezer(&finish_token())),
+        );
+    }
+}
+
+/// A final read that is also the first binds its length: the fixed-length TupleHash of Sec 5.3
+/// and ParallelHash of Sec 6.3.
+#[test]
+fn tuplehashxof_and_parallelhashxof_final_read_binds_the_length() {
+    let token = finish_token();
+    let msg = message(300);
+
+    let mut x = TupleHashXOF128::new(b"custom");
+    x.do_update(&msg[..100]);
+    x.do_update(&msg[100..]);
+    let mut fixed = TupleHash128::new(b"custom", 48).unwrap();
+    fixed.do_update(&msg[..100]);
+    fixed.do_update(&msg[100..]);
+    assert_eq!(x.finish_squeezer(&token).do_output_final(48), fixed.do_final());
+
+    let mut x = TupleHashXOF256::new(b"");
+    x.do_update(&msg);
+    let mut fixed = TupleHash256::new(b"", 200).unwrap();
+    fixed.do_update(&msg);
+    assert_eq!(x.finish_squeezer(&token).do_output_final(200), fixed.do_final());
+
+    for b in [7, 200, 1000] {
+        let mut x = ParallelHashXOF128::new(block(b), b"custom");
+        x.do_update(&msg);
+        let mut fixed = ParallelHash128::new(block(b), b"custom", 48).unwrap();
+        fixed.do_update(&msg);
+        assert_eq!(x.finish_squeezer(&token).do_output_final(48), fixed.do_final(), "{b}");
+
+        let mut x = ParallelHashXOF256::new(block(b), b"");
+        x.do_update(&msg);
+        let mut fixed = ParallelHash256::new(block(b), b"", 200).unwrap();
+        fixed.do_update(&msg);
+        assert_eq!(x.finish_squeezer(&token).do_output_final(200), fixed.do_final(), "{b}");
+    }
+}
+
+/// Finished from the call, as KMACXOF is; and a finished value is not suspended.
+#[test]
+fn a_finished_tuplehashxof_or_parallelhashxof_takes_nothing() {
+    finished_takes_nothing(
+        "TupleHashXOF128",
+        || TupleHashXOF128::new(b"custom"),
+        |x| Box::new(x.finish_squeezer(&finish_token())),
+    );
+    finished_takes_nothing(
+        "TupleHashXOF256",
+        || TupleHashXOF256::new(b""),
+        |x| Box::new(x.finish_squeezer(&finish_token())),
+    );
+    finished_takes_nothing(
+        "ParallelHashXOF128",
+        || ParallelHashXOF128::new(block(7), b"custom"),
+        |x| Box::new(x.finish_squeezer(&finish_token())),
+    );
+    finished_takes_nothing(
+        "ParallelHashXOF256",
+        || ParallelHashXOF256::new(block(200), b""),
+        |x| Box::new(x.finish_squeezer(&finish_token())),
+    );
+    let mut t = TupleHashXOF128::new(b"");
+    let _ = t.finish_squeezer(&finish_token());
+    refused("TupleHashXOF128 suspend", || t.clone().suspend());
+    let mut p = ParallelHashXOF128::new(block(7), b"");
+    p.do_update(b"abc");
+    let _ = p.finish_squeezer(&finish_token());
+    refused("ParallelHashXOF128 suspend", || p.clone().suspend());
 }

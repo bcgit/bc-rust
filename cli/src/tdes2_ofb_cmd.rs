@@ -8,8 +8,8 @@
 
 use crate::helpers::block_mode_helpers::{DecryptOnlyAction, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::decrypt_stream;
-use bouncycastle::cipher::modes::OFB;
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN_2KEY, TDES2Key};
+use bouncycastle::symmetric::modes::OFB;
+use bouncycastle::symmetric::tdes::{BLOCK_LEN, KEY_LEN_2KEY, TDES2Key};
 
 pub(crate) fn tdes2_ofb_cmd(
     action: &DecryptOnlyAction,

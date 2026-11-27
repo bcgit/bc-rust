@@ -1,21 +1,21 @@
-//! CLI wiring for `bouncycastle-sm2`. Bespoke rather than routed through `ecdsa_cmd`'s generic
-//! function: every SM2 `Signer`/`SignatureVerifier` call requires `ctx` to carry the signer's
-//! identity `IDA` (GB/T 32918.2-2016 §5.5; see `bouncycastle_sm2::sm2`'s docs), whereas every
+//! CLI wiring for `bouncycastle_ec::sm2`. Bespoke rather than routed through `ecdsa_cmd`'s generic
+//! function: every SM2 `SigningKey`/`VerifyingKey` call requires `ctx` to carry the signer's
+//! identity `IDA` (GB/T 32918.2-2016 §5.5; see `bouncycastle_ec::sm2::sm2`'s docs), whereas every
 //! curve `ecdsa_cmd` covers ignores `ctx` entirely -- and `SM2PrivateKey::derive_pk` is a plain
-//! inherent method rather than an implementation of `bouncycastle_ecdsa::keys_common::
+//! inherent method rather than an implementation of `bouncycastle_ec::ecdsa::keys_common::
 //! DerivePublicKey` (see that method's own doc comment: SM2 was never going to share a single
 //! generic command function with the other seven curves regardless). `--idfile` is mandatory for
-//! `Sign`/`Verify`: the crate has no default identity to fall back to when `ctx` is omitted.
+//! `Sign`/`Verify`: `bouncycastle_ec::sm2` has no default identity to fall back to when `ctx` is omitted.
 
 use crate::helpers::{
-    println_stdout, read_input_file, read_secret_file, read_secret_file_or_stdin, stream_stdin,
-    write_bytes_or_hex, write_private_key,
+    finish_stdout, flush_stdout, println_stdout, read_input_file, read_secret_file,
+    read_secret_file_or_stdin, stream_stdin, write_bytes_or_hex, write_private_key,
 };
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::signature_key::{SigningKey, VerifyingKey};
 use bouncycastle::core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
+use bouncycastle::ec::sm2::keys::{SM2PrivateKey, SM2PublicKey, keygen};
 use bouncycastle::rng::HashDRBG_SHA512;
-use bouncycastle::sm2::keys::{SM2PrivateKey, SM2PublicKey, keygen};
 use clap::ValueEnum;
 use std::process::exit;
 
@@ -29,11 +29,11 @@ pub(crate) enum SM2Action {
     /// Accepts a private key (stdin) and a public key (--pkfile), and checks that they match.
     CheckConsistency,
     /// Sign a message read from stdin with a private key file and output the signature.
-    /// Requires --idfile: SM2 signing needs the signer's identity IDA, and this crate has no
+    /// Requires --idfile: SM2 signing needs the signer's identity IDA, and the library has no
     /// default identity to fall back to.
     Sign,
     /// Verify a message read from stdin with a public key file and a signature file.
-    /// Requires --idfile: SM2 verification needs the signer's identity IDA, and this crate has no
+    /// Requires --idfile: SM2 verification needs the signer's identity IDA, and the library has no
     /// default identity to fall back to.
     Verify,
 }
@@ -49,19 +49,25 @@ pub(crate) fn sm2_cmd(
     match action {
         SM2Action::Keygen => {
             let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
-            write_private_key(&sk, output_hex);
+            let written = write_private_key(&sk, output_hex);
+            // `exit` runs no destructors, so the key is dropped before a failed write exits.
+            drop(sk);
+            finish_stdout(written);
         }
         SM2Action::PkFromSk => {
-            let sk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes());
-            write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
+            // `exit` runs no destructors, so the key is dropped before the write, which ends
+            // the process on a failure.
+            let pk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes()).derive_pk();
+            write_bytes_or_hex(&pk.encode(), output_hex);
         }
         SM2Action::CheckConsistency => {
-            let sk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes());
-
             let pk_bytes = require_file(pkfile, "pkfile");
             let pk = parse_pk(&pk_bytes);
 
-            if sk.derive_pk() == pk {
+            // As above: the key is dropped before either branch can exit.
+            let matches =
+                parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes()).derive_pk() == pk;
+            if matches {
                 println_stdout("SUCCESS: pk and sk match.");
             } else {
                 eprintln!("FAILURE: pk and sk do not match.");
@@ -69,16 +75,21 @@ pub(crate) fn sm2_cmd(
             }
         }
         SM2Action::Sign => {
-            let sk = parse_sk(require_secret(skfile, "skfile").ref_to_bytes());
             let id = require_id(idfile);
+            // The key is dropped before the signature is written; see `PkFromSk`.
+            let sig = {
+                let sk = parse_sk(require_secret(skfile, "skfile").ref_to_bytes());
 
-            // stream the message from stdin
-            let mut signer =
-                sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&id)).unwrap();
-            stream_stdin(|chunk| signer.do_update(chunk));
-            let sig = signer.do_final().unwrap();
+                // stream the message from stdin
+                let mut signer =
+                    sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&id)).unwrap();
+                stream_stdin(|chunk| signer.do_update(chunk));
+                signer.do_final().unwrap()
+            };
 
             write_bytes_or_hex(&sig, output_hex);
+            // A short signature is held in std's stdout buffer; see `write_stdout`.
+            flush_stdout();
         }
         SM2Action::Verify => {
             let pk_bytes = require_file(pkfile, "pkfile");
@@ -116,7 +127,7 @@ fn require_id(idfile: &Option<String>) -> Vec<u8> {
         None => {
             eprintln!(
                 "Error: no idfile provided. SM2 signing and verification require the signer's \
-                 identity IDA (GB/T 32918.2-2016 S5.5); this crate has no default identity to \
+                 identity IDA (GB/T 32918.2-2016 S5.5); the library has no default identity to \
                  fall back to."
             );
             exit(-1);

@@ -2,8 +2,8 @@
 //! (Menezes, van Oorschot & Vanstone, *Handbook of Applied Cryptography*, Algorithm 14.42, in the
 //! limb-aligned form below), generic over the limb count `L` like [`bouncycastle_utils::nat`].
 //!
-//! The one user is FIPS 186-5 Appendix A.4.1's `x mod (n - 1)` in `bouncycastle-ecdsa` and
-//! `bouncycastle-sm2`: the DRBG output `x` is 64 to 96 bits wider than `n`, and `n - 1` is even, so
+//! The one user is FIPS 186-5 Appendix A.4.1's `x mod (n - 1)` in `crate::ecdsa` and
+//! `crate::sm2`: the DRBG output `x` is 64 to 96 bits wider than `n`, and `n - 1` is even, so
 //! neither the per-curve Solinas reductions nor Montgomery arithmetic applies. The previous
 //! implementation reduced `x` one bit at a time -- a doubling, a conditional carry correction and
 //! a conditional subtraction per bit, 320 to 592 times -- which cost 10 to 15 microseconds, more

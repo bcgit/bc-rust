@@ -126,8 +126,9 @@
 //!   distinct initial values, and are not vulnerable to length extension in the same direct way, but
 //!   should still not be used as `H(k || m)` MACs.
 //! * The chaining value and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
-//!   zeroized on drop. Transient copies (working variables and message schedule) in registers/stack
-//!   locals during compression are not zeroized.
+//!   zeroized on drop. The compression function runs in a frame of its own, and the stack it used,
+//!   where the message schedule and working variables are spilled, is overwritten after it returns
+//!   (in an optimised build; an unoptimised build's frames are larger than the overwrite).
 //! * The implementation contains no data-dependent branches or table lookups.
 //! * Message length: FIPS 180-4 permits 2^64 bits for SHA-224/256 and 2^128 bits for SHA-384/512
 //!   and SHA-512/t. This implementation supports 2^61 - 1 bytes for SHA-224/256 (the standard's
@@ -185,7 +186,7 @@ pub type SHA512 = SHA512Internal<SHA512Params>;
 /// FIPS 180-4 s. 5.3.6 defines SHA-512/t for every "positive integer without a leading zero such
 /// that t < 512, and t is not 384", and then names two members of that family, SHA-512/224 and
 /// SHA-512/256, as approved hash algorithms. This type implements the family as the section
-/// defines it, with one narrowing of this crate's own: `T` must be a multiple of 8, because
+/// defines it, with one narrowing of this module's own: `T` must be a multiple of 8, because
 /// [`Hash`] produces whole bytes. So `T` may be any multiple of 8 from 8 to 504 other than 384;
 /// t = 384 is carved out because SHA-384 (s. 5.3.4) is already "SHA-512 truncated to 384 bits" --
 /// same compression function, same 384-bit output -- but predates SHA-512/t and has its own fixed
@@ -232,7 +233,7 @@ pub type SHA512 = SHA512Internal<SHA512Params>;
 /// same message, and digests for different t are unrelated to one another rather than prefixes of
 /// a common value. H(0) is not a parameter the caller supplies: [`SHA512tParams`] computes it at
 /// compile time from `T`, so a new `T` costs nothing at runtime and needs no table, and for
-/// t = 224 and t = 256 the result is pinned by `tests/sha512t_h0_tests.rs` against the words
+/// t = 224 and t = 256 the result is pinned by `tests/sha2_sha512t_h0_tests.rs` against the words
 /// FIPS 180-4 prints in s. 5.3.6.1 and s. 5.3.6.2.
 ///
 /// # Example
@@ -262,7 +263,7 @@ pub type SHA512_256 = SHA512t<256>;
 /*** Param traits ***/
 mod sealed {
     /// Prevents a parameter set from being defined outside this crate: the five marker types in
-    /// `lib.rs` are the only implementations.
+    /// this module are the only implementations.
     pub trait Sealed {}
 }
 impl sealed::Sealed for SHA224Params {}
@@ -404,7 +405,7 @@ impl SHA512InitValue for SHA512Params {
 ///
 /// * FIPS 180-4 s. 5.3.6's own rule, "t is any positive integer without a leading zero such that
 ///   t < 512, and t is not 384";
-/// * this crate's additional requirement that `T` be a multiple of 8, since the digest has to be a
+/// * this module's additional requirement that `T` be a multiple of 8, since the digest has to be a
 ///   whole number of bytes.
 ///
 /// See [`SHA512t`] for the accepted range and for what the t-specific initial hash value is.
@@ -462,7 +463,7 @@ impl<const T: usize> HashAlgParams for SHA512tParams<T> {
 impl<const T: usize> SHA512InitValue for SHA512tParams<T> {
     /// FIPS 180-4 s. 5.3.6: H(0) from the IV Generation Function. For t = 224 and t = 256 this is
     /// the value listed in s. 5.3.6.1 / s. 5.3.6.2, pinned against those words by
-    /// `tests/sha512t_h0_tests.rs`.
+    /// `tests/sha2_sha512t_h0_tests.rs`.
     const H0: [u64; 8] = sha512t_h0(T);
 }
 

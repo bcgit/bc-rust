@@ -5,7 +5,7 @@
 # first bytes of its output, decrypt reads it back from the first 12 bytes of its input, and CTR
 # accepts any input length with a ciphertext body exactly as long as the plaintext. Keys and data
 # come from `bc-rust rng`; the one fixed input is the OpenSSL-generated vector set, the same one
-# `crypto/aes/tests/ctr_vector_tests.rs` uses.
+# `crypto/symmetric/tests/aes_ctr_vector_tests.rs` uses.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 

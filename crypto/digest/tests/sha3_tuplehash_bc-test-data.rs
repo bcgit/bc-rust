@@ -5,6 +5,7 @@
 //! `crypto/sp800-185/`. If it is not present the tests print a warning and pass vacuously.
 
 use bouncycastle_core::errors::HashError;
+use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::hex;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
@@ -112,6 +113,20 @@ fn nist_sp800_185_tuplehashxof_sample_values() {
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
         assert_eq!(got, v.output, "COUNT {i}: TupleHashXOF{} S={:?}", v.strength, v.s);
+        // The same stream from a TupleHashXOF finished where it sits.
+        let in_place = match v.strength {
+            128 => {
+                let mut x = TupleHashXOF128::new(v.s.as_bytes());
+                t.iter().for_each(|e| x.do_update(e));
+                x.finish_squeezer(&finish_token()).do_output(want)
+            }
+            _ => {
+                let mut x = TupleHashXOF256::new(v.s.as_bytes());
+                t.iter().for_each(|e| x.do_update(e));
+                x.finish_squeezer(&finish_token()).do_output(want)
+            }
+        };
+        assert_eq!(in_place, v.output, "COUNT {i}: finish_squeezer");
     }
     println!("TupleHashXOF: {} sample values", vectors.len());
 }

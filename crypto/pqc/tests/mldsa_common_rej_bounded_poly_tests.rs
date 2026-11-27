@@ -1,4 +1,4 @@
-//! `rej_bounded_poly` against FIPS 204 Algorithm 31 written out literally, one squeezed byte per
+//! `rej_bounded_poly_out` against FIPS 204 Algorithm 31 written out literally, one squeezed byte per
 //! iteration, with Algorithm 15 for the half bytes. The function buffers its squeeze 272 bytes
 //! at a time and refills when a polynomial needs more, which for 𝜂 = 4 happens for a few seeds
 //! in a million: too rare for the known-answer suites to reach, so a seed that does is pinned
@@ -6,10 +6,11 @@
 
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_digest::sha3::SHAKE256;
-use bouncycastle_pqc::mldsa_common::aux_functions::rej_bounded_poly;
+use bouncycastle_pqc::mldsa_common::aux_functions::rej_bounded_poly_out;
 use bouncycastle_pqc::mldsa_common::params::{
     MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParamsBase,
 };
+use bouncycastle_pqc::mldsa_common::polynomial::Polynomial;
 
 /// The bytes the function squeezes at a time.
 const BUFFER_LEN: usize = 272;
@@ -68,7 +69,9 @@ fn rej_bounded_poly_literal(eta: usize, rho: &[u8; 64], nonce: &[u8; 2]) -> ([i3
 /// Checks one seed and returns the bytes the literal algorithm squeezed for it.
 fn check<P: MLDSAParamsBase>(rho: &[u8; 64], nonce: &[u8; 2]) -> usize {
     let (expected, squeezed) = rej_bounded_poly_literal(P::eta, rho, nonce);
-    let got = rej_bounded_poly::<P>(rho, nonce);
+    // Filled first with a value no coefficient takes, so that one left unwritten shows.
+    let mut got = Polynomial { coeffs: [i32::MAX; 256] };
+    rej_bounded_poly_out::<P>(rho, nonce, &mut got);
     for k in 0..256 {
         assert_eq!(got[k], expected[k], "{}: coefficient {k}", P::ALG_NAME);
     }

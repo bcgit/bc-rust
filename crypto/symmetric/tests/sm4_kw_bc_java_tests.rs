@@ -4,14 +4,14 @@
 //! `RFC3394WrapEngine(new SM4Engine())` and `RFC5649WrapEngine(new SM4Engine())`
 //! (bcprov-jdk18on 1.87-SNAPSHOT): `init(true, new KeyParameter(kek))` then `wrap`, with the
 //! unwrap checked there too. The plaintext of `len` bytes is `i * 0x9D` at byte `i`, as in
-//! `kw_reference_tests.rs`, which pins the same answers against RFC 3394 and RFC 5649 written out
-//! over the raw permutation; this file asserts agreement with the source implementation in its
+//! `sm4_kw_reference_tests.rs`, which pins the same answers against RFC 3394 and RFC 5649 written
+//! out over the raw permutation; this file asserts agreement with the source implementation in its
 //! own terms.
 
-use bouncycastle_cipher::modes::{KW, KWP};
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
+use bouncycastle_symmetric::modes::{KW, KWP};
 use bouncycastle_symmetric::sm4::{KEY_LEN, SM4Key};
 
 /// `KeyParameter(Hex.decode(..))`, the KEK of every case.

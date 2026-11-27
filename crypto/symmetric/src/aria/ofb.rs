@@ -3,17 +3,17 @@
 
 use crate::aria::BLOCK_LEN;
 use crate::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle_cipher::modes::Ofb;
+use crate::modes::Ofb;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
 
-/// ARIA-128 in OFB mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`].
+/// ARIA-128 in OFB mode. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`].
 ///
-/// See `bouncycastle_cipher::modes::ofb` for the construction and its security considerations.
+/// See `bouncycastle_symmetric::modes::ofb` for the construction and its security considerations.
 /// The alias is a stream cipher: the data is a `&mut [u8]` of any length, encrypted or decrypted
 /// in place. It comes from a key, [`ARIA128Key<OFB>`](crate::aria::ARIA128Key), through the
 /// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one block, drawn from
@@ -22,7 +22,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::aria::ARIA128Key;
-/// use bouncycastle_cipher::modes::OFB;
+/// use bouncycastle_symmetric::modes::OFB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

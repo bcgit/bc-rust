@@ -2,10 +2,10 @@
 //! Sec 3.1 and Sec 3.3.2, and the three-key engine type. The two-key engine is in
 //! [`super::tdes2`] and shares the checks defined here.
 
+use crate::modes::ModeNames;
 use crate::tdes::des::{Subkeys, inverse_ip, ip, rounds};
 use crate::tdes::schedule::{PARITY_MASK, expand, is_weak};
 use crate::tdes::{BLOCK_LEN, KEY_LEN};
-use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

@@ -9,12 +9,15 @@
 //! `[written, consumed)` is both already read and long enough for what this call can emit. That
 //! holds for a cipher that holds bytes back as well as for one that releases them at once. The
 //! price over a true in-place update is one memcpy of the data through `CHUNK` bytes of stack,
-//! and no second buffer the size of the message.
+//! wiped before returning, and no second buffer the size of the message. A cipher whose worker
+//! can work in place implements the in-place roles over that instead, with no copy at all.
 
 use crate::errors::SymmetricCipherError;
 use crate::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, FinishToken, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
+use bouncycastle_utils::secret::Secret;
 
 /// Bytes copied out per step. Four 16-byte blocks keeps a block-cipher mode on its wide path.
 const CHUNK: usize = 64;
@@ -47,7 +50,7 @@ where
     }
     enc.do_update_aad(aad)?;
     let written = enc.do_encrypt_out(plaintext, ciphertext)?;
-    let (last, last_len) = enc.do_encrypt_final()?;
+    let (last, last_len) = enc.finish_encrypt(&FinishToken::new())?;
     // `encrypt_out_len` is exactly `written + last_len`, so this fits in `ciphertext[..needed]`.
     ciphertext[written..written + last_len].copy_from_slice(&last[..last_len]);
     Ok(written + last_len)
@@ -80,7 +83,7 @@ where
     enc.do_update_aad(aad)?;
     let written = enc.do_encrypt_out(plaintext, ciphertext)?;
     let mut final_buf = [0u8; FINAL_LEN];
-    let (final_len, tag) = enc.do_encrypt_final_detached_out(&mut final_buf)?;
+    let (final_len, tag) = enc.finish_encrypt_detached_into(&FinishToken::new(), &mut final_buf)?;
     // `encrypt_detached_out_len` bounds `written + final_len`, so this fits in
     // `ciphertext[..needed]`.
     ciphertext[written..written + final_len].copy_from_slice(&final_buf[..final_len]);
@@ -108,7 +111,8 @@ where
     E: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     enc.do_update_aad(aad)?;
-    let mut tmp = [0u8; CHUNK];
+    // Plaintext, so wiped on every return, the error ones included.
+    let mut tmp = Secret::<[u8; CHUNK]>::new();
     let mut consumed = 0;
     let mut written = 0;
     while consumed < buf.len() {
@@ -118,7 +122,7 @@ where
         written += enc.do_encrypt_out(&tmp[..n], &mut buf[written..consumed])?;
     }
     let mut last = [0u8; FINAL_LEN];
-    let (last_len, tag) = enc.do_encrypt_final_detached_out(&mut last)?;
+    let (last_len, tag) = enc.finish_encrypt_detached_into(&FinishToken::new(), &mut last)?;
     buf[written..written + last_len].copy_from_slice(&last[..last_len]);
     Ok(tag)
 }
@@ -152,8 +156,9 @@ where
     }
     dec.do_update_aad(aad)?;
     let written = dec.do_decrypt_out(ciphertext, plaintext)?;
-    match dec.do_decrypt_final() {
-        Ok((last, data_len)) => {
+    let mut last = Secret::<[u8; FINAL_LEN]>::new();
+    match dec.finish_decrypt_into(&FinishToken::new(), &mut last) {
+        Ok(data_len) => {
             // `decrypt_out_len` bounds `written + data_len`, so this fits in `plaintext[..needed]`.
             plaintext[written..written + data_len].copy_from_slice(&last[..data_len]);
             Ok(written + data_len)
@@ -194,8 +199,8 @@ where
     }
     dec.do_update_aad(aad)?;
     let written = dec.do_decrypt_out(ciphertext, plaintext)?;
-    let mut final_buf = [0u8; FINAL_LEN];
-    match dec.do_decrypt_final_detached_out(tag, &mut final_buf) {
+    let mut final_buf = Secret::<[u8; FINAL_LEN]>::new();
+    match dec.finish_decrypt_detached_into(&FinishToken::new(), tag, &mut final_buf) {
         Ok(final_len) => {
             plaintext[written..written + final_len].copy_from_slice(&final_buf[..final_len]);
             Ok(written + final_len)
@@ -240,8 +245,9 @@ where
             consumed += n;
             written += dec.do_decrypt_out(&tmp[..n], &mut buf[written..consumed])?;
         }
-        let mut last = [0u8; FINAL_LEN];
-        let last_len = dec.do_decrypt_final_detached_out(tag, &mut last)?;
+        // Plaintext, so wiped on every return, the error ones included.
+        let mut last = Secret::<[u8; FINAL_LEN]>::new();
+        let last_len = dec.finish_decrypt_detached_into(&FinishToken::new(), tag, &mut last)?;
         buf[written..written + last_len].copy_from_slice(&last[..last_len]);
         Ok(())
     })();
@@ -283,7 +289,7 @@ where
         return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
     }
     let written = enc.do_encrypt_out(plaintext, ciphertext)?;
-    let (last, last_len) = enc.do_encrypt_final()?;
+    let (last, last_len) = enc.finish_encrypt(&FinishToken::new())?;
     // `encrypt_out_len` is exactly `written + last_len`, so this fits in `ciphertext[..needed]`.
     ciphertext[written..written + last_len].copy_from_slice(&last[..last_len]);
     Ok(written + last_len)
@@ -311,8 +317,9 @@ where
         return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
     }
     let written = dec.do_decrypt_out(ciphertext, plaintext)?;
-    match dec.do_decrypt_final() {
-        Ok((last, data_len)) => {
+    let mut last = Secret::<[u8; FINAL_LEN]>::new();
+    match dec.finish_decrypt_into(&FinishToken::new(), &mut last) {
+        Ok(data_len) => {
             // `decrypt_out_len` bounds `written + data_len`, so this fits in `plaintext[..needed]`.
             plaintext[written..written + data_len].copy_from_slice(&last[..data_len]);
             Ok(written + data_len)

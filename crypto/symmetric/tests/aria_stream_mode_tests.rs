@@ -18,12 +18,11 @@
 //!   tests through the key too.
 //!
 //! The same 160-byte plaintext runs through all four modes, and it is the one the ECB and CBC
-//! vectors in `kisa_vectors_tests.rs` use.
+//! vectors in `aria_kisa_vectors_tests.rs` use.
 
 #[path = "aria_common/mod.rs"]
 mod common;
 
-use bouncycastle_cipher::modes::{CFB, CFB8, CTR, OFB};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -32,6 +31,7 @@ use bouncycastle_core::symmetric_key::{
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_symmetric::aria::{ARIA128Key, ARIA192Key, ARIA256Key, BLOCK_LEN, CTR_NONCE_LEN};
+use bouncycastle_symmetric::modes::{CFB, CFB8, CTR, OFB};
 use common::bytes;
 
 /// The 160-byte plaintext shared by all twelve vectors.
@@ -264,7 +264,7 @@ fn check<'k, const KEY_LEN: usize, const INIT_DATA_LEN: usize, K>(
 
 #[test]
 fn aria_128_cfb_vectors() {
-    check::<16, _, _>(
+    check::<16, BLOCK_LEN, _>(
         "ARIA-128-CFB",
         &ARIA128Key::<CFB>::from_key_material(&material::<16>(KEY_128)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -274,7 +274,7 @@ fn aria_128_cfb_vectors() {
 
 #[test]
 fn aria_192_cfb_vectors() {
-    check::<24, _, _>(
+    check::<24, BLOCK_LEN, _>(
         "ARIA-192-CFB",
         &ARIA192Key::<CFB>::from_key_material(&material::<24>(KEY_192)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -284,7 +284,7 @@ fn aria_192_cfb_vectors() {
 
 #[test]
 fn aria_256_cfb_vectors() {
-    check::<32, _, _>(
+    check::<32, BLOCK_LEN, _>(
         "ARIA-256-CFB",
         &ARIA256Key::<CFB>::from_key_material(&material::<32>(KEY_256)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -296,7 +296,7 @@ fn aria_256_cfb_vectors() {
 
 #[test]
 fn aria_128_ofb_vectors() {
-    check::<16, _, _>(
+    check::<16, BLOCK_LEN, _>(
         "ARIA-128-OFB",
         &ARIA128Key::<OFB>::from_key_material(&material::<16>(KEY_128)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -306,7 +306,7 @@ fn aria_128_ofb_vectors() {
 
 #[test]
 fn aria_192_ofb_vectors() {
-    check::<24, _, _>(
+    check::<24, BLOCK_LEN, _>(
         "ARIA-192-OFB",
         &ARIA192Key::<OFB>::from_key_material(&material::<24>(KEY_192)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -316,7 +316,7 @@ fn aria_192_ofb_vectors() {
 
 #[test]
 fn aria_256_ofb_vectors() {
-    check::<32, _, _>(
+    check::<32, BLOCK_LEN, _>(
         "ARIA-256-OFB",
         &ARIA256Key::<OFB>::from_key_material(&material::<32>(KEY_256)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -328,7 +328,7 @@ fn aria_256_ofb_vectors() {
 
 #[test]
 fn aria_128_cfb8_vectors() {
-    check::<16, _, _>(
+    check::<16, BLOCK_LEN, _>(
         "ARIA-128-CFB8",
         &ARIA128Key::<CFB8>::from_key_material(&material::<16>(KEY_128)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -338,7 +338,7 @@ fn aria_128_cfb8_vectors() {
 
 #[test]
 fn aria_192_cfb8_vectors() {
-    check::<24, _, _>(
+    check::<24, BLOCK_LEN, _>(
         "ARIA-192-CFB8",
         &ARIA192Key::<CFB8>::from_key_material(&material::<24>(KEY_192)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -348,7 +348,7 @@ fn aria_192_cfb8_vectors() {
 
 #[test]
 fn aria_256_cfb8_vectors() {
-    check::<32, _, _>(
+    check::<32, BLOCK_LEN, _>(
         "ARIA-256-CFB8",
         &ARIA256Key::<CFB8>::from_key_material(&material::<32>(KEY_256)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
@@ -364,7 +364,7 @@ const CTR_NONCE: [u8; CTR_NONCE_LEN] = [0u8; CTR_NONCE_LEN];
 
 #[test]
 fn aria_128_ctr_vectors() {
-    check::<16, _, _>(
+    check::<16, CTR_NONCE_LEN, _>(
         "ARIA-128-CTR",
         &ARIA128Key::<CTR>::from_key_material(&material::<16>(KEY_128)).unwrap(),
         CTR_NONCE,
@@ -374,7 +374,7 @@ fn aria_128_ctr_vectors() {
 
 #[test]
 fn aria_192_ctr_vectors() {
-    check::<24, _, _>(
+    check::<24, CTR_NONCE_LEN, _>(
         "ARIA-192-CTR",
         &ARIA192Key::<CTR>::from_key_material(&material::<24>(KEY_192)).unwrap(),
         CTR_NONCE,
@@ -384,7 +384,7 @@ fn aria_192_ctr_vectors() {
 
 #[test]
 fn aria_256_ctr_vectors() {
-    check::<32, _, _>(
+    check::<32, CTR_NONCE_LEN, _>(
         "ARIA-256-CTR",
         &ARIA256Key::<CTR>::from_key_material(&material::<32>(KEY_256)).unwrap(),
         CTR_NONCE,
@@ -411,7 +411,7 @@ fn the_published_cfb128_and_cfb8_vectors_differ_after_the_first_byte() {
 
 /// The counter limit, through a key: under `CTR<15>` the counter is one byte, so the 256th block
 /// is the last the mode will produce, and the byte after it is refused rather than repeating the
-/// keystream (`bouncycastle_cipher::modes::Ctr`'s rule, pinned here on an ARIA key so that the
+/// keystream (`bouncycastle_symmetric::modes::Ctr`'s rule, pinned here on an ARIA key so that the
 /// key-object path reaches it).
 #[test]
 fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {

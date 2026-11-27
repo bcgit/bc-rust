@@ -16,7 +16,7 @@ use bouncycastle_digest::x963kdf::{
 };
 
 /// CAVP `ansx963_2001.rsp`, `[SHA-256]`, shared secret 192 bits, SharedInfo 128 bits, key data
-/// 1024 bits, COUNT = 0 (the same vector `x963kdf_cavp.rs` reads from bc-test-data).
+/// 1024 bits, COUNT = 0 (the same vector `x963kdf_x963kdf_cavp.rs` reads from bc-test-data).
 const Z: &str = "22518b10e70f2a3f243810ae3254139efbee04aa57c7af7d";
 const SHARED_INFO: &str = "75eef81aa3041e33b80971203d2c0c52";
 const KEY_DATA: &str = "c498af77161cc59f2962b9a713e2b215152d139766ce34a776df11866a69bf2e52a13d9c7c6fc878c50c5ea0bc7b00e0da2447cfd874f6cf92f30d0097111485500c90c3af8b487872d04685d14c8d1dc8d7fa08beb0ce0ababc11f0bd496269142d43525a78e5bc79a17f59676a5706dc54d54d4d1f0bd7e386128ec26afc21";

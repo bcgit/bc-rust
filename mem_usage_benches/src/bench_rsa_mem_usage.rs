@@ -22,7 +22,7 @@
 //! Only one representative (scheme, hash) is benched per modulus size (PKCS#1 v1.5/SHA-256): peak
 //! stack usage here is dominated by the const-generic-width RSASP1/RSAVP1 modular exponentiation
 //! (`L`, this modulus size's own limb count), not by which hash fed into it -- the
-//! `crypto/rsa/benches/rsa_*_benches.rs` criterion benches are where per-hash/per-scheme
+//! `crypto/modexp/benches/rsa_rsa_*_benches.rs` criterion benches are where per-hash/per-scheme
 //! *time* differences are measured instead.
 //!
 //! Main is at the bottom, controls which this was actually run.
@@ -37,23 +37,23 @@ use bouncycastle::core::signature_key::{
     OneShotVerifyingKey, SigningKey, VerifyingKey,
 };
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
-use bouncycastle::rng::DefaultRNG;
-use bouncycastle::rsa::keys::{
+use bouncycastle::digest::sha2::SHA256;
+use bouncycastle::modexp::rsa::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,
 };
-use bouncycastle::rsa::rsaes_oaep::OaepParams;
-use bouncycastle::rsa::size::RsaSigningSize;
-use bouncycastle::rsa::{
+use bouncycastle::modexp::rsa::rsaes_oaep::OaepParams;
+use bouncycastle::modexp::rsa::size::RsaSigningSize;
+use bouncycastle::modexp::rsa::{
     RSA1024, RSA1536, RSA2048, RSA3072, RSA4096, RSA8192, rsa_1024, rsa_1536, rsa_2048, rsa_3072,
     rsa_4096, rsa_8192,
 };
-use bouncycastle::sha2::SHA256;
+use bouncycastle::rng::DefaultRNG;
 
 const MSG: &[u8] = b"peak stack usage of RSA sign/verify, held constant across every modulus size";
 
 /// This prints the on-disk encoded length and the in-memory struct size of each modulus size's
 /// private/public keys, and each modulus size's signature length. This is the source for the
-/// table in `bouncycastle_rsa`'s own crate docs' `# Memory Usage` section.
+/// table in `bouncycastle_modexp::rsa`'s own module docs' `# Memory Usage` section.
 fn print_key_sizes() {
     use core::mem::size_of;
 
@@ -185,12 +185,12 @@ fn bench_1024_verify() {
     let pk = RsaPublicComponents::<RSA1024>::new(&n, 0x10001).unwrap();
     let mut sig = [0u8; 128];
     sig.copy_from_slice(
-        &bouncycastle::hex::decode(
+        &bouncycastle::core::hex::decode(
             "41339884a9b3940e8488d666bb158063c6a2a2717cae7f564834a876fcbf7098ecf3acbfabf37d38a8e6127b1e313744f1f896e165efdaea0b2e7673867842b9e94db0868ed9a92bcdcb370a4e20ff275c82595e4400a8b9e9f12482f014846b48216f321266ae6ae6338dbcdc41b711e483e6e3e728772e7f9f5ef95c30196b",
         )
         .unwrap(),
     );
-    let msg = bouncycastle::hex::decode("0000000000000000000000000000000000000000").unwrap();
+    let msg = bouncycastle::core::hex::decode("0000000000000000000000000000000000000000").unwrap();
 
     if pk.key::<rsa_1024::RSASSA_PKCS1_v1_5_SHA256>().verify(&msg, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");

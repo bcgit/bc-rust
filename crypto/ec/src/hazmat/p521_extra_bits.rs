@@ -1,7 +1,7 @@
 //! FIPS 186-5 Appendix A.4.1, "Conversion of a Bit String to an Integer mod n via Modular
-//! Reduction" -- the "extra random bits" method `bouncycastle-ecdsa`'s `keys_p521` key generation
-//! (Appendix A.2.1) and `ecdsa_p521` randomised per-message secret (Appendix A.3.1) use to turn a
-//! DRBG output wider than `n` into a value in `[1, n-1]`. Identical algorithm to
+//! Reduction" -- the "extra random bits" method `crate::ecdsa::keys`'s key generation
+//! (Appendix A.2.1) and `crate::ecdsa::ecdsa`'s randomised per-message secret (Appendix A.3.1)
+//! use to turn a DRBG output wider than `n` into a value in `[1, n-1]`. Identical algorithm to
 //! [`crate::hazmat::p256_extra_bits`] -- see that module's docs for the full reasoning -- with
 //! P-521's own `n` substituted and, because of `n`'s width, its own reduction (see
 //! [`reduce_wide_bits_mod_n_minus_1`]).
@@ -10,7 +10,7 @@
 //!
 //! Not for bias: FIPS 186-5 Table A.2 gives `p521` a required and recommended DRBG output of 521
 //! bits for key generation, since `n` is within `2^260` of `2^521`. But Appendix A.3.1 requires
-//! `N + t` bits with `t >= 64` for the per-message secret regardless, so `bouncycastle-ecdsa`
+//! `N + t` bits with `t >= 64` for the per-message secret regardless, so `crate::ecdsa`
 //! draws `N + 71 = 592` bits (74 bytes, the byte-aligned width at or above `585`) for both and
 //! reduces them here. `p521_extra_bits_tests.rs` pins known answers computed in Python.
 

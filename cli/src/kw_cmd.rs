@@ -47,13 +47,13 @@
 //! ```
 
 use crate::helpers::block_mode_helpers::{CipherDirection, InputLimit, load_key_object};
-use crate::helpers::{read_secret_stdin_all, wipe, write_secret_bytes_or_hex};
-use bouncycastle::cipher::BlockCipherKey;
-use bouncycastle::cipher::modes::ModeNames;
-use bouncycastle::cipher::modes::{KW, KWP};
+use crate::helpers::{finish_stdout, read_secret_stdin_all, wipe, write_secret_bytes_or_hex};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{KeyUnwrappingKey, KeyWrappingKey};
+use bouncycastle::symmetric::BlockCipherKey;
+use bouncycastle::symmetric::modes::ModeNames;
+use bouncycastle::symmetric::modes::{KW, KWP};
 use std::process::exit;
 
 /// KW under a `KEY_LEN`-byte key-encryption key for the permutation `P`; `alg` names the cipher
@@ -70,7 +70,7 @@ pub(crate) fn kw_cmd<P, const KEY_LEN: usize>(
     let alg = format!("{alg}-KW");
     run::<_, KEY_LEN>(
         direction,
-        &load_key_object::<BlockCipherKey<P, KW>, KEY_LEN>(key, key_file, &alg),
+        load_key_object::<BlockCipherKey<P, KW>, KEY_LEN>(key, key_file, &alg),
         None,
         output_hex,
         &alg,
@@ -90,7 +90,7 @@ pub(crate) fn kwp_cmd<P, const KEY_LEN: usize>(
     let alg = format!("{alg}-KWP");
     run::<_, KEY_LEN>(
         direction,
-        &load_key_object::<BlockCipherKey<P, KWP>, KEY_LEN>(key, key_file, &alg),
+        load_key_object::<BlockCipherKey<P, KWP>, KEY_LEN>(key, key_file, &alg),
         None,
         output_hex,
         &alg,
@@ -101,7 +101,7 @@ pub(crate) fn kwp_cmd<P, const KEY_LEN: usize>(
 /// algorithm in error messages. Shared with the other block ciphers' key-wrap commands.
 pub(crate) fn run<K, const KEK_LEN: usize>(
     direction: &CipherDirection,
-    kek: &K,
+    kek: K,
     limit: Option<&InputLimit>,
     output_hex: bool,
     alg: &str,
@@ -110,15 +110,17 @@ pub(crate) fn run<K, const KEK_LEN: usize>(
 {
     match direction {
         CipherDirection::Encrypt => run_with(
-            |len| kek.wrap_out_len(len),
-            |input, out| kek.wrap_out(input, out),
+            kek,
+            |kek, len| kek.wrap_out_len(len),
+            |kek, input, out| kek.wrap_out(input, out),
             limit,
             output_hex,
             alg,
         ),
         CipherDirection::Decrypt => run_with(
-            |len| kek.unwrap_out_max_len(len),
-            |input, out| kek.unwrap_out(input, out),
+            kek,
+            |kek, len| kek.unwrap_out_max_len(len),
+            |kek, input, out| kek.unwrap_out(input, out),
             None,
             output_hex,
             alg,
@@ -133,10 +135,12 @@ pub(crate) fn run<K, const KEK_LEN: usize>(
 /// input before `op` runs.
 ///
 /// One side of either direction is a key in the clear, so the input and the output are both
-/// wiped before the function returns or exits.
-pub(crate) fn run_with(
-    out_len: impl FnOnce(usize) -> usize,
-    op: impl FnOnce(&[u8], &mut [u8]) -> Result<usize, SymmetricCipherError>,
+/// wiped before the function returns or exits, and `kek` is dropped once `op` has run, before
+/// anything is written or reported. A failed read of stdin still exits with `kek` alive.
+pub(crate) fn run_with<K>(
+    kek: K,
+    out_len: impl FnOnce(&K, usize) -> usize,
+    op: impl FnOnce(&K, &[u8], &mut [u8]) -> Result<usize, SymmetricCipherError>,
     limit: Option<&InputLimit>,
     output_hex: bool,
     alg: &str,
@@ -147,17 +151,22 @@ pub(crate) fn run_with(
         && input_len as u64 > limit.max_bytes
     {
         wipe(&mut input);
+        drop(kek);
         eprintln!("Error: {}", limit.message);
         exit(-1);
     }
 
-    let mut output = vec![0u8; out_len(input_len)];
-    let result = op(&input, &mut output);
+    let mut output = vec![0u8; out_len(&kek, input_len)];
+    let result = op(&kek, &input, &mut output);
+    // `exit` runs no destructors.
+    drop(kek);
     wipe(&mut input);
-    if let Ok(written) = result {
-        write_secret_bytes_or_hex(&output[..written], output_hex);
-    }
+    let written = match result {
+        Ok(written) => write_secret_bytes_or_hex(&output[..written], output_hex),
+        Err(_) => Ok(()),
+    };
     wipe(&mut output);
+    finish_stdout(written);
 
     match result {
         Ok(_) => {}

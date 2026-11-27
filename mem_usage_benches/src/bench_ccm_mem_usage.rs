@@ -28,9 +28,6 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::aes::AES128Key;
-use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::cipher::modes::{CCM, CCM_Packet, CcmPacketDecryptor, CcmPacketEncryptor};
 use bouncycastle::core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadInPlaceEncryptMode, KeyExpansion,
 };
@@ -40,6 +37,9 @@ use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
+use bouncycastle::symmetric::aes::AES128Key;
+use bouncycastle::symmetric::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::symmetric::modes::{CCM, CCM_Packet, CcmPacketDecryptor, CcmPacketEncryptor};
 
 /// The parameters the ACVP vectors and most protocols use: 12-byte nonce, 16-byte tag.
 const NONCE_LEN: usize = 12;

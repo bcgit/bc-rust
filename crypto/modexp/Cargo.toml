@@ -1,0 +1,56 @@
+[package]
+name = "bouncycastle-modexp"
+version.workspace = true
+edition.workspace = true
+
+[features]
+# Forwards alone: the crate has nothing of its own behind either. `alloc` turns on the `alloc`
+# feature, and `std` the `std` feature, of the crates it depends on, so that the allocating
+# one-shots and `_boxed` finals of the core traits are there by default; without them the crate
+# and what it depends on link no allocator.
+default = ["std"]
+std = ["alloc", "bouncycastle-core/std", "bouncycastle-digest/std"]
+alloc = ["bouncycastle-core/alloc", "bouncycastle-digest/alloc"]
+
+[dependencies]
+bouncycastle-core.workspace = true
+bouncycastle-digest.workspace = true
+bouncycastle-utils.workspace = true
+
+# `bouncycastle_rsa_ct_harness` is set by dev_scripts/check_rsa_ct.sh alone; see `ct_harness`
+# in src/rsa/mod.rs.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(bouncycastle_rsa_ct_harness)'] }
+
+[dev-dependencies]
+# The tests, benches and doc examples use the `Vec` one-shots.
+bouncycastle-core = { workspace = true, features = ["std"] }
+bouncycastle-core-test-framework.workspace = true
+# The tests and doc examples seed a DRBG from the operating system.
+bouncycastle-rng = { workspace = true, features = ["std"] }
+criterion.workspace = true
+serde_json = "1.0"
+
+[[bench]]
+name = "rsa_rsa_1024_benches"
+harness = false
+
+[[bench]]
+name = "rsa_rsa_1536_benches"
+harness = false
+
+[[bench]]
+name = "rsa_rsa_2048_benches"
+harness = false
+
+[[bench]]
+name = "rsa_rsa_3072_benches"
+harness = false
+
+[[bench]]
+name = "rsa_rsa_4096_benches"
+harness = false
+
+[[bench]]
+name = "rsa_rsa_8192_benches"
+harness = false

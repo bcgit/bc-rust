@@ -2,11 +2,11 @@
 //! the source of the "Memory Usage" tables in the `bouncycastle_digest::sm3` module docs.
 //!
 //! As with Ascon, a call needs a few hundred bytes, below the floor of the process's own start-up
-//! that `bench_aes_mem_usage` describes, so massif cannot see it. The figures in the crate docs
-//! are read from the compiler the way `bench_ascon_mem_usage` describes: `-C remark=prologepilog`
-//! gives each function's frame and `--emit=asm` its calls, after LTO, and a figure is the deepest
-//! chain of frames below the entry point plus 8 bytes of return address per call, not following
-//! the panic paths. With every bench called from `main`:
+//! that `bench_aes_mem_usage` describes, so massif cannot see it. The figures in the `sm3` module
+//! docs are read from the compiler the way `bench_ascon_mem_usage` describes:
+//! `-C remark=prologepilog` gives each function's frame and `--emit=asm` its calls, after LTO, and
+//! a figure is the deepest chain of frames below the entry point plus 8 bytes of return address per
+//! call, not following the panic paths. With every bench called from `main`:
 //!
 //! ```text
 //! cargo rustc --release -p mem_usage_benches --bin bench_sm3_mem_usage -- -C remark=prologepilog --emit=asm
@@ -27,10 +27,10 @@ use bouncycastle::core::errors::{KDFError, MACError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::{Hash, HashOneShot, Suspendable};
-use bouncycastle::hmac::HmacKey;
-use bouncycastle::sm3::hkdf::HKDF_SM3;
-use bouncycastle::sm3::hmac::HMAC_SM3;
-use bouncycastle::sm3::{SM3, SUSPENDED_SM3_STATE_LEN};
+use bouncycastle::digest::hmac::HmacKey;
+use bouncycastle::digest::sm3::hkdf::HKDF_SM3;
+use bouncycastle::digest::sm3::hmac::HMAC_SM3;
+use bouncycastle::digest::sm3::{SM3, SUSPENDED_SM3_STATE_LEN};
 
 /// Two full 64-byte blocks and a partial one.
 const MSG_LEN: usize = 150;

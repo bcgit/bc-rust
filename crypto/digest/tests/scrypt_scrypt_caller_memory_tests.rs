@@ -1,5 +1,5 @@
-//! scrypt over working memory the caller supplies: the part of the crate that exists with and
-//! without the `std` feature, so this file runs in both configurations.
+//! scrypt over working memory the caller supplies: the part of the module that exists with and
+//! without the `alloc` feature, so this file runs in both configurations.
 
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hex::decode as hex_decode;

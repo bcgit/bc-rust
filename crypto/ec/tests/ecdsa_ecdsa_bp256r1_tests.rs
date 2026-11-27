@@ -1,0 +1,51 @@
+//! ECDSA over brainpoolP256r1 with SHA256: the shared behavioural suite in `ecdsa_common`, instantiated for
+//! the curve's conventional pairing.
+
+#[path = "ecdsa_ecdsa_common/mod.rs"]
+mod ecdsa_common;
+
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_digest::sha2::SHA256;
+use bouncycastle_ec::Bp256r1;
+
+#[test]
+fn framework_and_metadata() {
+    ecdsa_common::framework_and_metadata::<Bp256r1, SHA256, 65, 32, 64>(
+        "ECDSA-brainpoolP256r1-SHA256",
+        "ECDetDSA-brainpoolP256r1-SHA256",
+        SecurityStrength::_128bit,
+    );
+}
+
+#[test]
+fn two_signers_one_verifier() {
+    ecdsa_common::two_signers_one_verifier::<Bp256r1, SHA256, 64>();
+}
+
+#[test]
+fn short_draw_is_refused() {
+    ecdsa_common::short_draw_is_refused::<Bp256r1, SHA256, 64>();
+}
+
+#[test]
+fn context_is_refused() {
+    ecdsa_common::context_is_refused::<Bp256r1, SHA256, 64>();
+}
+
+#[test]
+fn key_loading() {
+    ecdsa_common::key_loading::<Bp256r1, SHA256, 65, 32>();
+}
+
+#[test]
+fn rng_rules() {
+    ecdsa_common::rng_rules::<Bp256r1, SHA256, 65>(
+        SecurityStrength::_128bit,
+        SecurityStrength::_112bit,
+    );
+}
+
+#[test]
+fn signature_length_and_range() {
+    ecdsa_common::signature_length_and_range::<Bp256r1, SHA256, 32, 64>();
+}

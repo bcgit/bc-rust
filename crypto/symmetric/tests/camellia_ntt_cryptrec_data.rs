@@ -5,9 +5,9 @@
 //! it lists ten keys, and for each key the ciphertexts of the 128 plaintexts with exactly one bit
 //! set, `P No.i` having bit `128 - i` set (bit 0 least significant) -- 3840 vectors in all.
 //!
-//! The plaintexts are not stored: `ntt_cryptrec_tests.rs` regenerates `P No.i` from `i` and the
-//! generator asserted that every plaintext in the file has that form. Keys and ciphertexts are the
-//! file's hex, whitespace removed, case preserved.
+//! The plaintexts are not stored: `camellia_ntt_cryptrec_tests.rs` regenerates `P No.i` from `i`
+//! and the generator asserted that every plaintext in the file has that form. Keys and ciphertexts
+//! are the file's hex, whitespace removed, case preserved.
 
 #![allow(dead_code)]
 

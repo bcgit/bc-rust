@@ -5,6 +5,7 @@
 //! `crypto/sp800-185/`. If it is not present the tests print a warning and pass vacuously.
 
 use bouncycastle_core::errors::HashError;
+use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::hex;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
@@ -100,11 +101,15 @@ fn nist_sp800_185_parallelhashxof_sample_values() {
             128 => {
                 let mut p = ParallelHashXOF128::new(v.block_size, v.s.as_bytes());
                 p.do_update(&v.msg);
+                let in_place = p.clone().finish_squeezer(&finish_token()).do_output(want);
+                assert_eq!(in_place, v.output, "COUNT {i}: finish_squeezer");
                 p.into_squeezer().do_output(want)
             }
             256 => {
                 let mut p = ParallelHashXOF256::new(v.block_size, v.s.as_bytes());
                 p.do_update(&v.msg);
+                let in_place = p.clone().finish_squeezer(&finish_token()).do_output(want);
+                assert_eq!(in_place, v.output, "COUNT {i}: finish_squeezer");
                 p.into_squeezer().do_output(want)
             }
             other => panic!("COUNT {i}: unexpected strength {other}"),

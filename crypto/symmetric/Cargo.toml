@@ -1,26 +1,30 @@
 [package]
 name = "bouncycastle-symmetric"
-description = "Symmetric algorithms: the ARIA, Camellia, SM4 and Triple DES block ciphers, Ascon (NIST SP 800-232), ChaCha20, Poly1305, ChaCha20-Poly1305 and the SP 800-108 KDFs"
+description = "Symmetric algorithms: the block cipher modes and padding, the AES, ARIA, Camellia, SM4 and Triple DES block ciphers, Ascon (NIST SP 800-232), ChaCha20, Poly1305, ChaCha20-Poly1305 and the SP 800-108 KDFs"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [features]
-# `std` gates the one-shots that return a `Vec`; everything else is the same without it.
+# `alloc` gates the one-shots that return a `Vec` (Ascon-CXOF128's) and turns on
+# `bouncycastle-core`'s and `bouncycastle-digest`'s; without it the crate and what it depends on
+# link no allocator. `std` implies `alloc` and gates nothing of its own: it is a forward.
 default = ["std"]
-std = ["bouncycastle-core/std"]
+std = ["alloc", "bouncycastle-core/std", "bouncycastle-digest/std"]
+alloc = ["bouncycastle-core/alloc", "bouncycastle-digest/alloc"]
 
 [dependencies]
-bouncycastle-aes.workspace = true
-bouncycastle-cipher.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-digest.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
+# The tests, benches and doc examples use the `Vec` one-shots.
+bouncycastle-core = { workspace = true, features = ["std"] }
 bouncycastle-cipher-test-framework.workspace = true
 bouncycastle-core-test-framework.workspace = true
-bouncycastle-rng.workspace = true
+# The tests and doc examples seed a DRBG from the operating system.
+bouncycastle-rng = { workspace = true, features = ["std"] }
 criterion.workspace = true
 serde_json = "1.0"
 
@@ -59,3 +63,92 @@ harness = false
 [[bench]]
 name = "tdes_tdes_benches"
 harness = false
+
+[[bench]]
+name = "aes_aes_benches"
+harness = false
+
+[[bench]]
+name = "aes_aes_modes_benches"
+harness = false
+
+[[bench]]
+name = "aes_aes_gcm_packet_benches"
+harness = false
+
+[[bench]]
+name = "aes_aes_xts_benches"
+harness = false
+
+# Ascon-CXOF128's `Vec`-returning one-shot.
+[[test]]
+name = "ascon_cxof128_tests"
+required-features = ["alloc"]
+
+[[test]]
+name = "padding_nopadding_tests"
+path = "tests/padding/nopadding_tests.rs"
+
+[[test]]
+name = "padding_padded_tests"
+path = "tests/padding/padded_tests.rs"
+
+[[test]]
+name = "padding_pkcs7_tests"
+path = "tests/padding/pkcs7_tests.rs"
+
+[[test]]
+name = "modes_alg_name_tests"
+path = "tests/modes/alg_name_tests.rs"
+
+[[test]]
+name = "modes_cbc_tests"
+path = "tests/modes/cbc_tests.rs"
+
+[[test]]
+name = "modes_ccm_tests"
+path = "tests/modes/ccm_tests.rs"
+
+[[test]]
+name = "modes_cfb8_tests"
+path = "tests/modes/cfb8_tests.rs"
+
+[[test]]
+name = "modes_cfb_tests"
+path = "tests/modes/cfb_tests.rs"
+
+[[test]]
+name = "modes_cmac_tests"
+path = "tests/modes/cmac_tests.rs"
+
+[[test]]
+name = "modes_ctr_tests"
+path = "tests/modes/ctr_tests.rs"
+
+[[test]]
+name = "modes_ecb_tests"
+path = "tests/modes/ecb_tests.rs"
+
+[[test]]
+name = "modes_gcm_tests"
+path = "tests/modes/gcm_tests.rs"
+
+[[test]]
+name = "modes_gmac_tests"
+path = "tests/modes/gmac_tests.rs"
+
+[[test]]
+name = "modes_kw_tests"
+path = "tests/modes/kw_tests.rs"
+
+[[test]]
+name = "modes_ofb_tests"
+path = "tests/modes/ofb_tests.rs"
+
+[[test]]
+name = "modes_symmetric_cipher_api_tests"
+path = "tests/modes/symmetric_cipher_api_tests.rs"
+
+[[test]]
+name = "modes_xts_tests"
+path = "tests/modes/xts_tests.rs"

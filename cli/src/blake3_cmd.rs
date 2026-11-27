@@ -3,15 +3,16 @@
 
 use std::process::exit;
 
-use bouncycastle::blake3::{BLAKE3, BLAKE3DeriveKey, BLAKE3KeyedHashKey};
+use bouncycastle::core::hazmat::finish_token;
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle::core::traits::MACGenerator;
+use bouncycastle::core::traits::{Hash, MACGenerator};
+use bouncycastle::digest::blake3::{BLAKE3, BLAKE3DeriveKey, BLAKE3KeyedHashKey};
 
 use crate::helpers::{load_mac_key, squeeze_to_stdout, stream_stdin, stream_xof};
 use crate::mac_cmd::do_mac_with_key;
 
 /// BLAKE3 spec s. 2.3: `keyed_hash` "takes an input of any length together with a 256-bit key".
-/// The crate has no public constant for it.
+/// The `blake3` module has no public constant for it.
 const BLAKE3_KEY_LEN: usize = 32;
 
 /// The default-length BLAKE3 output: BLAKE3 spec s. 2.1, "The chaining value of the root node,
@@ -30,7 +31,10 @@ pub(crate) fn blake3_cmd(output_len: usize, output_hex: bool) {
 /// application-specific"; this command takes it as an argument only so that scripts can name the
 /// application's fixed string.
 pub(crate) fn blake3_derive_key_cmd(context: &str, output_len: usize, output_hex: bool) {
-    stream_xof(BLAKE3DeriveKey::new(context.as_bytes()), output_len, output_hex);
+    // Finished where it sits, since it holds the key material's chaining values.
+    let mut kdf = BLAKE3DeriveKey::new(context.as_bytes());
+    stream_stdin(|chunk| kdf.do_update(chunk));
+    squeeze_to_stdout(kdf.finish_squeezer(&finish_token()), output_len, output_hex);
 }
 
 /// BLAKE3 `keyed_hash` mode of stdin: write `output_len` bytes of keyed output, or with `--verify`
@@ -70,5 +74,5 @@ pub(crate) fn blake3_keyed_hash_cmd(
     // BLAKE3 spec s. 2.6: the keyed output stream, of which the MAC tag is the first 32 bytes.
     let mut mac = mac_key.create_generator();
     stream_stdin(|chunk| mac.do_update(chunk));
-    squeeze_to_stdout(mac.into_squeezer(), output_len, output_hex);
+    squeeze_to_stdout(mac.finish_squeezer(&finish_token()), output_len, output_hex);
 }

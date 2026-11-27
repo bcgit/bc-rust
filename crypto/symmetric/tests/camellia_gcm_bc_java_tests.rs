@@ -2,22 +2,22 @@
 //!
 //! No standard publishes a Camellia-GCM vector: RFC 6367 defines the TLS cipher suites without
 //! one, and neither Wycheproof nor bc-test-data has a file; the Camellia authors' own cases are
-//! in `gcm_authors_tests.rs`, and cover 128 and 256 bits only. These answers come from bc-java
-//! 1.87's `GCMBlockCipher.newInstance(new CamelliaEngine())` under `AEADParameters` with a
+//! in `camellia_gcm_authors_tests.rs`, and cover 128 and 256 bits only. These answers come from
+//! bc-java 1.87's `GCMBlockCipher.newInstance(new CamelliaEngine())` under `AEADParameters` with a
 //! 128-bit tag, over inputs anyone can regenerate: the three RFC 3713 Appendix A keys, the
 //! 12-byte nonce `10 11 .. 1b`, the 20 AAD bytes `20 21 .. 33` and the 45-byte message
 //! `40 41 .. 6c` (not a block multiple, so the last counter block is used in part); and, at each
 //! key, the tag of an empty message with no AAD, which is GHASH over the lengths block alone.
-//! `tests/mode_key_tests.rs` has the AEAD suite over the same keys; this file pins the answers
-//! both ways.
+//! `tests/camellia_mode_key_tests.rs` has the AEAD suite over the same keys; this file pins the
+//! answers both ways.
 
 #[path = "camellia_common/mod.rs"]
 mod common;
 
-use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_symmetric::camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
+use bouncycastle_symmetric::modes::GCM;
 use common::bytes;
 
 fn nonce() -> [u8; 12] {

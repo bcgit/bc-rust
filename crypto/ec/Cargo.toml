@@ -1,15 +1,32 @@
 [package]
 name = "bouncycastle-ec"
+description = "Elliptic-curve cryptography: constant-time arithmetic over the NIST, Brainpool, secp256k1 and SM2 curves, ECDSA, ECC CDH, SM2 signatures, Ed25519, Ed448, X25519, X448 and the DHKEM of RFC 9180"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+
+[features]
+# Forwards alone: the crate has nothing of its own behind either. `alloc` turns on the `alloc`
+# feature, and `std` the `std` feature, of the crates it depends on, so that the allocating
+# one-shots and `_boxed` finals of the core traits are there by default; without them the crate
+# and what it depends on link no allocator.
+default = ["std"]
+std = ["alloc", "bouncycastle-core/std", "bouncycastle-digest/std"]
+alloc = ["bouncycastle-core/alloc", "bouncycastle-digest/alloc"]
 
 [dependencies]
 bouncycastle-core.workspace = true
+bouncycastle-digest.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
-bouncycastle-rng.workspace = true
+# The tests, benches and doc examples use the `Vec` one-shots.
+bouncycastle-core = { workspace = true, features = ["std"] }
+bouncycastle-core-test-framework.workspace = true
+# The tests and doc examples seed a DRBG from the operating system.
+bouncycastle-rng = { workspace = true, features = ["std"] }
 criterion.workspace = true
+serde_json = "1.0"
 
 [[bench]]
 name = "p256_field_benches"
@@ -105,4 +122,32 @@ harness = false
 
 [[bench]]
 name = "sm2_scalar_benches"
+harness = false
+
+[[bench]]
+name = "ecdsa_ecdsa_benches"
+harness = false
+
+[[bench]]
+name = "eccdh_eccdh_benches"
+harness = false
+
+[[bench]]
+name = "sm2_sm2_benches"
+harness = false
+
+[[bench]]
+name = "ed_x25519_benches"
+harness = false
+
+[[bench]]
+name = "ed_x448_benches"
+harness = false
+
+[[bench]]
+name = "ed_ed25519_benches"
+harness = false
+
+[[bench]]
+name = "ed_ed448_benches"
 harness = false

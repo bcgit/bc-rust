@@ -133,7 +133,7 @@ impl P256ScalarField {
     /// wrapped in [`bouncycastle_utils::secret::Secret`] -- that would cost its `Copy`, its `const
     /// ZERO`/`ONE`, and a scrub on every intermediate including the public ones. The trade is that
     /// scrubbing is the caller's job, on every path out of the function; see
-    /// `bouncycastle_ecdsa`'s `sign_with_k` for the intended use.
+    /// `crate::ecdsa`'s `sign_with_k` for the intended use.
     ///
     /// This does not reach values the compiler kept in registers or spilled itself, and is
     /// defence in depth rather than a guarantee.
@@ -507,12 +507,21 @@ impl SecretScalar for P256Scalar {
         P256Scalar::from_borrowed_limbs(limbs)
     }
 
+    fn from_borrowed_limbs_into(limbs: &[u64; 4], out: &mut Self) {
+        reduce_once_into(limbs, &mut out.0);
+    }
+
     fn from_be_bytes(bytes: &[u8; 32]) -> Self {
         P256Scalar::from_be_bytes(bytes)
     }
 
     fn to_be_bytes(&self) -> [u8; 32] {
         P256Scalar::to_be_bytes(self)
+    }
+
+    #[inline(never)]
+    fn to_be_bytes_into(&self, out: &mut [u8; 32]) {
+        crate::hazmat::p256_sec1::be_bytes_from_limbs_into(self.limbs(), out)
     }
 }
 

@@ -1,0 +1,33 @@
+name: ECDSA Stack Wipe
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ecdsa-stack-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ecdsa-stack:
+    name: ecdsa-stack
+    # x86-64 only: GitHub's copy also runs on an arm64 runner, which this platform does not offer.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Search the stack ECDSA, ECC CDH, DHKEM and EdDSA/XDH used for what they handled
+        run: ./dev_scripts/check_ecdsa_stack.sh

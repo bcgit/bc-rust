@@ -31,7 +31,7 @@ fn verify(msg: &[u8], tag: &[u8; 16]) -> Result<(), MACError> {
 }
 
 /// The framework's API-contract checks, which need no external data. The tag's correctness is
-/// pinned by the RFC 8439 vectors in poly1305_bc-test-data.rs, which run the same suite.
+/// pinned by the RFC 8439 vectors in poly1305_poly1305_bc-test-data.rs, which run the same suite.
 #[test]
 fn core_mac_contract() {
     let msg = b"framework message spanning more than one 16-byte block";
@@ -163,7 +163,7 @@ fn reference_tag(r0: u32, block: &[u8; 16]) -> [u8; 16] {
     tag
 }
 
-/// The figures in the crate docs' Memory Usage table.
+/// The figures in the module docs' Memory Usage table.
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn sizes_match_the_documented_memory_table() {

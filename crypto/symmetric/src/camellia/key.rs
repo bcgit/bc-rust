@@ -1,8 +1,8 @@
 //! Camellia key objects: [`BlockCipherKey`] over the Camellia permutations, one alias per key length.
 //! The docs are on [`Camellia128Key`], which the module root re-exports.
 
+use crate::BlockCipherKey;
 use crate::camellia::hazmat::{Camellia128Internal, Camellia192Internal, Camellia256Internal};
-use bouncycastle_cipher::BlockCipherKey;
 
 /// A Camellia-128 key for the mode `M`: 16 bytes of material, expanded to the 18-round subkeys.
 ///
@@ -16,8 +16,8 @@ use bouncycastle_cipher::BlockCipherKey;
 ///
 /// ```
 /// use bouncycastle_symmetric::camellia::Camellia256Key;
-/// use bouncycastle_cipher::modes::CBC;
-/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::PKCS7;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;

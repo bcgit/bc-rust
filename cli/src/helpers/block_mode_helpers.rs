@@ -402,7 +402,8 @@ pub(crate) fn decrypt_stream<D, const INIT_DATA_LEN: usize, const BLOCK_LEN: usi
     }
     // Releases the block held back above, unpadded; under `NoPadding` all of it is data. A
     // padded ciphertext that is unaligned or has malformed padding fails here.
-    let (last, last_len) = dec.do_decrypt_final().unwrap_or_else(|e| {
+    let mut last = [0u8; BLOCK_LEN];
+    let last_len = dec.do_decrypt_final_out(&mut last).unwrap_or_else(|e| {
         // Flush what was already written first, as `check_aligned` does, so the error follows it.
         let _ = io::stdout().flush();
         eprintln!("\nError: decryption failed: {e:?}");
@@ -438,7 +439,7 @@ fn stream_chunks(mut process: impl FnMut(&[u8])) -> usize {
 fn check_aligned<const BLOCK_LEN: usize>(mode: &str, total: usize) {
     if !total.is_multiple_of(BLOCK_LEN) {
         // Everything before the misaligned tail has already been written (bar the one block a
-        // decryptor holds back until `do_decrypt_final`), and in hex mode is
+        // decryptor holds back until `do_decrypt_final_out`), and in hex mode is
         // still sitting in stdout's line buffer with no newline to release it. Flush first so the
         // output and the error come out in order rather than the error landing inside it.
         let _ = io::stdout().flush();

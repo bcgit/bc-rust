@@ -118,7 +118,7 @@ mod mlkem_tests {
         assert_eq!(derived_pk, decoded_pk);
 
         // consistency check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, *derived_sk.pk());
+        assert_eq!(derived_pk, *derived_sk.pk().unwrap());
 
         MLKEM512::keygen_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
 
@@ -160,7 +160,7 @@ mod mlkem_tests {
         assert_eq!(derived_pk, expected_pk);
 
         // consistency check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, *derived_sk.pk());
+        assert_eq!(derived_pk, *derived_sk.pk().unwrap());
 
         MLKEM768::keygen_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
 
@@ -201,7 +201,7 @@ mod mlkem_tests {
         assert_eq!(derived_pk, expected_pk);
 
         // consistency check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, *derived_sk.pk());
+        assert_eq!(derived_pk, *derived_sk.pk().unwrap());
 
         MLKEM1024::keygen_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
 

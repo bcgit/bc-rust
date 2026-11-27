@@ -1,18 +1,17 @@
 //! The KDF Using KMAC, SP 800-108r1 Section 4.4.
 
 use crate::kbkdf::prf::sealed;
-use crate::kbkdf::{k_in_into, k_in_len};
+use crate::kbkdf::{k_in_into, k_in_len, mac_key_in_place};
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::hazmat::finish_token;
 use bouncycastle_core::hazmat::label_kdf_output;
 use bouncycastle_core::kdf_params::KdfDescription;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, KDF, XOFSqueezer};
 use bouncycastle_digest::sha3::kmac::KMACXOFInternal;
 use bouncycastle_digest::sha3::{SHAKE128Params, SHAKE256Params, SHAKEParams};
-use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 
 /// The longest key-derivation key, in bytes, the KMAC KDF takes: the key is copied once, into a
@@ -134,13 +133,11 @@ impl<'l, PARAMS: KmacKdfParams> KDF_KMAC<'l, PARAMS> {
             ));
         }
 
-        // KMAC takes one `MACKey`, so K_IN is copied and re-typed as the MAC key it is here; a
-        // key of any strength derives, and what the output may claim is settled from the keys'
-        // own types.
-        let mut k_in = Secret::<[u8; MAX_KMAC_KDK_LEN]>::new();
-        let at = k_in_into(keys, &mut k_in[..]);
-        let mac_key =
-            KeyMaterial::<MAX_KMAC_KDK_LEN>::from_bytes_as_type(&k_in[..at], KeyType::MACKey)?;
+        // KMAC takes one `MACKey`, so K_IN is concatenated into one, typed as the MAC key it is
+        // here; a key of any strength derives, and what the output may claim is settled from the
+        // keys' own types.
+        let mut mac_key = KeyMaterial::<MAX_KMAC_KDK_LEN>::new();
+        mac_key_in_place(&mut mac_key, |buf| k_in_into(keys, buf))?;
 
         // Step 2: K_OUT = KMAC#(K_IN, Context, L, Label). The length is bound by making the
         // squeezer's only read its final one, which is the fixed-length KMAC of SP 800-185

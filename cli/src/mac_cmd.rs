@@ -7,8 +7,6 @@ use crate::helpers::{
     write_stdout,
 };
 use crate::sha3_cmd::{MAX_FIXED_OUTPUT_LEN, Strength};
-use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
-use bouncycastle::cipher::modes::{CMAC, GMAC};
 use bouncycastle::core::errors::MACError;
 use bouncycastle::core::hazmat::finish_token;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -17,17 +15,19 @@ use bouncycastle::core::symmetric_key::{
     NonceMacGenerationKey, NonceMacVerificationKey,
 };
 use bouncycastle::core::traits::{Hash, MACGenerator, MACVerifier, XOFSqueezer};
-use bouncycastle::hmac::{HMACParams, HmacKey};
-use bouncycastle::poly1305;
-use bouncycastle::poly1305::hazmat::key_from_bytes;
-use bouncycastle::ripemd::RIPEMD160;
-use bouncycastle::rng::HashDRBG_SHA512;
-use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
-use bouncycastle::sha3::kmac::{
+use bouncycastle::digest::hmac::{HMACParams, HmacKey};
+use bouncycastle::digest::ripemd::RIPEMD160;
+use bouncycastle::digest::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use bouncycastle::digest::sha3::kmac::{
     KMAC_MAX_OUTPUT_LEN, KMAC_MIN_OUTPUT_LEN, KMACXOF128, KMACXOF256, KMACXOFInternal,
 };
-use bouncycastle::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKEParams};
-use bouncycastle::sm3::SM3;
+use bouncycastle::digest::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKEParams};
+use bouncycastle::digest::sm3::SM3;
+use bouncycastle::rng::HashDRBG_SHA512;
+use bouncycastle::symmetric::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::symmetric::modes::{CMAC, GMAC};
+use bouncycastle::symmetric::poly1305;
+use bouncycastle::symmetric::poly1305::hazmat::key_from_bytes;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use std::process::exit;
 
@@ -94,7 +94,7 @@ pub(crate) fn mac_cmd(
 /// The library's KMAC key types carry the tag length as a const parameter, which a command-line
 /// argument cannot name, so the command runs KMACXOF and binds the length at its final read:
 /// SP 800-185 Sec 4.3.1 differs from Sec 4.3 only in the `right_encode` the final read absorbs,
-/// so `KMACXOF`'s final read of `L` bytes is `KMAC(K, X, 8L, S)` exactly, which the sha3 crate's
+/// so `KMACXOF`'s final read of `L` bytes is `KMAC(K, X, 8L, S)` exactly, which the `sha3` module's
 /// sample-value tests pin against the published vectors.
 pub(crate) fn kmac_cmd(
     strength: Strength,

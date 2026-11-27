@@ -1,0 +1,368 @@
+//! [`PaddedBlockCipherEncryptor`] / [`PaddedBlockCipherDecryptor`]: adapt a block-aligned [`BlockCipherEncryptor`] /
+//! [`BlockCipherDecryptor`] to arbitrary-length data using a [`BlockCipherPadding`] scheme.
+//!
+//! The public API is the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] traits, whose
+//! shape was drawn from these two types; the one-shot methods are the traits' provided ones.
+//! `FINAL_LEN` is `BLOCK_LEN`: the final output is the padded block -- or, under a scheme with
+//! [`BlockCipherPadding::ALWAYS_PADS`] `false` (`NoPadding`) and an aligned message, nothing at
+//! all, in which case `do_encrypt_final` reports 0 of the `FINAL_LEN` bytes as output.
+
+use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, FinishToken,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+};
+use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::Secret;
+use core::array::from_mut;
+use core::marker::PhantomData;
+
+/// Blocks per inner-cipher call on the bulk path; the remainder is processed one at a time.
+const GROUP: usize = 8;
+
+/// Encrypts arbitrary-length data with a block cipher `E`, padding the final block with `P`.
+///
+/// Stream with [`SymmetricCipherEncryptor::do_encrypt_out`] then
+/// [`SymmetricCipherEncryptor::do_encrypt_final`], or use the key's one-shot `encrypt_out`.
+/// Output is
+/// `plaintext_len / BLOCK_LEN + 1` blocks for a scheme that always pads (PKCS7), and exactly the
+/// input length for one that never does (`NoPadding`, which rejects an unaligned input at
+/// `do_encrypt_final`). The buffered partial plaintext block is held in a [`Secret`].
+pub struct PaddedBlockCipherEncryptor<E, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+where
+    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
+{
+    encryptor: E,
+    _padding: PhantomData<P>,
+    /// Partial plaintext block; `buf_len < BLOCK_LEN` between calls.
+    buf: Secret<[u8; BLOCK_LEN]>,
+    buf_len: usize,
+}
+
+impl<E, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for PaddedBlockCipherEncryptor<E, P, INIT_DATA_LEN, BLOCK_LEN>
+where
+    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
+    P: BlockCipherPadding<BLOCK_LEN>,
+{
+    /// The inner cipher's name; padding does not change what the algorithm is.
+    const ALG_NAME: &'static str = E::ALG_NAME;
+    /// Padding does not change the strength of the inner cipher.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = E::MAX_SECURITY_STRENGTH;
+}
+
+impl<E, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    PaddedBlockCipherEncryptor<E, P, INIT_DATA_LEN, BLOCK_LEN>
+where
+    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
+{
+    /// The adapter over an already-constructed inner cipher, with nothing buffered: what a mode
+    /// type's `encrypt_init` builds.
+    pub(in crate::framework) fn from_inner(encryptor: E) -> Self {
+        Self { encryptor, _padding: PhantomData, buf: Secret::new(), buf_len: 0 }
+    }
+}
+
+impl<E, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>
+    for PaddedBlockCipherEncryptor<E, P, INIT_DATA_LEN, BLOCK_LEN>
+where
+    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
+    P: BlockCipherPadding<BLOCK_LEN>,
+{
+    /// Whole blocks among the buffered bytes plus `input_len`.
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
+        (self.buf_len + input_len) / BLOCK_LEN * BLOCK_LEN
+    }
+
+    /// Encrypts all whole blocks available (buffered + `plaintext`) into `ciphertext`, buffering the
+    /// remainder.
+    fn do_encrypt_out(
+        &mut self,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        ciphertext.fill(0);
+        let out_len = self.do_encrypt_out_len(plaintext.len());
+        if ciphertext.len() < out_len {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(out_len));
+        }
+        // out_len is a multiple of BLOCK_LEN, so the remainder of this split is empty.
+        let (mut out_blocks, _) = ciphertext[..out_len].as_chunks_mut::<BLOCK_LEN>();
+
+        // Turn this into a mutable pointer so that we can walk the pointer down the data.
+        // Note only the pointer is mut, the data remains immutable `&[u8]`.
+        let mut plaintext = plaintext;
+
+        // 1. Top up a previously buffered partial block.
+        if self.buf_len > 0 {
+            let take = (BLOCK_LEN - self.buf_len).min(plaintext.len());
+            self.buf[self.buf_len..self.buf_len + take].copy_from_slice(&plaintext[..take]);
+            self.buf_len += take;
+            plaintext = &plaintext[take..];
+            if self.buf_len < BLOCK_LEN {
+                // All input absorbed into the partial block; nothing to emit (out_len == 0).
+                return Ok(0);
+            }
+            // Block completed. out_len >= BLOCK_LEN here, so `split_first_mut` always succeeds.
+            // The cipher works in place, so the block is encrypted inside the `Secret` and only
+            // ciphertext is copied out of it.
+            if let Some((first, rest)) = core::mem::take(&mut out_blocks).split_first_mut() {
+                self.encryptor.do_encrypt_blocks_inplace(from_mut(&mut *self.buf))?;
+                *first = *self.buf;
+                out_blocks = rest;
+            }
+            self.buf_len = 0;
+        }
+
+        // 2. Bulk path: whole blocks are copied into the output and encrypted there, in place, in
+        //    groups of GROUP then singly.
+        let (in_blocks, remainder) = plaintext.as_chunks::<BLOCK_LEN>();
+        debug_assert_eq!(in_blocks.len(), out_blocks.len());
+        out_blocks.copy_from_slice(in_blocks);
+        let (out_groups, out_tail) = out_blocks.as_chunks_mut::<GROUP>();
+        for group in out_groups.iter_mut() {
+            self.encryptor.do_encrypt_blocks_inplace(group)?;
+        }
+        for block in out_tail.iter_mut() {
+            self.encryptor.do_encrypt_blocks_inplace(from_mut(block))?;
+        }
+
+        // 3. Buffer the trailing partial block (remainder.len() < BLOCK_LEN).
+        self.buf[..remainder.len()].copy_from_slice(remainder);
+        self.buf_len = remainder.len();
+        Ok(out_len)
+    }
+
+    /// Pads and encrypts the buffered partial block, returning the final ciphertext block and
+    /// `BLOCK_LEN` -- or, when the scheme adds nothing to aligned data and nothing is buffered, an
+    /// untouched buffer and 0: there is no final block.
+    ///
+    /// The block is padded and encrypted inside the `Secret`, so what is copied out is ciphertext.
+    /// A scheme that adds no padding refuses a buffered partial block
+    /// ([`PaddingError::PaddingNotPermitted`]), which is the alignment check such a scheme exists to
+    /// provide; it is reported as [`SymmetricCipherError::DataNotBlockAligned`], as on the decrypt
+    /// side.
+    fn finish_encrypt(
+        &mut self,
+        _token: &FinishToken,
+    ) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
+        if self.buf_len == 0 && !P::ALWAYS_PADS {
+            return Ok(([0u8; BLOCK_LEN], 0));
+        }
+        P::pad(&mut self.buf, self.buf_len).map_err(|e| match e {
+            PaddingError::PaddingNotPermitted => SymmetricCipherError::DataNotBlockAligned,
+            e => e.into(),
+        })?;
+        self.encryptor.do_encrypt_blocks_inplace(self.buf.as_chunks_mut().0)?;
+        Ok((*self.buf, BLOCK_LEN))
+    }
+
+    /// `(plaintext_len / BLOCK_LEN + 1) * BLOCK_LEN` -- always one extra block for the padding --
+    /// for a scheme that always pads; `plaintext_len` itself for one that adds nothing (an
+    /// unaligned length is rejected by `do_encrypt_final`, so this is exact for every accepted
+    /// input).
+    fn encrypt_out_len(plaintext_len: usize) -> usize {
+        if P::ALWAYS_PADS { (plaintext_len / BLOCK_LEN + 1) * BLOCK_LEN } else { plaintext_len }
+    }
+}
+
+/// Decrypts data produced by a [`PaddedBlockCipherEncryptor`] with the matching cipher and padding.
+///
+/// Only the last block carries padding, so [`do_update_out`](Self::do_decrypt_out) always withholds
+/// the most recent complete block and
+/// [`do_decrypt_final_out`](Self::do_decrypt_final_out) unpads it.
+/// One-shot: the key's `decrypt_out`.
+///
+/// A boxed decryptor is finished once, by
+/// [`do_decrypt_final_out_boxed`](SymmetricCipherDecryptor::do_decrypt_final_out_boxed), which
+/// consumes the box:
+///
+/// ```compile_fail,E0382
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+/// use bouncycastle_core::traits::SymmetricCipherDecryptor;
+/// use bouncycastle_symmetric::aes::AES128Key;
+/// use bouncycastle_symmetric::modes::CBC;
+/// use bouncycastle_symmetric::padding::PKCS7;
+///
+/// let bytes: [u8; 16] = core::array::from_fn(|i| i as u8);
+/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
+/// let key = AES128Key::<CBC<PKCS7>>::from_key_material(&material).unwrap();
+/// let dec: Box<dyn SymmetricCipherDecryptor<16, 16> + '_> =
+///     Box::new(key.create_decryptor(&[0u8; 16]));
+/// let mut last = [0u8; 16];
+/// let _ = dec.do_decrypt_final_out_boxed(&mut last);
+/// let _ = dec.do_decrypt_final_out_boxed(&mut last);
+/// ```
+pub struct PaddedBlockCipherDecryptor<D, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+where
+    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
+{
+    decryptor: D,
+    _padding: PhantomData<P>,
+    /// Partial ciphertext block; `buf_len < BLOCK_LEN` between calls.
+    buf: [u8; BLOCK_LEN],
+    buf_len: usize,
+    /// Most recent complete ciphertext block, withheld in case it is the last.
+    held: Option<[u8; BLOCK_LEN]>,
+}
+
+impl<D, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for PaddedBlockCipherDecryptor<D, P, INIT_DATA_LEN, BLOCK_LEN>
+where
+    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
+    P: BlockCipherPadding<BLOCK_LEN>,
+{
+    /// The inner cipher's name; padding does not change what the algorithm is.
+    const ALG_NAME: &'static str = D::ALG_NAME;
+    /// Padding does not change the strength of the inner cipher.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = D::MAX_SECURITY_STRENGTH;
+}
+
+impl<D, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    PaddedBlockCipherDecryptor<D, P, INIT_DATA_LEN, BLOCK_LEN>
+where
+    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
+{
+    /// The adapter over an already-constructed inner cipher, with nothing buffered or held
+    /// back: what a mode type's `decrypt_init` builds.
+    pub(in crate::framework) fn from_inner(decryptor: D) -> Self {
+        Self { decryptor, _padding: PhantomData, buf: [0u8; BLOCK_LEN], buf_len: 0, held: None }
+    }
+}
+
+impl<D, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>
+    for PaddedBlockCipherDecryptor<D, P, INIT_DATA_LEN, BLOCK_LEN>
+where
+    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
+    P: BlockCipherPadding<BLOCK_LEN>,
+{
+    /// All complete blocks but the most recent one are released.
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
+        let complete = self.held.is_some() as usize + (self.buf_len + input_len) / BLOCK_LEN;
+        complete.saturating_sub(1) * BLOCK_LEN
+    }
+
+    /// Decrypts all complete blocks except the most recent into `plaintext`, buffering the remainder.
+    fn do_decrypt_out(
+        &mut self,
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
+        let out_len = self.do_decrypt_out_len(ciphertext.len());
+        if plaintext.len() < out_len {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(out_len));
+        }
+        let (mut out_blocks, _) = plaintext[..out_len].as_chunks_mut::<BLOCK_LEN>();
+        let mut ciphertext = ciphertext;
+
+        // 1. Top up a previously buffered partial block.
+        if self.buf_len > 0 {
+            let take = (BLOCK_LEN - self.buf_len).min(ciphertext.len());
+            self.buf[self.buf_len..self.buf_len + take].copy_from_slice(&ciphertext[..take]);
+            self.buf_len += take;
+            ciphertext = &ciphertext[take..];
+            if self.buf_len < BLOCK_LEN {
+                return Ok(0);
+            }
+            self.buf_len = 0;
+            // The completed block becomes the held block; the previously held block, if any, is
+            // now known not to be last and can be released. out_blocks has room for it by
+            // construction of out_len, so `split_first_mut` succeeds.
+            if let Some(prev) = self.held.replace(self.buf)
+                && let Some((first, rest)) = core::mem::take(&mut out_blocks).split_first_mut()
+            {
+                *first = prev;
+                self.decryptor.do_decrypt_blocks_inplace(from_mut(first))?;
+                out_blocks = rest;
+            }
+        }
+
+        // 2. Bulk path.
+        let (in_blocks, remainder) = ciphertext.as_chunks::<BLOCK_LEN>();
+        if let Some((last, release)) = in_blocks.split_last() {
+            // Release the previously held block first (it precedes everything in `in_blocks`).
+            if let Some(prev) = self.held.replace(*last)
+                && let Some((first, rest)) = core::mem::take(&mut out_blocks).split_first_mut()
+            {
+                *first = prev;
+                self.decryptor.do_decrypt_blocks_inplace(from_mut(first))?;
+                out_blocks = rest;
+            }
+            // Then every block of this call except the new held one: copied into the output and
+            // decrypted there, in place.
+            debug_assert_eq!(release.len(), out_blocks.len());
+            out_blocks.copy_from_slice(release);
+            let (out_groups, out_tail) = out_blocks.as_chunks_mut::<GROUP>();
+            for group in out_groups.iter_mut() {
+                self.decryptor.do_decrypt_blocks_inplace(group)?;
+            }
+            for block in out_tail.iter_mut() {
+                self.decryptor.do_decrypt_blocks_inplace(from_mut(block))?;
+            }
+        }
+
+        // 3. Buffer the trailing partial block.
+        self.buf[..remainder.len()].copy_from_slice(remainder);
+        self.buf_len = remainder.len();
+        Ok(out_len)
+    }
+
+    /// Decrypts the held final block into `out` and unpads it there. Returns its data length; the
+    /// padding after it is zeroized. `DataNotBlockAligned` if the ciphertext was not a whole number
+    /// of blocks; `DecryptionFailed` if it was empty under a scheme that always pads (a padded
+    /// message is at least one block); `PaddingError` if the padding is malformed. Under a scheme
+    /// that adds nothing, an empty ciphertext is the empty message and every held block is
+    /// entirely data.
+    fn finish_decrypt_into(
+        &mut self,
+        _token: &FinishToken,
+        out: &mut [u8; BLOCK_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        out.fill(0);
+        if self.buf_len != 0 {
+            return Err(SymmetricCipherError::DataNotBlockAligned);
+        }
+        let Some(held) = self.held.as_ref() else {
+            return if P::ALWAYS_PADS {
+                Err(SymmetricCipherError::DecryptionFailed)
+            } else {
+                Ok(0)
+            };
+        };
+        // The worker keeps the ciphertext block; the plaintext goes straight into `out`.
+        *out = *held;
+        let mut decrypt_and_unpad = || -> Result<usize, SymmetricCipherError> {
+            self.decryptor.do_decrypt_blocks_inplace(out.as_chunks_mut().0)?;
+            Ok(P::unpad(out)?)
+        };
+        match decrypt_and_unpad() {
+            Ok(data_len) => {
+                // Constant-time in data_len, as `PKCS7::pad` is: every byte is visited.
+                for (i, b) in out.iter_mut().enumerate() {
+                    let is_padding = Condition::<i64>::is_gte(i as i64, data_len as i64);
+                    *b = is_padding.select(0, *b as i64) as u8;
+                }
+                Ok(data_len)
+            }
+            Err(e) => {
+                out.fill(0);
+                Err(e)
+            }
+        }
+    }
+
+    /// `ciphertext_len - 1` for a scheme that always pads (at least one byte of the final block is
+    /// padding); `ciphertext_len` for one that adds nothing.
+    fn decrypt_out_len(ciphertext_len: usize) -> usize {
+        if P::ALWAYS_PADS { ciphertext_len.saturating_sub(1) } else { ciphertext_len }
+    }
+}

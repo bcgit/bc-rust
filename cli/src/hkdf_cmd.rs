@@ -3,16 +3,16 @@
 use std::process::exit;
 
 use crate::helpers::{
-    SecretBytes, decode_hex_arg, load_secret, read_input_file, write_secret_bytes_or_hex,
-    write_stdout,
+    SecretBytes, decode_hex_arg, finish_stdout, load_secret, read_input_file, try_write_stdout,
+    write_secret_bytes_or_hex,
 };
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle::hkdf;
-use bouncycastle::hkdf::HKDF;
-use bouncycastle::hmac::HMACParams;
-use bouncycastle::sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
-use bouncycastle::sm3::hkdf::HKDF_SM3;
+use bouncycastle::digest::hkdf;
+use bouncycastle::digest::hkdf::{HKDF, HKDFParams};
+use bouncycastle::digest::ripemd::hkdf::HKDF_RIPEMD160;
+use bouncycastle::digest::sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
+use bouncycastle::digest::sm3::hkdf::HKDF_SM3;
 
 #[allow(non_camel_case_types)]
 pub(crate) enum HKDFVariant {
@@ -20,6 +20,7 @@ pub(crate) enum HKDFVariant {
     SHA384,
     SHA512,
     SM3,
+    RIPEMD160,
 }
 
 #[allow(clippy::too_many_arguments)] // one flag per RFC 5869 input, each inline or from a file
@@ -72,20 +73,24 @@ pub(crate) fn hkdf_cmd(
         HKDFVariant::SHA384 => run(HKDF_SHA384::new(), &salt, &ikm, &info, len, &mut out_key),
         HKDFVariant::SHA512 => run(HKDF_SHA512::new(), &salt, &ikm, &info, len, &mut out_key),
         HKDFVariant::SM3 => run(HKDF_SM3::new(), &salt, &ikm, &info, len, &mut out_key),
+        HKDFVariant::RIPEMD160 => run(HKDF_RIPEMD160::new(), &salt, &ikm, &info, len, &mut out_key),
     };
     if let Err(e) = result {
         eprintln!("Error: HKDF failed: {e}");
         exit(-1);
     }
 
-    write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
-    if output_hex {
-        write_stdout(b"\n");
-    }
+    let written = write_secret_bytes_or_hex(out_key.ref_to_bytes(), output_hex)
+        .and_then(|()| if output_hex { try_write_stdout(b"\n") } else { Ok(()) });
+    // `exit` runs no destructors, so the secrets are dropped before a failed write exits.
+    drop(out_key);
+    drop(ikm);
+    drop(salt);
+    finish_stdout(written);
 }
 
 /// Extract then expand through `h`, into `out_key`.
-fn run<H: HMACParams>(
+fn run<H: HKDFParams>(
     mut h: HKDF<H>,
     salt: &impl KeyMaterialTrait,
     ikm: &impl KeyMaterialTrait,

@@ -9,7 +9,9 @@
 //! came from `inner_state` of the same key, or that it was fed exactly the message: a caller that
 //! composes the two wrongly computes something that is not HMAC over that message. `finish_out`
 //! finishes the hash through a borrow, so that it is wiped where the caller made it; the hash is
-//! spent by the call and must not be used again. Use the
+//! spent by the call and must not be used again. `inner_state` returns the pad state, which is
+//! key-equivalent, by value: the copies that return and the caller's moves leave are the
+//! caller's to overwrite. Use the
 //! [`HMAC`] worker from [`HmacKey::create_generator`] unless the worker's borrow is what stands
 //! in the way.
 //!

@@ -32,8 +32,9 @@ pub mod symmetric_ciphers;
 pub mod test_data_loaders;
 pub mod xof;
 
-use bouncycastle_core::errors::RNGError;
-use bouncycastle_core::key_material::KeyMaterialTrait;
+use bouncycastle_core::errors::{KeyMaterialError, RNGError};
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::RNG;
 
@@ -57,6 +58,42 @@ impl RNG for FailingRNG {
     }
     fn security_strength(&self) -> SecurityStrength {
         SecurityStrength::None
+    }
+}
+
+/// An RNG of 256-bit strength whose every draw reports one byte fewer than it was asked for,
+/// for checking that a short count is refused rather than used as if it were full. A
+/// [`KeyMaterialTrait`] it fills is one byte short of its capacity, typed and tagged as a DRBG
+/// tags a draw of that length.
+pub struct ShortRNG;
+
+impl RNG for ShortRNG {
+    fn add_seed_keymaterial(&mut self, _: &dyn KeyMaterialTrait) -> Result<(), RNGError> {
+        Ok(())
+    }
+    fn next_int(&mut self) -> Result<u32, RNGError> {
+        Ok(0x5a5a_5a5a)
+    }
+    fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
+        out.fill(0);
+        let written = out.len().saturating_sub(1);
+        out[..written].fill(0x5a);
+        Ok(written)
+    }
+    fn fill_keymaterial_out(&mut self, out: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError> {
+        let mut written = 0;
+        do_hazardous_operations(out, |out| {
+            written = self
+                .next_bytes_out(out.ref_to_bytes_mut()?)
+                .map_err(|_| KeyMaterialError::GenericError("ShortRNG"))?;
+            out.set_key_len(written)?;
+            out.set_key_type(KeyType::CryptographicRandom)?;
+            out.set_security_strength(SecurityStrength::from_bytes(written))
+        })?;
+        Ok(written)
+    }
+    fn security_strength(&self) -> SecurityStrength {
+        SecurityStrength::_256bit
     }
 }
 

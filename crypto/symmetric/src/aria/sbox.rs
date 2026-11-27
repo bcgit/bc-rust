@@ -22,7 +22,7 @@
 //!
 //! `SB1` is the AES S-box (Sec 2.4.2's table is FIPS 197 Table 4, which `test_sb1_is_the_aes_sbox`
 //! checks), so [`sb1`] is the 113-gate Boyar-Peralta straight-line program for it, as
-//! `bouncycastle-aes` transcribes it from Peralta's `SLP_AES_113.txt`, with the SLP's `U0`-is-MSB
+//! `bouncycastle_symmetric::aes` transcribes it from Peralta's `SLP_AES_113.txt`, with the SLP's `U0`-is-MSB
 //! input convention mapped onto the planes; its non-linear section is the one
 //! shared with the other bit-sliced ciphers as [`bouncycastle_utils::bitslice::gf256_inverse_nonlinear`].
 //!
@@ -80,7 +80,7 @@
 //!
 //! Plane `k` holds bit `k` of every byte (bit 0 least significant), for inputs and outputs alike.
 //! The Boyar-Peralta sections keep their signal names (`y*`, `t*`, `z*`) so they can be diffed
-//! against the AES crate. In [`sb1`] the SLP's own input and output names
+//! against the AES module. In [`sb1`] the SLP's own input and output names
 //! `U0 .. U7` / `S0 .. S7` appear with `U0` the most significant bit, i.e. plane `q[7]`; in the
 //! generated circuits the inputs are bound from the top layer, so that convention never appears.
 

@@ -103,20 +103,19 @@ use crate::chacha20::hazmat::{ChaCha20KeyStream, keystream_at};
 use crate::chacha20::{ChaCha20, ChaCha20Key};
 use crate::poly1305::hazmat::key_from_bytes;
 use crate::poly1305::{Poly1305, Poly1305Key};
-use bouncycastle_cipher::stream::hazmat::stream_cipher_over;
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use crate::stream::hazmat::stream_cipher_over;
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::KeyStream;
+use bouncycastle_core::hazmat::{KeyStream, finish_token};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
     AeadDecryptionKey, AeadEncryptionKey, AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey,
     FromKeyMaterial,
 };
-use bouncycastle_core::symmetric_key::{decrypt_detached_inplace, encrypt_detached_inplace};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, FinishToken, MACGenerator, MACVerifier,
-    RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    RNG, RNGExt, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
@@ -151,7 +150,7 @@ pub const MAX_MESSAGE_LEN: u64 = u32::MAX as u64 * 64;
 ///
 /// ```compile_fail
 /// # use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20_Poly1305;
-/// # use bouncycastle_cipher::Encrypting;
+/// # use bouncycastle_symmetric::Encrypting;
 /// fn cloneable<T: Clone>() {}
 /// cloneable::<ChaCha20_Poly1305<'static, Encrypting>>();
 /// ```
@@ -160,7 +159,7 @@ pub const MAX_MESSAGE_LEN: u64 = u32::MAX as u64 * 64;
 ///
 /// ```
 /// # use bouncycastle_symmetric::chacha20_poly1305_aead::ChaCha20_Poly1305;
-/// # use bouncycastle_cipher::Encrypting;
+/// # use bouncycastle_symmetric::Encrypting;
 /// fn cloneable<T: Clone>() {}
 /// let _ = core::mem::size_of::<ChaCha20_Poly1305<'static, Encrypting>>();
 /// ```
@@ -296,18 +295,35 @@ impl ChaCha20_Poly1305<'_, Encrypting> {
     }
 
     fn encrypt_bytes(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
-        // do_encrypt_out, the only caller, has already checked the length.
+        // Every caller has already checked the length.
         self.start_data();
         self.cipher.do_encrypt_inplace(data)?;
         self.mac.do_update(data);
         self.data_len += data.len() as u64;
         Ok(())
     }
+
+    /// A whole message encrypted where it lies, tag detached: the body of the key's
+    /// [`AeadInPlaceEncryptionKey`] methods, on a worker nothing has been fed to. On an error
+    /// `buf` is unchanged.
+    fn encrypt_message_inplace(
+        &mut self,
+        token: &FinishToken,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        self.absorb_aad(aad)?;
+        if !buf.is_empty() {
+            self.check_data_len(buf.len())?;
+            self.encrypt_bytes(buf)?;
+        }
+        Ok(self.finish_tag(token))
+    }
 }
 
 impl ChaCha20_Poly1305<'_, Decrypting> {
     fn decrypt_bytes(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
-        // Both callers have already checked the length, before copying anything.
+        // Every caller has already checked the length, before copying anything.
         self.start_data();
         self.mac.do_update(data);
         self.cipher.do_decrypt_inplace(data)?;
@@ -323,6 +339,29 @@ impl ChaCha20_Poly1305<'_, Decrypting> {
         self.finish_mac(token);
         // Poly1305's finish_mac_verify compares in constant time.
         self.mac.finish_mac_verify(token, tag).map_err(|_| SymmetricCipherError::AEADTagCheckFailed)
+    }
+
+    /// A whole message decrypted where it lies and checked against `tag`: the body of the key's
+    /// [`AeadInPlaceDecryptionKey`] method, on a worker nothing has been fed to. On any error
+    /// `buf` is zeroized, since it may hold plaintext the tag has not vouched for.
+    fn decrypt_message_inplace(
+        &mut self,
+        token: &FinishToken,
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        let result = self.absorb_aad(aad).and_then(|()| {
+            if !buf.is_empty() {
+                self.check_data_len(buf.len())?;
+                self.decrypt_bytes(buf)?;
+            }
+            self.verify_tag(token, tag)
+        });
+        if result.is_err() {
+            buf.fill(0);
+        }
+        result
     }
 }
 
@@ -431,16 +470,18 @@ impl SymmetricCipherDecryptor<NONCE_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, Decr
         Ok(release)
     }
 
-    fn finish_decrypt(
+    fn finish_decrypt_into(
         &mut self,
         token: &FinishToken,
-    ) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        out: &mut [u8; TAG_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        out.fill(0);
         if self.held_len != TAG_LEN {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
         let tag = self.held;
         self.verify_tag(token, &tag)?;
-        Ok(([0u8; TAG_LEN], 0))
+        Ok(0)
     }
 
     fn decrypt_out_len(ciphertext_len: usize) -> usize {
@@ -513,8 +554,7 @@ impl AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20Poly130
         &'k self,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
-        let mut nonce = [0u8; NONCE_LEN];
-        rng.next_bytes_out(&mut nonce)?;
+        let nonce = rng.next_array::<NONCE_LEN>()?;
         Ok((ChaCha20_Poly1305::new(keystream_at(&self.key, &nonce, 0)), nonce))
     }
 
@@ -543,8 +583,8 @@ impl AeadInPlaceEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305K
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        let (enc, nonce) = self.create_encryptor(rng)?;
-        let tag = encrypt_detached_inplace(enc, aad, buf)?;
+        let (mut enc, nonce) = self.create_encryptor(rng)?;
+        let tag = enc.encrypt_message_inplace(&finish_token(), aad, buf)?;
         Ok((nonce, tag))
     }
 
@@ -554,7 +594,7 @@ impl AeadInPlaceEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305K
         aad: &[u8],
         buf: &mut [u8],
     ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        encrypt_detached_inplace(self.create_encryptor_nonce(nonce), aad, buf)
+        self.create_encryptor_nonce(nonce).encrypt_message_inplace(&finish_token(), aad, buf)
     }
 }
 
@@ -566,7 +606,7 @@ impl AeadInPlaceDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305K
         buf: &mut [u8],
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
-        decrypt_detached_inplace(self.create_decryptor(nonce), aad, buf, tag)
+        self.create_decryptor(nonce).decrypt_message_inplace(&finish_token(), aad, buf, tag)
     }
 }
 

@@ -1,4 +1,4 @@
-//! cSHAKE behaviour tests. The SP 800-185 sample values are in `cshake_bc-test-data.rs`.
+//! cSHAKE behaviour tests. The SP 800-185 sample values are in `sha3_cshake_bc-test-data.rs`.
 
 use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
 use bouncycastle_digest::sha3::{CSHAKE128, CSHAKE256, SHAKE128, SHAKE256};

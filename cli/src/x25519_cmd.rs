@@ -4,14 +4,14 @@
 
 use crate::helpers::kem_helpers::{decaps_cmd, encaps_cmd};
 use crate::helpers::{
-    SecretBytes, println_stdout, read_input_file, read_secret_file_or_stdin, write_bytes_or_hex,
-    write_private_key, write_secret_bytes_or_hex,
+    SecretBytes, finish_stdout, println_stdout, read_input_file, read_secret_file_or_stdin,
+    write_bytes_or_hex, write_private_key, write_secret_bytes_or_hex,
 };
 use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
-use bouncycastle::ed::x25519::{
-    POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen_out,
+use bouncycastle::ec::ed::x25519::{
+    POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen_out, keypair_consistency_check,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
@@ -48,16 +48,20 @@ pub(crate) fn x25519_cmd(
                 eprintln!("Error: key generation failed: {e:?}");
                 exit(-1);
             });
-            write_private_key(&sk, output_hex);
+            let written = write_private_key(&sk, output_hex);
+            // `exit` runs no destructors, so the key is dropped before a failed write exits.
+            drop(sk);
+            finish_stdout(written);
         }
         X25519Action::PkFromSk => {
-            let pk = load_sk(skfile).pk();
+            // A decoded key is filled, so it has a public key.
+            let pk = load_sk(skfile).pk().unwrap();
             write_bytes_or_hex(&pk.encode(), output_hex);
         }
         X25519Action::CheckConsistency => {
             let pk = parse_pk(&read_pkfile(pkfile));
             // The private key is dropped, and so wiped, before either branch exits.
-            let matches = load_sk(skfile).pk() == pk;
+            let matches = keypair_consistency_check(&pk, &load_sk(skfile)).is_ok();
             if matches {
                 println_stdout("SUCCESS: pk and sk match.");
             } else {
@@ -76,7 +80,9 @@ pub(crate) fn x25519_cmd(
                 eprintln!("Error: key agreement failed: {e:?}");
                 exit(-1);
             });
-            write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
+            let written = write_secret_bytes_or_hex(z.ref_to_bytes(), output_hex);
+            drop(z);
+            finish_stdout(written);
         }
         X25519Action::Encaps => {
             encaps_cmd::<X25519PublicKey, POINT_LEN, POINT_LEN, 32>(

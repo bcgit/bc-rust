@@ -47,13 +47,13 @@
 //! 584 B for the other two, 88 B for the one- and four-block entry points and 104 B for the
 //! two-block ones; `expand` 248 B for Camellia-128 and 328 B for the other two; `encrypt_4blocks`
 //! and `decrypt_4blocks` 200 B, or 232 B and 216 B for the copies the four-block closures call;
-//! `f` 152 B; `ortho` 24 B. The crate docs tabulate the chains: `new` 720 B for Camellia-128 and
-//! 1120 B for the other two, 496 B for the one-block calls, 512 B for the two-block calls and
-//! `decrypt_4blocks`, 528 B for `encrypt_4blocks`.
+//! `f` 152 B; `ortho` 24 B. The `camellia` module docs tabulate the chains: `new` 720 B for
+//! Camellia-128 and 1120 B for the other two, 496 B for the one-block calls, 512 B for the
+//! two-block calls and `decrypt_4blocks`, 528 B for `encrypt_4blocks`.
 
 #![allow(dead_code)]
 
-use bouncycastle::camellia::hazmat::{
+use bouncycastle::symmetric::camellia::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal,
 };
 

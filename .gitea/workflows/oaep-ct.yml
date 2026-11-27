@@ -1,0 +1,39 @@
+name: OAEP Constant-Time Decode
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oaep-ct-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  oaep-ct:
+    name: oaep-ct
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # The runner's container may run as root without sudo.
+      - name: Install valgrind
+        run: |
+          if ! command -v valgrind >/dev/null; then
+            if [ "$(id -u)" = 0 ]; then SUDO=; else SUDO=sudo; fi
+            $SUDO apt-get update && $SUDO apt-get install -y valgrind
+          fi
+
+      - name: Install nightly with rust-src
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install nightly --profile minimal --component rust-src
+
+      - name: Check the EME-OAEP decode under memcheck and in the Cortex-M0 and RISC-V 32I assembly
+        run: ./dev_scripts/check_oaep_ct.sh

@@ -59,6 +59,35 @@ fn point_plus_negation_is_infinity() {
     assert!(g.add(&g.negate()).is_infinity().to_bool());
 }
 
+/// A point plus its negation is the identity as [`P384JacobianPoint::INFINITY`] spells it,
+/// `(1, 1, 0)`. The generic formula's own result for that case also has `Z = 0`, with
+/// `X = R^2` and `Y = -R^3` for `R = 2 Y1 Z2^3`: an identity that still carries the operands'
+/// `Y`.
+#[test]
+fn point_plus_negation_is_the_canonical_identity() {
+    let g = g();
+    let c = fe([7, 0, 0, 0, 0, 0]);
+    let c2 = c.mul(&c);
+    let scaled = P384JacobianPoint { x: g.x.mul(&c2), y: g.y.mul(&c2.mul(&c)), z: c };
+    let inf = P384JacobianPoint::INFINITY;
+    for p in [g, g.double(), g.add(&g.double()), scaled] {
+        for sum in [p.add(&p.negate()), p.negate().add(&p)] {
+            assert_eq!((sum.x, sum.y, sum.z), (inf.x, inf.y, inf.z));
+        }
+    }
+}
+
+/// `zeroize` leaves every coordinate at zero: nothing of the point, and not the identity's
+/// encoding either.
+#[test]
+fn zeroize_clears_every_coordinate() {
+    let mut point = g().double();
+    let zero = P384FieldElement::ZERO;
+    assert!(point.x != zero && point.y != zero && point.z != zero);
+    point.zeroize();
+    assert_eq!((point.x, point.y, point.z), (zero, zero, zero));
+}
+
 #[test]
 fn infinity_identities() {
     let g = g();

@@ -6,8 +6,8 @@ usage: python3 -I lift_gcm_siv_vectors.py <rfc8452.txt> unit|public
 Extended from lift_polyval_vectors.py (phase 1), whose Appendix C parser this keeps. Every value
 is located by the RFC's own field labels; nothing is typed in here.
 
-  unit    the table for the unit tests in crypto/cipher/src/modes/gcm_siv.rs, intermediates included
-  public  the table for crypto/aes/tests/gcm_siv_rfc8452_tests.rs, inputs and result only
+  unit    the table for the unit tests in crypto/symmetric/src/framework/modes/gcm_siv.rs, intermediates included
+  public  the table for crypto/symmetric/tests/aes_gcm_siv_rfc8452_tests.rs, inputs and result only
 """
 import re
 import sys

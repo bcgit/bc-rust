@@ -18,7 +18,7 @@
 //!
 //! ## Modes of operation
 //!
-//! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
+//! A key is built once, under a mode from `bouncycastle_symmetric::modes`, and used for as many
 //! messages as needed: `CBC<PKCS7>` for CBC (NIST SP 800-38A Sec 6.2) with PKCS#7 padding, `CFB`
 //! for CFB128 (Sec 6.3), `CFB8` for the `s = 8` segment size, a different and non-interoperable
 //! mode costing one ARIA call per byte, `OFB` for OFB (Sec 6.4), and `CTR` for CTR (Sec 6.5) with a
@@ -32,12 +32,12 @@
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
 //! padding scheme to bridge the difference; the CFB modes, OFB and CTR are stream ciphers and take
 //! any length with no padding at all; GCM and CCM authenticate as well as encrypt, and are the
-//! modes to prefer. See the `bouncycastle_cipher::modes` crate docs for the comparison.
+//! modes to prefer. See the `bouncycastle_symmetric::modes` module docs for the comparison.
 //!
 //! ```
 //! use bouncycastle_symmetric::aria::ARIA256Key;
-//! use bouncycastle_cipher::modes::CBC;
-//! use bouncycastle_cipher::padding::PKCS7;
+//! use bouncycastle_symmetric::modes::CBC;
+//! use bouncycastle_symmetric::padding::PKCS7;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 //! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -64,7 +64,7 @@
 //!
 //! ```
 //! use bouncycastle_symmetric::aria::ARIA256Key;
-//! use bouncycastle_cipher::modes::CTR;
+//! use bouncycastle_symmetric::modes::CTR;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 //! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -295,7 +295,7 @@
 //! * **Source engine.** The constants, byte-array `A`, `SL1`/`SL2`, `FO`/`FE` and key schedule
 //!   this module reproduces, and the S-box tables the circuits are verified against, come from
 //!   Bouncy Castle Java's `ARIAEngine`. A direct transcription of it, including its fused
-//!   multiply-broadcast round, lives in the tests (`tests/common/mod.rs`) and this engine is
+//!   multiply-broadcast round, lives in the tests (`tests/aria_common/mod.rs`) and this engine is
 //!   checked against it on thousands of inputs.
 //! * **Normative reference: RFC 5794**, "A Description of the ARIA Encryption Algorithm" (Lee,
 //!   Lee, Kim, Kwon, Kim; March 2010). Every function cites its section. The S-box tables, the
@@ -303,14 +303,14 @@
 //! * **The non-linear section of the S-box circuits** is from the 113-gate straight-line program
 //!   `SLP_AES_113.txt` in Peralta's circuit collection, described in J. Boyar and R. Peralta, "A
 //!   new combinational logic minimization technique with applications to cryptology",
-//!   <https://eprint.iacr.org/2009/191.pdf>, as transcribed in `bouncycastle-aes`.
+//!   <https://eprint.iacr.org/2009/191.pdf>, as transcribed in `bouncycastle_symmetric::aes`.
 //! * **The bit-plane transpose** is translated from BearSSL's `aes_ct` by Thomas Pornin (MIT
-//!   licence), as in the AES crate.
+//!   licence), as in the AES module.
 //! * Verified against RFC 5794 Appendix A -- the three ciphertexts, and for the 128-bit key every
 //!   round key `ek1 .. ek13` and every intermediate value `P1 .. P11`; the ECB, CBC, CFB128, CFB8,
 //!   OFB and CTR vectors of OpenSSL's `evpciph_aria.txt`, which are KISA's published ARIA test
 //!   vectors (10 blocks under each key length); the vectors and invariants of
-//!   `tests/bc_java_tests.rs`; the transcription of the source engine on thousands of keys and
+//!   `tests/aria_bc_java_tests.rs`; the transcription of the source engine on thousands of keys and
 //!   blocks in every lane, both directions; and Project Wycheproof's `aria_cbc_pkcs5_test.json`
 //!   through the padded CBC keys, with `aria_ccm_test.json` and `aria_gcm_test.json` through the
 //!   `CCM` and `GCM` mode traits over the engines.

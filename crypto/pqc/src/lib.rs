@@ -26,6 +26,13 @@
 //!
 //! Each module's docs carry the considerations for its algorithm: what a seed and a signing or
 //! encapsulation randomness must be, and which items are `hazmat`.
+//!
+//! # Features
+//!
+//! `alloc`, and `std`, which is on by default and implies it, turn on the features of those names
+//! in `bouncycastle-core` and `bouncycastle-digest`: the allocating one-shots and `_boxed` finals
+//! of the core traits. The crate has nothing of its own behind either, and without them needs no
+//! allocator.
 
 #![no_std]
 #![forbid(unsafe_code)]

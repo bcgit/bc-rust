@@ -3,8 +3,8 @@
 //! for every `Clone` type, so `<T as NotClone<_>>` can be inferred only for a `T` that is not
 //! `Clone`. The key, which is `Clone`, is the control: for it the impl has to be named.
 
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_symmetric::ascon::{Ascon_AEAD128, AsconAEAD128Key};
+use bouncycastle_symmetric::{Decrypting, Encrypting};
 
 trait NotClone<A> {
     fn witness() {}

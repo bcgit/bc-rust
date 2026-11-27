@@ -36,16 +36,16 @@ fn measure(f: impl FnOnce()) {
     f()
 }
 
+use bouncycastle::core::hex;
 use bouncycastle::core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle::core::signature_key::OneShotVerifyingKey;
 use bouncycastle::core::traits::{PrivateKey, PublicKey};
-use bouncycastle::hex;
-use bouncycastle::mldsa::MLDSA44_SIG_LEN;
+use bouncycastle::pqc::mldsa::MLDSA44_SIG_LEN;
 
 /// This prints the in-memory size of all the public and private key structs
 fn print_struct_sizes() {
-    use bouncycastle::mldsa;
-    use bouncycastle::mldsa_lowmemory;
+    use bouncycastle::pqc::mldsa;
+    use bouncycastle::pqc::mldsa_lowmemory;
     use core::mem::size_of;
 
     println!("\nML-DSA-44");
@@ -124,7 +124,7 @@ fn bench_do_nothing() {
 }
 
 fn bench_mldsa44_keygen() {
-    use bouncycastle::mldsa::{MLDSA44, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{MLDSA44, MLDSATrait};
 
     eprintln!("MLDSA44/KeyGen");
 
@@ -138,12 +138,16 @@ fn bench_mldsa44_keygen() {
     )
     .unwrap();
 
-    let (pk, _sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
+    // The keys go to storage the caller holds, as `keygen_out` writes into, so that the two
+    // forms are measured alike.
+    let mut keys = None;
+    measure(|| keys = Some(MLDSA44::keygen_from_seed(&seed).unwrap()));
+    let (pk, _sk) = keys.unwrap();
     println!("{:x?}", pk.encode());
 }
 
 fn bench_mldsa44_lowmemory_keygen() {
-    use bouncycastle::mldsa_lowmemory::{MLDSA44, MLDSATrait};
+    use bouncycastle::pqc::mldsa_lowmemory::{MLDSA44, MLDSATrait};
 
     eprintln!("MLDSA44_lowmemory/KeyGen");
 
@@ -157,12 +161,16 @@ fn bench_mldsa44_lowmemory_keygen() {
     )
     .unwrap();
 
-    let (pk, _sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
+    // The keys go to storage the caller holds, as `keygen_out` writes into, so that the two
+    // forms are measured alike.
+    let mut keys = None;
+    measure(|| keys = Some(MLDSA44::keygen_from_seed(&seed).unwrap()));
+    let (pk, _sk) = keys.unwrap();
     println!("{:x?}", pk.encode());
 }
 
 fn bench_mldsa65_keygen() {
-    use bouncycastle::mldsa::{MLDSA65, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{MLDSA65, MLDSATrait};
 
     eprintln!("MLDSA65/KeyGen");
 
@@ -176,12 +184,16 @@ fn bench_mldsa65_keygen() {
     )
     .unwrap();
 
-    let (pk, _sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
+    // The keys go to storage the caller holds, as `keygen_out` writes into, so that the two
+    // forms are measured alike.
+    let mut keys = None;
+    measure(|| keys = Some(MLDSA65::keygen_from_seed(&seed).unwrap()));
+    let (pk, _sk) = keys.unwrap();
     println!("{:x?}", pk.encode());
 }
 
 fn bench_mldsa65_lowmemory_keygen() {
-    use bouncycastle::mldsa_lowmemory::{MLDSA65, MLDSATrait};
+    use bouncycastle::pqc::mldsa_lowmemory::{MLDSA65, MLDSATrait};
 
     eprintln!("MLDSA65_lowmemory/KeyGen");
 
@@ -195,12 +207,16 @@ fn bench_mldsa65_lowmemory_keygen() {
     )
     .unwrap();
 
-    let (pk, _sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
+    // The keys go to storage the caller holds, as `keygen_out` writes into, so that the two
+    // forms are measured alike.
+    let mut keys = None;
+    measure(|| keys = Some(MLDSA65::keygen_from_seed(&seed).unwrap()));
+    let (pk, _sk) = keys.unwrap();
     println!("{:x?}", pk.encode());
 }
 
 fn bench_mldsa87_keygen() {
-    use bouncycastle::mldsa::{MLDSA87, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{MLDSA87, MLDSATrait};
 
     eprintln!("MLDSA87/KeyGen");
 
@@ -214,12 +230,16 @@ fn bench_mldsa87_keygen() {
     )
     .unwrap();
 
-    let (pk, _sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
+    // The keys go to storage the caller holds, as `keygen_out` writes into, so that the two
+    // forms are measured alike.
+    let mut keys = None;
+    measure(|| keys = Some(MLDSA87::keygen_from_seed(&seed).unwrap()));
+    let (pk, _sk) = keys.unwrap();
     println!("{:x?}", pk.encode());
 }
 
 fn bench_mldsa87_lowmemory_keygen() {
-    use bouncycastle::mldsa_lowmemory::{MLDSA87, MLDSATrait};
+    use bouncycastle::pqc::mldsa_lowmemory::{MLDSA87, MLDSATrait};
 
     eprintln!("MLDSA87_lowmemory/KeyGen");
 
@@ -233,7 +253,11 @@ fn bench_mldsa87_lowmemory_keygen() {
     )
     .unwrap();
 
-    let (pk, _sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
+    // The keys go to storage the caller holds, as `keygen_out` writes into, so that the two
+    // forms are measured alike.
+    let mut keys = None;
+    measure(|| keys = Some(MLDSA87::keygen_from_seed(&seed).unwrap()));
+    let (pk, _sk) = keys.unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -244,8 +268,8 @@ fn bench_mldsa87_lowmemory_keygen() {
 /// max(key load, sign) rather than their sum. Inlining this into the bench would leave them
 /// on the stack underneath it and inflate the measurement by several kB.
 #[inline(never)]
-fn load_mldsa44_sk() -> bouncycastle::mldsa::MLDSA44PrivateKey {
-    use bouncycastle::mldsa::MLDSA44PrivateKey;
+fn load_mldsa44_sk() -> bouncycastle::pqc::mldsa::MLDSA44PrivateKey {
+    use bouncycastle::pqc::mldsa::MLDSA44PrivateKey;
 
     MLDSA44PrivateKey::from_bytes(&[
         0xD7, 0xB2, 0xB4, 0x72, 0x54, 0xAA, 0xE0, 0xDB, 0x45, 0xE7, 0x93, 0x0D, 0x4A, 0x98, 0xD2,
@@ -424,7 +448,7 @@ fn load_mldsa44_sk() -> bouncycastle::mldsa::MLDSA44PrivateKey {
 }
 
 fn bench_mldsa44_sign() {
-    use bouncycastle::mldsa::{MLDSA44, MLDSA44_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{MLDSA44, MLDSA44_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
 
     eprintln!("MLDSA44/Sign");
 
@@ -449,7 +473,7 @@ fn bench_mldsa44_sign() {
 }
 
 fn bench_mldsa44_sign_expanded_sk() {
-    use bouncycastle::mldsa::{
+    use bouncycastle::pqc::mldsa::{
         MLDSA44, MLDSA44_SK_LEN, MLDSA44PrivateKeyExpanded, MLDSAPrivateKeyTrait, MLDSATrait,
     };
 
@@ -480,8 +504,8 @@ fn bench_mldsa44_sign_expanded_sk() {
 /// Loads the private key for the matching sign bench. See [`load_mldsa44_sk`] for why this is
 /// `#[inline(never)]`.
 #[inline(never)]
-fn load_mldsa44_lowmemory_sk() -> bouncycastle::mldsa_lowmemory::MLDSA44PrivateKey {
-    use bouncycastle::mldsa_lowmemory::MLDSA44PrivateKey;
+fn load_mldsa44_lowmemory_sk() -> bouncycastle::pqc::mldsa_lowmemory::MLDSA44PrivateKey {
+    use bouncycastle::pqc::mldsa_lowmemory::MLDSA44PrivateKey;
 
     MLDSA44PrivateKey::from_bytes(&[
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
@@ -492,7 +516,7 @@ fn load_mldsa44_lowmemory_sk() -> bouncycastle::mldsa_lowmemory::MLDSA44PrivateK
 }
 
 fn bench_mldsa44_lowmemory_sign() {
-    use bouncycastle::mldsa_lowmemory::{
+    use bouncycastle::pqc::mldsa_lowmemory::{
         MLDSA44, MLDSA44_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait,
     };
 
@@ -521,8 +545,8 @@ fn bench_mldsa44_lowmemory_sign() {
 /// Loads the private key for the matching sign bench. See [`load_mldsa44_sk`] for why this is
 /// `#[inline(never)]`.
 #[inline(never)]
-fn load_mldsa65_sk() -> bouncycastle::mldsa::MLDSA65PrivateKey {
-    use bouncycastle::mldsa::MLDSA65PrivateKey;
+fn load_mldsa65_sk() -> bouncycastle::pqc::mldsa::MLDSA65PrivateKey {
+    use bouncycastle::pqc::mldsa::MLDSA65PrivateKey;
 
     MLDSA65PrivateKey::from_bytes(&[
         0x48, 0x68, 0x3D, 0x91, 0x97, 0x8E, 0x31, 0xEB, 0x3D, 0xDD, 0xB8, 0xB0, 0x47, 0x34, 0x82,
@@ -799,7 +823,7 @@ fn load_mldsa65_sk() -> bouncycastle::mldsa::MLDSA65PrivateKey {
 }
 
 fn bench_mldsa65_sign() {
-    use bouncycastle::mldsa::{MLDSA65, MLDSA65_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{MLDSA65, MLDSA65_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
 
     eprintln!("MLDSA65/Sign");
 
@@ -825,7 +849,7 @@ fn bench_mldsa65_sign() {
 }
 
 fn bench_mldsa65_sign_expanded_sk() {
-    use bouncycastle::mldsa::{
+    use bouncycastle::pqc::mldsa::{
         MLDSA65, MLDSA65_SK_LEN, MLDSA65PrivateKeyExpanded, MLDSAPrivateKeyTrait, MLDSATrait,
     };
 
@@ -857,8 +881,8 @@ fn bench_mldsa65_sign_expanded_sk() {
 /// Loads the private key for the matching sign bench. See [`load_mldsa44_sk`] for why this is
 /// `#[inline(never)]`.
 #[inline(never)]
-fn load_mldsa65_lowmemory_sk() -> bouncycastle::mldsa_lowmemory::MLDSA65PrivateKey {
-    use bouncycastle::mldsa_lowmemory::MLDSA65PrivateKey;
+fn load_mldsa65_lowmemory_sk() -> bouncycastle::pqc::mldsa_lowmemory::MLDSA65PrivateKey {
+    use bouncycastle::pqc::mldsa_lowmemory::MLDSA65PrivateKey;
 
     MLDSA65PrivateKey::from_bytes(&[
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
@@ -869,7 +893,7 @@ fn load_mldsa65_lowmemory_sk() -> bouncycastle::mldsa_lowmemory::MLDSA65PrivateK
 }
 
 fn bench_mldsa65_lowmemory_sign() {
-    use bouncycastle::mldsa_lowmemory::{
+    use bouncycastle::pqc::mldsa_lowmemory::{
         MLDSA65, MLDSA65_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait,
     };
 
@@ -898,8 +922,8 @@ fn bench_mldsa65_lowmemory_sign() {
 /// Loads the private key for the matching sign bench. See [`load_mldsa44_sk`] for why this is
 /// `#[inline(never)]`.
 #[inline(never)]
-fn load_mldsa87_sk() -> bouncycastle::mldsa::MLDSA87PrivateKey {
-    use bouncycastle::mldsa::MLDSA87PrivateKey;
+fn load_mldsa87_sk() -> bouncycastle::pqc::mldsa::MLDSA87PrivateKey {
+    use bouncycastle::pqc::mldsa::MLDSA87PrivateKey;
 
     MLDSA87PrivateKey::from_bytes(&[
         0x97, 0x92, 0xBC, 0xEC, 0x2F, 0x24, 0x30, 0x68, 0x6A, 0x82, 0xFC, 0xCF, 0x3C, 0x2F, 0x5F,
@@ -1234,7 +1258,7 @@ fn load_mldsa87_sk() -> bouncycastle::mldsa::MLDSA87PrivateKey {
 }
 
 fn bench_mldsa87_sign() {
-    use bouncycastle::mldsa::{MLDSA87, MLDSAPrivateKeyTrait, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{MLDSA87, MLDSAPrivateKeyTrait, MLDSATrait};
 
     eprintln!("MLDSA87/Sign");
 
@@ -1260,7 +1284,7 @@ fn bench_mldsa87_sign() {
 }
 
 fn bench_mldsa87_sign_expanded_sk() {
-    use bouncycastle::mldsa::{
+    use bouncycastle::pqc::mldsa::{
         MLDSA87, MLDSA87PrivateKeyExpanded, MLDSAPrivateKeyTrait, MLDSATrait,
     };
 
@@ -1292,8 +1316,8 @@ fn bench_mldsa87_sign_expanded_sk() {
 /// Loads the private key for the matching sign bench. See [`load_mldsa44_sk`] for why this is
 /// `#[inline(never)]`.
 #[inline(never)]
-fn load_mldsa87_lowmemory_sk() -> bouncycastle::mldsa_lowmemory::MLDSA87PrivateKey {
-    use bouncycastle::mldsa_lowmemory::MLDSA87PrivateKey;
+fn load_mldsa87_lowmemory_sk() -> bouncycastle::pqc::mldsa_lowmemory::MLDSA87PrivateKey {
+    use bouncycastle::pqc::mldsa_lowmemory::MLDSA87PrivateKey;
 
     MLDSA87PrivateKey::from_bytes(&[
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
@@ -1304,7 +1328,7 @@ fn load_mldsa87_lowmemory_sk() -> bouncycastle::mldsa_lowmemory::MLDSA87PrivateK
 }
 
 fn bench_mldsa87_lowmemory_sign() {
-    use bouncycastle::mldsa_lowmemory::{
+    use bouncycastle::pqc::mldsa_lowmemory::{
         MLDSA87, MLDSA87_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait,
     };
 
@@ -2372,14 +2396,14 @@ const MLDSA87_KAT_SIG: [u8; 4627] = [
 /// Loads the public key for the matching verify bench. See [`load_mldsa44_sk`] for why this is
 /// `#[inline(never)]`.
 #[inline(never)]
-fn load_mldsa44_pk() -> bouncycastle::mldsa::MLDSA44PublicKey {
-    use bouncycastle::mldsa::MLDSA44PublicKey;
+fn load_mldsa44_pk() -> bouncycastle::pqc::mldsa::MLDSA44PublicKey {
+    use bouncycastle::pqc::mldsa::MLDSA44PublicKey;
 
     MLDSA44PublicKey::from_bytes(&MLDSA44_KAT_PK).unwrap()
 }
 
 fn bench_mldsa44_verify() {
-    use bouncycastle::mldsa::{MLDSA44, MLDSA44_SIG_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{MLDSA44, MLDSA44_SIG_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
 
     eprintln!("MLDSA44/Verify");
 
@@ -2417,7 +2441,9 @@ fn bench_mldsa44_verify() {
 /// expanded key occupies for as long as it is held. Both the expansion and the verification are
 /// inside the measurement.
 fn bench_mldsa44_verify_expanded_pk() {
-    use bouncycastle::mldsa::{MLDSA44, MLDSA44_SIG_LEN, MLDSA44PublicKeyExpanded, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{
+        MLDSA44, MLDSA44_SIG_LEN, MLDSA44PublicKeyExpanded, MLDSATrait,
+    };
 
     eprintln!("MLDSA44/Verify_with_expanded_key");
 
@@ -2452,14 +2478,14 @@ fn bench_mldsa44_verify_expanded_pk() {
 /// Loads the public key for the matching verify bench. See [`load_mldsa44_sk`] for why this is
 /// `#[inline(never)]`.
 #[inline(never)]
-fn load_mldsa44_lowmemory_pk() -> bouncycastle::mldsa_lowmemory::MLDSA44PublicKey {
-    use bouncycastle::mldsa_lowmemory::MLDSA44PublicKey;
+fn load_mldsa44_lowmemory_pk() -> bouncycastle::pqc::mldsa_lowmemory::MLDSA44PublicKey {
+    use bouncycastle::pqc::mldsa_lowmemory::MLDSA44PublicKey;
 
     MLDSA44PublicKey::from_bytes(&MLDSA44_KAT_PK).unwrap()
 }
 
 fn bench_mldsa44_lowmemory_verify() {
-    use bouncycastle::mldsa_lowmemory::{
+    use bouncycastle::pqc::mldsa_lowmemory::{
         MLDSA44, MLDSA44_SIG_LEN, MLDSAPrivateKeyTrait, MLDSATrait,
     };
 
@@ -2495,14 +2521,14 @@ fn bench_mldsa44_lowmemory_verify() {
 /// Loads the public key for the matching verify bench. See [`load_mldsa44_sk`] for why this is
 /// `#[inline(never)]`.
 #[inline(never)]
-fn load_mldsa65_pk() -> bouncycastle::mldsa::MLDSA65PublicKey {
-    use bouncycastle::mldsa::MLDSA65PublicKey;
+fn load_mldsa65_pk() -> bouncycastle::pqc::mldsa::MLDSA65PublicKey {
+    use bouncycastle::pqc::mldsa::MLDSA65PublicKey;
 
     MLDSA65PublicKey::from_bytes(&MLDSA65_KAT_PK).unwrap()
 }
 
 fn bench_mldsa65_verify() {
-    use bouncycastle::mldsa::{MLDSA65, MLDSA65_SIG_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{MLDSA65, MLDSA65_SIG_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
 
     eprintln!("MLDSA65/Verify");
 
@@ -2543,7 +2569,9 @@ fn bench_mldsa65_verify() {
 /// expanded key occupies for as long as it is held. Both the expansion and the verification are
 /// inside the measurement.
 fn bench_mldsa65_verify_expanded_pk() {
-    use bouncycastle::mldsa::{MLDSA65, MLDSA65_SIG_LEN, MLDSA65PublicKeyExpanded, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{
+        MLDSA65, MLDSA65_SIG_LEN, MLDSA65PublicKeyExpanded, MLDSATrait,
+    };
 
     eprintln!("MLDSA65/Verify_with_expanded_key");
 
@@ -2581,14 +2609,14 @@ fn bench_mldsa65_verify_expanded_pk() {
 /// Loads the public key for the matching verify bench. See [`load_mldsa44_sk`] for why this is
 /// `#[inline(never)]`.
 #[inline(never)]
-fn load_mldsa65_lowmemory_pk() -> bouncycastle::mldsa_lowmemory::MLDSA65PublicKey {
-    use bouncycastle::mldsa_lowmemory::MLDSA65PublicKey;
+fn load_mldsa65_lowmemory_pk() -> bouncycastle::pqc::mldsa_lowmemory::MLDSA65PublicKey {
+    use bouncycastle::pqc::mldsa_lowmemory::MLDSA65PublicKey;
 
     MLDSA65PublicKey::from_bytes(&MLDSA65_KAT_PK).unwrap()
 }
 
 fn bench_mldsa65_lowmemory_verify() {
-    use bouncycastle::mldsa_lowmemory::{
+    use bouncycastle::pqc::mldsa_lowmemory::{
         MLDSA65, MLDSA65_SIG_LEN, MLDSAPrivateKeyTrait, MLDSATrait,
     };
 
@@ -2625,14 +2653,14 @@ fn bench_mldsa65_lowmemory_verify() {
 /// Loads the public key for the matching verify bench. See [`load_mldsa44_sk`] for why this is
 /// `#[inline(never)]`.
 #[inline(never)]
-fn load_mldsa87_pk() -> bouncycastle::mldsa::MLDSA87PublicKey {
-    use bouncycastle::mldsa::MLDSA87PublicKey;
+fn load_mldsa87_pk() -> bouncycastle::pqc::mldsa::MLDSA87PublicKey {
+    use bouncycastle::pqc::mldsa::MLDSA87PublicKey;
 
     MLDSA87PublicKey::from_bytes(&MLDSA87_KAT_PK).unwrap()
 }
 
 fn bench_mldsa87_verify() {
-    use bouncycastle::mldsa::{MLDSA87, MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{MLDSA87, MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSATrait};
 
     eprintln!("MLDSA87/Verify");
 
@@ -2671,7 +2699,7 @@ fn bench_mldsa87_verify() {
 /// expanded key occupies for as long as it is held. Both the expansion and the verification are
 /// inside the measurement.
 fn bench_mldsa87_verify_expanded_pk() {
-    use bouncycastle::mldsa::{
+    use bouncycastle::pqc::mldsa::{
         MLDSA87, MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87PublicKeyExpanded, MLDSATrait,
     };
 
@@ -2709,14 +2737,14 @@ fn bench_mldsa87_verify_expanded_pk() {
 /// Loads the public key for the matching verify bench. See [`load_mldsa44_sk`] for why this is
 /// `#[inline(never)]`.
 #[inline(never)]
-fn load_mldsa87_lowmemory_pk() -> bouncycastle::mldsa_lowmemory::MLDSA87PublicKey {
-    use bouncycastle::mldsa_lowmemory::MLDSA87PublicKey;
+fn load_mldsa87_lowmemory_pk() -> bouncycastle::pqc::mldsa_lowmemory::MLDSA87PublicKey {
+    use bouncycastle::pqc::mldsa_lowmemory::MLDSA87PublicKey;
 
     MLDSA87PublicKey::from_bytes(&MLDSA87_KAT_PK).unwrap()
 }
 
 fn bench_mldsa87_lowmemory_verify() {
-    use bouncycastle::mldsa_lowmemory::{
+    use bouncycastle::pqc::mldsa_lowmemory::{
         MLDSA87, MLDSA87_SIG_LEN, MLDSAPrivateKeyTrait, MLDSATrait,
     };
 
@@ -2751,7 +2779,7 @@ fn bench_mldsa87_lowmemory_verify() {
 }
 
 fn bench_mldsa44_keygen_out() {
-    use bouncycastle::mldsa::{MLDSA44, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{MLDSA44, MLDSATrait};
 
     eprintln!("MLDSA44/KeyGenOut");
 
@@ -2765,14 +2793,14 @@ fn bench_mldsa44_keygen_out() {
     )
     .unwrap();
 
-    let mut pk = bouncycastle::mldsa::MLDSA44PublicKey::zeroized();
-    let mut sk = bouncycastle::mldsa::MLDSA44PrivateKey::zeroized();
-    MLDSA44::keygen_from_seed_out(&seed, &mut pk, &mut sk).unwrap();
+    let mut pk = bouncycastle::pqc::mldsa::MLDSA44PublicKey::zeroized();
+    let mut sk = bouncycastle::pqc::mldsa::MLDSA44PrivateKey::zeroized();
+    measure(|| MLDSA44::keygen_from_seed_out(&seed, &mut pk, &mut sk).unwrap());
     println!("{:x?}", pk.encode());
 }
 
 fn bench_mldsa65_keygen_out() {
-    use bouncycastle::mldsa::{MLDSA65, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{MLDSA65, MLDSATrait};
 
     eprintln!("MLDSA65/KeyGenOut");
 
@@ -2786,14 +2814,14 @@ fn bench_mldsa65_keygen_out() {
     )
     .unwrap();
 
-    let mut pk = bouncycastle::mldsa::MLDSA65PublicKey::zeroized();
-    let mut sk = bouncycastle::mldsa::MLDSA65PrivateKey::zeroized();
-    MLDSA65::keygen_from_seed_out(&seed, &mut pk, &mut sk).unwrap();
+    let mut pk = bouncycastle::pqc::mldsa::MLDSA65PublicKey::zeroized();
+    let mut sk = bouncycastle::pqc::mldsa::MLDSA65PrivateKey::zeroized();
+    measure(|| MLDSA65::keygen_from_seed_out(&seed, &mut pk, &mut sk).unwrap());
     println!("{:x?}", pk.encode());
 }
 
 fn bench_mldsa87_keygen_out() {
-    use bouncycastle::mldsa::{MLDSA87, MLDSATrait};
+    use bouncycastle::pqc::mldsa::{MLDSA87, MLDSATrait};
 
     eprintln!("MLDSA87/KeyGenOut");
 
@@ -2807,9 +2835,72 @@ fn bench_mldsa87_keygen_out() {
     )
     .unwrap();
 
-    let mut pk = bouncycastle::mldsa::MLDSA87PublicKey::zeroized();
-    let mut sk = bouncycastle::mldsa::MLDSA87PrivateKey::zeroized();
-    MLDSA87::keygen_from_seed_out(&seed, &mut pk, &mut sk).unwrap();
+    let mut pk = bouncycastle::pqc::mldsa::MLDSA87PublicKey::zeroized();
+    let mut sk = bouncycastle::pqc::mldsa::MLDSA87PrivateKey::zeroized();
+    measure(|| MLDSA87::keygen_from_seed_out(&seed, &mut pk, &mut sk).unwrap());
+    println!("{:x?}", pk.encode());
+}
+
+fn bench_mldsa44_lowmemory_keygen_out() {
+    use bouncycastle::pqc::mldsa_lowmemory::{MLDSA44, MLDSATrait};
+
+    eprintln!("MLDSA44_lowmemory/KeyGenOut");
+
+    let seed = KeyMaterial256::from_bytes_as_type(
+        &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
+            0x1C, 0x1D, 0x1E, 0x1F,
+        ],
+        KeyType::Seed,
+    )
+    .unwrap();
+
+    let mut pk = bouncycastle::pqc::mldsa_lowmemory::MLDSA44PublicKey::zeroized();
+    let mut sk = bouncycastle::pqc::mldsa_lowmemory::MLDSA44PrivateKey::zeroized();
+    measure(|| MLDSA44::keygen_from_seed_out(&seed, &mut pk, &mut sk).unwrap());
+    println!("{:x?}", pk.encode());
+}
+
+fn bench_mldsa65_lowmemory_keygen_out() {
+    use bouncycastle::pqc::mldsa_lowmemory::{MLDSA65, MLDSATrait};
+
+    eprintln!("MLDSA65_lowmemory/KeyGenOut");
+
+    let seed = KeyMaterial256::from_bytes_as_type(
+        &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
+            0x1C, 0x1D, 0x1E, 0x1F,
+        ],
+        KeyType::Seed,
+    )
+    .unwrap();
+
+    let mut pk = bouncycastle::pqc::mldsa_lowmemory::MLDSA65PublicKey::zeroized();
+    let mut sk = bouncycastle::pqc::mldsa_lowmemory::MLDSA65PrivateKey::zeroized();
+    measure(|| MLDSA65::keygen_from_seed_out(&seed, &mut pk, &mut sk).unwrap());
+    println!("{:x?}", pk.encode());
+}
+
+fn bench_mldsa87_lowmemory_keygen_out() {
+    use bouncycastle::pqc::mldsa_lowmemory::{MLDSA87, MLDSATrait};
+
+    eprintln!("MLDSA87_lowmemory/KeyGenOut");
+
+    let seed = KeyMaterial256::from_bytes_as_type(
+        &[
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B,
+            0x1C, 0x1D, 0x1E, 0x1F,
+        ],
+        KeyType::Seed,
+    )
+    .unwrap();
+
+    let mut pk = bouncycastle::pqc::mldsa_lowmemory::MLDSA87PublicKey::zeroized();
+    let mut sk = bouncycastle::pqc::mldsa_lowmemory::MLDSA87PrivateKey::zeroized();
+    measure(|| MLDSA87::keygen_from_seed_out(&seed, &mut pk, &mut sk).unwrap());
     println!("{:x?}", pk.encode());
 }
 
@@ -2843,4 +2934,7 @@ fn main() {
     // bench_mldsa44_keygen_out()
     // bench_mldsa65_keygen_out()
     // bench_mldsa87_keygen_out()
+    // bench_mldsa44_lowmemory_keygen_out()
+    // bench_mldsa65_lowmemory_keygen_out()
+    // bench_mldsa87_lowmemory_keygen_out()
 }

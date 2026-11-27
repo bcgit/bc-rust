@@ -10,7 +10,7 @@
 //! Make sure you build in release mode!
 //!
 //! As for `bench_aes_mem_usage`, massif cannot see these: a call needs well under the 7.7 kB the
-//! process's own start-up reaches. The figures in `bouncycastle-aes`'s `AES_GCM_SIV_128` docs are
+//! process's own start-up reaches. The figures in `bouncycastle_symmetric::aes`'s `AES_GCM_SIV_128` docs are
 //! the deepest frame chain below each [`measure`] instance, from a release build with
 //! `RUSTFLAGS="-C remark=prologepilog -C remark=stack-frame-layout"` (the "N stack bytes in
 //! function" lines) and the binary's call graph (`objdump -d`), summed with a return address per
@@ -24,10 +24,12 @@
 
 #![allow(dead_code)]
 
-use bouncycastle::aes::{AES_GCM_SIV_128, AES_GCM_SIV_256, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::symmetric_key::{
     AeadInPlaceDecryptionKey, AeadInPlaceEncryptionKey, FromKeyMaterial,
+};
+use bouncycastle::symmetric::aes::{
+    AES_GCM_SIV_128, AES_GCM_SIV_256, GCM_SIV_NONCE_LEN, GCM_SIV_TAG_LEN,
 };
 
 /// The message length. The mode works in the caller's buffer, so its own stack does not depend

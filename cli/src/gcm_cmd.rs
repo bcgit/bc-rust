@@ -17,11 +17,11 @@
 
 use crate::helpers::aead_cipher_helpers::{decrypt_aead, encrypt_aead, load_aad};
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
-use bouncycastle::cipher::BlockCipherKey;
-use bouncycastle::cipher::modes::ModeNames;
-use bouncycastle::cipher::modes::{GCM, GCM_NONCE_LEN};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey};
+use bouncycastle::symmetric::BlockCipherKey;
+use bouncycastle::symmetric::modes::ModeNames;
+use bouncycastle::symmetric::modes::{GCM, GCM_NONCE_LEN};
 
 /// GCM with a 128-bit tag under a `KEY_LEN`-byte key for the permutation `P`; `alg` names the
 /// cipher and key length in messages.

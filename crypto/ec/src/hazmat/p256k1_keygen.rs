@@ -30,7 +30,8 @@ pub const MAX_DRBG_OUTPUT_LEN: usize = 63;
 ///
 /// # Errors
 /// [`RNGError::SecurityStrengthInsufficientForAlgorithm`] if the RNG is weaker than
-/// [`RNG_STRENGTH`], or the RNG's own error if it fails to deliver.
+/// [`RNG_STRENGTH`], the RNG's own error if it fails to deliver, or
+/// [`RNGError::GenericError`] if it writes fewer bytes than asked for.
 pub fn keygen<const DRBG_LEN: usize>(
     rng: &mut dyn RNG,
 ) -> Result<(P256K1Scalar, (P256K1FieldElement, P256K1FieldElement)), RNGError> {
@@ -44,7 +45,7 @@ pub fn keygen<const DRBG_LEN: usize>(
         return Err(RNGError::SecurityStrengthInsufficientForAlgorithm);
     }
     let mut extra_bits = Secret::<[u8; DRBG_LEN]>::new();
-    rng.next_bytes_out(&mut *extra_bits)?;
+    crate::rng_draw::fill_bytes(rng, &mut *extra_bits)?;
     let d = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
     let q = public_point(&d);
     Ok((d, q))

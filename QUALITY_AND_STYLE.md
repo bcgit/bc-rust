@@ -174,9 +174,10 @@ The following suffixes can be applied
   so that the worker is finished where it sits, and a `&FinishToken`, so that only a `_final` (or code that asks
   `core::hazmat::finish_token()` for one) calls it: `finish_into(&mut self, token: &FinishToken, out: &mut [u8])`.
   `_into` marks the ones that write their result into the caller's buffer, under the contract of the `_final_out`
-  they serve (`finish_into`, `finish_mac_into`, `finish_signature_into`, `finish_encrypt_detached_into`); one that
-  returns its result or only checks has no suffix (`finish_encrypt`, `finish_mac_verify`). It is not `_out`, which is
-  a caller's method, nor `_inplace`, which means the input and the output share a buffer.
+  they serve (`finish_into`, `finish_mac_into`, `finish_signature_into`, `finish_encrypt_detached_into`,
+  `finish_decrypt_into`); one that returns its result or only checks has no suffix (`finish_encrypt`,
+  `finish_mac_verify`). It is not `_out`, which is a caller's method, nor `_inplace`, which means the input and the
+  output share a buffer.
 * `_rng`: indicates that this version of the function sources its random numbers from a provided `&mut dyn RNG` instead
   of from the default library RNG. `_rng(.., &mut dyn RNG)`. Keyed primitives do not have it: their constructors and
   one-shots take the RNG, full stop.

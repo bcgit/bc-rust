@@ -9,7 +9,6 @@
 //! A `valid` case must encrypt to exactly `ct || tag` and decrypt back to `msg`. An `invalid` case
 //! must be rejected with `AEADTagCheckFailed`, leaving the output buffer zeroized.
 
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -21,9 +20,10 @@ use bouncycastle_symmetric::ascon::{
     ASCON_AEAD128_KEY_LEN, ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN, Ascon_AEAD128,
     AsconAEAD128Key,
 };
+use bouncycastle_symmetric::{Decrypting, Encrypting};
 
 /// Wraps the vector's key bytes as a cipher key, promoting them if `KeyMaterial`'s entropy
-/// heuristic declined to (as `ascon_bc-test-data.rs` does for the NIST KAT keys).
+/// heuristic declined to (as `ascon_ascon_bc-test-data.rs` does for the NIST KAT keys).
 fn cipher_key(bytes: &[u8]) -> KeyMaterial<ASCON_AEAD128_KEY_LEN> {
     let mut key = KeyMaterial::<ASCON_AEAD128_KEY_LEN>::from_bytes_as_type(
         bytes,

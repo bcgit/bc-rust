@@ -7,12 +7,12 @@ use crate::helpers::{
     decode_hex_arg, flush_stdout, load_secret, read_stdin_chunk, strip_trailing_newline,
     write_bytes_or_hex, write_stdout,
 };
-use bouncycastle::cipher::modes::{
-    XTS_MAX_DATA_UNIT_LEN, XTS_MIN_DATA_UNIT_LEN, XTS_TWEAK_LEN, XTSKey,
-};
 use bouncycastle::core::hazmat::BlockPermutation;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::FromKeyMaterial;
+use bouncycastle::symmetric::modes::{
+    XTS_MAX_DATA_UNIT_LEN, XTS_MIN_DATA_UNIT_LEN, XTS_TWEAK_LEN, XTSKey,
+};
 use bouncycastle_utils::ct::{ct_eq_bytes, ct_eq_zero_bytes};
 use std::process::exit;
 

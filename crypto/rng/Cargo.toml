@@ -3,18 +3,28 @@ name = "bouncycastle-rng"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# `std` adds the constructors that seed from the operating system (`new`, `new_from_os`,
+# `Default`), and `getrandom` with them; without it a DRBG is seeded by the caller alone. `alloc`
+# adds `Sp80090ADrbg::generate`, which returns a `Vec`; without it the crate links no allocator.
+# Neither forwards to `bouncycastle-core` or `bouncycastle-digest`, which use nothing gated
+# there: those two dev-depend on this crate, and a forward would turn their features on in their
+# own `--no-default-features` test builds.
+default = ["std"]
+std = ["alloc", "dep:getrandom"]
+alloc = []
+
 [dependencies]
 bouncycastle-core.workspace = true
-# By path, not from the workspace table, to leave the default `std` feature off:
-# `bouncycastle-digest` dev-depends on this crate, and a default-featured edge back to it would
-# turn `std` on in its own `--no-default-features` test build.
-bouncycastle-digest = { path = "../digest", default-features = false }
+bouncycastle-digest.workspace = true
 bouncycastle-utils.workspace = true
 
-# external
-getrandom = "0.4.0-rc.1"
+# external: the operating system's entropy, for the `std` constructors
+getrandom = { version = "0.4.0-rc.1", optional = true }
 
 [dev-dependencies]
+# The CAVP suite uses `hex::decode`, which returns a `Vec`.
+bouncycastle-core = { workspace = true, features = ["std"] }
 bouncycastle-core-test-framework.workspace = true
 criterion.workspace = true
 

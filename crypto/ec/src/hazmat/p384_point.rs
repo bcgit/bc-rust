@@ -328,6 +328,26 @@ mod tests {
         }
     }
 
+    /// As `add`'s in `p384_point_tests.rs`: a point plus its negation is `(1, 1, 0)`, and not
+    /// the generic formula's `Z = 0` result, which still carries the operands' `Y`.
+    #[test]
+    fn add_affine_of_the_opposite_point_is_the_canonical_identity() {
+        let g = P384JacobianPoint::from_affine(
+            P384FieldElement::from_limbs(G_X_LIMBS),
+            P384FieldElement::from_limbs(G_Y_LIMBS),
+        );
+        let z = P384FieldElement::from_limbs(G_Y_LIMBS);
+        let z2 = z.mul(&z);
+        let scaled_g = P384JacobianPoint { x: g.x.mul(&z2), y: g.y.mul(&z2.mul(&z)), z };
+        for a in [g, scaled_g] {
+            let sum = a.add_affine(&g.x, &g.y.negate(), Condition::<u64>::FALSE);
+            assert_eq!(
+                (sum.x, sum.y, sum.z),
+                (P384FieldElement::ONE, P384FieldElement::ONE, P384FieldElement::ZERO)
+            );
+        }
+    }
+
     #[test]
     fn add_vartime_affine_agrees_with_add_on_every_case() {
         let g = P384JacobianPoint::from_affine(

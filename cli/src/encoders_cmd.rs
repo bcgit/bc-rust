@@ -2,8 +2,8 @@ use std::io;
 use std::io::Read;
 use std::process::exit;
 
-use bouncycastle::base64;
-use bouncycastle::hex;
+use bouncycastle::core::base64;
+use bouncycastle::core::hex;
 
 pub(crate) fn hex_encode_cmd() {
     // Stream from stdin to stdout in chunks of 1 kb. Hex has no state to carry: every byte

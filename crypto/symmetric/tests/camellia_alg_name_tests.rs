@@ -6,11 +6,6 @@
 //! of one algorithm, not different algorithms, so every combination of them must report the same
 //! name.
 
-use bouncycastle_cipher::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr, OFB, Ofb};
-use bouncycastle_cipher::padding::{
-    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
-};
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
@@ -28,6 +23,11 @@ use bouncycastle_symmetric::camellia::{
     Camellia_KW_192, Camellia_KW_256, Camellia_OFB_128, Camellia_OFB_192, Camellia_OFB_256,
     Camellia128Key, LANES,
 };
+use bouncycastle_symmetric::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr, OFB, Ofb};
+use bouncycastle_symmetric::padding::{
+    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
+};
+use bouncycastle_symmetric::{Decrypting, Encrypting};
 use core::mem::size_of;
 
 /// Both directions of one algorithm report `name` and `strength`.
@@ -242,7 +242,7 @@ fn the_const_parameters_are_camellias() {
     assert_eq!(LANES * 8, 32, "four lanes of one F-function input each fill the circuit");
 }
 
-/// The engines are exactly their subkeys, the sizes the crate docs quote: 26 or 34 subkeys of 64
+/// The engines are exactly their subkeys, the sizes the module docs quote: 26 or 34 subkeys of 64
 /// bits and nothing else, no direction flag, no round counter, no initialised marker.
 #[test]
 fn the_engines_are_exactly_their_subkeys() {

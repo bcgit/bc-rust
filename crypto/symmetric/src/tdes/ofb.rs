@@ -1,21 +1,21 @@
 //! Type aliases for TDES in OFB mode (NIST SP 800-38A Sec 6.4). The docs are on [`TDES_OFB`],
 //! which the module root re-exports.
 
+use crate::Decrypting;
+use crate::modes::Ofb;
 use crate::tdes::BLOCK_LEN;
 use crate::tdes::hazmat::{TDES2Internal, TDESInternal};
-use bouncycastle_cipher::Decrypting;
-use bouncycastle_cipher::modes::Ofb;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
 
-/// TDES in OFB mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`].
+/// TDES in OFB mode. `Dir` is [`crate::Encrypting`] or
+/// [`crate::Decrypting`].
 ///
 /// This is the TOFB mode that SP 800-38A Appendix E says is equivalent to OFB "with the TDEA as
-/// the underlying block cipher". See `bouncycastle_cipher::modes::ofb` for the construction and
+/// the underlying block cipher". See `bouncycastle_symmetric::modes::ofb` for the construction and
 /// its security considerations. The alias is a stream cipher: the data is a `&mut [u8]` of any
 /// length, encrypted or decrypted in place. It comes from a key,
 /// [`TDES3Key<OFB>`](crate::tdes::TDES3Key), through the [`SymmetricEncryptionKey`] /
@@ -25,7 +25,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES3Key;
-/// use bouncycastle_cipher::modes::OFB;
+/// use bouncycastle_symmetric::modes::OFB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 /// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
@@ -55,7 +55,7 @@ pub type TDES_OFB<'k, Dir> = Ofb<'k, TDESInternal, Dir, BLOCK_LEN>;
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES2Key;
-/// use bouncycastle_cipher::modes::OFB;
+/// use bouncycastle_symmetric::modes::OFB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 ///

@@ -113,7 +113,7 @@ mod mlkem_tests {
         let (derived_pk, derived_sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
 
         assert_eq!(derived_pk.encode(), expected_pk_bytes.as_slice());
-        assert_eq!(derived_sk.pk().encode(), expected_pk_bytes.as_slice());
+        assert_eq!(derived_sk.pk().unwrap().encode(), expected_pk_bytes.as_slice());
 
         // test outputing to the full FIPS encoding
         let full_sk_bytes = derived_sk.encode_full_sk();
@@ -125,7 +125,7 @@ mod mlkem_tests {
         assert_eq!(derived_pk, decoded_pk);
 
         // consistency check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, derived_sk.pk());
+        assert_eq!(derived_pk, derived_sk.pk().unwrap());
 
         MLKEM512::keygen_from_seed_and_encoded(&seed, &full_sk_bytes).unwrap();
 
@@ -159,7 +159,7 @@ mod mlkem_tests {
         let (derived_pk, derived_sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
 
         assert_eq!(derived_pk.encode(), expected_pk_bytes.as_slice());
-        assert_eq!(derived_sk.pk().encode(), expected_pk_bytes.as_slice());
+        assert_eq!(derived_sk.pk().unwrap().encode(), expected_pk_bytes.as_slice());
 
         // test outputing to the full FIPS encoding
         let full_sk_bytes = derived_sk.encode_full_sk();
@@ -171,7 +171,7 @@ mod mlkem_tests {
         assert_eq!(derived_pk, expected_pk);
 
         // consistency check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, derived_sk.pk());
+        assert_eq!(derived_pk, derived_sk.pk().unwrap());
 
         MLKEM768::keygen_from_seed_and_encoded(&seed, &full_sk_bytes).unwrap();
 
@@ -205,7 +205,7 @@ mod mlkem_tests {
         let (derived_pk, derived_sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
 
         assert_eq!(derived_pk.encode(), expected_pk_bytes.as_slice());
-        assert_eq!(derived_sk.pk().encode(), expected_pk_bytes.as_slice());
+        assert_eq!(derived_sk.pk().unwrap().encode(), expected_pk_bytes.as_slice());
 
         // test outputing to the full FIPS encoding
         let full_sk_bytes = derived_sk.encode_full_sk();
@@ -217,7 +217,7 @@ mod mlkem_tests {
         assert_eq!(derived_pk, expected_pk);
 
         // consistency check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, derived_sk.pk());
+        assert_eq!(derived_pk, derived_sk.pk().unwrap());
 
         MLKEM1024::keygen_from_seed_and_encoded(&seed, &full_sk_bytes).unwrap();
 
@@ -334,7 +334,7 @@ mod mlkem_tests {
                 let sk_expanded = $expanded::from(&sk);
 
                 // same public side, same encodings, same seed
-                assert_eq!(sk_expanded.pk(), pk);
+                assert_eq!(sk_expanded.pk().unwrap(), pk);
                 assert_eq!(sk_expanded.pk_hash(), sk.pk_hash());
                 assert_eq!(sk_expanded.encode(), sk.encode());
                 assert_eq!(sk_expanded.encode_full_sk(), sk.encode_full_sk());

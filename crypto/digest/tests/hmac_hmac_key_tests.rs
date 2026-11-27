@@ -1,16 +1,19 @@
 //! `HmacKey`: the key object holding RFC 2104 Section 4's two pad states, and the workers it hands
 //! out producing exactly what RFC 2104's formula gives from the same material.
 
-use bouncycastle_core::errors::{KeyMaterialError, MACError};
+use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, RNGError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{Hash, MACGenerator, MACVerifier, RNG};
+use bouncycastle_core::traits::{
+    Algorithm, FinishToken, Hash, HashAlgParams, HashOneShot, MACGenerator, MACVerifier, RNG,
+};
 use bouncycastle_digest::hmac::hazmat::{finish_out, inner_state};
 use bouncycastle_digest::hmac::{HMACParams, HmacKey};
 use bouncycastle_digest::sha2::{SHA224, SHA256, SHA512};
 use bouncycastle_digest::sha3::SHA3_256;
+use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
 
 fn mac_key<const N: usize>(fill: u8) -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&[fill; N], KeyType::MACKey).expect("a MAC key")
@@ -121,7 +124,7 @@ fn construction_applies_the_key_type_and_strength_policy() {
     assert!(HmacKey::<SHA256>::from_key_material_allow_weak(&weak).is_ok());
 
     // An empty (zeroized) key, HKDF's absent salt, is admitted by the weak form and is the
-    // all-zero key of RFC 2104 step (1): the zero-length-key vector from `hmac_tests.rs`.
+    // all-zero key of RFC 2104 step (1): the zero-length-key vector from `hmac_hmac_tests.rs`.
     let no_salt = KeyMaterial256::new();
     let salt_key = HmacKey::<SHA256>::from_key_material_allow_weak(&no_salt).unwrap();
     assert_eq!(
@@ -208,4 +211,173 @@ fn the_hazmat_halves_compose_to_the_tag() {
     let mut short = [0xEEu8; 16];
     assert_eq!(finish_out(&key, &mut inner_state(&key), &mut short), 16);
     assert_eq!(short, key.mac(b"")[..16]);
+}
+
+/// SHA-256 under other claims: `HASH` is the strength the hash reports and `HMAC` the strength
+/// its HMAC does, each as [`SecurityStrength`]'s discriminant. No hash in the library states two
+/// different strengths, so the constant a check reads shows only on a hash like this one.
+#[derive(Clone, Default)]
+struct Claims<const HASH: u8, const HMAC: u8>(SHA256);
+
+const fn strength(discriminant: u8) -> SecurityStrength {
+    match discriminant {
+        2 => SecurityStrength::_128bit,
+        4 => SecurityStrength::_256bit,
+        _ => panic!("the tests claim 128 or 256 bits"),
+    }
+}
+
+impl<const HASH: u8, const HMAC: u8> Algorithm for Claims<HASH, HMAC> {
+    const ALG_NAME: &'static str = "Claims";
+    const MAX_SECURITY_STRENGTH: SecurityStrength = strength(HASH);
+}
+
+impl<const HASH: u8, const HMAC: u8> HashAlgParams for Claims<HASH, HMAC> {
+    const OUTPUT_LEN: usize = SHA256::OUTPUT_LEN;
+    const BLOCK_LEN: usize = SHA256::BLOCK_LEN;
+}
+
+impl<const HASH: u8, const HMAC: u8> Hash for Claims<HASH, HMAC> {
+    fn block_bitlen(&self) -> usize {
+        self.0.block_bitlen()
+    }
+
+    fn output_len(&self) -> usize {
+        self.0.output_len()
+    }
+
+    fn do_update(&mut self, data: &[u8]) {
+        self.0.do_update(data)
+    }
+
+    fn finish_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.0.finish_into(token, output)
+    }
+
+    fn finish_partial_bits_into(
+        &mut self,
+        token: &FinishToken,
+        partial_byte: u8,
+        num_bits: usize,
+        output: &mut [u8],
+    ) -> Result<usize, HashError> {
+        self.0.finish_partial_bits_into(token, partial_byte, num_bits, output)
+    }
+}
+
+impl<const HASH: u8, const HMAC: u8> HashOneShot for Claims<HASH, HMAC> {}
+
+impl<const HASH: u8, const HMAC: u8> HMACParams for Claims<HASH, HMAC> {
+    type MACKey = KeyMaterial<32>;
+    const HMAC_ALG_NAME: &'static str = "HMAC-Claims";
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = strength(HMAC);
+    const HMAC_OID: &'static [u32] = &[];
+    const HMAC_OID_DER: &'static [u8] = &[];
+}
+
+/// The strength a key and an RNG are held to is `HMACParams::HMAC_MAX_SECURITY_STRENGTH`, at
+/// the boundary on both sides, whatever strength the hash reports for itself.
+#[test]
+fn the_key_and_the_rng_are_held_to_the_hmac_strength() {
+    fn key_at(strength: SecurityStrength) -> KeyMaterial<32> {
+        let mut key = mac_key::<32>(0x0b);
+        key.set_security_strength(strength).unwrap();
+        key
+    }
+    // A DRBG at the strength asked for: the refusal reads only the strength the RNG reports.
+    fn refuses_rng<H: HMACParams>(strength: SecurityStrength) -> bool {
+        let drawn = match strength {
+            SecurityStrength::_128bit => {
+                let mut rng = HashDRBG_SHA256::new_from_os();
+                assert_eq!(rng.security_strength(), strength);
+                HmacKey::<H>::keygen_from_rng(&mut rng)
+            }
+            SecurityStrength::_256bit => {
+                let mut rng = HashDRBG_SHA512::new_from_os();
+                assert_eq!(rng.security_strength(), strength);
+                HmacKey::<H>::keygen_from_rng(&mut rng)
+            }
+            _ => panic!("the tests draw at 128 or 256 bits"),
+        };
+        match drawn {
+            Ok(_) => false,
+            Err(RNGError::SecurityStrengthInsufficientForAlgorithm) => true,
+            Err(e) => panic!("unexpected error {e:?}"),
+        }
+    }
+    fn refuses_key<H: HMACParams>(strength: SecurityStrength) -> bool {
+        match HmacKey::<H>::from_key_material(&key_at(strength)) {
+            Ok(_) => false,
+            Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => true,
+            Err(e) => panic!("unexpected error {e:?}"),
+        }
+    }
+
+    // An HMAC claiming more than its hash: 192 bits is above the hash's 128 and below the
+    // HMAC's 256.
+    type HmacAbove = Claims<2, 4>;
+    assert!(refuses_key::<HmacAbove>(SecurityStrength::_128bit));
+    assert!(refuses_key::<HmacAbove>(SecurityStrength::_192bit));
+    assert!(!refuses_key::<HmacAbove>(SecurityStrength::_256bit));
+    assert!(refuses_rng::<HmacAbove>(SecurityStrength::_128bit));
+    assert!(!refuses_rng::<HmacAbove>(SecurityStrength::_256bit));
+
+    // An HMAC claiming less than its hash: 128 bits meets the HMAC's claim, 112 does not.
+    type HmacBelow = Claims<4, 2>;
+    assert!(refuses_key::<HmacBelow>(SecurityStrength::_112bit));
+    assert!(!refuses_key::<HmacBelow>(SecurityStrength::_128bit));
+    assert!(!refuses_key::<HmacBelow>(SecurityStrength::_192bit));
+    assert!(!refuses_rng::<HmacBelow>(SecurityStrength::_128bit));
+    assert!(!refuses_rng::<HmacBelow>(SecurityStrength::_256bit));
+
+    // The weak form skips the check under either claim, and the key is SHA-256's.
+    let weak = key_at(SecurityStrength::_112bit);
+    let key = HmacKey::<HmacAbove>::from_key_material_allow_weak(&weak).unwrap();
+    assert_eq!(
+        key.mac(MSG),
+        HmacKey::<SHA256>::from_key_material_allow_weak(&weak).unwrap().mac(MSG)
+    );
+}
+
+/// Every hash the library keys an HMAC with states one strength for the hash and for its HMAC,
+/// so the choice of constant accepts and refuses the same keys for all of them.
+#[test]
+fn the_library_hashes_claim_one_strength() {
+    use bouncycastle_digest::ripemd::RIPEMD160;
+    use bouncycastle_digest::sha2::{SHA384, SHA512_224, SHA512_256};
+    use bouncycastle_digest::sha3::{SHA3_224, SHA3_384, SHA3_512};
+    use bouncycastle_digest::sm3::SM3;
+    fn check<H: HMACParams>() {
+        assert_eq!(H::MAX_SECURITY_STRENGTH, H::HMAC_MAX_SECURITY_STRENGTH, "{}", H::HMAC_ALG_NAME);
+    }
+    check::<SHA224>();
+    check::<SHA256>();
+    check::<SHA384>();
+    check::<SHA512>();
+    check::<SHA512_224>();
+    check::<SHA512_256>();
+    check::<SHA3_224>();
+    check::<SHA3_256>();
+    check::<SHA3_384>();
+    check::<SHA3_512>();
+    check::<SM3>();
+    check::<RIPEMD160>();
+}
+
+/// `keygen_from_rng` takes whatever key type the RNG gives its draw (`FixedSeedRNG` labels it
+/// `Seed`) and returns a `MACKey` of the hash's output length: the RNG's bytes, keying HMAC as
+/// `generate` does from the same stream. The seed is longer than one draw, so two draws differ.
+#[test]
+fn keygen_from_rng_types_any_rng_output_as_a_mac_key() {
+    let seed: [u8; 64] = core::array::from_fn(|i| i as u8);
+    let mut rng = FixedSeedRNG::new(seed);
+    let first = HmacKey::<SHA256>::keygen_from_rng(&mut rng).expect("a 256-bit RNG suffices");
+    assert_eq!(first.key_type(), KeyType::MACKey);
+    assert_eq!(first.ref_to_bytes(), &seed[..32]);
+    let second = HmacKey::<SHA256>::keygen_from_rng(&mut rng).unwrap();
+    assert_eq!(second.ref_to_bytes(), &seed[32..]);
+
+    let generated = HmacKey::<SHA256>::generate(&mut FixedSeedRNG::new(seed)).unwrap();
+    let from_drawn = HmacKey::<SHA256>::from_key_material(&first).unwrap();
+    assert_eq!(from_drawn.mac(MSG), generated.mac(MSG));
 }

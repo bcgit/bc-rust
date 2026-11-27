@@ -3,11 +3,11 @@
 //! `bouncycastle_digest::ripemd` module docs.
 //!
 //! As with SM3, a call needs a few hundred bytes, below the floor of the process's own start-up
-//! that `bench_aes_mem_usage` describes, so massif cannot see it. The figures in the crate docs
-//! are read from the compiler the way `bench_ascon_mem_usage` describes: `-C remark=prologepilog`
-//! gives each function's frame and `--emit=asm` its calls, after LTO, and a figure is the deepest
-//! chain of frames below the entry point plus 8 bytes of return address per call, not following
-//! the panic paths. With every bench called from `main`:
+//! that `bench_aes_mem_usage` describes, so massif cannot see it. The figures in the `ripemd`
+//! module docs are read from the compiler the way `bench_ascon_mem_usage` describes:
+//! `-C remark=prologepilog` gives each function's frame and `--emit=asm` its calls, after LTO, and
+//! a figure is the deepest chain of frames below the entry point plus 8 bytes of return address per
+//! call, not following the panic paths. With every bench called from `main`:
 //!
 //! ```text
 //! cargo rustc --release -p mem_usage_benches --bin bench_ripemd_mem_usage -- -C remark=prologepilog --emit=asm
@@ -24,13 +24,14 @@
 use core::hint::black_box;
 
 use bouncycastle::core::direction::Encrypting;
-use bouncycastle::core::errors::MACError;
-use bouncycastle::core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
+use bouncycastle::core::errors::{KDFError, MACError};
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::{Hash, HashOneShot, Suspendable};
-use bouncycastle::hmac::HmacKey;
-use bouncycastle::ripemd::hmac::HMAC_RIPEMD160;
-use bouncycastle::ripemd::{
+use bouncycastle::digest::hmac::HmacKey;
+use bouncycastle::digest::ripemd::hkdf::HKDF_RIPEMD160;
+use bouncycastle::digest::ripemd::hmac::HMAC_RIPEMD160;
+use bouncycastle::digest::ripemd::{
     RIPEMD128, RIPEMD160, RIPEMD256, RIPEMD320, SUSPENDED_RIPEMD128_STATE_LEN,
     SUSPENDED_RIPEMD160_STATE_LEN, SUSPENDED_RIPEMD256_STATE_LEN, SUSPENDED_RIPEMD320_STATE_LEN,
 };
@@ -62,6 +63,7 @@ fn print_struct_sizes() {
     println!("SUSPENDED_RIPEMD320_STATE_LEN: {}", SUSPENDED_RIPEMD320_STATE_LEN);
     println!("size_of<HMAC_RIPEMD160>: {}", size_of::<HMAC_RIPEMD160<'static, Encrypting>>());
     println!("size_of<HmacKey<RIPEMD160>>: {}", size_of::<HmacKey<RIPEMD160>>());
+    println!("size_of<HKDF_RIPEMD160>: {}", size_of::<HKDF_RIPEMD160>());
 }
 
 /// Runs the operation in its own frame. Returns nothing, so no result crosses the boundary.
@@ -226,6 +228,29 @@ fn bench_hmac_ripemd160_mac_out() {
     });
 }
 
+#[inline(never)]
+fn bench_hkdf_ripemd160_oneshot() {
+    eprintln!("HKDF_RIPEMD160::extract_and_expand_out, 64 B out");
+    let salt = black_box(key());
+    let ikm = black_box(key());
+    let info = black_box(message::<16>(0x5a));
+    measure(move || {
+        let mut okm = KeyMaterial::<64>::new();
+        let op = black_box(
+            HKDF_RIPEMD160::extract_and_expand_out
+                as fn(
+                    &KeyMaterial256,
+                    &KeyMaterial256,
+                    &[u8],
+                    usize,
+                    &mut KeyMaterial<64>,
+                ) -> Result<usize, KDFError>,
+        );
+        let n = op(&salt, &ikm, &info, 64, &mut okm).unwrap();
+        black_box((n, &okm));
+    });
+}
+
 fn main() {
     print_struct_sizes()
     // bench_do_nothing()
@@ -238,4 +263,5 @@ fn main() {
     // ripemd160::bench_from_suspended()
     // bench_hmac_ripemd160_key()
     // bench_hmac_ripemd160_mac_out()
+    // bench_hkdf_ripemd160_oneshot()
 }

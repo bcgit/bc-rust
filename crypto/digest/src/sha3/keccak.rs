@@ -1,5 +1,6 @@
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::stack_wipe::wipe_stack_below;
 
 /// `RC[ir]` for the 24 rounds of KECCAK-f[1600]: FIPS 202 Algorithm 6 (iota) steps 2-3,
 /// evaluated with the `rc(t)` LFSR of Algorithm 5 for `ir = 0..24` and stored as lanes.
@@ -45,7 +46,7 @@ impl KeccakState {
     /// own and the stack that frame used is overwritten afterwards.
     pub fn permute(a: &mut Self) {
         Self::permute_in_own_frame(a);
-        wipe_stack_below();
+        wipe_stack_below::<WIPED_STACK_WORDS>();
     }
 
     /// The computation of [`Self::permute`]: the round function
@@ -204,19 +205,11 @@ impl KeccakState {
     }
 }
 
-/// How much stack [`wipe_stack_below`] overwrites, in 64-bit words: more than
+/// How much stack [`wipe_stack_below`] overwrites after a permutation, in 64-bit words: more than
 /// [`KeccakState::permute_in_own_frame`], which calls nothing, uses (464 bytes with its return
 /// address in the x86-64 release build), with room for a compiler that lays the frame out less
 /// tightly. An unoptimised build's frame (1936 bytes on x86-64) is not covered. It is paid for on every permutation, in time and in stack depth.
 const WIPED_STACK_WORDS: usize = 96;
-
-/// Overwrites the stack that the previous call made from the caller's frame used, by taking a
-/// frame of its own over the same memory and wiping it. Never inlined: the frame is the point.
-#[inline(never)]
-fn wipe_stack_below() {
-    let mut scratch = Secret::<[u64; WIPED_STACK_WORDS]>::new();
-    core::hint::black_box(&mut *scratch);
-}
 
 /// What a sponge panics with when it is given input, or finished any other way, after it was
 /// finished.
@@ -275,7 +268,7 @@ impl KeccakInternal {
     /// # Contract
     /// This private function has preconditions to entry that the caller must uphold:
     /// ## `bits_in_queue` is byte-aligned (a multiple of 8) on entry.
-    /// currently all call sites within the crate respect this, and there are unit tests to trigger
+    /// currently all call sites within the module respect this, and there are unit tests to trigger
     /// the embedded debug_assert for existing call sites, but any new call sites to this MUST
     /// respect this precondition. If we ever open up the [`KeccakInternal`] object to be called publicly,
     /// then we'll have to add proper error-handling here.
@@ -305,6 +298,10 @@ impl KeccakInternal {
                 return;
             }
             self.state.absorb(&*self.data_queue);
+            // What was absorbed is not left in the queue, where a clone or a suspended state
+            // would carry it: for KMAC it is the key (SP 800-185 Sec 4.3 step 1's bytepad).
+            // Once per call at most: whole blocks after this one are absorbed from `data`.
+            self.data_queue.zeroize();
         }
         // Whole blocks are absorbed straight from `data`; only a partial block is buffered.
         while data.len() >= rate_bytes {

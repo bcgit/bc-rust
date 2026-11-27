@@ -5,7 +5,7 @@
 //! [`SCrypt`] holds the salt and the [`ScryptParams`], and the password is the key it is
 //! given. The derivation needs `128 * r * N` bytes of working memory and more besides
 //! ([`ScryptParams::work_len`]); [`SCrypt::derive_with_memory_out`] takes that memory from the
-//! caller, and with the `std` feature the [`KDF`] trait impl allocates it, up to a limit the
+//! caller, and with the `alloc` feature the [`KDF`] trait impl allocates it, up to a limit the
 //! instance carries.
 //!
 //! # Usage Examples
@@ -34,7 +34,7 @@
 //! Through the [`KDF`] trait, which allocates:
 //!
 //! ```
-//! # #[cfg(feature = "std")] {
+//! # #[cfg(feature = "alloc")] {
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 //! use bouncycastle_core::traits::KDF;
 //! use bouncycastle_digest::scrypt::{SCrypt, ScryptParams};
@@ -52,7 +52,7 @@
 //! The working memory is [`ScryptParams::work_len`] bytes, `128 * r * (N + p + 1)`: 16 MiB at
 //! `N = 2^14, r = 8, p = 1`. It is the caller's buffer, or with the [`KDF`] impl a heap
 //! allocation; either way it is wiped before the derivation returns. Beside it the peak stack
-//! is 2312 bytes, whatever the parameters (x86-64, release, rustc 1.97.0-nightly, the deepest
+//! is 5288 bytes, whatever the parameters (x86-64, release, rustc 1.97.0-nightly, the deepest
 //! frame chain of `bench_scrypt_mem_usage`).
 //!
 //! # 🚨 Security Considerations 🚨
@@ -79,7 +79,7 @@
 use crate::pbkdf2::{PBKDF2_HMAC_SHA256, hazmat::pbkdf2_into};
 use crate::sha2::SHA256;
 use bouncycastle_core::errors::KDFError;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -194,8 +194,8 @@ impl Algorithm for SCrypt<'_> {
 
 /// Every parameter is a readable field ([`SCrypt::salt`], [`SCrypt::params`],
 /// [`SCrypt::max_work_len`]), so the KDF describes itself: the engine is a copy. With the `KDF`
-/// impl it names, this needs `std`.
-#[cfg(feature = "std")]
+/// impl it names, this needs `alloc`.
+#[cfg(feature = "alloc")]
 impl KdfDescription for SCrypt<'_> {
     type Engine = Self;
 
@@ -330,7 +330,7 @@ impl<'s> SCrypt<'s> {
 
     /// scrypt has no fixed info: a caller who supplies some has mistaken it for another KDF,
     /// and dropping it silently would hide that.
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn derive_allocating(
         &self,
         keys: &[&dyn KeyMaterialTrait],
@@ -351,7 +351,7 @@ impl<'s> SCrypt<'s> {
         Self::check_request(keys, len, dk)?;
         // Fallibly: `vec![0; n]` aborts the process when the memory is not there, and the limit
         // is the caller's to raise.
-        let mut work = std::vec::Vec::new();
+        let mut work = alloc::vec::Vec::new();
         work.try_reserve_exact(self.params.work_len)
             .map_err(|_| KDFError::GenericError("the working memory could not be allocated"))?;
         work.resize(self.params.work_len, 0u8);
@@ -359,7 +359,7 @@ impl<'s> SCrypt<'s> {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl KDF for SCrypt<'_> {
     /// RFC 7914 Section 6 with the password `ikm`, under this instance's salt and parameters,
     /// in working memory allocated for the call and wiped after it.

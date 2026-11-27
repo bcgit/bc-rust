@@ -1,9 +1,9 @@
 //! Tests for [`BLAKE3KeyedHashKey`], the [`BLAKE3KeyedHash`] worker it hands out (`keyed_hash`
 //! mode) and [`BLAKE3KeyedSqueezer`].
 //!
-//! Vector sources: the official BLAKE3 test vectors (see `vectors/mod.rs`). bc-test-data has no
-//! BLAKE3 data, and Wycheproof has no BLAKE vectors (C2SP/wycheproof testvectors_v1 has no blake*
-//! file), so the "against bc-test-data and wycheproof" requirement is met vacuously.
+//! Vector sources: the official BLAKE3 test vectors (see `blake3_vectors/mod.rs`). bc-test-data has
+//! no BLAKE3 data, and Wycheproof has no BLAKE vectors (C2SP/wycheproof testvectors_v1 has no
+//! blake* file), so the "against bc-test-data and wycheproof" requirement is met vacuously.
 
 #[path = "blake3_vectors/mod.rs"]
 mod vectors;
@@ -13,7 +13,7 @@ mod keyed_hash_tests {
     use super::vectors::{CASES, KEY, OUTPUT_LEN, input};
     use bouncycastle_core::direction::Encrypting;
     use bouncycastle_core::errors::{KeyMaterialError, MACError};
-    use bouncycastle_core::hazmat::FixedSeedRNG;
+    use bouncycastle_core::hazmat::{FixedSeedRNG, finish_token};
     use bouncycastle_core::hex;
     use bouncycastle_core::key_material::{
         KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
@@ -69,6 +69,11 @@ mod keyed_hash_tests {
             let mut m = k.create_generator();
             m.do_update(&msg);
             assert_eq!(m.into_squeezer().do_output(OUTPUT_LEN), expected, "len {len}");
+
+            let mut m = k.create_generator();
+            m.do_update(&msg);
+            let got = m.finish_squeezer(&finish_token()).do_output(OUTPUT_LEN);
+            assert_eq!(got, expected, "finish_squeezer / len {len}");
 
             for split in [1usize, 64, 65] {
                 let mut m = k.create_generator();
@@ -235,5 +240,44 @@ mod keyed_hash_tests {
         );
         assert_eq!(key().create_generator().max_security_strength(), SecurityStrength::_128bit);
         assert_eq!(size_of::<BLAKE3KeyedHashKey>(), 32);
+    }
+
+    /// After `finish_squeezer`, or a MAC final where the worker sits, the worker takes no more
+    /// input and no other final.
+    #[test]
+    fn a_finished_keyed_worker_takes_nothing() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        fn refused(what: &str, f: impl FnOnce()) {
+            let payload = catch_unwind(AssertUnwindSafe(f)).expect_err(what);
+            let msg = payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_default();
+            assert!(msg.contains("the hasher has been finished"), "{what}: {msg:?}");
+        }
+        let k = key();
+        let token = finish_token();
+
+        let mut g = k.create_generator();
+        g.do_update(b"a secret");
+        let _ = g.finish_squeezer(&token);
+        refused("do_update", || g.do_update(b"more"));
+        refused("finish_squeezer again", || drop(g.finish_squeezer(&token)));
+        let mut tag = [0xAAu8; 32];
+        refused("finish_mac_into", || {
+            let _ = g.finish_mac_into(&token, &mut tag);
+        });
+        assert_eq!(tag, [0xAAu8; 32]);
+
+        let mut g = k.create_generator();
+        g.finish_mac_into(&token, &mut tag);
+        refused("do_update after finish_mac_into", || g.do_update(b"more"));
+        refused("finish_squeezer after finish_mac_into", || drop(g.finish_squeezer(&token)));
+
+        let mut v = k.create_verifier();
+        let _ = v.finish_mac_verify(&token, &tag);
+        refused("verifier do_update after its final", || v.do_update(b"more"));
+        refused("verifier final again", || drop(v.finish_mac_verify(&token, &tag)));
     }
 }

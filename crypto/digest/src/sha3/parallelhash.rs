@@ -6,7 +6,7 @@
 //! # ParallelHash
 //!
 //!```
-//! # #[cfg(feature = "std")] {
+//! # #[cfg(feature = "alloc")] {
 //! use core::num::NonZeroUsize;
 //! use bouncycastle_core::traits::Hash;
 //! use bouncycastle_digest::sha3::parallelhash::ParallelHash128;
@@ -27,7 +27,7 @@
 //!
 //! Example of `ParallelHashXOF128`:
 //! ```
-//! # #[cfg(feature = "std")] {
+//! # #[cfg(feature = "alloc")] {
 //! use core::num::NonZeroUsize;
 //! use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 //! use bouncycastle_digest::sha3::parallelhash::{ParallelHash128, ParallelHashXOF128};
@@ -45,25 +45,25 @@
 //! # }
 //! ```
 
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 use crate::sha3::cshake::{
-    CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer, absorb_left_encode_into, right_encode,
+    CSHAKE_COMPONENT_LEN, CSHAKEBorrowedSqueezer, CSHAKEInternal, CSHAKESqueezer,
+    absorb_left_encode_into, right_encode,
 };
 use crate::sha3::keccak::SHA3_FAMILY_STATE_LEN;
 use crate::sha3::shake::SHAKEInternal;
 use crate::sha3::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, Suspendable, XOF};
-// Named only by the doc links below.
-#[cfg(doc)]
 use bouncycastle_core::traits::XOFSqueezer;
+use bouncycastle_core::traits::{Algorithm, FinishToken, Hash, Suspendable, XOF};
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,
 };
 use core::num::NonZeroUsize;
-#[cfg(feature = "std")]
-use std::vec::Vec;
 
 /// The name of the ParallelHash128 algorithm (NIST SP 800-185 Sec 6).
 pub const PARALLELHASH128_NAME: &str = "ParallelHash128";
@@ -369,6 +369,24 @@ impl<PARAMS: SHAKEParams> ParallelHashXOFInternal<PARAMS> {
     pub fn new(block_size: NonZeroUsize, customization: &[u8]) -> Self {
         Self { state: ParallelState::new(block_size, customization) }
     }
+
+    /// Ends the input phase where the sponge sits and lends out its squeezing half:
+    /// [`XOF::into_squeezer`] without the move, as
+    /// [`KMACXOFInternal::finish_squeezer`](crate::sha3::kmac::KMACXOFInternal::finish_squeezer)
+    /// does. The squeezer reads as the one [`XOF::into_squeezer`] returns: a first read through
+    /// [`XOFSqueezer::do_output_final`] is the fixed-length ParallelHash of that length. Afterwards
+    /// the value is finished (see [`FinishToken`]): a second call continues the stream the first
+    /// read chose, and anything else that would absorb or finish again panics, in every build.
+    ///
+    /// [`XOFSqueezer::do_output_final`]: bouncycastle_core::traits::XOFSqueezer::do_output_final
+    pub fn finish_squeezer(&mut self, _token: &FinishToken) -> CSHAKEBorrowedSqueezer<'_, PARAMS> {
+        // The short last block and the block count go in once, at the first call (Sec 6.3.1
+        // steps 3 and 4); the `right_encode(L)` after them is the first read's to choose.
+        if !self.state.cshake.is_lent() {
+            self.state.finish_blocks();
+        }
+        self.state.cshake.finish_squeezer_unbound()
+    }
 }
 
 impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for ParallelHashXOFInternal<PARAMS> {
@@ -376,6 +394,8 @@ impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for ParallelHashXOFIntern
     type Key = ();
 
     fn write_state(&self, out: &mut [u8]) {
+        // A value that lent out its squeezer is finished, as KMACXOF's is.
+        self.state.cshake.assert_not_lent();
         self.state.write_state(PARAMS::PARALLELHASHXOF_STATE_TAG, out)
     }
 
@@ -410,7 +430,13 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
         self.state.cshake.output_len()
     }
 
+    /// # Panics
+    /// If the value has lent out its squeezer through
+    /// [`finish_squeezer`](ParallelHashXOFInternal::finish_squeezer).
     fn do_update(&mut self, data: &[u8]) {
+        // Checked here and not left to the outer cSHAKE: input goes to the block's inner sponge
+        // first and reaches the outer one only when a block fills.
+        self.state.cshake.assert_not_lent();
         self.state.do_update(data);
     }
 
@@ -448,10 +474,15 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
 impl<PARAMS: SHAKEParams> XOF for ParallelHashXOFInternal<PARAMS> {
     type Squeezer = CSHAKESqueezer<PARAMS>;
 
+    fn finish_xof_into(&mut self, token: &FinishToken, output: &mut [u8]) -> usize {
+        self.finish_squeezer(token).do_output_final_out(output)
+    }
+
     // The block count of Sec 6.3.1 step 4 is bound here; the `right_encode` that follows it is
     // not, because whether it carries 0 or the length of a final read is
     // CSHAKESqueezer's decision.
     fn into_squeezer(mut self) -> Self::Squeezer {
+        self.state.cshake.assert_not_finished();
         self.state.finish_blocks();
         CSHAKESqueezer::new(self.state.cshake)
     }
@@ -475,17 +506,19 @@ impl<PARAMS: SHAKEParams> ParallelHashInternal<PARAMS> {
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
-        self.do_final()
+        let mut output = alloc::vec![0u8; self.output_len()];
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), &mut output);
+        output
     }
 
     /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
     pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.do_final_out(output)
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), output)
     }
 }
 
@@ -494,16 +527,18 @@ impl<PARAMS: SHAKEParams> ParallelHashXOFInternal<PARAMS> {
     /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
     /// that take none; here the parameters come with the instance, so the one-shot is a method.
     ///
-    /// Only available with the `std` feature.
-    #[cfg(feature = "std")]
+    /// Only available with the `alloc` feature.
+    #[cfg(feature = "alloc")]
     pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.do_update(data);
-        self.do_final()
+        let mut output = alloc::vec![0u8; self.output_len()];
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), &mut output);
+        output
     }
 
     /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
     pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.do_final_out(output)
+        self.finish_into(&bouncycastle_core::hazmat::finish_token(), output)
     }
 }

@@ -60,7 +60,7 @@ mod mlkem_key_tests {
         assert_eq!(pk_bytes, expected_pk_bytes.as_slice());
 
         // test re-deriving pk from sk;
-        assert_eq!(sk.pk(), decoded_pk);
+        assert_eq!(sk.pk().unwrap(), decoded_pk);
     }
     #[test]
     fn test_ek_hash() {
@@ -167,7 +167,7 @@ mod mlkem_key_tests {
         assert_eq!(seed.security_strength(), SecurityStrength::_128bit);
         assert_eq!(sk.encode(), [0u8; 64]);
         // and the stored H(ek) is the hash of the public key it derives
-        assert_eq!(sk.pk_hash(), &sk.pk().compute_hash());
+        assert_eq!(sk.pk_hash(), &sk.pk().unwrap().compute_hash());
     }
 
     #[test]

@@ -6,8 +6,9 @@
 //! verifies. Ed25519ph signs the SHA-512 digest of the message, so `ed25519ph` streams it.
 
 use crate::helpers::{
-    CHUNK_LEN, SecretBytes, println_stdout, read_input_file, read_secret_file,
-    read_secret_file_or_stdin, read_stdin_all, stream_stdin, write_bytes_or_hex, write_private_key,
+    CHUNK_LEN, SecretBytes, finish_stdout, flush_stdout, println_stdout, read_input_file,
+    read_secret_file, read_secret_file_or_stdin, read_stdin_all, stream_stdin, write_bytes_or_hex,
+    write_private_key,
 };
 use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
@@ -15,7 +16,7 @@ use bouncycastle::core::signature_key::{
     DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotVerifyingKey, VerifyingKey,
 };
 use bouncycastle::core::traits::{PublicKey, SignatureSigner, SignatureVerifier};
-use bouncycastle::ed::ed25519::{
+use bouncycastle::ec::ed::ed25519::{
     Ed25519PrivateKey, Ed25519PublicKey, SIGNATURE_LEN, keygen_out, keypair_consistency_check,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
@@ -68,7 +69,10 @@ pub(crate) fn ed25519_cmd(
                 eprintln!("Error: key generation failed: {e:?}");
                 exit(-1);
             });
-            write_private_key(&sk, output_hex);
+            let written = write_private_key(&sk, output_hex);
+            // `exit` runs no destructors, so the key is dropped before a failed write exits.
+            drop(sk);
+            finish_stdout(written);
         }
         Ed25519Action::PkFromSk => {
             // The private key is dropped before the write, which ends the process on a closed
@@ -119,6 +123,8 @@ pub(crate) fn ed25519_cmd(
                 exit(-1);
             });
             write_bytes_or_hex(&sig, output_hex);
+            // A short signature is held in std's stdout buffer; see `write_stdout`.
+            flush_stdout();
         }
         Ed25519Action::Verify => {
             let pk = parse_pk(&require_file(pkfile, "pkfile"));

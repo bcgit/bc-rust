@@ -1,6 +1,6 @@
 //! FIPS 186-5 Appendix A.4.1, "Conversion of a Bit String to an Integer mod n via Modular
-//! Reduction" -- the "extra random bits" method both `bouncycastle-ecdsa`'s `keys_bp512r1`'s key
-//! generation (Appendix A.2.1) and `bouncycastle-ecdsa`'s `ecdsa_bp512r1`'s randomised per-message
+//! Reduction" -- the "extra random bits" method both `crate::ecdsa::keys`'s key
+//! generation (Appendix A.2.1) and `crate::ecdsa::ecdsa`'s randomised per-message
 //! secret (Appendix A.3.1) use to turn a DRBG output wider than `n` into a value in `[1, n-1]` with
 //! negligible bias. Identical algorithm to [`crate::hazmat::p256_extra_bits`] -- see that module's
 //! docs for the full reasoning -- with brainpoolP512r1's own `n` substituted.
@@ -13,13 +13,13 @@
 //! power of two. FIPS 186-5 Appendix A.4.1 step 2's bias-bound check (`2ρ(1-ρ)(n-1) > ε·N`, `ε =
 //! 2^-64`) was evaluated directly (in Python, against `n`'s actual value) for `N = 2^l` at
 //! increasing `l`: `l = 512` (matching `n`'s own bit length) fails the check, and the smallest
-//! passing `l` is `575`; `bouncycastle-ecdsa` uses `l = 576` (72 bytes, byte-aligned) as
-//! `bouncycastle-ecdsa`'s `keys_bp512r1::EXTRA_BITS_DRBG_OUTPUT_LEN`.
+//! passing `l` is `575`; `crate::ecdsa` uses `l = 576` (72 bytes, byte-aligned) as
+//! `Bp512r1::EXTRA_BITS_DRAW_LEN`.
 //!
 //! The reduction itself is [`crate::barrett`]'s constant-time Barrett reduction with `m = n - 1`
 //! (see [`crate::hazmat::p256_extra_bits`]'s docs for the constant-time argument);
 //! `bp512r1_extra_bits_tests.rs` pins known answers computed in Python and cross-checks it against
-//! the bit-serial algorithm this module used to implement, kept there as an independent reference.
+//! a bit-serial implementation of the same reduction, kept there as an independent reference.
 
 use crate::barrett;
 use crate::hazmat::bp512r1_scalar::{Bp512r1Scalar, N_LIMBS};
@@ -50,7 +50,7 @@ const MU_LOW_LIMBS: [u64; 8] = [
 /// FIPS 186-5 Appendix A.4.1 steps 3-5 for `n` = the curve order: reduces the big-endian bit string
 /// `bytes` modulo `n-1` and adds `1`, landing in `[1, n-1]`. `bytes` may be up to `127` bytes
 /// -- `2^1016 < (n-1) * 2^512`, Barrett's precondition -- which covers the 72-byte DRBG
-/// output `bouncycastle-ecdsa` draws with room to spare; a longer input is a programming error and panics.
+/// output `crate::ecdsa` draws with room to spare; a longer input is a programming error and panics.
 pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> Bp512r1Scalar {
     assert!(
         bytes.len() < 128,

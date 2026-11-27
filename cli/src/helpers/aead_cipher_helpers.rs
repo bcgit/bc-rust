@@ -1,7 +1,7 @@
 //! Shared plumbing for the AEAD subcommands: `aes{128,192,256}-gcm` and `chacha20-poly1305`.
 //!
 //! Parallel to [`crate::helpers::stream_mode_helpers`], but for an AEAD key -- one bound to
-//! [`bouncycastle::cipher::modes::GCM`], or a ChaCha20-Poly1305 key -- rather than a stream mode:
+//! [`bouncycastle::symmetric::modes::GCM`], or a ChaCha20-Poly1305 key -- rather than a stream mode:
 //! an AEAD carries additional authenticated data and a tag, neither of which the stream traits
 //! have room for, so this module drives the key's AEAD workers through [`AEADCipherEncryptor`] /
 //! [`AEADCipherDecryptor`], which add `do_update_aad` to the symmetric-cipher streaming methods.
@@ -16,7 +16,7 @@
 //! nonce the same way, `--iv` included. The decryptor, per
 //! [`SymmetricCipherDecryptor`]'s contract,
 //! holds back the last 16 bytes it has seen because they might be the tag -- and checks the tag on
-//! `do_decrypt_final`.
+//! `do_decrypt_final_out`.
 //!
 //! # The exit code is the signal, not the output
 //!
@@ -132,8 +132,8 @@ pub fn encrypt_aead<
 
 /// Decrypts stdin to stdout under any AEAD key: takes the nonce from `nonce` or else reads it
 /// first, streams the rest through the inline decryptor, and checks the tag on
-/// `do_decrypt_final`. See the module docs for why plaintext may already be written to stdout by
-/// the time a tag failure is reported.
+/// `do_decrypt_final_out`. See the module docs for why plaintext may already be written to stdout
+/// by the time a tag failure is reported.
 pub fn decrypt_aead<
     K,
     const KEY_LEN: usize,
@@ -184,9 +184,10 @@ pub fn decrypt_aead<
         write_bytes_or_hex(&out, output_hex);
     }
 
-    match dec.do_decrypt_final() {
+    let mut last = [0u8; FINAL_LEN];
+    match dec.do_decrypt_final_out(&mut last) {
         // Any plaintext still held back (none, for the AEADs here: the held bytes are the tag).
-        Ok((last, last_len)) => write_bytes_or_hex(&last[..last_len], output_hex),
+        Ok(last_len) => write_bytes_or_hex(&last[..last_len], output_hex),
         Err(e) => {
             // Whatever plaintext was already written above stands; the exit code is the signal a
             // script must check (see the module docs).

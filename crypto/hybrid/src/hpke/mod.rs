@@ -8,9 +8,9 @@
 //! The KEM is the key's: every key with the
 //! [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) or
 //! [`DecapsulatingKey`](bouncycastle_core::kem_key::DecapsulatingKey) role over `()` whose
-//! algorithm is a [`bouncycastle_dhkem::HpkeKem`] is an HPKE key: X25519's and X448's
-//! (`bouncycastle_ed::x25519`, `bouncycastle_ed::x448`) and the ECC CDH keys over P-256, P-384
-//! and P-521 (`bouncycastle_eccdh`), each through `bouncycastle-dhkem`'s generic DHKEM.
+//! algorithm is a [`bouncycastle_ec::dhkem::HpkeKem`] is an HPKE key: X25519's and X448's
+//! (`bouncycastle_ec::ed::x25519`, `bouncycastle_ec::ed::x448`) and the ECC CDH keys over P-256, P-384
+//! and P-521 (`bouncycastle_ec::eccdh`), each through `bouncycastle_ec::dhkem`'s generic DHKEM.
 //!
 //! The Base and PSK modes are [`HpkeSender`] and [`HpkeRecipient`]. The Auth and AuthPSK modes
 //! (RFC 9180 Sections 5.1.3 and 5.1.4), in which the sender also uses a key pair of its own
@@ -25,10 +25,10 @@
 //! derived from its position.
 //!
 //! ```
-//! use bouncycastle_aes::AES128Key;
-//! use bouncycastle_cipher::modes::GCM;
+//! use bouncycastle_symmetric::aes::AES128Key;
+//! use bouncycastle_symmetric::modes::GCM;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
-//! use bouncycastle_ed::x25519::keygen;
+//! use bouncycastle_ec::ed::x25519::keygen;
 //! use bouncycastle_hybrid::hpke::{HpkeParams, HpkeRecipient, HpkeSender, NT};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_digest::sha2::SHA256;
@@ -74,17 +74,17 @@
 //! deepest frame chain from the `mem_usage_benches` hpke harness's `measure` wrapper down, the
 //! wrapper's own frame included (release build, x86-64, rustc 1.97.0-nightly). The setups
 //! include the KEM operation; the figures for the DHKEM alone are in
-//! `bouncycastle_ed::x25519`'s and `bouncycastle_eccdh`'s Memory Usage tables.
+//! `bouncycastle_ec::ed::x25519`'s and `bouncycastle_ec::eccdh`'s Memory Usage tables.
 //!
 //! | Operation              | Stack |
 //! |------------------------|-------|
-//! | `setup_sender`         | 4,728 |
-//! | `setup_recipient`      | 3,832 |
-//! | `setup_auth_sender`    | 4,760 |
-//! | `setup_auth_recipient` | 3,832 |
-//! | `seal_out`             | 1,280 |
-//! | `open_out`             | 1,264 |
-//! | `export_out`           | 1,936 |
+//! | `setup_sender`         | 6,200 |
+//! | `setup_recipient`      | 5,272 |
+//! | `setup_auth_sender`    | 5,528 |
+//! | `setup_auth_recipient` | 5,208 |
+//! | `seal_out`             | 992   |
+//! | `open_out`             | 1,024 |
+//! | `export_out`           | 3,488 |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -107,7 +107,6 @@
 //!   already agree on them.
 //! * **A context is returned by value** from its setup, a move that does not wipe where it was
 //!   built; the context itself wipes its key, nonce and exporter secret when dropped.
-//! * The crate's own source is `no_std`, but `bouncycastle-core`, which it depends on, is not yet.
 
 mod scheme;
 
