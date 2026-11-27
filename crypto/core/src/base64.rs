@@ -158,7 +158,8 @@ pub const fn decode_out_len(input_len: usize) -> usize {
     Base64Decoder::final_len_bound(0, input_len)
 }
 
-/// Return type for errors relating to Base64 encoding and decoding.
+/// Return type for errors relating to Base64 encoding and decoding. Implements
+/// [`core::error::Error`].
 #[derive(Debug)]
 pub enum Base64Error {
     /// The [`Base64Decoder::do_update`] method must not be called on a block that contains padding.
@@ -189,6 +190,22 @@ pub enum Base64Error {
     /// the call.
     InsufficientOutputBufferSize,
 }
+
+// The input may be secret, so the messages leave out the index of the offending character.
+impl core::fmt::Display for Base64Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::PaddingEncounteredDuringDoUpdate => "base64 padding passed to do_update",
+            Self::InvalidB64Character(_) => "invalid base64 character",
+            Self::InvalidPadding(_) => "invalid base64 padding",
+            Self::TruncatedInput => "truncated base64 input",
+            Self::DecoderFailed => "base64 decoder failed on an earlier call",
+            Self::InsufficientOutputBufferSize => "output buffer too small",
+        })
+    }
+}
+
+impl core::error::Error for Base64Error {}
 
 /// The stateful base64 encoder that supports streaming. The bytes it holds between calls, the
 /// start of an incomplete block, are wiped when it is dropped.

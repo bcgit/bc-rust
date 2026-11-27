@@ -35,7 +35,8 @@ use alloc::{string::String, vec, vec::Vec};
 use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::Secret;
 
-/// Return type for errors relating to Hex encoding and decoding.
+/// Return type for errors relating to Hex encoding and decoding. Implements
+/// [`core::error::Error`].
 #[derive(Debug)]
 pub enum HexError {
     /// Invalid hex character encountered at the given index.
@@ -45,6 +46,19 @@ pub enum HexError {
     /// The output buffer is shorter than [`encode_out_len`] or [`decode_out_len`] asks for.
     InsufficientOutputBufferSize,
 }
+
+// The input may be secret, so the message leaves out the index of the bad character.
+impl core::fmt::Display for HexError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::InvalidHexCharacter(_) => "invalid hex character",
+            Self::OddLengthInput => "odd-length hex input",
+            Self::InsufficientOutputBufferSize => "output buffer too small",
+        })
+    }
+}
+
+impl core::error::Error for HexError {}
 
 /// One-shot encode from bytes to a hex-encoded string using a constant-time implementation.
 ///

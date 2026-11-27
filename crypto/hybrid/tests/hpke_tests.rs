@@ -791,3 +791,39 @@ fn the_authenticated_kems_errors_are_reported_as_the_kems() {
         Err(HpkeError::KEMError(KEMError::DecapsulationFailed))
     ));
 }
+
+// `HpkeError` is `Error + Send + Sync + 'static`, or this fails to compile.
+const _: () = {
+    const fn is_error<T: core::error::Error + Send + Sync + 'static>() {}
+    is_error::<HpkeError>();
+};
+
+/// Each variant prints a message of its own; a wrapping one prints its own, not the inner
+/// error's, and returns the inner error from `source()`.
+#[test]
+fn hpke_error_display_and_source() {
+    use core::error::Error;
+    let kem = || KEMError::DecapsulationFailed;
+    let aead = || SymmetricCipherError::AEADTagCheckFailed;
+    let messages = [
+        HpkeError::KEMError(kem()),
+        HpkeError::AEADError(aead()),
+        HpkeError::MessageLimitReached,
+        HpkeError::InvalidPsk("p-psk"),
+    ]
+    .map(|e| e.to_string());
+    for (i, m) in messages.iter().enumerate() {
+        assert!(!m.is_empty());
+        assert!(!messages[i + 1..].contains(m));
+    }
+    assert!(messages[3].contains("p-psk"));
+    assert_ne!(messages[0], kem().to_string());
+    assert_ne!(messages[1], aead().to_string());
+
+    let e = HpkeError::KEMError(kem());
+    assert_eq!(e.source().and_then(|s| s.downcast_ref::<KEMError>()), Some(&kem()));
+    let e = HpkeError::AEADError(aead());
+    assert_eq!(e.source().and_then(|s| s.downcast_ref::<SymmetricCipherError>()), Some(&aead()));
+    assert!(HpkeError::MessageLimitReached.source().is_none());
+    assert!(HpkeError::InvalidPsk("p-psk").source().is_none());
+}

@@ -6,6 +6,11 @@
 //! All error enums exported from this crate are tagged `#[non_exhaustive]` to indicate that they
 //! are highly likely to gain more branches in the future; therefore, the compiler is to treat it as
 //! an error if a caller matches exhaustively against the current set of variants.
+//!
+//! Every error type here implements [`Display`](core::fmt::Display) and [`core::error::Error`].
+
+use core::error::Error;
+use core::fmt;
 
 ///
 #[derive(Debug, PartialEq, Eq)]
@@ -447,3 +452,344 @@ impl From<RNGError> for KeyTransportError {
         Self::RNGError(e)
     }
 }
+
+/*** Display and Error ***/
+// Each message is fixed text plus, at most, the variant's `&'static str`, so no message carries
+// anything derived from a key, a plaintext or a secret input. A wrapping variant names itself and
+// leaves the inner error to `source()`.
+
+impl fmt::Display for HashError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GenericError(m) => f.write_str(m),
+            Self::InvalidLength(m) => write!(f, "invalid length: {m}"),
+            Self::InvalidState(m) => write!(f, "invalid state: {m}"),
+            Self::InvalidInput(m) => write!(f, "invalid input: {m}"),
+            Self::KeyMaterialError(_) => f.write_str("key material error"),
+        }
+    }
+}
+
+impl Error for HashError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::KeyMaterialError(e) => Some(e),
+            Self::GenericError(_)
+            | Self::InvalidLength(_)
+            | Self::InvalidState(_)
+            | Self::InvalidInput(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for KeyMaterialError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ActingOnZeroizedKey => f.write_str("operation on a zeroized key"),
+            Self::GenericError(m) => f.write_str(m),
+            Self::HazardousOperationNotPermitted => {
+                f.write_str("hazardous operation not permitted")
+            }
+            Self::InputDataLongerThanKeyCapacity => {
+                f.write_str("input data longer than the key capacity")
+            }
+            Self::InvalidKeyType(m) => write!(f, "invalid key type: {m}"),
+            Self::InvalidLength => f.write_str("invalid key length"),
+            Self::SecurityStrength(m) => write!(f, "insufficient security strength: {m}"),
+            Self::WeakKey(m) => write!(f, "weak key: {m}"),
+        }
+    }
+}
+
+impl Error for KeyMaterialError {}
+
+impl fmt::Display for KDFError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GenericError(m) => f.write_str(m),
+            Self::HashError(_) => f.write_str("hash error"),
+            Self::InvalidLength(m) => write!(f, "invalid length: {m}"),
+            Self::KeyMaterialError(_) => f.write_str("key material error"),
+            Self::MACError(_) => f.write_str("MAC error"),
+        }
+    }
+}
+
+impl Error for KDFError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::HashError(e) => Some(e),
+            Self::KeyMaterialError(e) => Some(e),
+            Self::MACError(e) => Some(e),
+            Self::GenericError(_) | Self::InvalidLength(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for KEMError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GenericError(m) => f.write_str(m),
+            Self::ConsistencyCheckFailed(m) => {
+                write!(f, "key pair consistency check failed: {m}")
+            }
+            Self::EncodingError(m) => write!(f, "encoding error: {m}"),
+            Self::DecapsulationFailed => f.write_str("decapsulation failed"),
+            Self::DecodingError(m) => write!(f, "decoding error: {m}"),
+            Self::InvalidPublicKey(m) => write!(f, "invalid public key: {m}"),
+            Self::KeyGenError(m) => write!(f, "key generation failed: {m}"),
+            Self::KeyMaterialError(_) => f.write_str("key material error"),
+            Self::RNGError(_) => f.write_str("RNG error"),
+            Self::KDFError(_) => f.write_str("KDF error"),
+        }
+    }
+}
+
+impl Error for KEMError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::KeyMaterialError(e) => Some(e),
+            Self::RNGError(e) => Some(e),
+            Self::KDFError(e) => Some(e),
+            Self::GenericError(_)
+            | Self::ConsistencyCheckFailed(_)
+            | Self::EncodingError(_)
+            | Self::DecapsulationFailed
+            | Self::DecodingError(_)
+            | Self::InvalidPublicKey(_)
+            | Self::KeyGenError(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for KeyTransportError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::KeyTooLong => f.write_str("key too long for the algorithm"),
+            Self::DecryptionFailed => f.write_str("decryption failed"),
+            Self::KeyMaterialError(_) => f.write_str("key material error"),
+            Self::RNGError(_) => f.write_str("RNG error"),
+        }
+    }
+}
+
+impl Error for KeyTransportError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::KeyMaterialError(e) => Some(e),
+            Self::RNGError(e) => Some(e),
+            Self::KeyTooLong | Self::DecryptionFailed => None,
+        }
+    }
+}
+
+impl fmt::Display for PublicKeyEncryptionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DecryptionFailed => f.write_str("decryption failed"),
+            Self::EncryptionFailed => f.write_str("encryption failed"),
+            Self::InvalidInputLength(m) => write!(f, "invalid input length: {m}"),
+            Self::OutputBufferTooSmall(_) => f.write_str("output buffer too small"),
+            Self::RNGError(_) => f.write_str("RNG error"),
+        }
+    }
+}
+
+impl Error for PublicKeyEncryptionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::RNGError(e) => Some(e),
+            Self::DecryptionFailed
+            | Self::EncryptionFailed
+            | Self::InvalidInputLength(_)
+            | Self::OutputBufferTooSmall(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for KeyAgreementError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GenericError(m) => f.write_str(m),
+            Self::AgreementFailed => f.write_str("key agreement produced no shared secret"),
+            Self::ConsistencyCheckFailed => f.write_str("key pair consistency check failed"),
+            Self::DecodingError(m) => write!(f, "decoding error: {m}"),
+            Self::KeyMaterialError(_) => f.write_str("key material error"),
+            Self::RNGError(_) => f.write_str("RNG error"),
+            Self::KDFError(_) => f.write_str("KDF error"),
+        }
+    }
+}
+
+impl Error for KeyAgreementError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::KeyMaterialError(e) => Some(e),
+            Self::RNGError(e) => Some(e),
+            Self::KDFError(e) => Some(e),
+            Self::GenericError(_)
+            | Self::AgreementFailed
+            | Self::ConsistencyCheckFailed
+            | Self::DecodingError(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for MACError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GenericError(m) => f.write_str(m),
+            Self::HashError(_) => f.write_str("hash error"),
+            Self::InvalidLength(m) => write!(f, "invalid length: {m}"),
+            Self::InvalidState(m) => write!(f, "invalid state: {m}"),
+            Self::KeyMaterialError(_) => f.write_str("key material error"),
+            Self::RNGError(_) => f.write_str("RNG error"),
+            Self::VerificationFailed => f.write_str("MAC verification failed"),
+        }
+    }
+}
+
+impl Error for MACError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::HashError(e) => Some(e),
+            Self::KeyMaterialError(e) => Some(e),
+            Self::RNGError(e) => Some(e),
+            Self::GenericError(_)
+            | Self::InvalidLength(_)
+            | Self::InvalidState(_)
+            | Self::VerificationFailed => None,
+        }
+    }
+}
+
+impl fmt::Display for RNGError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GenericError(m) => f.write_str(m),
+            Self::Uninitialized => f.write_str("RNG not seeded"),
+            Self::InsufficientSeedEntropy => {
+                f.write_str("RNG seeded with insufficient entropy for the request")
+            }
+            Self::ReseedRequired => f.write_str("RNG reseed required"),
+            Self::SecurityStrengthInsufficientForAlgorithm => {
+                f.write_str("RNG security strength insufficient for the algorithm")
+            }
+            Self::KeyMaterialError(_) => f.write_str("key material error"),
+        }
+    }
+}
+
+impl Error for RNGError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::KeyMaterialError(e) => Some(e),
+            Self::GenericError(_)
+            | Self::Uninitialized
+            | Self::InsufficientSeedEntropy
+            | Self::ReseedRequired
+            | Self::SecurityStrengthInsufficientForAlgorithm => None,
+        }
+    }
+}
+
+impl fmt::Display for SignatureError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GenericError(m) => f.write_str(m),
+            Self::ConsistencyCheckFailed => f.write_str("key pair consistency check failed"),
+            Self::RejectionLimitExceeded => f.write_str("signing rejection limit exceeded"),
+            Self::PreHashTooWeak => f.write_str("pre-hash too weak for the parameter set"),
+            Self::ComputationFault => f.write_str("computation fault detected"),
+            Self::EncodingError(m) => write!(f, "encoding error: {m}"),
+            Self::DecodingError(m) => write!(f, "decoding error: {m}"),
+            Self::KeyGenError(m) => write!(f, "key generation failed: {m}"),
+            Self::KeyMaterialError(_) => f.write_str("key material error"),
+            Self::LengthError(m) => write!(f, "invalid length: {m}"),
+            Self::SignatureVerificationFailed => f.write_str("signature verification failed"),
+            Self::RNGError(_) => f.write_str("RNG error"),
+        }
+    }
+}
+
+impl Error for SignatureError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::KeyMaterialError(e) => Some(e),
+            Self::RNGError(e) => Some(e),
+            Self::GenericError(_)
+            | Self::ConsistencyCheckFailed
+            | Self::RejectionLimitExceeded
+            | Self::PreHashTooWeak
+            | Self::ComputationFault
+            | Self::EncodingError(_)
+            | Self::DecodingError(_)
+            | Self::KeyGenError(_)
+            | Self::LengthError(_)
+            | Self::SignatureVerificationFailed => None,
+        }
+    }
+}
+
+impl fmt::Display for SymmetricCipherError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GenericError(m) => f.write_str(m),
+            Self::AEADTagCheckFailed => f.write_str("AEAD tag check failed"),
+            Self::DecryptionFailed => f.write_str("decryption failed"),
+            // The length is left out: on a padded decryption it depends on the plaintext.
+            Self::OutputBufferTooSmall(_) => f.write_str("output buffer too small"),
+            Self::DataLimitExceeded => {
+                f.write_str("data limit exceeded under the current init data")
+            }
+            Self::DataNotBlockAligned => f.write_str("data not a whole number of blocks"),
+            Self::InvalidInputLength(m) => write!(f, "invalid input length: {m}"),
+            Self::KeyMaterialError(_) => f.write_str("key material error"),
+            Self::PaddingError(_) => f.write_str("padding error"),
+            Self::RNGError(_) => f.write_str("RNG error"),
+            Self::StateError(m) => write!(f, "invalid state: {m}"),
+        }
+    }
+}
+
+impl Error for SymmetricCipherError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::KeyMaterialError(e) => Some(e),
+            Self::PaddingError(e) => Some(e),
+            Self::RNGError(e) => Some(e),
+            Self::GenericError(_)
+            | Self::AEADTagCheckFailed
+            | Self::DecryptionFailed
+            | Self::OutputBufferTooSmall(_)
+            | Self::DataLimitExceeded
+            | Self::DataNotBlockAligned
+            | Self::InvalidInputLength(_)
+            | Self::StateError(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for PaddingError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DataLengthTooLong(max) => {
+                write!(f, "data too long to pad: at most {max} bytes")
+            }
+            Self::InvalidPadding => f.write_str("invalid padding"),
+            Self::PaddingNotPermitted => {
+                f.write_str("data not a whole number of blocks and the scheme adds no padding")
+            }
+        }
+    }
+}
+
+impl Error for PaddingError {}
+
+impl fmt::Display for KeyDecodingError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "key decoding failed: {}", self.0)
+    }
+}
+
+impl Error for KeyDecodingError {}

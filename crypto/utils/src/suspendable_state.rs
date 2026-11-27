@@ -56,7 +56,7 @@
 //! [`Cursor`] and [`CursorMut`] are for writing the layouts as a sequence of fields rather than
 //! offset arithmetic; [`bounded_usize`] reads a count back and refuses one past its bound.
 
-/// Errors from suspending and resuming an object's state.
+/// Errors from suspending and resuming an object's state. Implements [`core::error::Error`].
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SuspendableError {
@@ -65,6 +65,17 @@ pub enum SuspendableError {
     /// The serialized state is malformed or corrupt.
     InvalidData,
 }
+
+impl core::fmt::Display for SuspendableError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::IncompatibleVersion => "suspended state from an incompatible library version",
+            Self::InvalidData => "suspended state malformed or corrupt",
+        })
+    }
+}
+
+impl core::error::Error for SuspendableError {}
 
 /// A semantic library version, ordered by `major`, then `minor`, then `patch`.
 ///

@@ -52,7 +52,7 @@ const LABEL_BASE_NONCE: &[u8] = b"base_nonce";
 const LABEL_EXP: &[u8] = b"exp";
 const LABEL_SEC: &[u8] = b"sec";
 
-/// Errors of HPKE setup, encryption and decryption.
+/// Errors of HPKE setup, encryption and decryption. Implements [`core::error::Error`].
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum HpkeError {
@@ -67,6 +67,27 @@ pub enum HpkeError {
     MessageLimitReached,
     /// The pre-shared key or its identifier is not usable (RFC 9180 Sections 5.1 and 9.5).
     InvalidPsk(&'static str),
+}
+
+impl core::fmt::Display for HpkeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::KEMError(_) => f.write_str("HPKE KEM operation failed"),
+            Self::AEADError(_) => f.write_str("HPKE AEAD operation failed"),
+            Self::MessageLimitReached => f.write_str("HPKE message limit reached"),
+            Self::InvalidPsk(m) => write!(f, "invalid HPKE PSK: {m}"),
+        }
+    }
+}
+
+impl core::error::Error for HpkeError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            Self::KEMError(e) => Some(e),
+            Self::AEADError(e) => Some(e),
+            Self::MessageLimitReached | Self::InvalidPsk(_) => None,
+        }
+    }
 }
 
 impl From<KEMError> for HpkeError {
