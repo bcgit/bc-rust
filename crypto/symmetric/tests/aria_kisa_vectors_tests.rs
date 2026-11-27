@@ -6,15 +6,12 @@
 //! The ECB vectors are 10 independent blocks, so they exercise the four-block, pair
 //! and single-block paths against published answers (two fours and a pair). The CBC vectors go
 //! through `ARIA128Key<CBC<Blocks>>` and its siblings, the block-aligned keys the padded
-//! `ARIA_CBC_*` aliases wrap: encryption is driven through the key's `create_encryptor` with a
-//! [`FixedSeedRNG`] whose stream is the vector's IV (there is no API for supplying one), and the
-//! test asserts the returned init data really is that IV before comparing any ciphertext;
-//! decryption takes the IV directly.
+//! `ARIA_CBC_*` aliases wrap, with the vector's IV supplied to `create_encryptor_nonce` and
+//! `create_decryptor`.
 
 #[path = "aria_common/mod.rs"]
 mod common;
 
-use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
@@ -106,13 +103,12 @@ where
     let pt: [u8; 160] = bytes(PLAINTEXT);
     let ct: [u8; 160] = bytes(ct_hex);
 
-    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
-    assert_eq!(got_iv, iv, "{name}: the pinned RNG should produce the vector's IV");
+    let mut enc = key.create_encryptor_nonce(&iv);
     let mut data = pt;
     enc.do_encrypt_blocks_inplace(data.as_chunks_mut::<BLOCK_LEN>().0).unwrap();
     assert_eq!(data, ct, "{name}: encrypt, all blocks in one call");
 
-    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
+    let mut enc = key.create_encryptor_nonce(&iv);
     let mut data = pt;
     for block in data.as_chunks_mut::<BLOCK_LEN>().0.iter_mut() {
         enc.do_encrypt_blocks_inplace(core::slice::from_mut(block)).unwrap();

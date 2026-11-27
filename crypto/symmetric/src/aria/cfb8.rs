@@ -17,7 +17,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// See `bouncycastle_symmetric::modes::cfb8` for the construction. The alias is a stream cipher with
 /// a one-byte segment, and comes from a key, [`ARIA128Key<CFB8>`](crate::aria::ARIA128Key), through the
 /// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one block, drawn from
-/// the caller's RNG by encryption and returned.
+/// the caller's RNG by encryption and returned, or supplied to the key's `_nonce` forms
+/// by a caller who then must make it unpredictable (SP 800-38A Appendix C).
 ///
 /// CFB8 is a **different, non-interoperable mode** from CFB128, not a variant of it: their
 /// ciphertexts differ from the second byte, and it costs a full ARIA call per byte, sixteen times

@@ -17,7 +17,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// See `bouncycastle_symmetric::modes::cfb8` for the construction. The aliases are stream ciphers with
 /// a one-byte segment, and come from a key, [`Camellia128Key<CFB8>`](crate::camellia::Camellia128Key) and
 /// friends, through the [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one
-/// block, drawn from the caller's RNG by encryption and returned.
+/// block, drawn from the caller's RNG by encryption and returned, or supplied to the key's `_nonce`
+/// forms by a caller who then must make it unpredictable (SP 800-38A Appendix C).
 ///
 /// CFB8 is a **different, non-interoperable mode** from CFB128, not a variant of it: their
 /// ciphertexts differ from the second byte, and it costs a full Camellia call per byte, sixteen

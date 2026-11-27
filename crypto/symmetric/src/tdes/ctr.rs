@@ -65,9 +65,9 @@ pub const CTR_NONCE_LEN: usize = 6;
 /// is exactly as long as the plaintext. They come from a key,
 /// [`TDES3Key<CTR<CTR_NONCE_LEN, BLOCK_LEN>>`](crate::tdes::TDES3Key), through the
 /// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the nonce is drawn from the
-/// caller's RNG by encryption and returned, and there is no API for supplying one. `CTR`'s
-/// defaults are AES's 12-byte nonce on a 16-byte block, so both parameters must be spelled out
-/// for TDEA.
+/// caller's RNG by encryption and returned, or supplied to the key's `_nonce` forms by a caller
+/// who then must never repeat it under the key (SP 800-38A Appendix B). `CTR`'s defaults are
+/// AES's 12-byte nonce on a 16-byte block, so both parameters must be spelled out for TDEA.
 ///
 /// SP 800-38A Appendix E: "the Triple DES algorithm, i.e., TDEA, as described above, may be used
 /// as the underlying block cipher algorithm for the six modes in this recommendation. One of the

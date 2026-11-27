@@ -18,7 +18,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// data is a `&mut [u8]` of any length, encrypted or decrypted in place. It comes from a key,
 /// [`ARIA128Key<CFB>`](crate::aria::ARIA128Key), through the [`SymmetricEncryptionKey`] /
 /// [`SymmetricDecryptionKey`] pair; the IV is one block, drawn from the caller's RNG by encryption
-/// and returned, and there is no API for supplying one.
+/// and returned, or supplied to the key's `_nonce` forms by a caller who then must make it
+/// unpredictable (SP 800-38A Appendix C).
 ///
 /// The segment size is the full block, so this is **CFB128**. SP 800-38A's `s = 8` variant is a
 /// different, non-interoperable mode with its own alias, [`ARIA_CFB8_128`](crate::aria::ARIA_CFB8_128),

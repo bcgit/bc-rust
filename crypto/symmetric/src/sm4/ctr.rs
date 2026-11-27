@@ -21,7 +21,8 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// data is a `&mut [u8]` of any length, encrypted or decrypted in place. It comes from a key,
 /// [`SM4Key<CTR>`](crate::sm4::SM4Key), through the [`SymmetricEncryptionKey`] /
 /// [`SymmetricDecryptionKey`] pair; the nonce is drawn from the caller's RNG by encryption and
-/// returned, and there is no API for supplying one.
+/// returned, or supplied to the key's `_nonce` forms by a caller who then must never repeat it
+/// under the key (SP 800-38A Appendix B).
 ///
 /// # The nonce length is 12, so the counter is 4
 ///

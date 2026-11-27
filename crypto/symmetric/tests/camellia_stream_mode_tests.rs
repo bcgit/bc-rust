@@ -39,7 +39,6 @@ mod common;
 
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
@@ -111,14 +110,12 @@ where
     let pt = bytes::<64>(CFB_PT);
     let ct = bytes::<64>(expected);
 
-    // There is no API for supplying an IV, so pin the RNG to the vector's and check what came back.
-    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("enc init");
-    assert_eq!(got_iv, iv, "{name}: the pinned RNG should produce the vector's IV");
+    let mut enc = key.create_encryptor_nonce(&iv);
     let mut data = pt;
     enc.do_encrypt_inplace(&mut data).expect("encryption");
     assert_eq!(data, ct, "{name} encrypt, one call");
 
-    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("enc init");
+    let mut enc = key.create_encryptor_nonce(&iv);
     let mut data = pt;
     for block in data.chunks_mut(BLOCK_LEN) {
         enc.do_encrypt_inplace(block).expect("encryption");
@@ -329,8 +326,7 @@ where
         reference_ctr::<P, KEY_LEN>(&material, t1, &mut expected);
 
         let mut data = plaintext.clone();
-        let (mut enc, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).expect("enc init");
-        assert_eq!(got, nonce, "{name}: the pinned RNG should produce the chosen nonce");
+        let mut enc = key.create_encryptor_nonce(&nonce);
         enc.do_encrypt_inplace(&mut data).expect("encryption");
         assert_eq!(data, expected, "{name}, len {len}: should match the reference");
 
@@ -551,8 +547,7 @@ where
         reference_ofb::<P, KEY_LEN>(&material, iv, &mut expected);
 
         let mut data = plaintext.clone();
-        let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("enc init");
-        assert_eq!(got_iv, iv);
+        let mut enc = key.create_encryptor_nonce(&iv);
         enc.do_encrypt_inplace(&mut data).expect("encryption");
         assert_eq!(data, expected, "{name}, len {len}: encrypt should match the equations");
 
@@ -637,8 +632,7 @@ where
         reference_cfb8::<P, KEY_LEN>(&material, iv, &mut expected, true);
 
         let mut data = plaintext.clone();
-        let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("enc init");
-        assert_eq!(got_iv, iv);
+        let mut enc = key.create_encryptor_nonce(&iv);
         enc.do_encrypt_inplace(&mut data).expect("encryption");
         assert_eq!(data, expected, "{name}, len {len}: encrypt should match the equations");
 
@@ -678,8 +672,7 @@ fn the_cfb8_keys_agree_with_the_equations() {
 fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {
     let key = Camellia128Key::<CTR<15>>::from_key_material(&key_material::<16>(KEY_128)).unwrap();
     let nonce = [0x5au8; 15];
-    let (mut enc, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
-    assert_eq!(got, nonce);
+    let mut enc = key.create_encryptor_nonce(&nonce);
 
     let mut data = vec![0u8; 256 * BLOCK_LEN];
     enc.do_encrypt_inplace(&mut data).expect("256 blocks fill a one-byte counter exactly");

@@ -21,7 +21,8 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// the data is a `&mut [u8]` of any length, encrypted or decrypted in place. They come from a key,
 /// [`Camellia128Key<CTR>`](crate::camellia::Camellia128Key) and friends, through the
 /// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the nonce is drawn from the
-/// caller's RNG by encryption and returned, and there is no API for supplying one.
+/// caller's RNG by encryption and returned, or supplied to the key's `_nonce` forms
+/// by a caller who then must never repeat it under the key (SP 800-38A Appendix B).
 ///
 /// # The nonce length is 12, so the counter is 4
 ///

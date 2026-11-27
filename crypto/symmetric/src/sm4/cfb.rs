@@ -18,7 +18,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// data is a `&mut [u8]` of any length, encrypted or decrypted in place. It comes from a key,
 /// [`SM4Key<CFB>`](crate::sm4::SM4Key), through the [`SymmetricEncryptionKey`] /
 /// [`SymmetricDecryptionKey`] pair; the IV is one block, drawn from the caller's RNG by encryption
-/// and returned, and there is no API for supplying one.
+/// and returned, or supplied to the key's `_nonce` forms by a caller who then must make it
+/// unpredictable (SP 800-38A Appendix C).
 ///
 /// The segment size is the full block, so this is the draft's **SM4-CFB-128**, one of the four
 /// variants Sec 8.5.1 names: "SM4-CFB-1 ... SM4-CFB-8 ... SM4-CFB-64 ... SM4-CFB-128, the 128-bit

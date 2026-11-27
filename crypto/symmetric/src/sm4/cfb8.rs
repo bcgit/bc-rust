@@ -17,7 +17,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// See `bouncycastle_symmetric::modes::cfb8` for the construction. The alias is a stream cipher with
 /// a one-byte segment, and comes from a key, [`SM4Key<CFB8>`](crate::sm4::SM4Key), through the
 /// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one block, drawn from
-/// the caller's RNG by encryption and returned.
+/// the caller's RNG by encryption and returned, or supplied to the key's `_nonce` forms
+/// by a caller who then must make it unpredictable (SP 800-38A Appendix C).
 ///
 /// This is the draft's **SM4-CFB-8**, named in Sec 8.5.1 as "the 8-bit SM4-CFB mode, where s is set
 /// to 8". It is a **different, non-interoperable mode** from SM4-CFB-128, not a variant of it:

@@ -19,8 +19,9 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// `CBC<Pad>` hands out.
 ///
 /// `Dir` is [`Encrypting`] or [`Decrypting`] and `Pad` is [`PKCS7`] or [`NoPadding`]; the wrong
-/// direction is a compile error, not a runtime check. The IV is drawn from the caller's RNG by
-/// encryption and returned; it is never supplied. It is one block: 8 bytes.
+/// direction is a compile error, not a runtime check. The IV is one block, 8 bytes, drawn from the
+/// caller's RNG by encryption and returned, or supplied to the key's `_nonce` forms
+/// by a caller who then must make it unpredictable (SP 800-38A Appendix C).
 ///
 /// ```
 /// use bouncycastle_symmetric::tdes::TDES3Key;

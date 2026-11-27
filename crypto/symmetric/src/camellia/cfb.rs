@@ -18,7 +18,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// the data is a `&mut [u8]` of any length, encrypted or decrypted in place. They come from a key,
 /// [`Camellia128Key<CFB>`](crate::camellia::Camellia128Key) and friends, through the
 /// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one block, drawn from
-/// the caller's RNG by encryption and returned, and there is no API for supplying one.
+/// the caller's RNG by encryption and returned, or supplied to the key's `_nonce` forms
+/// by a caller who then must make it unpredictable (SP 800-38A Appendix C).
 ///
 /// The segment size is the full block, so these are **CFB128**. SP 800-38A's `s = 8` variant is a
 /// different, non-interoperable mode with its own aliases --

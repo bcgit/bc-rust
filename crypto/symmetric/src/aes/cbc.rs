@@ -26,7 +26,9 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// implements the block-cipher traits directly, is [`Cbc`] and is not re-exported from this module.
 /// The workers come from a key: [`AES128Key<CBC<PKCS7>>`](crate::aes::AES128Key) (or `CBC<NoPadding>`)
 /// hands them out through the [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair, and
-/// `AES128Key<CBC<Blocks>>` hands out [`Cbc`] itself through the block pair.
+/// `AES128Key<CBC<Blocks>>` hands out [`Cbc`] itself through the block pair. The IV is drawn from
+/// the caller's RNG by encryption and returned, or supplied to the key's `_nonce` forms
+/// by a caller who then must make it unpredictable (SP 800-38A Appendix C).
 ///
 /// # Usage Examples
 ///
@@ -48,12 +50,16 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
 /// let plaintext = [0x5Au8; 50];
 ///
-/// // The IV is drawn from `rng` and returned; there is no API for supplying one.
+/// // The IV is drawn from `rng` and returned.
 /// let (iv, ciphertext) = key.encrypt(&mut rng, &plaintext).expect("encryption");
 /// assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
 ///
 /// let recovered = key.decrypt(&iv, &ciphertext).expect("decryption");
 /// assert_eq!(recovered, plaintext);
+///
+/// // `encrypt_nonce` takes the IV from the caller instead, who must then make it unpredictable
+/// // (SP 800-38A Appendix C). Under the IV drawn above it gives the same ciphertext.
+/// assert_eq!(key.encrypt_nonce(&iv, &plaintext).expect("encryption"), ciphertext);
 /// ```
 ///
 /// ## Streaming API

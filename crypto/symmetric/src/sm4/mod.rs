@@ -51,7 +51,8 @@
 //! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
 //! let plaintext = [0x5Au8; 50];
 //!
-//! // The IV is drawn from `rng` and returned; there is no API for supplying one.
+//! // The IV is drawn from `rng` and returned; `encrypt_nonce` takes one from the caller, who
+//! // must then make it unpredictable (SP 800-38A Appendix C).
 //! let (iv, ciphertext) = key.encrypt(&mut rng, &plaintext).expect("encryption");
 //! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
 //!

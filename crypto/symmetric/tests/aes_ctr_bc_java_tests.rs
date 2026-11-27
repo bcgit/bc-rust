@@ -37,7 +37,6 @@
 //! what is pinned here is specifically the part neither of them reaches: the narrow counters.
 
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
@@ -61,8 +60,7 @@ fn keystream<const NONCE_LEN: usize>(nonce_hex: &str, blocks: usize) -> Vec<u8> 
     let nonce: [u8; NONCE_LEN] =
         hex::decode(nonce_hex).expect("valid hex").try_into().expect("nonce length");
     let key = key::<NONCE_LEN>();
-    let (mut enc, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).expect("encrypt init");
-    assert_eq!(got, nonce, "the pinned RNG should reproduce the nonce");
+    let mut enc = key.create_encryptor_nonce(&nonce);
 
     let mut data = vec![0u8; blocks * 16];
     enc.do_encrypt_inplace(&mut data).expect("encryption");
@@ -152,7 +150,7 @@ fn the_counter_limit_falls_where_bc_java_throws() {
     let nonce: [u8; 15] =
         hex::decode("5a5b5c5d5e5f606162636465666768").unwrap().try_into().unwrap();
     let key = key::<15>();
-    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
+    let mut enc = key.create_encryptor_nonce(&nonce);
 
     // BC Java encrypts 4096 bytes under this IV without complaint.
     let mut data = vec![0u8; 4096];

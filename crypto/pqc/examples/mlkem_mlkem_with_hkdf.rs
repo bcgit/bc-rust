@@ -34,7 +34,7 @@ fn main() {
     let (key, ct) = pk.encaps(&mut rng, params).unwrap();
     let key1 = sk.decaps(&ct, params).unwrap();
     assert_eq!(key, key1);
-    println!("derived key: {} bytes at {:?}: {key}", key.key_len(), key.security_strength());
+    println!("derived key metadata: {key}");
 
     // A worker borrows the key and holds the parameters, fixed in it once.
     let decapsulator = sk.create_decapsulator(params).unwrap();
@@ -64,10 +64,10 @@ fn main() {
     let decapsulator = sk.create_decapsulator(params).unwrap();
     assert_eq!(decapsulator.decaps_out(&ct_out, &mut key_b).unwrap(), 64);
     assert_eq!(key_a, key_b);
-    println!("derived key, _out: {key_b}");
+    println!("derived key metadata, _out: {key_b}");
 
     // The same key pair still runs plain ML-KEM-768, with `()` selecting it.
     let (K, ct) = pk.encaps(&mut rng, ()).unwrap();
     assert_eq!(sk.decaps(&ct, ()).unwrap(), K);
-    println!("plain ML-KEM secret: {K}");
+    println!("plain ML-KEM secret metadata: {K}");
 }

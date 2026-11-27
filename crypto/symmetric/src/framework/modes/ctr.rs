@@ -108,9 +108,9 @@
 //!
 //! and used to recover any other plaintext encrypted under that same counter. That is why [`Ctr`]
 //! refuses to overflow the counter and returns a [`SymmetricCipherError::DataLimitExceeded`]
-//! instead, and why the nonce is generated rather than accepted from the caller: within one
-//! message the counter cannot repeat, and across messages a fresh random nonce is what keeps the
-//! counter blocks distinct.
+//! instead, and why a key's `create_encryptor` draws the nonce: within one message the counter
+//! cannot repeat, and across messages a fresh random nonce is what keeps the counter blocks
+//! distinct. Its `create_encryptor_nonce` hands that obligation to the caller.
 
 use crate::modes::ModeNames;
 use crate::modes::hazmat::ctr_key_stream::CtrKeyStream;

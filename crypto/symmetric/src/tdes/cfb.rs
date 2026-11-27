@@ -56,7 +56,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// the data is a `&mut [u8]` of any length, encrypted or decrypted in place. They come from a key,
 /// [`TDES3Key<CFB>`](crate::tdes::TDES3Key), through the [`SymmetricEncryptionKey`] /
 /// [`SymmetricDecryptionKey`] pair; the IV is one block (8 bytes), drawn from the caller's RNG by
-/// encryption and returned, and there is no API for supplying one.
+/// encryption and returned, or supplied to the key's `_nonce` forms by a caller who then must make
+/// it unpredictable (SP 800-38A Appendix C).
 ///
 /// The segment size is the full block, so this is **CFB64** -- the `s = 64` case of the TCFB mode
 /// that SP 800-38A Appendix E says is "equivalent to the CFB mode in this recommendation, with the

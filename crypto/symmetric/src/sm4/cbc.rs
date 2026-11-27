@@ -46,7 +46,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// let key = SM4Key::<CBC<PKCS7>>::from_key_material(&material).expect("a valid SM4 key");
 /// let message = b"a message of no particular length";
 ///
-/// // The IV is drawn from `rng` and returned; there is no API for supplying one.
+/// // The IV is drawn from `rng` and returned; `encrypt_nonce` takes one from the caller, who
+/// // must then make it unpredictable (SP 800-38A Appendix C).
 /// let (iv, ciphertext) = key.encrypt(&mut rng, message).expect("encryption");
 /// let recovered = key.decrypt(&iv, &ciphertext).expect("decryption");
 /// assert_eq!(recovered, message);

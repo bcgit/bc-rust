@@ -23,8 +23,9 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// decrypted in place since ciphertext is exactly as long as the plaintext. They come from a key,
 /// [`AES128Key<CTR>`](crate::aes::AES128Key) and friends, through the [`SymmetricEncryptionKey`] /
 /// [`SymmetricDecryptionKey`] pair. The nonce is drawn from the caller's RNG by encryption and
-/// returned; there is no API for supplying one. `Dir` is [`Encrypting`] or [`Decrypting`]; the
-/// wrong direction is a compile error, not a runtime check.
+/// returned, or supplied to the key's `_nonce` forms by a caller who then must never repeat it
+/// under the key (SP 800-38A Appendix B). `Dir` is [`Encrypting`] or [`Decrypting`]; the wrong
+/// direction is a compile error, not a runtime check.
 ///
 /// # Nonce and counter length
 ///

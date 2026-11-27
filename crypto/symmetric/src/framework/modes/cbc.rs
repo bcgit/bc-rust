@@ -19,7 +19,8 @@
 //! The direction is part of the type: [`Cbc<'k, P, Encrypting, ..>`](Cbc) implements
 //! [`BlockCipherEncryptor`] and nothing else, and [`Cbc<'k, P, Decrypting, ..>`](Cbc) implements
 //! [`BlockCipherDecryptor`] and nothing else.
-//! The IV is drawn from the RNG and returned; there is no API for supplying one.
+//! The IV is drawn from the RNG and returned by `encrypt_init`, or supplied to
+//! `encrypt_init_nonce` by a caller who then must make it unpredictable (SP 800-38A Appendix C).
 //!
 //! The pair is reached through a mode-bound key -- [`CBC<Blocks>`] on a key type such as
 //! `bouncycastle_symmetric::aes::AES128Key<CBC<Blocks>>` for whole blocks, [`CBC<Pad>`](CBC) for the padded

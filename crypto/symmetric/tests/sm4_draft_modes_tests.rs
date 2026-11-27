@@ -7,15 +7,12 @@
 //! see the module docs on why you must not use it to encrypt anything.)
 //!
 //! The CBC vectors go through `SM4Key<CBC<Blocks>>`, the block-aligned key the padded `SM4_CBC`
-//! alias wraps. There is no API for supplying an IV, so encryption is driven through the key's
-//! `create_encryptor` with a [`FixedSeedRNG`] whose stream is the vector's IV, and the test
-//! asserts the returned init data really is that IV before comparing any ciphertext. Decryption
-//! takes the IV directly.
+//! alias wraps, with the vector's IV supplied to the key's `create_encryptor_nonce` and
+//! `create_decryptor`.
 //!
 //! The draft notes these vectors "can be verified using" Botan and OpenSSL. All values are
 //! transcribed from the downloaded text of the draft.
 
-use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -107,14 +104,13 @@ fn check_cbc(section: &str, key: &str, expected: &str) {
     let ct: [u8; 32] = bytes(expected);
 
     // Encrypt, both blocks in one call, under the vector's IV.
-    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
-    assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
+    let mut enc = key.create_encryptor_nonce(&iv);
     let mut data = pt;
     enc.do_encrypt_blocks_inplace(data.as_chunks_mut::<BLOCK_LEN>().0).unwrap();
     assert_eq!(data, ct, "{section} encrypt, two blocks in one call");
 
     // Encrypt one block at a time.
-    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
+    let mut enc = key.create_encryptor_nonce(&iv);
     let mut data = pt;
     for block in data.as_chunks_mut::<BLOCK_LEN>().0.iter_mut() {
         enc.do_encrypt_blocks_inplace(core::slice::from_mut(block)).unwrap();

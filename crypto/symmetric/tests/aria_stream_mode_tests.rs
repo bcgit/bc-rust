@@ -8,9 +8,7 @@
 //! aliases exactly, in all four modes:
 //!
 //! * The CFB128, CFB8 and OFB vectors share the IV `0f1e2d3c..f0` that the CBC vectors use, and are
-//!   driven through the key's `create_encryptor` with a [`FixedSeedRNG`] whose stream is that IV
-//!   (there is no API for supplying one); the test asserts the returned init data really is the
-//!   vector's IV before comparing any ciphertext. Decryption takes the IV directly.
+//!   supplied to the key's `create_encryptor_nonce` and `create_decryptor`.
 //! * The CTR vectors start from an **all-zero counter block** and their `NextIV` is `..0a` after
 //!   the 160-byte, ten-block message, so the counter runs 0, 1, ... 9. That is exactly what the
 //!   nonce/counter split of `Ctr` produces from a twelve-byte zero nonce (see the
@@ -24,7 +22,6 @@
 mod common;
 
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
@@ -229,17 +226,13 @@ fn check<'k, const KEY_LEN: usize, const INIT_DATA_LEN: usize, K>(
     let pt = bytes::<LEN>(PLAINTEXT);
     let ct = bytes::<LEN>(expected);
 
-    // There is no API for supplying init data, so pin the RNG to the vector's and check it came
-    // back before trusting any ciphertext.
-    let (mut enc, got) =
-        key.create_encryptor(&mut FixedSeedRNG::new(init)).expect("encryption init");
-    assert_eq!(got, init, "{name}: the pinned RNG should produce the vector's init data");
+    let mut enc = key.create_encryptor_nonce(&init);
     let mut data = pt;
     enc.do_encrypt_inplace(&mut data).expect("encryption");
     assert_eq!(data, ct, "{name} encrypt, one call");
 
     // Block by block: the answer must not depend on where the call boundaries fall.
-    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(init)).expect("encryption init");
+    let mut enc = key.create_encryptor_nonce(&init);
     let mut data = pt;
     for block in data.chunks_mut(BLOCK_LEN) {
         enc.do_encrypt_inplace(block).expect("encryption");
@@ -417,8 +410,7 @@ fn the_published_cfb128_and_cfb8_vectors_differ_after_the_first_byte() {
 fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {
     let key = ARIA128Key::<CTR<15>>::from_key_material(&material::<16>(KEY_128)).unwrap();
     let nonce = [0x5au8; 15];
-    let (mut enc, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
-    assert_eq!(got, nonce);
+    let mut enc = key.create_encryptor_nonce(&nonce);
 
     let mut data = vec![0u8; 256 * BLOCK_LEN];
     enc.do_encrypt_inplace(&mut data).expect("256 blocks fill a one-byte counter exactly");

@@ -372,10 +372,9 @@ pub trait BlockCipherDecryptor<const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
 /// The length of the initialization data is specified by the implementing struct via the
 /// `INIT_DATA_LEN` constant.
 ///
-/// In order for these APIs to be usable securely in all contexts, the init data will be generated
-/// securely by the block cipher implementation and returned along with the ciphertext, and there is no API for the
-/// user to provide the init data to the encryptor.
-/// If you require this functionality, see the documentation for the underlying implementation.
+/// The key that makes the encryptor draws the init data from the caller's RNG and returns it
+/// along with the ciphertext, or takes it from the caller through its `_nonce` forms; see
+/// [`BlockEncryptionKey`](crate::symmetric_key::BlockEncryptionKey).
 ///
 /// # Everything is in place
 ///
@@ -1430,8 +1429,9 @@ pub trait StreamCipherDecryptor<const INIT_DATA_LEN: usize>:
 ///
 /// # Init data (a nonce or IV)
 ///
-/// Init data (a nonce or IV) is generated securely by the implementation in the constructor and
-/// returned for transmission alongside the ciphertext; there is no API for the user to supply it.
+/// The key that makes the encryptor draws the init data from the caller's RNG and returns it for
+/// transmission alongside the ciphertext, or takes it from the caller through its `_nonce` forms;
+/// see [`SymmetricEncryptionKey`](crate::symmetric_key::SymmetricEncryptionKey).
 ///
 /// # Everything is in place
 ///
@@ -1688,9 +1688,11 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
 /// length is answered exactly, before the fact, by [`update_out_len`](Self::do_encrypt_out_len) and
 /// [`encrypt_out_len`](Self::encrypt_out_len), so a caller can size buffers without guessing.
 ///
-/// Init data (an IV or nonce) is drawn by the key's `create_encryptor` and returned, never
-/// supplied, for the same reason as in [`BlockCipherEncryptor`]. Everything is `no_std`-friendly
-/// except the allocating [`do_encrypt`](Self::do_encrypt), which sits behind the `alloc` feature.
+/// Init data (an IV or nonce) is drawn by the key's `create_encryptor` and returned, or supplied
+/// to its `create_encryptor_nonce`; see
+/// [`SymmetricEncryptionKey`](crate::symmetric_key::SymmetricEncryptionKey). Everything is
+/// `no_std`-friendly except the allocating [`do_encrypt`](Self::do_encrypt), which sits behind the
+/// `alloc` feature.
 ///
 /// An implementor writes only [`update_out_len`](Self::do_encrypt_out_len),
 /// [`do_update_out`](Self::do_encrypt_out),

@@ -7,10 +7,8 @@
 //! * **A.2.3, SM4-OFB.** Straight known-answer tests through `SM4Key<OFB>`, as for A.2.4 below,
 //!   beside the one `SM4-OFB` entry of OpenSSL's `evpciph_sm4.txt` (OpenSSL 3.6.2), whose key and
 //!   IV are both `0123..10`.
-//! * **A.2.4, SM4-CFB.** Straight known-answer tests through `SM4Key<CFB>`. There is no API for
-//!   supplying an IV, so encryption is driven through the key's `create_encryptor` with a
-//!   [`FixedSeedRNG`] whose stream is the vector's IV, and the test asserts the returned init data
-//!   really is that IV before comparing any ciphertext. Decryption takes the IV directly.
+//! * **A.2.4, SM4-CFB.** Straight known-answer tests through `SM4Key<CFB>`, with the vector's IV
+//!   supplied to the key's `create_encryptor_nonce` and `create_decryptor`.
 //! * **A.2.5, SM4-CTR.** The draft's counter sequence makes the whole 16-byte IV the first counter
 //!   block and increments it as a unit; `Ctr` splits the block into a 12-byte nonce and a 4-byte
 //!   counter that starts at zero (see the `SM4_CTR` docs, and Sec 8.7, which leaves the sequence to
@@ -28,7 +26,6 @@
 //! All vector values are transcribed from the downloaded text of the draft.
 
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -126,16 +123,14 @@ fn check_cfb(section: &str, key_hex: &str, expected: &str) {
     let ct = bytes(expected);
 
     // Encrypt in one call, under the vector's IV.
-    let (mut enc, got_iv) =
-        key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("encryption init");
-    assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
+    let mut enc = key.create_encryptor_nonce(&iv);
     let mut data = pt.clone();
     let written = enc.do_encrypt_inplace(&mut data).expect("encryption");
     assert_eq!(written, pt.len(), "{section}: a stream cipher writes exactly what it was given");
     assert_eq!(data, ct, "{section} encrypt, one call");
 
     // Encrypt one block at a time: same answer.
-    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("encryption init");
+    let mut enc = key.create_encryptor_nonce(&iv);
     let mut data = pt.clone();
     for chunk in data.chunks_mut(BLOCK_LEN) {
         enc.do_encrypt_inplace(chunk).expect("encryption");
@@ -174,9 +169,7 @@ fn check_ofb(section: &str, key_hex: &str, iv: [u8; BLOCK_LEN], pt: &str, expect
     let pt = bytes(pt);
     let ct = bytes(expected);
 
-    let (mut enc, got_iv) =
-        key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("encryption init");
-    assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
+    let mut enc = key.create_encryptor_nonce(&iv);
     let mut data = pt.clone();
     enc.do_encrypt_inplace(&mut data).expect("encryption");
     assert_eq!(data, ct, "{section} encrypt, one call");
@@ -284,9 +277,7 @@ fn the_ctr_key_agrees_with_the_reference() {
         reference_ctr(&material, t1, &mut expected);
 
         let mut data = plaintext.clone();
-        let (mut enc, got) =
-            key.create_encryptor(&mut FixedSeedRNG::new(nonce)).expect("encryption init");
-        assert_eq!(got, nonce, "the pinned RNG should produce the chosen nonce");
+        let mut enc = key.create_encryptor_nonce(&nonce);
         enc.do_encrypt_inplace(&mut data).expect("encryption");
         assert_eq!(data, expected, "len {len}: SM4Key<CTR> should match the reference");
 
@@ -344,9 +335,7 @@ fn the_cfb8_key_agrees_with_the_equations() {
         reference_cfb8(&material, iv, &mut expected, true);
 
         let mut data = plaintext.clone();
-        let (mut enc, got_iv) =
-            key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("encryption init");
-        assert_eq!(got_iv, iv);
+        let mut enc = key.create_encryptor_nonce(&iv);
         enc.do_encrypt_inplace(&mut data).expect("encryption");
         assert_eq!(data, expected, "len {len}: SM4Key<CFB8> encrypt should match the equations");
 
@@ -372,8 +361,7 @@ fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {
     .unwrap();
     let key = SM4Key::<CTR<15>>::from_key_material(&material).unwrap();
     let nonce = [0x5au8; 15];
-    let (mut enc, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
-    assert_eq!(got, nonce);
+    let mut enc = key.create_encryptor_nonce(&nonce);
 
     let mut data = vec![0u8; 256 * BLOCK_LEN];
     enc.do_encrypt_inplace(&mut data).expect("256 blocks fill a one-byte counter exactly");

@@ -133,7 +133,8 @@
 //! or potentially how much a file was modified between versions.
 //!
 //! This reinforces the general advice to always generate cryptographically random IVs unique for
-//! each encryption operation.
+//! each encryption operation. A key's `create_encryptor` draws one; its `create_encryptor_nonce`
+//! hands the obligation to the caller, whose IV must be unpredictable (SP 800-38A Appendix C).
 
 use crate::modes::ModeNames;
 use crate::modes::iv::random_iv;

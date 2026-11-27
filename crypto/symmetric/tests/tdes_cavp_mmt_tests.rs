@@ -22,10 +22,8 @@
 //! ECB vectors are block-permutation vectors and go through the engine directly, one block at a
 //! time, as well as through the four-block path where the message is long enough.
 //!
-//! The CBC, CFB and OFB vectors carry an IV, and a key's `create_encryptor` draws the IV from the
-//! RNG it is given, so three-key encryption passes a `FixedSeedRNG` that emits the vector's IV, and
-//! the returned init data is asserted equal to it before any ciphertext is compared; decryption
-//! takes the IV directly. The keys are made under the modes the `TDES_*` aliases name, so the
+//! The CBC, CFB and OFB vectors carry an IV, which three-key encryption supplies to the key's
+//! `create_encryptor_nonce` and decryption to `create_decryptor`. The keys are made under the modes the `TDES_*` aliases name, so the
 //! aliases' parameter choices (an 8-byte block, an 8-byte IV) are what is under test.
 //!
 //! Two-key TDEA is decryption-only -- `create_encryptor` does not compile on [`TDES2Key`] -- so its
@@ -36,7 +34,6 @@
 //! The Monte Carlo Test files (`tdesmct_intermediate.zip`) are **not** used: their chained update
 //! rule is defined by SP 800-20, and implementing it is a separate piece of work from the engine.
 
-use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion, Mode};
 use bouncycastle_core::hex;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -222,8 +219,7 @@ fn tcbcmmt3() {
         let iv = iv(case);
         let name = label("TCBCMMT3", case);
 
-        let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
-        assert_eq!(got_iv, iv, "{name}: the pinned RNG should reproduce the vector's IV");
+        let mut enc = key.create_encryptor_nonce(&iv);
         let mut buf = case.plaintext.clone();
         enc.do_encrypt_blocks_inplace(buf.as_chunks_mut::<BLOCK_LEN>().0).unwrap();
         assert_eq!(buf, case.ciphertext, "{name}: encrypt");
@@ -258,8 +254,7 @@ where
 {
     let iv = iv(case);
 
-    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
-    assert_eq!(got_iv, iv, "{name}: the pinned RNG should reproduce the vector's IV");
+    let mut enc = key.create_encryptor_nonce(&iv);
     let mut buf = case.plaintext.clone();
     enc.do_encrypt_inplace(&mut buf).unwrap();
     assert_eq!(buf, case.ciphertext, "{name}: encrypt");
@@ -269,7 +264,7 @@ where
     assert_eq!(buf, case.plaintext, "{name}: decrypt");
 
     // The same message fed one byte at a time must give the same ciphertext.
-    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
+    let mut enc = key.create_encryptor_nonce(&iv);
     let mut buf = case.plaintext.clone();
     for byte in buf.iter_mut() {
         enc.do_encrypt_inplace(core::slice::from_mut(byte)).unwrap();

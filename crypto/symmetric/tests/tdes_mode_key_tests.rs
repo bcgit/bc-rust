@@ -3,7 +3,6 @@
 //! a two-key key can do, decrypt.
 
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hazmat::{BlockPermutation, EcbDecryptionKey, KeyExpansion, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -268,8 +267,7 @@ fn a_mac_mode_key_refuses_every_material_consistently() {
 fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {
     let key = key3::<CTR<7, BLOCK_LEN>>();
     let nonce = [0x5au8; 7];
-    let (mut enc, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
-    assert_eq!(got, nonce);
+    let mut enc = key.create_encryptor_nonce(&nonce);
 
     let mut data = vec![0u8; 256 * BLOCK_LEN];
     enc.do_encrypt_inplace(&mut data).expect("256 blocks fill a one-byte counter exactly");
