@@ -69,6 +69,7 @@ use std::collections::HashSet;
 use std::hint::black_box;
 
 mod ed;
+#[path = "../../stack_scrubbed_call.rs"]
 mod scrubbed;
 
 /// How far below the call the stack is painted and searched. The deepest operation here uses
@@ -77,11 +78,13 @@ const DEPTH: usize = 256 * 1024;
 /// The gap between the frame that takes the copy and the operation's first frame.
 const PAD: usize = 16 * 1024;
 const PAINT: u8 = 0xA5;
-/// How far below the call a difference between two runs is put down to the registers the
-/// call's first frames saved, and not counted: this program's loop index and heap addresses,
-/// which the frames above the wiped ones save. The furthest seen is 408 bytes, below the
-/// deterministic signer's final, whose frame holds the message hash.
-const SAVED_REGISTERS: usize = 512;
+/// How far below the call a difference between two runs is put down to the operation's first
+/// frames, above its wiped ones, and not counted: the registers they save, which
+/// [`Scan::run`] has zeroed, and values handed out on the way to the caller's slot. With this
+/// at 0, the furthest seen is 208 bytes on arm64 (rustc 1.100: Ed25519's `sign`, staging the
+/// signature it returns), 136 on arm64 with rustc 1.97 and 128 on x86-64 (rustc 1.97 and
+/// 1.88).
+const SAVED_REGISTERS: usize = 256;
 
 /// The fixed RNG's seed: one draw at its start. Every operation here draws once.
 const SEED_LEN: usize = 128;
@@ -315,25 +318,34 @@ impl Scan {
 
     /// Whether the bytes `i..end`, in which the two runs differ, are pieces of `public_before` in
     /// the kept run and the same pieces of `public` in the last, one after another: two public
-    /// values can lie side by side, in any order. Each piece but the last is at least a word.
+    /// values can lie side by side, in any order. Each piece is at least a word, but for the
+    /// whole run when it is shorter, and for a last piece that carries on where the one before
+    /// it ended in the image.
     fn public_run(&self, i: usize, end: usize, public_before: &[u8], public: &[u8]) -> bool {
-        let mut p = i;
-        while p < end {
-            let piece = (0..public.len())
-                .map(|at| {
-                    (0..(end - p).min(public.len() - at))
-                        .take_while(|l| {
-                            public_before[at + l] == self.before[p + l]
-                                && public[at + l] == self.buf[p + l]
-                        })
-                        .count()
+        // How many bytes from `p` match the image from `at`, in both runs.
+        let matching = |p: usize, at: usize| {
+            (0..(end - p).min(public.len() - at))
+                .take_while(|l| {
+                    public_before[at + l] == self.before[p + l] && public[at + l] == self.buf[p + l]
                 })
-                .max()
-                .unwrap_or(0);
-            if piece < 8.min(end - p) {
-                return false;
+                .count()
+        };
+        let mut p = i;
+        // Where in the image the last piece ended.
+        let mut after: Option<usize> = None;
+        while p < end {
+            let (len, at) =
+                (0..public.len()).map(|at| (matching(p, at), at)).max().unwrap_or((0, 0));
+            if len >= 8 {
+                p += len;
+                after = Some(at + len);
+                continue;
             }
-            p += piece;
+            let rest = end - p;
+            return match after {
+                None => len == rest,
+                Some(at) => at < public.len() && matching(p, at) == rest,
+            };
         }
         true
     }

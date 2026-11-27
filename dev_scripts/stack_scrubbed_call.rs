@@ -1,4 +1,5 @@
-//! A call made with every callee-saved register zero. This program computes with the secrets it
+//! A call made with every callee-saved register zero, for the SM2 and ECDSA stack harnesses, each
+//! of which includes this file as its `scrubbed` module. This program computes with the secrets it
 //! searches for (to know what to search for, and to check the operation's output), and a word
 //! of one can wait in a callee-saved register of `main` across the call that runs the operation;
 //! the first frame below that uses the register saves it, a copy the search then finds, which is
@@ -9,7 +10,7 @@
 //! aarch64 (AAPCS64): x19-x28 and the low halves of v8-v15. x86-64 (System V): rbx, rbp and
 //! r12-r15. The caller-saved registers are not touched: no callee saves those.
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
 core::arch::global_asm!(
     ".text",
     ".globl stack_harness_scrubbed_call",
@@ -62,7 +63,7 @@ core::arch::global_asm!(
     ".size stack_harness_scrubbed_call, . - stack_harness_scrubbed_call",
 );
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 core::arch::global_asm!(
     ".text",
     ".globl stack_harness_scrubbed_call",
@@ -97,8 +98,10 @@ core::arch::global_asm!(
     ".size stack_harness_scrubbed_call, . - stack_harness_scrubbed_call",
 );
 
-#[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
-compile_error!("the stack harness clears the callee-saved registers on aarch64 and x86-64 only");
+#[cfg(not(all(target_os = "linux", any(target_arch = "aarch64", target_arch = "x86_64"))))]
+compile_error!(
+    "the stack harnesses clear the callee-saved registers on aarch64 and x86-64 Linux only"
+);
 
 unsafe extern "C" {
     /// Calls `job(arg)` with the callee-saved registers zero, and restores them.

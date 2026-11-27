@@ -46,6 +46,7 @@ use bouncycastle_ec::sm2::sm2::SIG_LEN;
 use std::collections::HashSet;
 use std::hint::black_box;
 
+#[path = "../../stack_scrubbed_call.rs"]
 mod scrubbed;
 
 /// How far below the call the stack is painted and searched. The deepest operation here uses
@@ -55,8 +56,10 @@ const DEPTH: usize = 256 * 1024;
 const PAD: usize = 16 * 1024;
 const PAINT: u8 = 0xA5;
 /// How far below the call a difference between two runs is put down to the registers the
-/// call's first frames saved, and not counted. The furthest seen is 120 bytes.
-const SAVED_REGISTERS: usize = 256;
+/// call's first frames saved, and not counted. With those registers zeroed ([`Scan::run`]),
+/// nothing differs there on arm64 (rustc 1.100 and 1.97) or x86-64 (rustc 1.97 and 1.88); this
+/// is room for a frame record and two register pairs.
+const SAVED_REGISTERS: usize = 64;
 
 /// The private key of GM/T 0003.5-2012 Annex C.2.
 const DB: [u8; 32] = [

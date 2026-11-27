@@ -34,7 +34,8 @@
 # Linux, and CI runs this on x86-64 and arm64 Linux (.github/workflows/ecdsa-stack.yml). A pass
 # says nothing of another target or another compiler, and nothing of a debug build, whose frames
 # are larger and are not covered. It does not look at registers, at the heap, or at what a caller
-# does with a key it was returned.
+# does with a key it was returned, and what the caller's own callee-saved registers held, which a
+# library frame may save, is out of its scope: the harness zeroes them before each operation.
 #
 #   ./dev_scripts/check_ecdsa_stack.sh
 set -euo pipefail
