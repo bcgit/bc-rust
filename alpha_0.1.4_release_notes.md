@@ -2,6 +2,94 @@
 
 ## Major features
 
+* New algorithms added to crypto/ :
+    * Block ciphers -- ARIA (RFC 5794), Camellia (RFC 3713) and SM4 (GB/T 32907-2016), constant-time and
+      table-free (bit-sliced S-boxes, four blocks at a time), and three-key TDEA (SP 800-67 Rev 2) with two-key
+      TDEA for decryption only; each with CBC, CFB, CFB8, OFB, CTR, GCM, CCM, CMAC, GMAC and key wrap.
+    * AES modes -- OFB (all block ciphers), AES-XTS (SP 800-38E) and AES-GCM-SIV (RFC 8452); AES KW / KWP
+      (SP 800-38F) and TDEA TKW over the new `KeyWrapper` / `KeyUnwrapper` traits.
+    * ChaCha20, Poly1305 and ChaCha20-Poly1305 (RFC 8439).
+    * Hashes -- SHA-1 (interoperation only, no security strength), RIPEMD-128/160/256/320, BLAKE2b-512,
+      BLAKE2s-256 and BLAKE3.
+    * KDFs -- PBKDF2 (RFC 8018), scrypt (RFC 7914), SP 800-108 (Counter, Feedback, Double-Pipeline and KMAC),
+      the ANSI X9.63 KDF and the SP 800-56C one-step (concatenation) KDF.
+    * ECDSA (FIPS 186-5, with RFC 6979) and ECC CDH (SP 800-56A) over P-256, P-384, P-521, secp256k1 and the
+      three brainpool curves, written once over a `Curve` marker; SM2 signatures and SM2 public key encryption.
+    * Ed25519 / Ed25519ph and Ed448 / Ed448ph (RFC 8032), X25519 and X448 (RFC 7748).
+    * DHKEM (RFC 9180) over X25519, X448, P-256, P-384 and P-521, and HPKE in all four modes (no CLI yet).
+    * RSA -- RSASSA-PKCS1-v1_5, RSASSA-PSS, RSASVE and RSAES-OAEP, with FIPS 186-5 key generation, at 2048 to
+      8192 bits.
+    * ML-KEM with its shared secret derived through HKDF.
+* Fewer, larger crates: the library is the umbrella `bouncycastle` over nine crates -- `core`, `digest`, `rng`,
+  `symmetric`, `ec`, `pqc`, `modexp`, `hybrid` and `utils` -- each primitive a module under its old name
+  (`bouncycastle::digest::sha2`, `bouncycastle::pqc::mlkem`), one path per algorithm. `bouncycastle-factory`
+  is removed: algorithms are named by type. Every library crate is `#![no_std]`, with `std` and `alloc`
+  features; a build with `default-features = false` links neither `std` nor an allocator.
+* Keys own their operations, finished: KEM encapsulation and decapsulation (`EncapsulatingKey` /
+  `DecapsulatingKey`), key agreement (`AgreementKey`), key transport and MACs (split into `MACGenerator` /
+  `MACVerifier`, the tag a fixed-length array) move onto key objects, as ciphers and signatures did in 0.1.3;
+  one pair of key encoding traits (`PrivateKey<N>` / `PublicKey<N>`) replaces six. A KEM or agreement that
+  derives its key takes a KDF *description* (`KdfParams`), which a key held in an HSM or token can read.
+* Secrets no longer left behind: a systematic pass found and removed copies of keys, nonces, pad states and
+  intermediates on the dead stack and in moved-from values, across every algorithm family. Compressions,
+  key schedules, signing, key generation and decoding run in their own frame and wipe it, with one shared
+  stack wipe (`bouncycastle_utils::stack_wipe`) that is checked to cover its own frame on x86-64, aarch64,
+  thumbv6m and riscv32i. Workers finish in place (`finish_*`, `_boxed` finals), so one-shots and boxed workers
+  no longer move state. Four in-tree checks run in CI on x86-64 and arm64 (`check_{rsa,sm2,ecdsa,symmetric}_stack.sh`),
+  each searching what an operation leaves on the stack and comparing two runs over different secrets.
+* Performance and footprint:
+    * SHA-256 about 20% and SHA-384/512 about 20% faster on x86-64 (HMAC, HKDF and PBKDF2 likewise), with
+      smaller compression frames on every target.
+    * ML-DSA / ML-KEM memory lower again, e.g. ML-DSA-87 KeyGen 133 kB to 99 kB, ML-KEM-1024 Encaps 42 kB to 32 kB.
+
+## Minor features / bug fixes
+
+Trait system:
+
+* Cipher and MAC workers no longer suspend or clone (#173): a copy repeats a nonce, counter or keystream
+  position. Hashes, XOFs and KMAC keep `Suspendable`; HMAC and HKDF no longer suspend.
+* Every encrypting key takes a caller-supplied IV or nonce (`create_encryptor_nonce`, `encrypt_nonce_out`).
+* One-shot signing, verification and in-place AEAD have roles of their own (`OneShotSigningKey`,
+  `AeadInPlaceEncryptionKey`, ...), for schemes that cannot stream.
+* HashML-DSA, Ed25519ph and Ed448ph are views reached by `as_prehash()`; every signature key names one
+  algorithm. Signing requires a `CollisionResistantHash` (`hazmat::WithoutCollisionResistance<H>` opts back in).
+* A short RNG draw is an error everywhere (key generation, nonces, IVs, `rnd`, ML-KEM's `m`), through
+  `RNGExt::next_bytes_exact_out`; `RNG::next_bytes` (returning a `Vec`) is gone.
+* `KeyType::SharedSecret`, and a reviewed KDF entropy accounting (`core::hazmat::KdfCredit`).
+* SHA-3 and SHAKE no longer implement `KDF` (the construction was non-standard).
+
+Fixes:
+
+* ECDSA refuses a non-empty context instead of dropping it; HMAC keeps its key's strength; SM2 decryption accepts
+  hybrid-form `C1`; `X25519PrivateKey::pk` / `X448PrivateKey::pk` and ML-KEM `pk()` refuse an unfilled key
+  where they returned an all-zero public key; `Sp80090ADrbg` raises a requested strength below 112 bits and no
+  longer panics on prediction resistance; `hex` and `base64` zeroize their outputs and decoders on error.
+
+Command line:
+
+* A `bc-rust` subcommand for every new primitive: the new ciphers and modes, key wrap, XTS, GCM-SIV, the new
+  hashes and KDFs, ECDSA, ECC CDH, SM2 (signatures and encryption), Ed25519/Ed448, X25519/X448, RSA and
+  ML-KEM-HKDF. Commands exiting on an error wipe the secrets they hold first.
+
+Docs, build and CI:
+
+* Stack-usage ("Memory Usage") tables re-measured throughout, each naming its method and toolchain.
+* CI adds a bare-metal `no_std` build (thumbv6m), constant-time assembly and memcheck checks for AES and
+  RSA-OAEP, and the four stack checks on x86-64 and arm64; the gitea origin runs copies of every pull-request
+  check.
+* Wycheproof is pinned to a commit; CAVP, ACVP, RFC and Wycheproof vectors cover every new algorithm.
+* Thanks to Francis Mendoza (ChaCha20-Poly1305, XTS), royb (key wrap, BLAKE2/BLAKE3), Mike Ounsworth
+  (ML-DSA stack work, X25519), Peter Dettman (EdDSA and the Curve448 family) and Megan (Gitea Actions).
+
+* Github issues and PRs resolved: #123, #139, #140, #141, #142, #143, #157, #160, #173, #177, #180, #184, #186,
+  #192, #193, #194, #195.
+
+## Full changelog
+
+Every change in this release, in the order it landed.
+
+### Major features
+
 * ARIA -- `bouncycastle-aria`, the RFC 5794 block cipher at 128, 192 and 256 bits, constant-time and table-free (the
   S-boxes as bit-sliced Boolean circuits, four blocks at a time), on the key objects as `ARIA128Key<M>` and friends
   with CBC, CFB, CFB8, OFB, CTR, GCM, CCM, CMAC, GMAC, KW and KWP; the
@@ -132,7 +220,7 @@
   `OaepHash`. `dev_scripts/check_oaep_ct.sh`, run on pull requests, puts the decoding under memcheck with the encoded
   message undefined and reads its Cortex-M0 and RISC-V 32I assembly.
 
-## Minor features / bug fixes
+### Minor features / bug fixes
 
 * OFB (NIST SP 800-38A Sec 6.4) over any block permutation, as `bouncycastle_cipher::modes::OFB` / `Ofb`, a keystream
   under `StreamCipher`; the `AES_OFB_*`, `ARIA_OFB_*`, `Camellia_OFB_*`, `SM4_OFB`, `TDES_OFB` and `TDES2_OFB` aliases,
