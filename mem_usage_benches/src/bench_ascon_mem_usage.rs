@@ -32,12 +32,15 @@
 //!
 //! The numbers in the `ascon` module docs come from the compiler instead, read the way
 //! `bench_aes_mem_usage` does: `-C remark=prologepilog` gives each function's frame and
-//! `--emit=asm` its calls, after LTO, and a figure is the deepest chain of frames below the entry
-//! point plus 8 bytes of return address per call. The panic and unwind paths (`unwrap_failed`,
-//! `panic_fmt`, `slice_index_fail`, `_Unwind_Resume`) are not followed, since valid input never
-//! reaches them. A tail call adds nothing, libc's `memcpy` counts as its return address only, and
-//! the `&mut dyn RNG` call is to `FixedNonce::next_bytes_out`. The figures are for x86-64 Linux;
-//! the Windows x64 calling convention reserves more per frame, so measure on Linux to compare.
+//! `--emit=asm` its calls, after LTO, and a figure counts from the call into the entry point: its
+//! return address and frame, then the deepest chain of frames below it plus 8 bytes of return
+//! address per call. The panic and unwind paths (`unwrap_failed`, `panic_fmt`, `slice_index_fail`,
+//! `_Unwind_Resume`) are not followed, since valid input never reaches them. A tail call pushes no
+//! return address and its target's frame replaces the caller's, libc's `memcpy` counts as its
+//! return address only, and so does the `&mut dyn RNG` call to `FixedNonce::next_bytes_out`. The
+//! figures are the same with every bench called from `main` and with one alone, and are for
+//! x86-64 Linux; the Windows x64 calling convention reserves more per frame, so measure on Linux
+//! to compare.
 //! Cross-compiling is enough, because the remarks and the asm are written before the link (which
 //! then fails without a Linux linker):
 //!

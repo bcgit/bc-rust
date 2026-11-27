@@ -100,24 +100,26 @@
 //! | MLKEM512_lowmemory/KeyGen, `keygen_out`  | 7.7 (11.5) |                   |
 //! | MLKEM768_lowmemory/KeyGen, `keygen_out`  | 7.7 (16.0) |                   |
 //! | MLKEM1024_lowmemory/KeyGen, `keygen_out` | 8.4 (21.5) |                   |
-//! | MLKEM512_lowmemory/Encaps  | 8.9 (13.6)             | 35.8 (48.8)       |
-//! | MLKEM768_lowmemory/Encaps  | 9.9 (19.7)             | 21.1 (28.8)       |
-//! | MLKEM1024_lowmemory/Encaps | 11.3 (26.8)            | 14.4 (19.7)       |
+//! | MLKEM512_lowmemory/Encaps  | 9.3 (11.8)             | 35.8 (48.8)       |
+//! | MLKEM768_lowmemory/Encaps  | 10.6 (16.8)            | 21.1 (28.8)       |
+//! | MLKEM1024_lowmemory/Encaps | 12.4 (22.9)            | 14.4 (19.7)       |
 //! | MLKEM512_lowmemory/Decaps  | 11.1 (12.8)            | 19.2 (37.4)       |
 //! | MLKEM768_lowmemory/Decaps  | 12.5 (18.3)            | 10.8 (28.6)       |
 //! | MLKEM1024_lowmemory/Decaps | 14.3 (25.0)            | 7.1 (20.4)        |
-//! | MLKEM512_lowmemory/KdfEncaps  | 10.8 (14.9)         |                   |
-//! | MLKEM768_lowmemory/KdfEncaps  | 12.7 (21.7)         |                   |
-//! | MLKEM1024_lowmemory/KdfEncaps | 15.0 (28.7)         |                   |
-//! | MLKEM512_lowmemory/KdfDecaps  | 11.2 (13.3)         |                   |
-//! | MLKEM768_lowmemory/KdfDecaps  | 13.7 (18.6)         |                   |
-//! | MLKEM1024_lowmemory/KdfDecaps | 15.0 (25.2)         |                   |
+//! | MLKEM512_lowmemory/KdfEncaps  | 10.8 (15.7)         |                   |
+//! | MLKEM768_lowmemory/KdfEncaps  | 11.5 (21.2)         |                   |
+//! | MLKEM1024_lowmemory/KdfEncaps | 12.9 (28.7)         |                   |
+//! | MLKEM512_lowmemory/KdfDecaps  | 11.1 (13.2)         |                   |
+//! | MLKEM768_lowmemory/KdfDecaps  | 12.4 (19.9)         |                   |
+//! | MLKEM1024_lowmemory/KdfDecaps | 13.6 (26.5)         |                   |
 //!
 //! The Kdf rows derive a 32-byte key through [`MLKEM512_HKDF_SHA256`] and a 64-byte one through
 //! [`MLKEM768_HKDF_SHA512`] and [`MLKEM1024_HKDF_SHA512`]; they have no throughput figure.
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the [`pqc::mlkem`](crate::mlkem) module.
-//! Memory figures were measured with `mem_usage_benches/bench_mlkem_mem_usage` under massif on 2026-11-24;
+//! Memory figures were measured with `mem_usage_benches/bench_mlkem_mem_usage` under massif on 2026-11-27,
+//! the largest `mem_stacks_B` of a release build for x86-64 with rustc 1.97 nightly, `main` calling that
+//! bench alone;
 //! throughput figures come from the modules' criterion benches on 2026-11-24, on a developer desktop
 //! shared with other work, where a figure moves by up to 15% between runs.
 //! The `keygen_out` rows generate into a key the caller holds, which leaves no copy of it behind.
