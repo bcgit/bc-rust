@@ -56,6 +56,7 @@ extern crate alloc;
 extern crate self as bouncycastle_symmetric;
 
 mod framework;
+mod stack_wipe;
 pub use framework::{BlockCipherKey, modes, padding, stream};
 
 // The direction markers are `bouncycastle_core::direction`'s, re-exported so that

@@ -503,7 +503,7 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 ## CI
 
-Eleven workflows under `.github/workflows/`, all triggered by pull requests:
+Twelve workflows under `.github/workflows/`, all triggered by pull requests:
 
 - `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable, then, since
   `--all-features` never builds a crate with a default feature off: `cargo check -p <crate>
@@ -560,19 +560,38 @@ Eleven workflows under `.github/workflows/`, all triggered by pull requests:
   `crypto/ec/src/ed/{ed25519,ed448}/{point,scalar}.rs` and `x448.rs`, `BY_VALUE_STACK_WORDS` in
   `crypto/ec/src/ed/{ed25519,ed448}/keys.rs`, `x25519.rs` and `x448.rs`, and `KEYGEN_STACK_WORDS` in the two
   `keys.rs`.
+- `symmetric-stack.yml`: `dev_scripts/check_symmetric_stack.sh`, the same shape and matrix over
+  `dev_scripts/symmetric_stack_harness`, which runs HMAC's key construction, one-shots and streaming
+  workers (SHA-256, SHA-512, SHA3-256, SM3, RIPEMD-160), HKDF's extract, expand and `KDF` derivation,
+  BLAKE3's three modes with its squeezer, and AES-GCM-SIV's encryption and decryption, searching for
+  the keys, pad states, PRK and OKM, chaining values, derived keys, POLYVAL state and message, and
+  comparing two runs over different secrets (an HMAC worker's by-value final, PBKDF2 and an AES
+  key's construction are reported, not failed). Re-measure `KEY_WIPED_STACK_WORDS`,
+  `LOAD_WIPED_STACK_WORDS` and `FINISH_WIPED_STACK_WORDS` in `crypto/digest/src/hmac/mod.rs`,
+  `HKDF_WIPED_STACK_WORDS` and `HKDF_LARGE_STATE_WIPED_STACK_WORDS` in `crypto/digest/src/hkdf/mod.rs`,
+  `WIPED_STACK_WORDS`, `BLOCK_WIPED_STACK_WORDS` and `KEY_WIPED_STACK_WORDS` in
+  `crypto/digest/src/blake3/blake3.rs`, the hashes' `COMPRESS_WIPED_STACK_WORDS` and Keccak's
+  `WIPED_STACK_WORDS`, and `WIPED_STACK_WORDS` in `crypto/symmetric/src/framework/modes/gcm_siv.rs`
+  (`STACK_DETAIL=1` prints how far below the call each finding lies).
 - `publish_doc_benches_to_ghpages.yaml`: builds rustdoc and runs `quality_stats.sh`; on `main` it also
   publishes docs and code stats to GitHub Pages (`https://bcgit.github.io/bc-rust/`). Its bench step is
   commented out because the benches are too slow on the hosted runner, so benchmark figures come from a
   developer's machine, not CI.
 
+A stack check's pass on x86-64 does not carry to another target: a wipe takes a frame of its own
+over the stack below its caller, but never clears the registers that frame saves or the padding
+above its array, and the size of both, like the depth of the frames it wipes, is the target's.
+That is why the SM2, ECDSA and symmetric stack checks run on arm64 as well, and why a target
+they do not run on is not covered by them.
+
 `cargo test --all` is the workspace run, so a failing test does block a PR; what CI does not run is
 `cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.
 
-The gitea origin has its own copies of the ten pull-request checks under `.gitea/workflows/`
+The gitea origin has its own copies of the eleven pull-request checks under `.gitea/workflows/`
 (there is no Pages job). They differ from the GitHub ones in four ways: the toolchain is installed
 with `rustup` in a shell step; valgrind is installed with or without `sudo`, whichever the
-runner's container allows; `sm2-stack.yml` and `ecdsa-stack.yml` run on x86-64 only, there being
-no arm64 runner; and the test job takes its vectors from the runner's read-only
+runner's container allows; `sm2-stack.yml`, `ecdsa-stack.yml` and `symmetric-stack.yml` run on
+x86-64 only, there being no arm64 runner; and the test job takes its vectors from the runner's read-only
 `/bc-test-data` and `/wycheproof` mounts, failing if either is missing. Wycheproof's are read out
 of the mounted clone at the pinned commit (`git archive`), wherever the clone's `HEAD` is, so the
 runner's clone needs a fetch only when the pin moves past what it holds. The pin is therefore
