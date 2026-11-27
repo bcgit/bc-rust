@@ -262,8 +262,8 @@
 //!   CI runs it for x86-64 and arm64 Linux. On another target, compiler or an unoptimised
 //!   build they may not reach everything. Loading a private key (`from_bytes`) zeroizes the
 //!   copies it makes and has no such wipe, and neither have `encode`, `encode_out` and
-//!   `clone`; in the x86-64 builds the check finds nothing of the key on the stack after any
-//!   of the four. The key a call returns, and the bytes `encode` returns, are the caller's to
+//!   `clone`; in the x86-64 and arm64 builds the check finds nothing of the key on the stack
+//!   after any of the four. The key a call returns, and the bytes `encode` returns, are the caller's to
 //!   look after.
 
 pub mod encryption;

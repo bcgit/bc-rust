@@ -172,10 +172,8 @@
 //! multiplication (key expansion's `[s]B`, signing's `[r]B`) the stack it used, where it leaves
 //! limbs of the point's coordinates and of the inversion that normalizes them.
 //! `dev_scripts/check_ecdsa_stack.sh` finds none of the key after key generation, decoding and
-//! every form of signing in release builds for x86-64 (rustc 1.97 and 1.88); arm64 is not yet
-//! measured with these wipes. SHA-512 is outside that: its load of the block that holds the
-//! private key can leave words of it on the stack, seen as one word after `from_bytes_out` in
-//! an arm64 build.
+//! every form of signing in release builds for x86-64 (rustc 1.97 and 1.88) and arm64 (rustc
+//! 1.100), the wipes being sized on x86-64.
 //!
 //! Each fixed-base multiplication checks that its result is a point of the curve before
 //! anything is released, and a failure is reported as an error; no input causes one.

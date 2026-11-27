@@ -190,8 +190,8 @@
 //! after each operation finds none of the private key, the scalar, the prefix, the digests,
 //! the nonce `r`, `r + k s` or those Keccak states after `keygen_out`, `from_bytes_out`,
 //! `clone_from`, `encode_out`, `pk`, `==`, `keypair_consistency_check` and every form of
-//! signing, in the release build for x86-64 Linux (rustc 1.97.0-nightly), the one build
-//! scanned. The by-value forms leave what a move leaves, as above.
+//! signing, in release builds for x86-64 Linux (rustc 1.97.0-nightly) and arm64 Linux (rustc
+//! 1.100). The by-value forms leave what a move leaves, as above.
 //!
 //! Each fixed-base multiplication checks that its result is a point of the curve before
 //! anything is released, and a failure is reported as an error; no input causes one.

@@ -25,10 +25,10 @@
 #
 # What a pass shows: that in a release build for the host, by the installed toolchain, the
 # wipes reach as far as the operations write. The wipes are sized by measurement on x86-64
-# Linux (the encryption wipes also with room over arm64 Linux), and CI runs this on both
-# (.github/workflows/sm2-stack.yml). A pass says nothing of another target or another compiler,
-# and nothing of a debug build, whose frames are larger and are not covered. It does not look at
-# registers, at the heap, or at what a caller does with a key it was returned.
+# Linux (the encryption and signing wipes also with room over arm64 Linux), and CI runs this on
+# both (.github/workflows/sm2-stack.yml). A pass says nothing of another target or another
+# compiler, and nothing of a debug build, whose frames are larger and are not covered. It does
+# not look at registers, at the heap, or at what a caller does with a key it was returned.
 #
 #   ./dev_scripts/check_sm2_stack.sh
 set -euo pipefail

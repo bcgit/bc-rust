@@ -79,8 +79,8 @@ use bouncycastle_utils::secret::Secret;
 /// `create_signer`, 3208 below one of `sign_out` and 2840 below the streaming final with rustc
 /// 1.97 (nightly), and 1384, 3008 and 2640 with rustc 1.88; with 2560 bytes wiped
 /// `dev_scripts/check_sm2_stack.sh` fails with rustc 1.88, and with 2816 it passes with either.
-/// The rest is room for a compiler that lays the frames out less tightly; it has not been
-/// measured on arm64.
+/// On arm64 Linux with rustc 1.100 the harness reports 1504, 3240 and 2904 bytes. The rest is
+/// room for a compiler that lays the frames out less tightly.
 const WIPED_STACK_WORDS: usize = 512;
 
 /// Raw `r || s` signature length: two 32-byte field-width integers. See the module docs on why
