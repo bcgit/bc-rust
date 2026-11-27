@@ -119,6 +119,9 @@ Every change in this release, in the order it landed.
 * AES-XTS -- XTS-AES-128 and XTS-AES-256 (NIST SP 800-38E; IEEE Std 1619-2007) for storage, as `XTS_AES_128` /
   `XTS_AES_256` over `bouncycastle_cipher::modes::XTSKey`, taking one data unit of 16 bytes to 2^20 blocks per call;
   the `aes128-xts` / `aes256-xts` CLI commands.
+* CBC ciphertext stealing -- CBC-CS1, CBC-CS2 and CBC-CS3 (Addendum to NIST SP 800-38A) over any 128-bit block
+  permutation, as the `CBC_CS1` / `CBC_CS2` / `CBC_CS3` mode types, `CTS` being CBC-CS3 (RFC 2040); the
+  `AES_CBC_CS{1,2,3}_*` and `AES_CTS_*` aliases; the `aes*-cbc-cs{1,2,3}` CLI commands, with `aes*-cts` for CS3.
 * ECDSA -- FIPS 186-5 signatures over P-256, P-384, P-521, secp256k1, brainpoolP256r1, brainpoolP384r1 and
   brainpoolP512r1, with the RFC 6979 deterministic variant, through the `SigningKey` / `DeterministicSigningKey` /
   `VerifyingKey` core roles; the `ecdsa-*` CLI commands.

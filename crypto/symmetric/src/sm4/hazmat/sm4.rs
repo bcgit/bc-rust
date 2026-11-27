@@ -253,6 +253,9 @@ impl BlockPermutation<BLOCK_LEN> for SM4Internal {
 // named, and the key carries the symmetric, block and AEAD roles for the modes it aliases.
 impl ModeNames for SM4Internal {
     const CBC_ALG_NAME: &'static str = "SM4_CBC";
+    const CBC_CS1_ALG_NAME: &'static str = "SM4_CBC_CS1";
+    const CBC_CS2_ALG_NAME: &'static str = "SM4_CBC_CS2";
+    const CBC_CS3_ALG_NAME: &'static str = "SM4_CBC_CS3";
     const CCM_ALG_NAME: &'static str = "SM4_CCM";
     const CFB_ALG_NAME: &'static str = "SM4_CFB";
     const CFB8_ALG_NAME: &'static str = "SM4_CFB8";

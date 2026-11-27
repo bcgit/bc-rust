@@ -16,6 +16,9 @@
 //! operation, on the 128-bit alias of each:
 //!
 //! * [`AES_CBC_128`]
+//! * [`AES_CBC_CS1_128`], [`AES_CBC_CS2_128`] and [`AES_CBC_CS3_128`] (also [`AES_CTS_128`]), CBC
+//!   with ciphertext stealing: any length from one block up, the ciphertext as long as the
+//!   plaintext
 //! * [`AES_CCM_128`]
 //! * [`AES_CFB_128`]
 //! * [`AES_CFB8_128`]
@@ -187,6 +190,7 @@
 
 mod bitslice;
 mod cbc;
+mod cbc_cs;
 mod ccm;
 mod cfb;
 mod cfb8;
@@ -281,6 +285,11 @@ impl AESParams for AES256Params {
 }
 
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
+pub use cbc_cs::{
+    AES_CBC_CS1_128, AES_CBC_CS1_192, AES_CBC_CS1_256, AES_CBC_CS2_128, AES_CBC_CS2_192,
+    AES_CBC_CS2_256, AES_CBC_CS3_128, AES_CBC_CS3_192, AES_CBC_CS3_256, AES_CTS_128, AES_CTS_192,
+    AES_CTS_256,
+};
 pub use ccm::{AES_CCM_128, AES_CCM_192, AES_CCM_256, CCM_NONCE_LEN, CCM_TAG_LEN};
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};

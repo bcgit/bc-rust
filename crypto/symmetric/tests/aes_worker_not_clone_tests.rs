@@ -20,8 +20,8 @@ use bouncycastle_symmetric::aes::AES128Key;
 use bouncycastle_symmetric::aes::hazmat::AES128Internal;
 use bouncycastle_symmetric::modes::hazmat::ecb::Ecb;
 use bouncycastle_symmetric::modes::{
-    CBC, Cbc, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor, CcmPacketEncryptor, Cfb, Cfb8, Cmac,
-    Ctr, Gcm, Gmac, Kw, Kwp, Ofb, Tkw,
+    CBC, CS1, CS2, CS3, Cbc, CbcCs, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor,
+    CcmPacketEncryptor, Cfb, Cfb8, Cmac, Ctr, Gcm, Gmac, Kw, Kwp, Ofb, Tkw,
 };
 use bouncycastle_symmetric::padding::{
     PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
@@ -86,6 +86,12 @@ fn cipher_workers_are_not_clone() {
         Cbc<'static, P, Decrypting, 16>,
         PaddedBlockCipherEncryptor<Cbc<'static, P, Encrypting, 16>, PKCS7, 16, 16>,
         PaddedBlockCipherDecryptor<Cbc<'static, P, Decrypting, 16>, PKCS7, 16, 16>,
+        CbcCs<'static, P, Encrypting, CS1>,
+        CbcCs<'static, P, Decrypting, CS1>,
+        CbcCs<'static, P, Encrypting, CS2>,
+        CbcCs<'static, P, Decrypting, CS2>,
+        CbcCs<'static, P, Encrypting, CS3>,
+        CbcCs<'static, P, Decrypting, CS3>,
         Cfb<'static, P, Encrypting, 16>,
         Cfb<'static, P, Decrypting, 16>,
         Cfb8<'static, P, Encrypting, 16>,

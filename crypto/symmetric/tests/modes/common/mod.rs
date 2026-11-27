@@ -62,6 +62,9 @@ impl Algorithm for Toy {
 
 impl ModeNames for Toy {
     const CBC_ALG_NAME: &'static str = "Toy_CBC";
+    const CBC_CS1_ALG_NAME: &'static str = "Toy_CBC_CS1";
+    const CBC_CS2_ALG_NAME: &'static str = "Toy_CBC_CS2";
+    const CBC_CS3_ALG_NAME: &'static str = "Toy_CBC_CS3";
     const CCM_ALG_NAME: &'static str = "Toy_CCM";
     const CFB_ALG_NAME: &'static str = "Toy_CFB";
     const CFB8_ALG_NAME: &'static str = "Toy_CFB8";
@@ -143,6 +146,9 @@ impl Algorithm for SwappedPairToy {
 
 impl ModeNames for SwappedPairToy {
     const CBC_ALG_NAME: &'static str = "SwappedPairToy_CBC";
+    const CBC_CS1_ALG_NAME: &'static str = "SwappedPairToy_CBC_CS1";
+    const CBC_CS2_ALG_NAME: &'static str = "SwappedPairToy_CBC_CS2";
+    const CBC_CS3_ALG_NAME: &'static str = "SwappedPairToy_CBC_CS3";
     const CCM_ALG_NAME: &'static str = "SwappedPairToy_CCM";
     const CFB_ALG_NAME: &'static str = "SwappedPairToy_CFB";
     const CFB8_ALG_NAME: &'static str = "SwappedPairToy_CFB8";
@@ -224,6 +230,9 @@ impl Algorithm for ForwardOnlyToy {
 
 impl ModeNames for ForwardOnlyToy {
     const CBC_ALG_NAME: &'static str = "ForwardOnlyToy_CBC";
+    const CBC_CS1_ALG_NAME: &'static str = "ForwardOnlyToy_CBC_CS1";
+    const CBC_CS2_ALG_NAME: &'static str = "ForwardOnlyToy_CBC_CS2";
+    const CBC_CS3_ALG_NAME: &'static str = "ForwardOnlyToy_CBC_CS3";
     const CCM_ALG_NAME: &'static str = "ForwardOnlyToy_CCM";
     const CFB_ALG_NAME: &'static str = "ForwardOnlyToy_CFB";
     const CFB8_ALG_NAME: &'static str = "ForwardOnlyToy_CFB8";
@@ -287,6 +296,9 @@ impl Algorithm for SwappedFourToy {
 
 impl ModeNames for SwappedFourToy {
     const CBC_ALG_NAME: &'static str = "SwappedFourToy_CBC";
+    const CBC_CS1_ALG_NAME: &'static str = "SwappedFourToy_CBC_CS1";
+    const CBC_CS2_ALG_NAME: &'static str = "SwappedFourToy_CBC_CS2";
+    const CBC_CS3_ALG_NAME: &'static str = "SwappedFourToy_CBC_CS3";
     const CCM_ALG_NAME: &'static str = "SwappedFourToy_CCM";
     const CFB_ALG_NAME: &'static str = "SwappedFourToy_CFB";
     const CFB8_ALG_NAME: &'static str = "SwappedFourToy_CFB8";

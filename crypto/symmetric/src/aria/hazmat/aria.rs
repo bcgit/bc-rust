@@ -305,6 +305,9 @@ impl BlockPermutation<BLOCK_LEN> for ARIA256Internal {
 // others; GMAC has none, and is named here only because the trait asks for every mode.
 impl ModeNames for ARIA128Internal {
     const CBC_ALG_NAME: &'static str = "ARIA_CBC_128";
+    const CBC_CS1_ALG_NAME: &'static str = "ARIA_CBC_CS1_128";
+    const CBC_CS2_ALG_NAME: &'static str = "ARIA_CBC_CS2_128";
+    const CBC_CS3_ALG_NAME: &'static str = "ARIA_CBC_CS3_128";
     const CCM_ALG_NAME: &'static str = "ARIA_CCM_128";
     const CFB_ALG_NAME: &'static str = "ARIA_CFB_128";
     const CFB8_ALG_NAME: &'static str = "ARIA_CFB8_128";
@@ -320,6 +323,9 @@ impl ModeNames for ARIA128Internal {
 
 impl ModeNames for ARIA192Internal {
     const CBC_ALG_NAME: &'static str = "ARIA_CBC_192";
+    const CBC_CS1_ALG_NAME: &'static str = "ARIA_CBC_CS1_192";
+    const CBC_CS2_ALG_NAME: &'static str = "ARIA_CBC_CS2_192";
+    const CBC_CS3_ALG_NAME: &'static str = "ARIA_CBC_CS3_192";
     const CCM_ALG_NAME: &'static str = "ARIA_CCM_192";
     const CFB_ALG_NAME: &'static str = "ARIA_CFB_192";
     const CFB8_ALG_NAME: &'static str = "ARIA_CFB8_192";
@@ -335,6 +341,9 @@ impl ModeNames for ARIA192Internal {
 
 impl ModeNames for ARIA256Internal {
     const CBC_ALG_NAME: &'static str = "ARIA_CBC_256";
+    const CBC_CS1_ALG_NAME: &'static str = "ARIA_CBC_CS1_256";
+    const CBC_CS2_ALG_NAME: &'static str = "ARIA_CBC_CS2_256";
+    const CBC_CS3_ALG_NAME: &'static str = "ARIA_CBC_CS3_256";
     const CCM_ALG_NAME: &'static str = "ARIA_CCM_256";
     const CFB_ALG_NAME: &'static str = "ARIA_CFB_256";
     const CFB8_ALG_NAME: &'static str = "ARIA_CFB8_256";

@@ -4,6 +4,7 @@ mod ascon_cmd;
 mod blake2_cmd;
 mod blake3_cmd;
 mod cbc_cmd;
+mod cbc_cs_cmd;
 mod ccm_cmd;
 mod cfb8_cmd;
 mod cfb_cmd;
@@ -88,6 +89,7 @@ use bouncycastle::symmetric::aria::hazmat::{ARIA128Internal, ARIA192Internal, AR
 use bouncycastle::symmetric::camellia::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal,
 };
+use bouncycastle::symmetric::modes::{CS1, CS2, CS3};
 use bouncycastle::symmetric::sm4::hazmat::SM4Internal;
 use clap::{Parser, Subcommand};
 use helpers::block_mode_helpers::{CipherDirection, DecryptOnlyAction};
@@ -132,6 +134,123 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     AES128_CBC {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in CBC-CS1 mode (CBC with ciphertext stealing, Addendum to NIST SP 800-38A Sec 2),
+    /// streaming stdin to stdout.
+    ///
+    /// The IV is as for `aes128-cbc`: on `encrypt` a fresh unpredictable IV is generated and
+    /// written as the FIRST 16 BYTES of the output, and on `decrypt` it is read back from the first
+    /// 16 bytes of the input. With `--iv` (hex) or `--iv-file` (raw bytes; hex with --hex-input) it
+    /// is supplied instead: `encrypt` writes ONLY the ciphertext and `decrypt` reads ONLY
+    /// ciphertext, and the IV must then be unpredictable to an attacker (SP 800-38A Appendix C) and
+    /// never reused under one key.
+    ///
+    /// There is no padding: the ciphertext after the IV is exactly as long as the plaintext. Input
+    /// must be at least one block, 16 bytes; a shorter input is refused, in both directions. The
+    /// three variants differ only in the order of the last two portions of the ciphertext: CS1
+    /// keeps CBC's order, CS2 swaps them when the last block is partial, and CS3 (also
+    /// `aes128-cts`) always swaps them. A ciphertext decrypts only under the variant that made it.
+    ///
+    /// WARNING: CBC-CS provides confidentiality only. It does not detect tampering, and neither the
+    /// ciphertext nor the IV is authenticated. Do not decrypt data you have not authenticated
+    /// separately.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_CBC_CS1 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in CBC-CS2 mode (CBC with ciphertext stealing, Addendum to NIST SP 800-38A Sec 3),
+    /// streaming stdin to stdout: the last two portions of the ciphertext swapped when the last
+    /// block is partial.
+    ///
+    /// See `aes128-cbc-cs1` for the IV convention, the length rule and the warnings.
+    AES128_CBC_CS2 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in CBC-CS3 mode (CBC with ciphertext stealing, Addendum to NIST SP 800-38A Sec 4),
+    /// streaming stdin to stdout: the last two portions of the ciphertext always swapped, which is
+    /// CTS as RFC 2040 Sec 8 defines it.
+    ///
+    /// See `aes128-cbc-cs1` for the IV convention, the length rule and the warnings.
+    #[command(visible_alias = "aes128-cts")]
+    AES128_CBC_CS3 {
         #[arg(short, long)]
         direction: CipherDirection,
 
@@ -716,6 +835,108 @@ enum Subcommands {
         x: bool,
     },
 
+    /// AES-192 in CBC-CS1 mode (CBC with ciphertext stealing, Addendum to NIST SP 800-38A Sec 2),
+    /// streaming stdin to stdout.
+    ///
+    /// See `aes128-cbc-cs1` for the IV convention, the length rule and the warnings; only the key
+    /// length differs.
+    AES192_CBC_CS1 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in CBC-CS2 mode (CBC with ciphertext stealing, Addendum to NIST SP 800-38A Sec 3),
+    /// streaming stdin to stdout: the last two portions of the ciphertext swapped when the last
+    /// block is partial.
+    ///
+    /// See `aes128-cbc-cs1` for the IV convention, the length rule and the warnings; only the key
+    /// length differs.
+    AES192_CBC_CS2 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in CBC-CS3 mode (CBC with ciphertext stealing, Addendum to NIST SP 800-38A Sec 4),
+    /// streaming stdin to stdout: the last two portions of the ciphertext always swapped, which is
+    /// CTS as RFC 2040 Sec 8 defines it.
+    ///
+    /// See `aes128-cbc-cs1` for the IV convention, the length rule and the warnings; only the key
+    /// length differs.
+    #[command(visible_alias = "aes192-cts")]
+    AES192_CBC_CS3 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// AES-192 in CCM mode (NIST SP 800-38C), authenticated encryption of stdin to stdout.
     ///
     /// See `aes128-ccm` for the nonce convention, the length rules, the non-streaming note and the
@@ -1024,6 +1245,108 @@ enum Subcommands {
     /// See `aes128-cbc` for the IV convention, padding and warnings; only the
     /// key length differs.
     AES256_CBC {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in CBC-CS1 mode (CBC with ciphertext stealing, Addendum to NIST SP 800-38A Sec 2),
+    /// streaming stdin to stdout.
+    ///
+    /// See `aes128-cbc-cs1` for the IV convention, the length rule and the warnings; only the key
+    /// length differs.
+    AES256_CBC_CS1 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in CBC-CS2 mode (CBC with ciphertext stealing, Addendum to NIST SP 800-38A Sec 3),
+    /// streaming stdin to stdout: the last two portions of the ciphertext swapped when the last
+    /// block is partial.
+    ///
+    /// See `aes128-cbc-cs1` for the IV convention, the length rule and the warnings; only the key
+    /// length differs.
+    AES256_CBC_CS2 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long, visible_alias = "nonce")]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long, visible_alias = "nonce-file")]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in CBC-CS3 mode (CBC with ciphertext stealing, Addendum to NIST SP 800-38A Sec 4),
+    /// streaming stdin to stdout: the last two portions of the ciphertext always swapped, which is
+    /// CTS as RFC 2040 Sec 8 defines it.
+    ///
+    /// See `aes128-cbc-cs1` for the IV convention, the length rule and the warnings; only the key
+    /// length differs.
+    #[command(visible_alias = "aes256-cts")]
+    AES256_CBC_CS3 {
         #[arg(short, long)]
         direction: CipherDirection,
 
@@ -7948,6 +8271,21 @@ fn run() {
                 direction, key, key_file, iv, iv_file, *x, "AES-128",
             );
         }
+        Some(Subcommands::AES128_CBC_CS1 { direction, key, key_file, iv, iv_file, x }) => {
+            cbc_cs_cmd::cbc_cs_cmd::<AES128Internal, CS1, 16>(
+                direction, key, key_file, iv, iv_file, *x, "AES-128",
+            );
+        }
+        Some(Subcommands::AES128_CBC_CS2 { direction, key, key_file, iv, iv_file, x }) => {
+            cbc_cs_cmd::cbc_cs_cmd::<AES128Internal, CS2, 16>(
+                direction, key, key_file, iv, iv_file, *x, "AES-128",
+            );
+        }
+        Some(Subcommands::AES128_CBC_CS3 { direction, key, key_file, iv, iv_file, x }) => {
+            cbc_cs_cmd::cbc_cs_cmd::<AES128Internal, CS3, 16>(
+                direction, key, key_file, iv, iv_file, *x, "AES-128",
+            );
+        }
         Some(Subcommands::AES128_CCM {
             direction,
             key,
@@ -8019,6 +8357,21 @@ fn run() {
                 direction, key, key_file, iv, iv_file, *x, "AES-192",
             );
         }
+        Some(Subcommands::AES192_CBC_CS1 { direction, key, key_file, iv, iv_file, x }) => {
+            cbc_cs_cmd::cbc_cs_cmd::<AES192Internal, CS1, 24>(
+                direction, key, key_file, iv, iv_file, *x, "AES-192",
+            );
+        }
+        Some(Subcommands::AES192_CBC_CS2 { direction, key, key_file, iv, iv_file, x }) => {
+            cbc_cs_cmd::cbc_cs_cmd::<AES192Internal, CS2, 24>(
+                direction, key, key_file, iv, iv_file, *x, "AES-192",
+            );
+        }
+        Some(Subcommands::AES192_CBC_CS3 { direction, key, key_file, iv, iv_file, x }) => {
+            cbc_cs_cmd::cbc_cs_cmd::<AES192Internal, CS3, 24>(
+                direction, key, key_file, iv, iv_file, *x, "AES-192",
+            );
+        }
         Some(Subcommands::AES192_CCM {
             direction,
             key,
@@ -8073,6 +8426,21 @@ fn run() {
         }
         Some(Subcommands::AES256_CBC { direction, key, key_file, iv, iv_file, x }) => {
             cbc_cmd::cbc_cmd::<AES256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "AES-256",
+            );
+        }
+        Some(Subcommands::AES256_CBC_CS1 { direction, key, key_file, iv, iv_file, x }) => {
+            cbc_cs_cmd::cbc_cs_cmd::<AES256Internal, CS1, 32>(
+                direction, key, key_file, iv, iv_file, *x, "AES-256",
+            );
+        }
+        Some(Subcommands::AES256_CBC_CS2 { direction, key, key_file, iv, iv_file, x }) => {
+            cbc_cs_cmd::cbc_cs_cmd::<AES256Internal, CS2, 32>(
+                direction, key, key_file, iv, iv_file, *x, "AES-256",
+            );
+        }
+        Some(Subcommands::AES256_CBC_CS3 { direction, key, key_file, iv, iv_file, x }) => {
+            cbc_cs_cmd::cbc_cs_cmd::<AES256Internal, CS3, 32>(
                 direction, key, key_file, iv, iv_file, *x, "AES-256",
             );
         }

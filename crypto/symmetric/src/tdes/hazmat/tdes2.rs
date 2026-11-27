@@ -234,6 +234,9 @@ impl BlockPermutation<BLOCK_LEN> for TDES2Internal {
 /// verifying and unwrapping halves.
 impl ModeNames for TDES2Internal {
     const CBC_ALG_NAME: &'static str = "TDES2_CBC";
+    const CBC_CS1_ALG_NAME: &'static str = "";
+    const CBC_CS2_ALG_NAME: &'static str = "";
+    const CBC_CS3_ALG_NAME: &'static str = "";
     const CCM_ALG_NAME: &'static str = "";
     const CFB_ALG_NAME: &'static str = "TDES2_CFB";
     const CFB8_ALG_NAME: &'static str = "TDES2_CFB8";

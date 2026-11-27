@@ -33,9 +33,10 @@ use bouncycastle_core::traits::{Algorithm, RNG};
 /// `KeyType::SymmetricCipherKey`.
 ///
 /// Which workers a key hands out is decided by its mode, through the mode traits `M` implements
-/// over `P` in [`bouncycastle_core::hazmat`]: the symmetric pair for the stream modes and the
+/// over `P` in [`bouncycastle_core::hazmat`]: the symmetric pair for the stream modes, the
 /// padded block modes (`CFB`, `CFB8`, `OFB`, `CTR<N>` at any nonce length, `CBC<PKCS7>`,
-/// `CBC<NoPadding>`, `ECB<PKCS7>`, `ECB<NoPadding>`), the block pair for `CBC<Blocks>`, the
+/// `CBC<NoPadding>`, `ECB<PKCS7>`, `ECB<NoPadding>`) and ciphertext stealing (`CBC_CS1`,
+/// `CBC_CS2`, `CBC_CS3`, and `CTS`, which is `CBC_CS3`), the block pair for `CBC<Blocks>`, the
 /// `hazmat` ECB pair for `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM` and `CCM_Packet` (each
 /// its streaming pair and the in-place pair) and the in-place pair alone for `GCM_SIV`, the MAC
 /// pair for `CMAC`, the key-wrap pair for `KW`

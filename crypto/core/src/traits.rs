@@ -1594,7 +1594,8 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     /// [`SymmetricCipherError::DataNotBlockAligned`] if a block cipher's ciphertext was not a whole
     /// number of blocks; [`SymmetricCipherError::DecryptionFailed`] if it was otherwise malformed
     /// (empty, or not the length an implementor's type fixes);
-    /// [`SymmetricCipherError::PaddingError`] or
+    /// [`SymmetricCipherError::InvalidInputLength`] if it was shorter than an implementor defined
+    /// only on messages of a minimum length accepts; [`SymmetricCipherError::PaddingError`] or
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the check fails. In every error case the
     /// caller learns only that decryption failed, not where.
     fn do_decrypt_final_out(
@@ -1767,7 +1768,9 @@ pub trait SymmetricCipherEncryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     /// [`SymmetricCipherError::PaddingError`] if the buffered data cannot be finished -- with a
     /// scheme that adds no padding, a message that is not a whole number of blocks -- and
     /// [`SymmetricCipherError::StateError`] from an implementor whose message length is fixed by
-    /// its type (see [`AEADCipherEncryptor`]) that was given less than it.
+    /// its type (see [`AEADCipherEncryptor`]) that was given less than it, and
+    /// [`SymmetricCipherError::InvalidInputLength`] from one defined only on messages of a minimum
+    /// length that was given a shorter one.
     fn do_encrypt_final(mut self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>
     where
         Self: Sized,

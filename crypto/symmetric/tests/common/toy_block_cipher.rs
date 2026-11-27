@@ -39,6 +39,9 @@ impl Algorithm for ToyBlockCipher {
 
 impl ModeNames for ToyBlockCipher {
     const CBC_ALG_NAME: &'static str = "ToyBlockCipher_CBC";
+    const CBC_CS1_ALG_NAME: &'static str = "ToyBlockCipher_CBC_CS1";
+    const CBC_CS2_ALG_NAME: &'static str = "ToyBlockCipher_CBC_CS2";
+    const CBC_CS3_ALG_NAME: &'static str = "ToyBlockCipher_CBC_CS3";
     const CCM_ALG_NAME: &'static str = "ToyBlockCipher_CCM";
     const CFB_ALG_NAME: &'static str = "ToyBlockCipher_CFB";
     const CFB8_ALG_NAME: &'static str = "ToyBlockCipher_CFB8";
