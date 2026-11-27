@@ -82,8 +82,8 @@ const PAINT: u8 = 0xA5;
 /// frames, above its wiped ones, and not counted: the registers they save, which
 /// [`Scan::run`] has zeroed, and values handed out on the way to the caller's slot. With this
 /// at 0, the furthest seen is 208 bytes on arm64 (rustc 1.100: Ed25519's `sign`, staging the
-/// signature it returns), 136 on arm64 with rustc 1.97 and 128 on x86-64 (rustc 1.97 and
-/// 1.88).
+/// signature it returns), 136 on arm64 with rustc 1.97 and 128 on x86-64 (rustc 1.100, 1.97
+/// and 1.88).
 const SAVED_REGISTERS: usize = 256;
 
 /// The fixed RNG's seed: one draw at its start. Every operation here draws once.
@@ -318,9 +318,11 @@ impl Scan {
 
     /// Whether the bytes `i..end`, in which the two runs differ, are pieces of `public_before` in
     /// the kept run and the same pieces of `public` in the last, one after another: two public
-    /// values can lie side by side, in any order. Each piece is at least a word, but for the
-    /// whole run when it is shorter, and for a last piece that carries on where the one before
-    /// it ended in the image.
+    /// values can lie side by side, in any order, and a value returned by value can be staged in
+    /// chunks out of order (Ed448's signature, on x86-64 with rustc 1.100, as bytes 23..39 then
+    /// 0..7). Each piece is at least four bytes, which both runs match by chance at a given place
+    /// in the image with odds of 2^-64, but for the whole run when it is shorter, and for a last
+    /// piece that carries on where the one before it ended in the image.
     fn public_run(&self, i: usize, end: usize, public_before: &[u8], public: &[u8]) -> bool {
         // How many bytes from `p` match the image from `at`, in both runs.
         let matching = |p: usize, at: usize| {
@@ -336,7 +338,7 @@ impl Scan {
         while p < end {
             let (len, at) =
                 (0..public.len()).map(|at| (matching(p, at), at)).max().unwrap_or((0, 0));
-            if len >= 8 {
+            if len >= 4 {
                 p += len;
                 after = Some(at + len);
                 continue;
