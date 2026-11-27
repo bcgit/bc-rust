@@ -288,15 +288,16 @@
 //! at 2048/3072/4096/8192).
 //!
 //! Peak stack usage, as measured by `bench_rsa_mem_usage` under `valgrind --tool=massif
-//! --stacks=yes` (release build, x86-64):
+//! --heap=no --stacks=yes` (peak `mem_stacks_B`, `main` calling the one bench; release build,
+//! x86-64, rustc 1.97 nightly; the harness with no bench reads 7680):
 //!
 //! | Operation                  | RSA-2048 | RSA-8192 |
 //! |----------------------------|----------|----------|
-//! | PKCS#1 v1.5 sign (SHA-256) | 16456    | 53720    |
-//! | RSASVE encaps              | 12888    | 35672    |
-//! | RSASVE decaps              | 20552    | 59336    |
-//! | OAEP encaps (SHA-256)      | 12232    | 31816    |
-//! | OAEP decaps (SHA-256)      | 16536    | 59672    |
+//! | PKCS#1 v1.5 sign (SHA-256) | 14344    | 48504    |
+//! | RSASVE encaps              | 8280     | 25688    |
+//! | RSASVE decaps              | 16168    | 56056    |
+//! | OAEP encaps (SHA-256)      | 7960     | 24856    |
+//! | OAEP decaps (SHA-256)      | 16296    | 55576    |
 //!
 //! All values are in bytes. "On disk" is the `PublicKey`/`PrivateKey` raw layout
 //! ([`keys::RsaPublicComponents`]'s and [`keys::RsaPrivateComponents`]'s `# Encoding`: `n || e`,

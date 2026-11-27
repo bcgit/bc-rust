@@ -250,20 +250,20 @@ fn decrypt_with_d(
 
 /// What [`wipe_stack_below`] overwrites after encryption and decryption, in 64-bit words: 8192
 /// bytes. In x86-64 builds under the workspace's release profile with the body of the wipe
-/// taken out, `dev_scripts/sm2_stack_harness` reports the stack written to 5480 bytes below a
-/// call of `encrypt_out` and 4936 below one of `decrypt_out` with rustc 1.97 (nightly), and
-/// 5232 and 4784 with rustc 1.88, of which 500 to 800 bytes are the frames above the wiped
-/// region; with 4608 bytes wiped that harness finds the computation's residue with rustc 1.97,
-/// and with 3072 with either, and `dev_scripts/check_sm2_stack.sh` fails. Measured in review on
+/// taken out, `dev_scripts/sm2_stack_harness` reports the stack written to 5016 bytes below a
+/// call of `encrypt_out` and 4488 below one of `decrypt_out` with rustc 1.97 (nightly), and
+/// 4896 and 4448 with rustc 1.88, of which 500 to 800 bytes are the frames above the wiped
+/// region; with 4096 bytes wiped that harness finds the computation's residue with either,
+/// and `dev_scripts/check_sm2_stack.sh` fails. Measured in review on
 /// arm64 Linux, encryption writes to between 5216 and 5440 bytes below the call, and the check
 /// fails with 4608 bytes wiped and passes with 5120. The rest is room for a compiler that lays
 /// the frames out less tightly.
 const WIPED_STACK_WORDS: usize = 1024;
 
 /// What [`wipe_stack_below`] overwrites after a key pair is generated or a public key derived,
-/// in 64-bit words: 4096 bytes. Measured as [`WIPED_STACK_WORDS`] was, `keygen` writes to 2568
-/// bytes below its call with rustc 1.97 (nightly) and 2544 with rustc 1.88, and `derive_pk` to
-/// 2504 and 2528; with 2304 bytes the check fails. Measured in review on arm64 Linux, it fails
+/// in 64-bit words: 4096 bytes. Measured as [`WIPED_STACK_WORDS`] was, `keygen` writes to 2552
+/// bytes below its call with rustc 1.97 (nightly) and 2272 with rustc 1.88, and `derive_pk` to
+/// 2440 and 2208; with 2304 bytes the check fails. Measured in review on arm64 Linux, it fails
 /// with 2048 bytes and passes with 2560.
 pub(in crate::sm2) const KEY_WIPED_STACK_WORDS: usize = 512;
 

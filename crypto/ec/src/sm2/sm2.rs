@@ -75,9 +75,9 @@ use bouncycastle_utils::secret::Secret;
 
 /// What the stack wipe overwrites after `k` is drawn and after signing, in 64-bit words: 4096
 /// bytes. In x86-64 builds under the workspace's release profile with the body of the wipe taken
-/// out, `dev_scripts/sm2_stack_harness` reports the stack written to 1432 bytes below a call of
-/// `create_signer`, 3320 below one of `sign_out` and 2840 below the streaming final with rustc
-/// 1.97 (nightly), and 1384, 3472 and 2960 with rustc 1.88; with 2560 bytes wiped
+/// out, `dev_scripts/sm2_stack_harness` reports the stack written to 1528 bytes below a call of
+/// `create_signer`, 3208 below one of `sign_out` and 2840 below the streaming final with rustc
+/// 1.97 (nightly), and 1384, 3008 and 2640 with rustc 1.88; with 2560 bytes wiped
 /// `dev_scripts/check_sm2_stack.sh` fails with rustc 1.88, and with 2816 it passes with either.
 /// The rest is room for a compiler that lays the frames out less tightly; it has not been
 /// measured on arm64.

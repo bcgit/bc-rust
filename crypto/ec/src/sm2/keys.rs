@@ -38,8 +38,8 @@ pub(in crate::sm2) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
 /// What the stack wipe overwrites after a signing key is loaded or generated, in 64-bit words:
 /// 5120 bytes. In x86-64 builds under the workspace's release profile with the body of the wipe
 /// taken out, `dev_scripts/sm2_stack_harness` reports the stack written to 2664 bytes below a
-/// call of `from_bytes` and 2968 below one of [`keygen`] with rustc 1.97 (nightly), and 2704 and
-/// 3008 with rustc 1.88; with 2816 bytes wiped `dev_scripts/check_sm2_stack.sh` fails with rustc
+/// call of `from_bytes` and 2968 below one of [`keygen`] with rustc 1.97 (nightly), and 2384 and
+/// 2688 with rustc 1.88; with 2816 bytes wiped `dev_scripts/check_sm2_stack.sh` fails with rustc
 /// 1.88, and with 2560 with either. The rest is room for a compiler that lays the frames out
 /// less tightly; it has not been measured on arm64.
 const WIPED_STACK_WORDS: usize = 640;
