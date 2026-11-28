@@ -27,4 +27,5 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+pub mod prelude;
 pub mod rsa;

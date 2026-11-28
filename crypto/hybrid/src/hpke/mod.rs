@@ -27,9 +27,10 @@
 //! ```
 //! use bouncycastle_symmetric::aes::AES128Key;
 //! use bouncycastle_symmetric::modes::GCM;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
+//! use bouncycastle_core::key_material::KeyMaterial;
 //! use bouncycastle_ec::ed::x25519::keygen;
-//! use bouncycastle_hybrid::hpke::{HpkeParams, HpkeRecipient, HpkeSender, NT};
+//! use bouncycastle_hybrid::hpke::{HpkeParams, NT};
+//! use bouncycastle_hybrid::prelude::*;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_digest::sha2::SHA256;
 //!

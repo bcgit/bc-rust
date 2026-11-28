@@ -30,9 +30,9 @@
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyType};
 //! use bouncycastle_core::security_strength::SecurityStrength;
-//! use bouncycastle_core::traits::RNG;
+//! use bouncycastle_rng::HashDRBG_SHA256;
 //! use bouncycastle_rng::hazmat::NewUninitialized;
-//! use bouncycastle_rng::{HashDRBG_SHA256, Sp80090ADrbg};
+//! use bouncycastle_rng::prelude::*;
 //!
 //! # fn read_entropy_source() -> [u8; 32] { [0x5a; 32] }
 //! # fn instantiation_counter() -> u64 { 7 }
@@ -121,6 +121,7 @@ extern crate std;
 
 pub mod hash_drbg80090a;
 pub mod hazmat;
+pub mod prelude;
 
 /*** pub types ***/
 /// Public type for HashDRBG using SHA256.

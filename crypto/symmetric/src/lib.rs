@@ -71,5 +71,6 @@ pub mod chacha20;
 pub mod chacha20_poly1305_aead;
 pub mod kbkdf;
 pub mod poly1305;
+pub mod prelude;
 pub mod sm4;
 pub mod tdes;

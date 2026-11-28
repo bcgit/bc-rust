@@ -76,9 +76,8 @@
 //! uses every signature scheme. The key names its scheme, so the calls name nothing:
 //!
 //! ```
-//! use bouncycastle_core::signature_key::{DeterministicOneShotSigningKey, DeterministicSigningKey, OneShotSigningKey, OneShotVerifyingKey, SigningKey, VerifyingKey};
-//! use bouncycastle_core::traits::{PrivateKey, PublicKey, SignatureSigner, SignatureVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_modexp::prelude::*;
 //! use bouncycastle_modexp::rsa::keys::{RsaPrivateKey, RsaPublicKey};
 //! use bouncycastle_modexp::rsa::rsa_2048::{RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256};
 //! # // A genuine RSA-2048 keypair (Wycheproof rsa_pkcs1_2048_sig_gen_test.json's first SHA-256

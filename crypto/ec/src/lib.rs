@@ -223,6 +223,7 @@ pub mod ecdsa;
 pub mod ed;
 pub mod hazmat;
 pub mod inverse_vartime;
+pub mod prelude;
 mod rng_draw;
 pub mod sm2;
 

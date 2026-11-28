@@ -30,11 +30,8 @@
 //! differ; `sign_deterministic` takes no RNG and reproduces the same signature every time:
 //!
 //! ```
-//! use bouncycastle_core::signature_key::{
-//!     DeterministicOneShotSigningKey, OneShotSigningKey, OneShotVerifyingKey,
-//! };
 //! use bouncycastle_ec::P256;
-//! use bouncycastle_ec::ecdsa::keys_common::SignatureKeyPair;
+//! use bouncycastle_ec::prelude::*;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_digest::sha2::SHA256;
 //!

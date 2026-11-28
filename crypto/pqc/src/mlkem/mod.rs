@@ -93,8 +93,8 @@
 //!
 //! ```rust
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_pqc::mlkem::{MLKEM768, MLKEMTrait};
-//! use bouncycastle_core::kem_key::{EncapsulatingKey, DecapsulatingKey};
+//! use bouncycastle_pqc::mlkem::MLKEM768;
+//! use bouncycastle_pqc::prelude::*;
 //! use bouncycastle_core::errors::KEMError;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();

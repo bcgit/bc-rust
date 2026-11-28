@@ -50,6 +50,7 @@ pub mod concatkdf;
 pub mod hkdf;
 pub mod hmac;
 pub mod pbkdf2;
+pub mod prelude;
 pub mod ripemd;
 pub mod scrypt;
 pub mod sha1;

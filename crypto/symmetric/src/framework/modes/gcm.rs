@@ -30,9 +30,8 @@
 //! use bouncycastle_symmetric::BlockCipherKey;
 //! use bouncycastle_core::errors::SymmetricCipherError;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 //! use bouncycastle_symmetric::modes::GCM;
+//! use bouncycastle_symmetric::prelude::*;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)

@@ -39,9 +39,8 @@
 //! A key is built once, from key material of any length, and used for any number of messages:
 //!
 //! ```
-//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-//! use bouncycastle_core::traits::{MACGenerator, MACVerifier};
 //! use bouncycastle_digest::hmac::HmacKey;
+//! use bouncycastle_digest::prelude::*;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_digest::sha2::SHA256;
 //!
