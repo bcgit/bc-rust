@@ -56,6 +56,50 @@ fn has_full_bit_length<K: RsaSize>(n: &K::Limbs) -> bool {
 const MODULUS_NOT_FULL_LENGTH: SignatureError =
     SignatureError::DecodingError("RSA modulus must have its top bit set");
 
+/// `bytes`, a big-endian unsigned integer, right-aligned into `out` with the bytes above it
+/// zeroed. Leading zero bytes are accepted at any length; false, with `out` zeroed, if a byte
+/// beyond `out`'s width is nonzero. For an integer that fits, the time taken depends on the two
+/// lengths, not the value.
+fn be_integer_into(bytes: &[u8], out: &mut [u8]) -> bool {
+    out.fill(0);
+    let (excess, tail) = bytes.split_at(bytes.len().saturating_sub(out.len()));
+    let high = excess.iter().fold(0u8, |acc, b| acc | b);
+    let start = out.len() - tail.len();
+    out[start..].copy_from_slice(tail);
+    if high != 0 {
+        out.fill(0);
+        return false;
+    }
+    true
+}
+
+/// A public exponent given as a big-endian integer of any length.
+fn exponent_from_be(e: &[u8]) -> Result<u64, SignatureError> {
+    let mut bytes = [0u8; 8];
+    if !be_integer_into(e, &mut bytes) {
+        return Err(SignatureError::DecodingError("RSA public exponent must be below 2^64"));
+    }
+    Ok(u64::from_be_bytes(bytes))
+}
+
+/// What the big-endian constructors return for an integer wider than its place in the key.
+const INTEGER_TOO_LONG: SignatureError =
+    SignatureError::DecodingError("an RSA key integer is longer than the key size allows");
+
+/// A prime-width component given as a big-endian integer of any length, into `out`, staged
+/// through a `Secret` that is scrubbed on the way out.
+fn half_limbs_from_be<K: RsaSigningSize>(
+    bytes: &[u8],
+    out: &mut K::HalfLimbs,
+) -> Result<(), SignatureError> {
+    let mut staged = Secret::<K::HalfBytes>::new();
+    if !be_integer_into(bytes, staged.as_mut()) {
+        return Err(INTEGER_TOO_LONG);
+    }
+    *out = K::half_limbs_from_be_bytes(&staged);
+    Ok(())
+}
+
 /// RFC 8017 §3.1: `e` is odd and at least 3, in the public key and in the private key's copy.
 fn check_public_exponent(e: u64) -> Result<(), SignatureError> {
     if e < 3 || e & 1 == 0 {
@@ -83,6 +127,20 @@ impl<K: RsaSize> RsaPublicComponents<K> {
         }
         check_public_exponent(e)?;
         Ok(Self { n: *n, e })
+    }
+
+    /// [`Self::new`] from big-endian integers of any length, as PKCS#1, X.509 and JWK carry
+    /// them: leading zero bytes are accepted and need not be present.
+    ///
+    /// # Errors
+    /// [`SignatureError::DecodingError`] if `n` is wider than `K::K_LEN` bytes or `e` than 8,
+    /// and in the cases [`Self::new`] rejects.
+    pub fn from_be(n: &[u8], e: &[u8]) -> Result<Self, SignatureError> {
+        let mut n_bytes = K::Modulus::ZEROED;
+        if !be_integer_into(n, n_bytes.as_mut()) {
+            return Err(INTEGER_TOO_LONG);
+        }
+        Self::new(&K::limbs_from_be_bytes(&n_bytes), exponent_from_be(e)?)
     }
 
     /// The modulus `n`, as little-endian limbs.
@@ -249,6 +307,193 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
         finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
     ) -> Result<T, E> {
         finish(Self::validated(p, q, d_p, d_q, q_inv, e))
+    }
+
+    /// Builds a private key from its primes and public exponent, deriving `dP`, `dQ` and
+    /// `qInv` (RFC 8017 §3.2) and then checking the result as [`Self::from_crt_components`]
+    /// does. For a key held as `(p, q, e)`, or as `(n, e, d)` once `n` has been factored.
+    ///
+    /// # Errors
+    /// [`SignatureError::DecodingError`] if `p` or `q` is even, if `e` is even, below 3 or has
+    /// no inverse modulo `p - 1` or `q - 1`, and in the cases [`Self::from_crt_components`]
+    /// rejects. Primality is not checked: a composite `p` usually gives a `qInv` that check
+    /// refuses, but a composite `q` is not caught here at all; [`Self::validate`] tests both.
+    ///
+    /// # 🚨 Security Considerations 🚨
+    ///
+    /// Deriving `dP` and `dQ` is not constant time in the primes, as key generation's same
+    /// derivation is not: it reduces `p - 1` and `q - 1` modulo `e` with ordinary integer
+    /// division, runs a single-word extended Euclid on the residue, whose iteration count depends
+    /// on it, and returns early when `e` has no inverse. `qInv` is computed in constant time.
+    pub fn from_primes(p: &K::HalfLimbs, q: &K::HalfLimbs, e: u64) -> Result<Self, SignatureError> {
+        Self::from_primes_as(p, q, e, |components| components)
+    }
+
+    /// [`Self::from_primes`] with its result handed to `finish`, as
+    /// [`Self::from_crt_components_as`] hands its own.
+    pub(in crate::rsa) fn from_primes_as<T, E>(
+        p: &K::HalfLimbs,
+        q: &K::HalfLimbs,
+        e: u64,
+        finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let _wipe =
+            WipeStackBelowScaledOnDrop::<K::Limbs, KEY_STACK_PER_LIMB, KEY_STACK_FIXED>::new();
+        Self::from_primes_in_own_frame(p, q, e, finish)
+    }
+
+    /// The work of [`Self::from_primes_as`]. Never inlined: see
+    /// [`Self::from_crt_components_in_own_frame`].
+    #[inline(never)]
+    fn from_primes_in_own_frame<T, E>(
+        p: &K::HalfLimbs,
+        q: &K::HalfLimbs,
+        e: u64,
+        finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        finish(Self::from_primes_validated(p, q, e))
+    }
+
+    /// The derivation and checks of [`Self::from_primes`], for a caller that runs under a wipe
+    /// of its own.
+    fn from_primes_validated(
+        p: &K::HalfLimbs,
+        q: &K::HalfLimbs,
+        e: u64,
+    ) -> Result<Self, SignatureError> {
+        check_public_exponent(e)?;
+        if p.as_ref()[0] & 1 == 0 {
+            return Err(SignatureError::DecodingError("p must be odd"));
+        }
+        if q.as_ref()[0] & 1 == 0 {
+            return Err(SignatureError::DecodingError("q must be odd"));
+        }
+        let mut d_p = Secret::<K::HalfLimbs>::new();
+        let mut d_q = Secret::<K::HalfLimbs>::new();
+        let mut q_inv = Secret::<K::HalfLimbs>::new();
+        K::crt_from_primes(
+            p,
+            q,
+            e,
+            &mut d_p,
+            &mut d_q,
+            &mut q_inv,
+            crate::rsa::size::sealed::EngineToken::new(),
+        )?;
+        Self::validated(p, q, &d_p, &d_q, &q_inv, e)
+    }
+
+    /// [`Self::from_crt_components`] from big-endian integers of any length, as PKCS#1
+    /// `RSAPrivateKey` and JWK carry them: leading zero bytes are accepted and need not be
+    /// present.
+    ///
+    /// # Errors
+    /// [`SignatureError::DecodingError`] if a component is wider than `K::K_LEN / 2` bytes or
+    /// `e` than 8, and in the cases [`Self::from_crt_components`] rejects.
+    pub fn from_be_crt(
+        p: &[u8],
+        q: &[u8],
+        d_p: &[u8],
+        d_q: &[u8],
+        q_inv: &[u8],
+        e: &[u8],
+    ) -> Result<Self, SignatureError> {
+        Self::from_be_crt_as(p, q, d_p, d_q, q_inv, e, |components| components)
+    }
+
+    /// [`Self::from_be_crt`] with its result handed to `finish`, as
+    /// [`Self::from_crt_components_as`] hands its own.
+    pub(in crate::rsa) fn from_be_crt_as<T, E>(
+        p: &[u8],
+        q: &[u8],
+        d_p: &[u8],
+        d_q: &[u8],
+        q_inv: &[u8],
+        e: &[u8],
+        finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let _wipe =
+            WipeStackBelowScaledOnDrop::<K::Limbs, KEY_STACK_PER_LIMB, KEY_STACK_FIXED>::new();
+        Self::from_be_crt_in_own_frame(p, q, d_p, d_q, q_inv, e, finish)
+    }
+
+    /// The work of [`Self::from_be_crt_as`]. Never inlined: see
+    /// [`Self::from_crt_components_in_own_frame`].
+    #[inline(never)]
+    fn from_be_crt_in_own_frame<T, E>(
+        p: &[u8],
+        q: &[u8],
+        d_p: &[u8],
+        d_q: &[u8],
+        q_inv: &[u8],
+        e: &[u8],
+        finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        finish(Self::from_be_crt_validated(p, q, d_p, d_q, q_inv, e))
+    }
+
+    fn from_be_crt_validated(
+        p: &[u8],
+        q: &[u8],
+        d_p: &[u8],
+        d_q: &[u8],
+        q_inv: &[u8],
+        e: &[u8],
+    ) -> Result<Self, SignatureError> {
+        let e = exponent_from_be(e)?;
+        let mut components: [Secret<K::HalfLimbs>; 5] = core::array::from_fn(|_| Secret::new());
+        for (bytes, component) in [p, q, d_p, d_q, q_inv].into_iter().zip(components.iter_mut()) {
+            half_limbs_from_be::<K>(bytes, component)?;
+        }
+        let [p, q, d_p, d_q, q_inv] = &components;
+        Self::validated(p, q, d_p, d_q, q_inv, e)
+    }
+
+    /// [`Self::from_primes`] from big-endian integers of any length.
+    ///
+    /// # Errors
+    /// [`SignatureError::DecodingError`] if `p` or `q` is wider than `K::K_LEN / 2` bytes or `e`
+    /// than 8, and in the cases [`Self::from_primes`] rejects.
+    ///
+    /// # 🚨 Security Considerations 🚨
+    ///
+    /// As [`Self::from_primes`].
+    pub fn from_be_primes(p: &[u8], q: &[u8], e: &[u8]) -> Result<Self, SignatureError> {
+        Self::from_be_primes_as(p, q, e, |components| components)
+    }
+
+    /// [`Self::from_be_primes`] with its result handed to `finish`, as
+    /// [`Self::from_crt_components_as`] hands its own.
+    pub(in crate::rsa) fn from_be_primes_as<T, E>(
+        p: &[u8],
+        q: &[u8],
+        e: &[u8],
+        finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let _wipe =
+            WipeStackBelowScaledOnDrop::<K::Limbs, KEY_STACK_PER_LIMB, KEY_STACK_FIXED>::new();
+        Self::from_be_primes_in_own_frame(p, q, e, finish)
+    }
+
+    /// The work of [`Self::from_be_primes_as`]. Never inlined: see
+    /// [`Self::from_crt_components_in_own_frame`].
+    #[inline(never)]
+    fn from_be_primes_in_own_frame<T, E>(
+        p: &[u8],
+        q: &[u8],
+        e: &[u8],
+        finish: impl FnOnce(Result<Self, SignatureError>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        finish(Self::from_be_primes_validated(p, q, e))
+    }
+
+    fn from_be_primes_validated(p: &[u8], q: &[u8], e: &[u8]) -> Result<Self, SignatureError> {
+        let e = exponent_from_be(e)?;
+        let mut p_limbs = Secret::<K::HalfLimbs>::new();
+        let mut q_limbs = Secret::<K::HalfLimbs>::new();
+        half_limbs_from_be::<K>(p, &mut p_limbs)?;
+        half_limbs_from_be::<K>(q, &mut q_limbs)?;
+        Self::from_primes_validated(&p_limbs, &q_limbs, e)
     }
 
     /// The checks and the key of [`Self::from_crt_components`], for a caller that runs under a
@@ -531,6 +776,14 @@ impl<A: RsaSignatureAlgorithm> RsaPublicKey<A> {
         Ok(Self::from_components(RsaPublicComponents::new(n, e)?))
     }
 
+    /// As [`RsaPublicComponents::from_be`].
+    ///
+    /// # Errors
+    /// As [`RsaPublicComponents::from_be`].
+    pub fn from_be(n: &[u8], e: &[u8]) -> Result<Self, SignatureError> {
+        Ok(Self::from_components(RsaPublicComponents::from_be(n, e)?))
+    }
+
     /// A key over validated components.
     pub fn from_components(components: RsaPublicComponents<A::Size>) -> Self {
         Self { components, _alg: PhantomData }
@@ -642,6 +895,47 @@ where
         e: u64,
     ) -> Result<Self, SignatureError> {
         RsaPrivateComponents::from_crt_components_as(p, q, d_p, d_q, q_inv, e, |components| {
+            components.map(Self::from_components)
+        })
+    }
+
+    /// As [`RsaPrivateComponents::from_be_crt`].
+    ///
+    /// # Errors
+    /// As [`RsaPrivateComponents::from_be_crt`].
+    pub fn from_be_crt(
+        p: &[u8],
+        q: &[u8],
+        d_p: &[u8],
+        d_q: &[u8],
+        q_inv: &[u8],
+        e: &[u8],
+    ) -> Result<Self, SignatureError> {
+        RsaPrivateComponents::from_be_crt_as(p, q, d_p, d_q, q_inv, e, |components| {
+            components.map(Self::from_components)
+        })
+    }
+
+    /// As [`RsaPrivateComponents::from_primes`], whose Security Considerations apply.
+    ///
+    /// # Errors
+    /// As [`RsaPrivateComponents::from_primes`].
+    pub fn from_primes(
+        p: &<A::Size as RsaSize>::HalfLimbs,
+        q: &<A::Size as RsaSize>::HalfLimbs,
+        e: u64,
+    ) -> Result<Self, SignatureError> {
+        RsaPrivateComponents::from_primes_as(p, q, e, |components| {
+            components.map(Self::from_components)
+        })
+    }
+
+    /// As [`RsaPrivateComponents::from_be_primes`], whose Security Considerations apply.
+    ///
+    /// # Errors
+    /// As [`RsaPrivateComponents::from_be_primes`].
+    pub fn from_be_primes(p: &[u8], q: &[u8], e: &[u8]) -> Result<Self, SignatureError> {
+        RsaPrivateComponents::from_be_primes_as(p, q, e, |components| {
             components.map(Self::from_components)
         })
     }

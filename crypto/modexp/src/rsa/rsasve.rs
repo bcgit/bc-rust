@@ -138,6 +138,13 @@ impl<K: RsaSize> RsaKEMPublicKey<K> {
         Self::from_rsa_key(RsaPublicComponents::new(n, e).map_err(kem_error)?)
     }
 
+    /// [`Self::new`] from big-endian integers of any length, as
+    /// [`RsaPublicComponents::from_be`]. Returns `Err(`[`KEMError::DecodingError`]`)` in the
+    /// cases that rejects, and also if `e < 65,537`.
+    pub fn from_be(n: &[u8], e: &[u8]) -> Result<Self, KEMError> {
+        Self::from_rsa_key(RsaPublicComponents::from_be(n, e).map_err(kem_error)?)
+    }
+
     pub(in crate::rsa) fn from_rsa_key(pk: RsaPublicComponents<K>) -> Result<Self, KEMError> {
         if pk.e() < MIN_PUBLIC_EXPONENT {
             return Err(EXPONENT_TOO_SMALL);
@@ -187,6 +194,40 @@ impl<K: RsaSigningSize> RsaKEMPrivateKey<K> {
         e: u64,
     ) -> Result<Self, KEMError> {
         RsaPrivateComponents::from_crt_components_as(p, q, d_p, d_q, q_inv, e, |components| {
+            Self::from_rsa_key(components.map_err(kem_error)?)
+        })
+    }
+
+    /// [`Self::from_crt_components`] from big-endian integers of any length, as
+    /// [`RsaPrivateComponents::from_be_crt`]. Returns `Err(`[`KEMError::DecodingError`]`)` in
+    /// the cases that rejects, and also if `e < 65,537`.
+    pub fn from_be_crt(
+        p: &[u8],
+        q: &[u8],
+        d_p: &[u8],
+        d_q: &[u8],
+        q_inv: &[u8],
+        e: &[u8],
+    ) -> Result<Self, KEMError> {
+        RsaPrivateComponents::from_be_crt_as(p, q, d_p, d_q, q_inv, e, |components| {
+            Self::from_rsa_key(components.map_err(kem_error)?)
+        })
+    }
+
+    /// A private key from its primes and public exponent, as
+    /// [`RsaPrivateComponents::from_primes`], whose Security Considerations apply. Returns
+    /// `Err(`[`KEMError::DecodingError`]`)` in the cases that rejects, and also if `e < 65,537`.
+    pub fn from_primes(p: &K::HalfLimbs, q: &K::HalfLimbs, e: u64) -> Result<Self, KEMError> {
+        RsaPrivateComponents::from_primes_as(p, q, e, |components| {
+            Self::from_rsa_key(components.map_err(kem_error)?)
+        })
+    }
+
+    /// [`Self::from_primes`] from big-endian integers of any length, as
+    /// [`RsaPrivateComponents::from_be_primes`], whose Security Considerations apply. Returns
+    /// `Err(`[`KEMError::DecodingError`]`)` in the cases that rejects, and also if `e < 65,537`.
+    pub fn from_be_primes(p: &[u8], q: &[u8], e: &[u8]) -> Result<Self, KEMError> {
+        RsaPrivateComponents::from_be_primes_as(p, q, e, |components| {
             Self::from_rsa_key(components.map_err(kem_error)?)
         })
     }

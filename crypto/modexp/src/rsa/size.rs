@@ -9,7 +9,7 @@
 //! from `K`.
 
 use crate::rsa::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
-use crate::rsa::keygen::{keygen_as, keygen_from_rng, validate_key_pair};
+use crate::rsa::keygen::{crt_from_primes, keygen_as, keygen_from_rng, validate_key_pair};
 use crate::rsa::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey, modulus_strength,
 };
@@ -573,6 +573,18 @@ impl sealed::PrivateKeyEngine for RSA2048 {
         validate_key_pair::<Self, 16, 32, 33>(sk, rng)
     }
 
+    fn crt_from_primes(
+        p: &Self::HalfLimbs,
+        q: &Self::HalfLimbs,
+        e: u64,
+        d_p: &mut Self::HalfLimbs,
+        d_q: &mut Self::HalfLimbs,
+        q_inv: &mut Self::HalfLimbs,
+        _: sealed::EngineToken,
+    ) -> Result<(), SignatureError> {
+        crt_from_primes::<16, 32, 33>(p, q, e, d_p, d_q, q_inv)
+    }
+
     fn crt_exp(
         sk: &RsaPrivateComponents<Self>,
         m: &Self::Limbs,
@@ -682,6 +694,18 @@ impl sealed::PrivateKeyEngine for RSA3072 {
         _: sealed::EngineToken,
     ) -> Result<(), SignatureError> {
         validate_key_pair::<Self, 24, 48, 49>(sk, rng)
+    }
+
+    fn crt_from_primes(
+        p: &Self::HalfLimbs,
+        q: &Self::HalfLimbs,
+        e: u64,
+        d_p: &mut Self::HalfLimbs,
+        d_q: &mut Self::HalfLimbs,
+        q_inv: &mut Self::HalfLimbs,
+        _: sealed::EngineToken,
+    ) -> Result<(), SignatureError> {
+        crt_from_primes::<24, 48, 49>(p, q, e, d_p, d_q, q_inv)
     }
 
     fn crt_exp(
@@ -795,6 +819,18 @@ impl sealed::PrivateKeyEngine for RSA4096 {
         validate_key_pair::<Self, 32, 64, 65>(sk, rng)
     }
 
+    fn crt_from_primes(
+        p: &Self::HalfLimbs,
+        q: &Self::HalfLimbs,
+        e: u64,
+        d_p: &mut Self::HalfLimbs,
+        d_q: &mut Self::HalfLimbs,
+        q_inv: &mut Self::HalfLimbs,
+        _: sealed::EngineToken,
+    ) -> Result<(), SignatureError> {
+        crt_from_primes::<32, 64, 65>(p, q, e, d_p, d_q, q_inv)
+    }
+
     fn crt_exp(
         sk: &RsaPrivateComponents<Self>,
         m: &Self::Limbs,
@@ -906,6 +942,18 @@ impl sealed::PrivateKeyEngine for RSA8192 {
         validate_key_pair::<Self, 64, 128, 129>(sk, rng)
     }
 
+    fn crt_from_primes(
+        p: &Self::HalfLimbs,
+        q: &Self::HalfLimbs,
+        e: u64,
+        d_p: &mut Self::HalfLimbs,
+        d_q: &mut Self::HalfLimbs,
+        q_inv: &mut Self::HalfLimbs,
+        _: sealed::EngineToken,
+    ) -> Result<(), SignatureError> {
+        crt_from_primes::<64, 128, 129>(p, q, e, d_p, d_q, q_inv)
+    }
+
     fn crt_exp(
         sk: &RsaPrivateComponents<Self>,
         m: &Self::Limbs,
@@ -978,6 +1026,18 @@ pub(in crate::rsa) mod sealed {
         fn validate_key_pair(
             sk: &RsaPrivateComponents<Self>,
             rng: &mut dyn RNG,
+            token: EngineToken,
+        ) -> Result<(), SignatureError>;
+        /// `dP`, `dQ` and `qInv` of the key pair with the odd primes `p` and `q` and the public
+        /// exponent `e`; `Err(DecodingError)` if `e` has no inverse modulo `p - 1` or `q - 1`.
+        /// Not constant time in the primes, as key generation is not.
+        fn crt_from_primes(
+            p: &Self::HalfLimbs,
+            q: &Self::HalfLimbs,
+            e: u64,
+            d_p: &mut Self::HalfLimbs,
+            d_q: &mut Self::HalfLimbs,
+            q_inv: &mut Self::HalfLimbs,
             token: EngineToken,
         ) -> Result<(), SignatureError>;
         /// `m^d mod n` by the CRT (RSASP1 / RSADP's exponentiation), `m < n`, into `out`, constant

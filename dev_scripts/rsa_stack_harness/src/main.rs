@@ -372,6 +372,31 @@ macro_rules! scan_size {
             let kept = scan.run(|| RsaKEMPrivateKey::<$K>::from_bytes(&encoded[..]));
             let sk_kem = Box::new(kept.unwrap());
             scan.clean("from_bytes (key-establishment key)", &secrets);
+            let half = K_LEN / 2;
+            let be = |i: usize| &encoded[i * half..(i + 1) * half];
+            let e_be = &encoded[5 * half..];
+            let kept = scan.run(|| RsaPrivateComponents::<$K>::from_primes(p, q, e));
+            black_box(&kept);
+            scan.clean("from_primes (components)", &secrets);
+            let kept = scan.run(|| RsaKEMPrivateKey::<$K>::from_primes(p, q, e));
+            black_box(&kept);
+            scan.clean("from_primes (key-establishment key)", &secrets);
+            let kept = scan.run(|| RsaPrivateKey::<Pss>::from_be_primes(be(0), be(1), e_be));
+            black_box(&kept);
+            scan.clean("from_be_primes (signature key)", &secrets);
+            let kept = scan.run(|| {
+                RsaPrivateKey::<Pss>::from_be_crt(be(0), be(1), be(2), be(3), be(4), e_be)
+            });
+            black_box(&kept);
+            scan.clean("from_be_crt (signature key)", &secrets);
+            let kept = scan.run(|| {
+                RsaPrivateComponents::<$K>::from_be_crt(be(0), be(1), be(2), be(3), be(4), e_be)
+            });
+            black_box(&kept);
+            scan.clean("from_be_crt (components)", &secrets);
+            let kept = scan.run(|| RsaKEMPrivateKey::<$K>::from_be_primes(be(0), be(1), e_be));
+            black_box(&kept);
+            scan.clean("from_be_primes (key-establishment key)", &secrets);
             let mut out: Box<[u8; SK_LEN]> = Box::new([0u8; SK_LEN]);
             scan.run(|| {
                 sk_pss.encode_out(&mut out);

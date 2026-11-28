@@ -117,10 +117,10 @@ fn div_u64<const N: usize>(hi: u64, a: &[u64; N], d: u64) -> ([u64; N], u64) {
     (quotient, rem as u64)
 }
 
-/// `r^-1 mod e` for `0 < r < e` with `GCD(r, e) = 1`, by the extended Euclidean algorithm of
-/// FIPS 186-5 Appendix B.1 on single words.
-fn inv_mod_u64(r: u64, e: u64) -> u64 {
-    debug_assert!(r != 0 && r < e);
+/// `r^-1 mod e` for `r < e`, by the extended Euclidean algorithm of FIPS 186-5 Appendix B.1
+/// on single words; `None` if `GCD(r, e) != 1`.
+fn inv_mod_u64(r: u64, e: u64) -> Option<u64> {
+    debug_assert!(r < e);
     // Invariant: t0 * r == r0 and t1 * r == r1 (mod e), with |t0|, |t1| <= e.
     let (mut r0, mut r1) = (i128::from(e), i128::from(r));
     let (mut t0, mut t1) = (0i128, 1i128);
@@ -129,29 +129,80 @@ fn inv_mod_u64(r: u64, e: u64) -> u64 {
         (r0, r1) = (r1, r0 - quotient * r1);
         (t0, t1) = (t1, t0 - quotient * t1);
     }
-    debug_assert_eq!(r0, 1, "r and e must be coprime");
-    t0.rem_euclid(i128::from(e)) as u64
+    (r0 == 1).then(|| t0.rem_euclid(i128::from(e)) as u64)
 }
 
-/// `e^-1 mod m` for `m > 1` and an `e > 1` with `GCD(m, e) = 1`.
+/// `e^-1 mod m` for `m > 1` and an `e > 1`; `None` if `GCD(m, e) != 1`.
 ///
-/// FIPS 186-5 Appendix B.1 gives the extended Euclidean algorithm for reference and allows
-/// "other algorithms that produce an equivalent result". Because `e` is one word, the
+/// FIPS 186-5 Appendix B.1 gives the extended Euclidean algorithm "for reference purposes.
+/// Other (constant time) algorithms that produce an equivalent result may be used." This one is
+/// not constant time in `m` (see the module docs' `# What is and is not constant-time here`). Because `e` is one word, the
 /// inverse comes without a multi-limb division: with `r = m mod e` and `k = -r^-1 mod e` (so
 /// `k*m + 1 ≡ 0 mod e`), `d = (k*m + 1) / e` is an exact integer with `e*d = 1 + k*m ≡ 1 mod m`,
 /// and `0 < d < m` since `0 < k < e`. The only multi-limb operations are one multiply by `k` and
 /// one exact division by `e`.
-fn inverse_of_e_mod<const N: usize>(m: &[u64; N], e: u64) -> [u64; N] {
+fn inverse_of_e_mod<const N: usize>(m: &[u64; N], e: u64) -> Option<[u64; N]> {
     let r = mod_u64(m, e);
-    // `GCD(m, e) = 1` is the caller's invariant. `keygen` discards any `p` (or `q`) with
-    // `e | p - 1` at step 4.5, and `LCM(p - 1, q - 1)` then cannot be divisible by `e` either;
-    // a key's constructor has checked that `e` has an inverse modulo `p - 1` and `q - 1`.
-    debug_assert_ne!(r, 0, "e must not divide m");
-    let k = e - inv_mod_u64(r, e);
+    let k = e - inv_mod_u64(r, e)?;
     let (lo, hi) = mul_u64_add(m, k, 1);
     let (d, rem) = div_u64(hi, &lo, e);
     debug_assert_eq!(rem, 0, "k*m + 1 is divisible by e by construction");
-    d
+    Some(d)
+}
+
+/// `e^-1 mod (prime - 1)` into `out`; false, with `out` untouched, if there is none.
+fn inverse_of_e_mod_prime_minus_1<const HALF: usize>(
+    prime: &[u64; HALF],
+    e: u64,
+    out: &mut [u64; HALF],
+) -> bool {
+    let mut prime_minus_1 = sub_u64(prime, 1);
+    let inverse = inverse_of_e_mod(&prime_minus_1, e);
+    zeroize_in_place(&mut prime_minus_1);
+    match inverse {
+        Some(mut inverse) => {
+            *out = inverse;
+            zeroize_in_place(&mut inverse);
+            true
+        }
+        None => false,
+    }
+}
+
+/// The CRT exponents and coefficient (RFC 8017 §3.2) of the key pair with the odd primes `p`
+/// and `q` and public exponent `e`, into `d_p`, `d_q` and `q_inv`: `dP = e^-1 mod (p - 1)` and
+/// `dQ = e^-1 mod (q - 1)`, which are `d mod (p - 1)` and `d mod (q - 1)` for any `d` that
+/// inverts `e` modulo `LCM(p - 1, q - 1)`, and `qInv = q^-1 mod p = q^(p - 2) mod p` (Fermat,
+/// `p` being prime), through the constant-time ladder with `p - 2` as the exponent. `dP` and
+/// `dQ` are not constant time in the primes: see the module docs.
+///
+/// Returns `Err(DecodingError)` if `e` has no inverse modulo `p - 1` or `q - 1`, which is also
+/// the outcome for a `p` or `q` of 1.
+pub(in crate::rsa) fn crt_from_primes<
+    const HALF: usize,
+    const HALF2: usize,
+    const HALF21: usize,
+>(
+    p: &[u64; HALF],
+    q: &[u64; HALF],
+    e: u64,
+    d_p: &mut [u64; HALF],
+    d_q: &mut [u64; HALF],
+    q_inv: &mut [u64; HALF],
+) -> Result<(), SignatureError> {
+    debug_assert!(p[0] & 1 == 1 && q[0] & 1 == 1, "p and q must be odd");
+    if !inverse_of_e_mod_prime_minus_1(p, e, d_p) || !inverse_of_e_mod_prime_minus_1(q, e, d_q) {
+        zeroize_in_place(d_p);
+        return Err(SignatureError::DecodingError("e has no inverse modulo p - 1 or q - 1"));
+    }
+    let mut q_mod_p = reduce_wide::<HALF, HALF>(q, p);
+    let mut p_minus_2 = sub_u64(p, 2);
+    let mut ctx_p = Secret::<MontgomeryContext<HALF>>::new();
+    *ctx_p = MontgomeryContext::for_secret_modulus(p);
+    *q_inv = mod_pow::<HALF, HALF2, HALF21>(&q_mod_p, &p_minus_2, &ctx_p);
+    zeroize_in_place(&mut q_mod_p);
+    zeroize_in_place(&mut p_minus_2);
+    Ok(())
 }
 
 // ---- multi-limb helpers ----------------------------------------------------------------------
@@ -579,7 +630,10 @@ fn private_exponent_exceeds_half<const HALF: usize, const HALF2: usize>(
         zeroize_in_place(&mut q_minus_1_over_g);
     }
     let mut d = Secret::<[u64; HALF2]>::new();
-    *d = inverse_of_e_mod(&lcm, e);
+    match inverse_of_e_mod(&lcm, e) {
+        Some(inverse) => *d = inverse,
+        None => return false,
+    }
     let d_high = &d[HALF..];
     let d_low = &d[..HALF];
     let mut one_high = [0u64; HALF];
@@ -824,25 +878,15 @@ where
             continue;
         }
 
-        // The CRT quintuple (RFC 8017 §3.2). dP and dQ are the same inverse taken modulo p - 1
-        // and q - 1 directly, which is what `d mod (p - 1)` and `d mod (q - 1)` come to.
+        // The CRT quintuple. e has its inverses, steps 4.5 and 5.6 having discarded any p with
+        // GCD(p - 1, e) != 1 and any q with GCD(q - 1, e) != 1, and both are odd by steps 4.3
+        // and 5.3.
         let mut d_p = Secret::<[u64; HALF]>::new();
-        *d_p = inverse_of_e_mod(&p_minus_1, PUBLIC_EXPONENT);
         let mut d_q = Secret::<[u64; HALF]>::new();
-        *d_q = inverse_of_e_mod(&q_minus_1, PUBLIC_EXPONENT);
-        // qInv = q^-1 mod p = q^(p - 2) mod p (Fermat; p is prime and does not divide q), through
-        // the constant-time ladder with p - 2 as the exponent.
         let mut q_inv = Secret::<[u64; HALF]>::new();
-        {
-            let mut q_mod_p = reduce_wide::<HALF, HALF>(&q, &p);
-            let mut p_minus_2 = sub_u64(&p, 2);
-            // p is odd by construction (step 4.3), as the constructor requires.
-            let mut ctx_p = Secret::<MontgomeryContext<HALF>>::new();
-            *ctx_p = MontgomeryContext::for_secret_modulus(&p);
-            *q_inv = mod_pow::<HALF, HALF2, HALF21>(&q_mod_p, &p_minus_2, &ctx_p);
-            zeroize_in_place(&mut q_mod_p);
-            zeroize_in_place(&mut p_minus_2);
-        }
+        crt_from_primes::<HALF, HALF2, HALF21>(
+            &p, &q, PUBLIC_EXPONENT, &mut d_p, &mut d_q, &mut q_inv,
+        )?;
 
         let sk = RsaPrivateComponents::<K>::from_crt_components(
             &p, &q, &d_p, &d_q, &q_inv, PUBLIC_EXPONENT,
