@@ -150,11 +150,10 @@ const fn min_strength(a: SecurityStrength, b: SecurityStrength) -> SecurityStren
 /// use bouncycastle_core::traits::PrivateKey;
 /// use bouncycastle_ec::P256;
 /// use bouncycastle_ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
-/// use bouncycastle_ec::ecdsa::keys_common::DerivePublicKey;
 /// use bouncycastle_digest::ripemd::RIPEMD160;
 ///
 /// let sk = ECDSAPrivateKey::<P256, RIPEMD160>::from_bytes(&[1u8; 32]).unwrap();
-/// let pk: ECDSAPublicKey<P256, RIPEMD160> = sk.derive_pk();
+/// let pk: ECDSAPublicKey<P256, RIPEMD160> = sk.pub_key()?;
 /// let sk = sk.with_hash::<WithoutCollisionResistance<RIPEMD160>>();
 /// let sig = sk.sign_deterministic(b"message", None)?;
 /// pk.verify(b"message", None, &sig)?;
@@ -382,6 +381,7 @@ where
         const { check_hash_fits::<C, H>() };
         // Before `k` is drawn, so that a refused call takes nothing from the RNG.
         refuse_context(ctx)?;
+        self.check_filled()?;
         in_wiped_frame_scaled::<C::Limbs, SIGN_STACK_PER_LIMB, SIGN_STACK_FIXED, _>(|| {
             Ok(ECDSASigner { sk: self, hash: H::default(), k: random_k::<C>(rng)? })
         })
@@ -424,6 +424,7 @@ where
     ) -> Result<Self::Signer<'k>, SignatureError> {
         const { check_hash_fits::<C, H>() };
         refuse_context(ctx)?;
+        self.check_filled()?;
         Ok(ECDetDSASigner { sk: self, hash: H::default() })
     }
 }

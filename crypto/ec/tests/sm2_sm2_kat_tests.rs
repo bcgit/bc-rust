@@ -121,7 +121,7 @@ fn known_answer_vectors_reject_wrong_id() {
 /// docs for its provenance and why it is the one externally-sourced case here.
 ///
 /// Unlike the vectors above it comes with its private key, so this also pins
-/// [`SM2PrivateKey::derive_pk`] (`PA = [dA]G`) against the same external source, not just the
+/// [`SM2PrivateKey::pub_key`] (`PA = [dA]G`) against the same external source, not just the
 /// end-to-end verify result; its `ZA` is a known answer in `za.rs`'s unit tests.
 #[test]
 fn bc_java_sm2p256v1_vector_verifies() {
@@ -135,7 +135,7 @@ fn bc_java_sm2p256v1_vector_verifies() {
 
     let sk = SM2PrivateKey::from_bytes(&bouncycastle_core::hex::decode(D_HEX).unwrap())
         .expect("bc-java's dA is in [1, n-1]");
-    let pk = sk.derive_pk();
+    let pk = sk.pub_key().unwrap();
     assert_eq!(pk, pubkey_from_hex(PA_X, PA_Y), "PA = [dA]G disagrees with the external vector");
 
     let sig = sig_from_hex(R, S);

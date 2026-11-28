@@ -4,7 +4,7 @@
 //! parameter set is its own concrete algorithm with its own quirks (a hash-then-sign variant, a
 //! from-seed variant, a bespoke consistency-check API) -- but every ECDSA curve implements the
 //! identical `SigningKey`/`DeterministicSigningKey`/`VerifyingKey`/`PrivateKey`/`PublicKey`/
-//! `DerivePublicKey` trait shape with no per-curve deviation, so a single generic function bound
+//! `KeyPairGenerator` trait shape with no per-curve deviation, so a single generic function bound
 //! over those traits, monomorphised once per curve below, covers all seven without repeating the
 //! same match block.
 //!
@@ -14,9 +14,8 @@
 //! `ctx` is not exposed as a CLI flag here: ECDSA has no context input, and `bouncycastle_ec::ecdsa`
 //! refuses a non-empty one, so a `--ctxfile` flag could only fail -- every call below passes
 //! `None` directly instead. `SM2` (`sm2_cmd.rs`) is the curve this command
-//! does NOT cover: its `ctx` is mandatory (it carries the signer's identity `IDA`) and its
-//! `derive_pk` is a bespoke inherent method rather than an implementation of `DerivePublicKey`, so
-//! it needs its own command function and its own `--idfile` flag.
+//! does NOT cover: its `ctx` is mandatory (it carries the signer's identity `IDA`), so it needs
+//! its own command function and its own `--idfile` flag.
 
 use crate::helpers::{
     finish_stdout, flush_stdout, println_stdout, read_input_file, read_secret_file,
@@ -27,14 +26,15 @@ use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::signature_key::{
     DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
-use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier};
+use bouncycastle::core::traits::{
+    KeyPairGenerator, PrivateKey, PublicKey, RNG, SignatureSigner, SignatureVerifier,
+};
 use bouncycastle::digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle::ec::curve::Curve;
 use bouncycastle::ec::ecdsa::ecdsa::{
     ECDSABp256r1, ECDSABp384r1, ECDSABp512r1, ECDSAP256, ECDSAP384, ECDSAP521, ECDSASecp256K1,
 };
 use bouncycastle::ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
-use bouncycastle::ec::ecdsa::keys_common::DerivePublicKey;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
@@ -60,7 +60,7 @@ pub(crate) fn ecdsa_cmd<
     A: SignatureAlgorithm,
     PK: PublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN>,
     SK: PrivateKey<SK_LEN>
-        + DerivePublicKey<PK, PK_LEN>
+        + KeyPairGenerator<PublicKey = PK, Error = SignatureError>
         + SigningKey<A, SIG_LEN>
         + DeterministicSigningKey<A, SIG_LEN>,
     const SK_LEN: usize,
@@ -92,7 +92,7 @@ pub(crate) fn ecdsa_cmd<
                     read_secret_file_or_stdin(skfile).ref_to_bytes(),
                     alg_name,
                 );
-                sk.derive_pk()
+                sk.pub_key().expect("a decoded key is filled")
             };
             write_bytes_or_hex(&pk.encode(), output_hex);
         }
@@ -106,7 +106,7 @@ pub(crate) fn ecdsa_cmd<
                     read_secret_file_or_stdin(skfile).ref_to_bytes(),
                     alg_name,
                 );
-                sk.derive_pk() == pk
+                sk.pub_key().expect("a decoded key is filled") == pk
             };
             if matches {
                 println_stdout("SUCCESS: pk and sk match.");

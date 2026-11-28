@@ -1227,6 +1227,49 @@ pub trait PublicKey<const PK_LEN: usize>: PartialEq + Eq + Clone + Debug + Displ
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyDecodingError>;
 }
 
+/// A private key that can be generated, and that gives its public key. Implemented on the
+/// private key type, which names one algorithm, so generation needs no other marker:
+/// `Ed25519PrivateKey::generate(&mut rng)`.
+///
+/// [`generate_out`](Self::generate_out) writes the key where the caller holds it, so that no
+/// by-value copy of it is left behind; [`generate`](Self::generate) is built on it. A key from
+/// [`zeroized`](Self::zeroized) that was never filled, or whose generation failed, is refused by
+/// [`pub_key`](Self::pub_key) and by every operation with
+/// [`KeyMaterialError::ActingOnZeroizedKey`].
+pub trait KeyPairGenerator: Sized {
+    /// The public key of the pair.
+    type PublicKey;
+    /// The error of the algorithm's role.
+    type Error: From<KeyMaterialError>;
+
+    /// A key that holds nothing, for [`generate_out`](Self::generate_out) to fill.
+    fn zeroized() -> Self;
+
+    /// Generates a key pair's private key into `sk`, which is zeroized first and left so on
+    /// every error.
+    ///
+    /// # Errors
+    /// The algorithm's: an RNG weaker than the algorithm or failing to deliver, above all.
+    fn generate_out(rng: &mut dyn RNG, sk: &mut Self) -> Result<(), Self::Error>;
+
+    /// The public key of this private key.
+    ///
+    /// # Errors
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] for a key that was never filled.
+    fn pub_key(&self) -> Result<Self::PublicKey, Self::Error>;
+
+    /// A new key pair, `(pk, sk)`, through [`generate_out`](Self::generate_out).
+    ///
+    /// # Errors
+    /// As [`generate_out`](Self::generate_out).
+    fn generate(rng: &mut dyn RNG) -> Result<(Self::PublicKey, Self), Self::Error> {
+        let mut sk = Self::zeroized();
+        Self::generate_out(rng, &mut sk)?;
+        let pk = sk.pub_key()?;
+        Ok((pk, sk))
+    }
+}
+
 /// An interface for random number generation.
 /// This interface is meant to be simpler and more ergonomic than the interfaces provided by the
 /// `rng` crate, but that one should

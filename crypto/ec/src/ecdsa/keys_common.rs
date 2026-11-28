@@ -1,29 +1,11 @@
 //! [`SignatureKeyPair`]: the ECDSA key pair of a curve, reached from its [`bouncycastle_ec`](crate) marker.
-//!
-//! [`DerivePublicKey`]: a small trait the private key implements, so `d`'s matching public key
-//! `Q = [d]G` can be recomputed on demand rather than only ever obtained from `keys::keygen` at
-//! generation time. Exists for the CLI's
-//! `PkFromSk`/`CheckConsistency` actions, mirroring the shape (if not the name) of
-//! `bouncycastle_pqc::mldsa::MLDSAPrivateKeyTrait::derive_pk` /
-//! `bouncycastle_pqc::mlkem::MLKEMPrivateKeyTrait::pk`,
-//! which those modules' own CLI commands already use for the same purpose -- kept local to this
-//! module rather than added to `bouncycastle_core::traits`, since no other primitive in this
-//! workspace shares this exact shape (a public key that is *always* a fixed, cheap function of the
-//! private key alone, with no additional state).
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{CollisionResistantHash, PublicKey, RNG};
+use bouncycastle_core::traits::{CollisionResistantHash, RNG};
 
 use crate::curve::Curve;
 use crate::ecdsa::ecdsa::EcdsaHash;
 use crate::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
-
-/// Implemented by the private key: recomputes the matching public key `Q = [d]G` directly from
-/// the wrapped private scalar `d`, using the same fixed-base multiplier `keys::keygen` uses.
-pub trait DerivePublicKey<PK: PublicKey<PK_LEN>, const PK_LEN: usize> {
-    /// Recomputes `Q = [d]G`.
-    fn derive_pk(&self) -> PK;
-}
 
 /// Implemented on a [`bouncycastle_ec`](crate) curve marker: the ECDSA key pair of that curve, so a caller
 /// starts from the curve and the trait in scope says what the pair is for
@@ -51,4 +33,16 @@ pub trait SignatureKeyPair: Curve {
     fn generate_signature_key_pair<H: EcdsaHash + CollisionResistantHash>(
         rng: &mut dyn RNG,
     ) -> Result<(ECDSAPublicKey<Self, H>, ECDSAPrivateKey<Self, H>), SignatureError>;
+
+    /// The private key of [`generate_signature_key_pair`](Self::generate_signature_key_pair)
+    /// into `sk`, a key you hold, as [`keys::keygen_out`](crate::ecdsa::keys::keygen_out)
+    /// generates it; the public key is `sk.pub_key()`.
+    ///
+    /// # Errors
+    /// As [`generate_signature_key_pair`](Self::generate_signature_key_pair), with `sk` left
+    /// zeroized.
+    fn generate_signature_key_out<H: EcdsaHash + CollisionResistantHash>(
+        rng: &mut dyn RNG,
+        sk: &mut ECDSAPrivateKey<Self, H>,
+    ) -> Result<(), SignatureError>;
 }

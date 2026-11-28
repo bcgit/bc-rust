@@ -125,6 +125,8 @@ pub enum PublicKeyEncryptionError {
     /// The caller's output buffer is too small. The usize is the minimum length the buffer
     /// needs for the same call to succeed.
     OutputBufferTooSmall(usize),
+    /// The key is not usable: a private key that was never filled, say.
+    KeyMaterialError(KeyMaterialError),
     /// The RNG refused or failed to deliver, or is weaker than the algorithm requires.
     RNGError(RNGError),
 }
@@ -441,6 +443,12 @@ impl From<RNGError> for SignatureError {
     }
 }
 
+impl From<KeyMaterialError> for PublicKeyEncryptionError {
+    fn from(e: KeyMaterialError) -> Self {
+        Self::KeyMaterialError(e)
+    }
+}
+
 impl From<KeyMaterialError> for KeyTransportError {
     fn from(e: KeyMaterialError) -> Self {
         Self::KeyMaterialError(e)
@@ -590,6 +598,7 @@ impl fmt::Display for PublicKeyEncryptionError {
             Self::EncryptionFailed => f.write_str("encryption failed"),
             Self::InvalidInputLength(m) => write!(f, "invalid input length: {m}"),
             Self::OutputBufferTooSmall(_) => f.write_str("output buffer too small"),
+            Self::KeyMaterialError(_) => f.write_str("key material error"),
             Self::RNGError(_) => f.write_str("RNG error"),
         }
     }
@@ -598,6 +607,7 @@ impl fmt::Display for PublicKeyEncryptionError {
 impl Error for PublicKeyEncryptionError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::KeyMaterialError(e) => Some(e),
             Self::RNGError(e) => Some(e),
             Self::DecryptionFailed
             | Self::EncryptionFailed

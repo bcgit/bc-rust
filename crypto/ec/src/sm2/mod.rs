@@ -84,7 +84,7 @@
 //! assert_eq!(SM2PublicKey::from_bytes(&pk.encode())?, pk);
 //! assert_eq!(SM2PrivateKey::from_bytes(&sk.encode())?, sk);
 //! // A private key carries its own public key, so this costs nothing to ask for.
-//! assert_eq!(sk.derive_pk(), pk);
+//! assert_eq!(sk.pub_key()?, pk);
 //!
 //! assert!(SM2PrivateKey::from_bytes(&[0u8; 32]).is_err());
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
@@ -180,7 +180,7 @@
 //! | Operation                   | Stack, 1.97 | Stack, 1.88 | Unwiped, 1.97 | Unwiped, 1.88 |
 //! |-----------------------------|-------------|-------------|---------------|---------------|
 //! | `encryption::keygen`        | 4,296       | 4,248       | 2,552         | 2,272         |
-//! | `derive_pk`                 | 4,200       | 4,200       | 2,440         | 2,208         |
+//! | `pub_key`                   | 4,200       | 4,200       | 2,440         | 2,208         |
 //! | `encrypt_detached_inplace`  | 8,728       | 8,728       | 4,776         | 4,672         |
 //! | `encrypt_out`               | 8,952       | 8,952       | 5,016         | 4,896         |
 //! | `decrypt_detached_inplace`  | 8,536       | 8,616       | 4,392         | 4,352         |
@@ -255,7 +255,7 @@
 //!   `k` in `[1, n-1]` and a valid public key never take.
 //! - **The stack the computation used is overwritten afterwards**, as well as the named
 //!   secrets being zeroized, since the arithmetic and SM3 leave copies in spilled registers
-//!   and temporaries: after encryption, decryption, key generation and `derive_pk`. The sizes
+//!   and temporaries: after encryption, decryption, key generation and `pub_key`. The sizes
 //!   of those wipes, 8,192 bytes after encryption and decryption and 4,096 after the other
 //!   two, were chosen from measurements of optimised x86-64 builds with rustc 1.88 and 1.97,
 //!   and `dev_scripts/check_sm2_stack.sh` checks that they reach what the computation wrote;

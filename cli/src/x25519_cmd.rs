@@ -55,7 +55,7 @@ pub(crate) fn x25519_cmd(
         }
         X25519Action::PkFromSk => {
             // A decoded key is filled, so it has a public key.
-            let pk = load_sk(skfile).pk().unwrap();
+            let pk = load_sk(skfile).pub_key().unwrap();
             write_bytes_or_hex(&pk.encode(), output_hex);
         }
         X25519Action::CheckConsistency => {

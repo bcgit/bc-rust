@@ -144,6 +144,7 @@ fn public_key_encryption_error() {
         leaf(PublicKeyEncryptionError::EncryptionFailed),
         carrying(PublicKeyEncryptionError::InvalidInputLength("p-len"), "p-len"),
         small,
+        wrapping(PublicKeyEncryptionError::KeyMaterialError(km()), km()),
         wrapping(PublicKeyEncryptionError::RNGError(rng()), rng()),
     ]);
 }

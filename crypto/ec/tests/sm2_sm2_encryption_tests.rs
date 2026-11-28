@@ -238,7 +238,7 @@ fn counting_seed() -> [u8; 251] {
 #[test]
 fn annex_c_ciphertext_decrypts_in_both_orders() {
     let sk = sk(ANNEX_C_DB);
-    assert_eq!(sk.derive_pk().encode().to_vec(), hex(ANNEX_C_PB));
+    assert_eq!(sk.pub_key().unwrap().encode().to_vec(), hex(ANNEX_C_PB));
 
     let c1c3c2 = [hex(ANNEX_C_C1), hex(ANNEX_C_C3), hex(ANNEX_C_C2)].concat();
     assert_eq!(decrypt_both_orders(&sk, &c1c3c2).unwrap(), ANNEX_C_M);
@@ -261,7 +261,7 @@ fn annex_c_ciphertext_decrypts_in_both_orders() {
 #[test]
 fn ciphertexts_from_the_model_and_from_openssl_decrypt() {
     let model_sk = sk(MODEL_D);
-    assert_eq!(model_sk.derive_pk().encode().to_vec(), hex(MODEL_PB));
+    assert_eq!(model_sk.pub_key().unwrap().encode().to_vec(), hex(MODEL_PB));
     for (ciphertext, len) in MODEL_C1C3C2.iter().zip([1usize, 33, 100]) {
         let expected: Vec<u8> = (0..len).map(|i| (7 * i + len) as u8).collect();
         assert_eq!(decrypt_both_orders(&model_sk, &hex(ciphertext)).unwrap(), expected);
@@ -304,7 +304,8 @@ fn a_key_stream_of_equal_bytes_is_not_all_zero() {
     k_minus_1[39] = EQUAL_T_K - 1;
     let mut buf = EQUAL_T_M;
     let (c1, c3) = sk
-        .derive_pk()
+        .pub_key()
+        .unwrap()
         .encrypt_detached_inplace(&mut FixedSeedRNG::new(k_minus_1), &mut buf)
         .unwrap();
     assert_eq!((c1.to_vec(), c3.to_vec(), buf), (hex(EQUAL_T_C1), hex(EQUAL_T_C3), EQUAL_T_C2));
@@ -736,7 +737,7 @@ fn key_encodings_round_trip() {
         });
 
     let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
-    assert_eq!(sk.derive_pk(), pk);
+    assert_eq!(sk.pub_key().unwrap(), pk);
     assert_eq!(SM2EncryptionPublicKey::from_bytes(&pk.encode()).unwrap(), pk);
     assert_eq!(SM2EncryptionPrivateKey::from_bytes(&sk.encode()).unwrap(), sk);
 
@@ -757,7 +758,7 @@ fn key_encodings_round_trip() {
     // The encodings are the signature keys': the same bytes load as either.
     assert_eq!(SM2PublicKey::from_bytes(&pk_out).unwrap().encode(), pk_out);
     assert_eq!(SM2PrivateKey::from_bytes(&sk_out).unwrap().encode(), sk_out);
-    assert_eq!(SM2PrivateKey::from_bytes(&sk_out).unwrap().derive_pk().encode(), pk_out);
+    assert_eq!(SM2PrivateKey::from_bytes(&sk_out).unwrap().pub_key().unwrap().encode(), pk_out);
 
     let (other_pk, other_sk) = keygen(&mut DefaultRNG::default()).unwrap();
     assert_ne!(pk, other_pk);
@@ -797,8 +798,8 @@ fn keys_out_of_range_or_off_the_curve_are_refused() {
         let sk = SM2EncryptionPrivateKey::from_bytes(&equal_limbs).unwrap();
         assert_eq!(sk.encode(), equal_limbs);
         assert_eq!(
-            sk.derive_pk().encode(),
-            SM2PrivateKey::from_bytes(&equal_limbs).unwrap().derive_pk().encode()
+            sk.pub_key().unwrap().encode(),
+            SM2PrivateKey::from_bytes(&equal_limbs).unwrap().pub_key().unwrap().encode()
         );
     }
 
@@ -823,7 +824,7 @@ fn keygen_is_determined_by_the_rng_and_gives_a_working_pair() {
     assert_ne!(pk_a, pk_c);
 
     // The pair works, and it is a pair: the other private key does not decrypt.
-    assert_eq!(sk_a.derive_pk(), pk_a);
+    assert_eq!(sk_a.pub_key().unwrap(), pk_a);
     let msg = message(45);
     let mut ciphertext = vec![0u8; 45 + OVERHEAD_LEN];
     pk_a.encrypt_out(&mut DefaultRNG::default(), &msg, &mut ciphertext).unwrap();
@@ -869,7 +870,7 @@ fn the_keys_at_the_ends_of_the_range_round_trip() {
     n_minus_2[31] -= 2;
     for d in [one, n_minus_2] {
         let sk = SM2EncryptionPrivateKey::from_bytes(&d).unwrap();
-        let pk = sk.derive_pk();
+        let pk = sk.pub_key().unwrap();
         let mut ciphertext = vec![0u8; 50 + OVERHEAD_LEN];
         pk.encrypt_out(&mut DefaultRNG::default(), &message(50), &mut ciphertext).unwrap();
         assert_eq!(decrypt_both_orders(&sk, &ciphertext), Ok(message(50)));

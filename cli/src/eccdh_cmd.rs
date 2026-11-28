@@ -14,10 +14,9 @@ use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::errors::KeyAgreementError;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{PrivateKey, PublicKey, RNG};
+use bouncycastle::core::traits::{KeyPairGenerator, PrivateKey, PublicKey, RNG};
 use bouncycastle::ec::curve::Curve;
 use bouncycastle::ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
-use bouncycastle::ec::eccdh::keys_common::DerivePublicKey;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
@@ -46,7 +45,9 @@ pub(crate) enum ECCDHAction {
 #[allow(clippy::type_complexity)] // the keygen function pointer is the one per-curve input
 pub(crate) fn eccdh_cmd<
     PK: PublicKey<PK_LEN>,
-    SK: PrivateKey<SK_LEN> + DerivePublicKey<PK, PK_LEN> + AgreementKey<(), SS_LEN, PublicKey = PK>,
+    SK: PrivateKey<SK_LEN>
+        + KeyPairGenerator<PublicKey = PK, Error = KeyAgreementError>
+        + AgreementKey<(), SS_LEN, PublicKey = PK>,
     const SK_LEN: usize,
     const PK_LEN: usize,
     const SS_LEN: usize,
@@ -77,7 +78,7 @@ pub(crate) fn eccdh_cmd<
                     read_secret_file_or_stdin(skfile).ref_to_bytes(),
                     alg_name,
                 );
-                sk.derive_pk()
+                sk.pub_key().expect("a decoded key is filled")
             };
             write_bytes_or_hex(&pk.encode(), output_hex);
         }
@@ -89,7 +90,7 @@ pub(crate) fn eccdh_cmd<
                     read_secret_file_or_stdin(skfile).ref_to_bytes(),
                     alg_name,
                 );
-                sk.derive_pk() == pk
+                sk.pub_key().expect("a decoded key is filled") == pk
             };
             if matches {
                 println_stdout("SUCCESS: pk and sk match.");

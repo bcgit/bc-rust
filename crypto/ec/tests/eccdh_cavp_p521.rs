@@ -12,7 +12,6 @@ use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ec::P521;
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
-use bouncycastle_ec::eccdh::keys_common::DerivePublicKey;
 use cavp_common::{get_test_data, hex_field, parse_records, uncompressed_pk};
 
 const SECTION: &str = "P-521";
@@ -47,7 +46,7 @@ fn cavp_ecc_cdh_primitive() {
             .unwrap_or_else(|e| panic!("COUNT {count}: QIUT {e:?}"));
         let sk = ECCDHPrivateKey::<P521>::from_bytes(&d)
             .unwrap_or_else(|e| panic!("COUNT {count}: dIUT {e:?}"));
-        assert_eq!(sk.derive_pk(), own_pk, "COUNT {count}: [dIUT]G must be QIUT");
+        assert_eq!(sk.pub_key().unwrap(), own_pk, "COUNT {count}: [dIUT]G must be QIUT");
 
         let z = sk.agree(&peer_pk, ()).unwrap_or_else(|e| panic!("COUNT {count}: agree {e:?}"));
         assert_eq!(z.ref_to_bytes(), z_expected.as_slice(), "COUNT {count}: ZIUT");

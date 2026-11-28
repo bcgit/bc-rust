@@ -32,7 +32,6 @@ use bouncycastle::digest::sha2::{SHA256, SHA384, SHA512};
 use bouncycastle::ec::curve::Curve;
 use bouncycastle::ec::ecdsa::ecdsa::EcdsaHash;
 use bouncycastle::ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
-use bouncycastle::ec::ecdsa::keys_common::DerivePublicKey;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle::rng::DefaultRNG;
 
@@ -125,7 +124,7 @@ where
     eprintln!("ECDSA {name}/Verify");
 
     let sk = fixed_key::<C, H, SK_LEN>();
-    let pk = sk.derive_pk();
+    let pk = sk.pub_key().unwrap();
     let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
 
     if pk.verify(MSG, None, &sig).is_ok() {

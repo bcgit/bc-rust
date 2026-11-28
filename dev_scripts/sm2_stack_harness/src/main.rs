@@ -36,6 +36,7 @@ use bouncycastle_ec::hazmat::sm2_scalar::{Sm2Scalar, Sm2ScalarField};
 use bouncycastle_ec::hazmat::sm2_sec1;
 use bouncycastle_ec::sm2::encryption::{
     C1_LEN, C3_LEN, OVERHEAD_LEN, SM2EncryptionPrivateKey, SM2EncryptionPublicKey, keygen,
+    keygen_out,
 };
 use bouncycastle_ec::sm2::extra_bits::{
     reduce_wide_bits_mod_n_minus_1, reduce_wide_bits_mod_n_minus_2,
@@ -441,7 +442,7 @@ fn key_values(d: &[u8; 32]) -> Values {
 
 fn main() {
     let mut scan = Scan::new();
-    let pk = Box::new(SM2EncryptionPrivateKey::from_bytes(&DB).unwrap().derive_pk());
+    let pk = Box::new(SM2EncryptionPrivateKey::from_bytes(&DB).unwrap().pub_key().unwrap());
     let pb = pk.encode();
     // Everything an operation is handed lives on the heap and is refilled for its second run,
     // so that the two runs differ in their secrets and in no address.
@@ -508,11 +509,11 @@ fn main() {
     for d in [&DB, &DB_2] {
         scan.keep();
         *sk = SM2EncryptionPrivateKey::from_bytes(d).unwrap();
-        let derived = scan.run(|| sk.derive_pk());
-        scan.clean("derive_pk", &key_values(d));
+        let derived = scan.run(|| sk.pub_key()).unwrap();
+        scan.clean("pub_key", &key_values(d));
         publics.push(public_of(&derived));
     }
-    scan.same("derive_pk", &publics[0], &publics[1]);
+    scan.same("pub_key", &publics[0], &publics[1]);
     let mut publics = Vec::new();
     for wide in [WIDE_1, WIDE_2] {
         scan.keep();
@@ -526,6 +527,19 @@ fn main() {
         publics.push(public_of(&generated_pk));
     }
     scan.same("keygen", &publics[0], &publics[1]);
+    // Into the key on the heap: nothing is handed out.
+    for wide in [WIDE_1, WIDE_2] {
+        scan.keep();
+        *rng = FixedSeedRNG::new([wide, wide].concat().try_into().unwrap());
+        *sk = SM2EncryptionPrivateKey::zeroized();
+        scan.run(|| keygen_out(&mut *rng, &mut sk)).unwrap();
+        let d = reduce_wide_bits_mod_n_minus_2(&wide).to_be_bytes();
+        assert_eq!(sk.encode(), d, "not its reduction");
+        let mut values = key_values(&d);
+        push_integer(&mut values, "RNG output", &wide);
+        scan.clean("keygen_out", &values);
+    }
+    scan.same("keygen_out", &[], &[]);
 
     for len in [19usize, 100] {
         let msg = message(len);
@@ -755,7 +769,7 @@ fn signing(scan: &mut Scan) {
         let loaded = scan.run(|| SM2PrivateKey::from_bytes(&encoded[..])).unwrap();
         assert_eq!(loaded.encode(), *d);
         scan.clean("signing from_bytes", &signing_key_values(d));
-        publics.push(public_image(&loaded.derive_pk().encode()));
+        publics.push(public_image(&loaded.pub_key().unwrap().encode()));
     }
     scan.same("signing from_bytes", &publics[0], &publics[1]);
     for d in [&DB, &DB_2] {
@@ -788,11 +802,11 @@ fn signing(scan: &mut Scan) {
     for d in [&DB, &DB_2] {
         scan.keep();
         *sk = SM2PrivateKey::from_bytes(d).unwrap();
-        let derived: SM2PublicKey = scan.run(|| sk.derive_pk());
-        scan.clean("signing derive_pk", &signing_key_values(d));
+        let derived: SM2PublicKey = scan.run(|| sk.pub_key()).unwrap();
+        scan.clean("signing pub_key", &signing_key_values(d));
         publics.push(public_image(&derived.encode()));
     }
-    scan.same("signing derive_pk", &publics[0], &publics[1]);
+    scan.same("signing pub_key", &publics[0], &publics[1]);
     let mut publics = Vec::new();
     for wide in [WIDE_1, WIDE_2] {
         scan.keep();
@@ -806,10 +820,23 @@ fn signing(scan: &mut Scan) {
         publics.push(public_image(&generated_pk.encode()));
     }
     scan.same("signing keygen", &publics[0], &publics[1]);
+    // Into the key on the heap: nothing is handed out.
+    for wide in [WIDE_1, WIDE_2] {
+        scan.keep();
+        *rng = FixedSeedRNG::new([wide, wide].concat().try_into().unwrap());
+        *sk = SM2PrivateKey::zeroized();
+        scan.run(|| keys::keygen_out(&mut *rng, &mut sk)).unwrap();
+        let d = reduce_wide_bits_mod_n_minus_2(&wide).to_be_bytes();
+        assert_eq!(sk.encode(), d, "not its reduction");
+        let mut values = signing_key_values(&d);
+        push_integer(&mut values, "RNG output", &wide);
+        scan.clean("signing keygen_out", &values);
+    }
+    scan.same("signing keygen_out", &[], &[]);
 
     // Signing, under one key, twice, from two draws of the RNG.
     *sk = SM2PrivateKey::from_bytes(&DB).unwrap();
-    let pk = Box::new(sk.derive_pk());
+    let pk = Box::new(sk.pub_key().unwrap());
     let msg = message(100);
     let mut sig = Box::new([0u8; SIG_LEN]);
     let check = |sig: &[u8; SIG_LEN], wide: &[u8; 40]| {

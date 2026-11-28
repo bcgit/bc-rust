@@ -261,9 +261,9 @@ fn bytes(hex: &str) -> Vec<u8> {
 /// vector's, and the vector's public key decoded on its own.
 fn key_pair(name: &str, sk: &str, pk: &str) -> (Ed448PublicKey, Ed448PrivateKey) {
     let sk = Ed448PrivateKey::from_bytes(&bytes(sk)).unwrap();
-    assert_eq!(sk.pk().unwrap().encode().as_slice(), bytes(pk), "{name}: public key");
+    assert_eq!(sk.pub_key().unwrap().encode().as_slice(), bytes(pk), "{name}: public key");
     let pk = Ed448PublicKey::from_bytes(&bytes(pk)).unwrap();
-    assert_eq!(pk, sk.pk().unwrap(), "{name}");
+    assert_eq!(pk, sk.pub_key().unwrap(), "{name}");
     keypair_consistency_check(&pk, &sk).unwrap();
     (pk, sk)
 }

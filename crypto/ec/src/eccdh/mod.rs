@@ -182,12 +182,12 @@
 //!   the curve for P-256, P-384 and P-521 only, and not arrangeable without `d`; the buffer
 //!   decides it, and skips the test while the caller's hazardous window is open); the one masked
 //!   decision of the private key's range check, which reveals whether the key loaded; and
-//!   `to_affine`'s identity branch at key generation and in `derive_pk`, false for every valid
+//!   `to_affine`'s identity branch at key generation and in `pub_key`, false for every valid
 //!   `d`. Of Section 5.7.1.2 step 4's destruction of intermediates, this module does its own
 //!   part: `P`, `z`, the inverse of `P`'s `Z` coordinate and its square, and the byte string are
 //!   zeroized on every path, and `Z` is written into the caller's buffer. The multiplication
 //!   `[d]Q` (of an agreement and of a DHKEM), key generation, `from_bytes`, `encode`,
-//!   `encode_out` and `derive_pk` run in a frame of their own whose stack is overwritten
+//!   `encode_out` and `pub_key` run in a frame of their own whose stack is overwritten
 //!   afterwards (512 bytes after an encoding, 1,536 after decoding, 4,608 to 7,808 after
 //!   deriving a public key, 5,120 to 8,960 after generation and 6,656 to 11,776 after a
 //!   multiplication, by curve, as [`ecdsa`](crate::ecdsa)'s keys do and checked by the same

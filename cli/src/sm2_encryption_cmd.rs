@@ -61,7 +61,7 @@ pub(crate) fn sm2_encryption_cmd(
             // A failed write exits, and `exit` runs no destructors, so the key is dropped first.
             let pk = {
                 let sk = parse_sk(read_secret_file_or_stdin(skfile));
-                sk.derive_pk()
+                sk.pub_key().expect("a decoded key is filled")
             };
             write_bytes_or_hex(&pk.encode(), output_hex);
         }

@@ -330,6 +330,20 @@ macro_rules! scan_size {
                 "key generation (generate_kem_key_pair)",
                 &Key::<H>::from_encoding(&other[..]).values::<H2, H21>(),
             );
+            let mut held: Box<RsaPrivateKey<Pss>> = Box::new(RsaPrivateKey::zeroized());
+            scan.run(|| <$K>::generate_signature_key_out(&mut *rng, &mut held)).unwrap();
+            let other: Box<[u8; SK_LEN]> = Box::new(held.encode());
+            scan.clean(
+                "key generation (generate_signature_key_out)",
+                &Key::<H>::from_encoding(&other[..]).values::<H2, H21>(),
+            );
+            let mut held: Box<RsaKEMPrivateKey<$K>> = Box::new(RsaKEMPrivateKey::zeroized());
+            scan.run(|| <$K>::generate_kem_key_out(&mut *rng, &mut held)).unwrap();
+            let other: Box<[u8; SK_LEN]> = Box::new(held.encode());
+            scan.clean(
+                "key generation (generate_kem_key_out)",
+                &Key::<H>::from_encoding(&other[..]).values::<H2, H21>(),
+            );
 
             // The controls.
             scan.run(|| {});

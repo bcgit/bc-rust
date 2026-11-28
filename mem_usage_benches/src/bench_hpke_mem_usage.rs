@@ -73,7 +73,7 @@ const ENC: [u8; 32] = [
 /// A sender's context, made out of line.
 #[inline(never)]
 fn sender() -> HpkeContext<Sender, SHA256, AES128Key<GCM>> {
-    let pk = load_sk().pk().unwrap();
+    let pk = load_sk().pub_key().unwrap();
     pk.setup_sender(&mut HashDRBG_SHA512::new_from_os(), Params::new(b"info")).unwrap().1
 }
 
@@ -87,7 +87,7 @@ fn recipient() -> HpkeContext<Recipient, SHA256, AES128Key<GCM>> {
 fn bench_hpke_setup_sender() {
     eprintln!("HPKE/SetupSender");
 
-    let pk = load_sk().pk().unwrap();
+    let pk = load_sk().pub_key().unwrap();
     measure(|| {
         let (enc, _context) =
             pk.setup_sender(&mut HashDRBG_SHA512::new_from_os(), Params::new(b"info")).unwrap();
@@ -113,7 +113,7 @@ fn bench_hpke_setup_auth_sender() {
     eprintln!("HPKE/SetupAuthSender");
 
     let sk = load_sk();
-    let pk = sk.pk().unwrap();
+    let pk = sk.pub_key().unwrap();
     measure(|| {
         let (enc, _context) = pk
             .setup_auth_sender(&mut HashDRBG_SHA512::new_from_os(), &sk, Params::new(b"info"))
@@ -127,7 +127,7 @@ fn bench_hpke_setup_auth_recipient() {
     eprintln!("HPKE/SetupAuthRecipient");
 
     let sk = load_sk();
-    let pk = sk.pk().unwrap();
+    let pk = sk.pub_key().unwrap();
     measure(|| {
         let context = sk.setup_auth_recipient(&ENC, &pk, Params::new(b"info")).unwrap();
         let mut out = KeyMaterial::<32>::new();

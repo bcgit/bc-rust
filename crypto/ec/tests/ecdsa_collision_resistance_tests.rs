@@ -20,7 +20,7 @@ use bouncycastle_digest::sha2::SHA256;
 use bouncycastle_ec::P256;
 use bouncycastle_ec::ecdsa::ecdsa::ECDSA;
 use bouncycastle_ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
-use bouncycastle_ec::ecdsa::keys_common::{DerivePublicKey, SignatureKeyPair};
+use bouncycastle_ec::ecdsa::keys_common::SignatureKeyPair;
 use bouncycastle_rng::DefaultRNG;
 
 type Unsafe<H> = WithoutCollisionResistance<H>;
@@ -87,7 +87,7 @@ fn verification_over_ripemd160_needs_no_wrapper() {
 fn a_key_over_ripemd160_does_everything_but_sign() {
     let sk = private_key();
     assert_eq!(sk.encode()[..], hex_decode(D).unwrap()[..]);
-    let pk: ECDSAPublicKey<P256, RIPEMD160> = sk.derive_pk();
+    let pk: ECDSAPublicKey<P256, RIPEMD160> = sk.pub_key().unwrap();
     assert_eq!(pk, public_key());
     assert_eq!(sk.clone(), sk);
     assert_eq!(ECDSA::<P256, RIPEMD160>::ALG_NAME, "ECDSA-P256-RIPEMD160");
@@ -156,7 +156,7 @@ fn the_wrapper_changes_no_signature() {
     .concat();
 
     let bare = ECDSAPrivateKey::<P256, SHA256>::from_bytes(&x).unwrap();
-    let pk: ECDSAPublicKey<P256, SHA256> = bare.derive_pk();
+    let pk: ECDSAPublicKey<P256, SHA256> = bare.pub_key().unwrap();
     assert_eq!(bare.sign_deterministic(b"sample", None).unwrap()[..], expected[..]);
 
     let wrapped = bare.with_hash::<Unsafe<SHA256>>();

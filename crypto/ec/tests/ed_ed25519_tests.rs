@@ -237,7 +237,7 @@ fn ed25519_rejects_what_was_not_signed() {
     assert_eq!(verify(&pk, &MSG[1..], &sig), FAILED);
     assert_eq!(verify(&pk, b"", &sig), FAILED);
 
-    let other = Ed25519PrivateKey::from_bytes(&[3; 32]).unwrap().pk().unwrap();
+    let other = Ed25519PrivateKey::from_bytes(&[3; 32]).unwrap().pub_key().unwrap();
     assert_eq!(verify(&other, MSG, &sig), FAILED);
 
     for i in [0, 31, 32, 63] {
@@ -361,7 +361,7 @@ fn ed25519ph_known_answers_with_a_context() {
     // RFC 8032 Section 7.3: the secret key, and the message "abc".
     let sk = "833fe62409237b9d62ec77587520911e9a759cec1d19755b7da901b96dca3d42";
     let sk = Ed25519PrivateKey::from_bytes(&bouncycastle_core::hex::decode(sk).unwrap()).unwrap();
-    let pk = sk.pk().unwrap();
+    let pk = sk.pub_key().unwrap();
     for (ctx, sig) in ED25519PH_CONTEXTS {
         let ctx = bouncycastle_core::hex::decode(ctx).unwrap();
         let sig = bouncycastle_core::hex::decode(sig).unwrap();

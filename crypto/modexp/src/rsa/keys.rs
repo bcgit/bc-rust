@@ -22,9 +22,9 @@
 
 use crate::rsa::rsassa::RsaSignatureAlgorithm;
 use crate::rsa::size::{RsaSigningSize, RsaSize};
-use bouncycastle_core::errors::{KeyDecodingError, SignatureError};
+use bouncycastle_core::errors::{KeyDecodingError, KeyMaterialError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
+use bouncycastle_core::traits::{KeyPairGenerator, PrivateKey, PublicKey, RNG};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use bouncycastle_utils::stack_wipe::{WipeStackBelowScaledOnDrop, wipe_stack_below_scaled};
 use core::fmt;
@@ -349,6 +349,9 @@ impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     ///
     /// Not constant time in the key, as key generation is not.
     pub fn validate(&self, rng: &mut dyn RNG) -> Result<(), SignatureError> {
+        if !self.is_filled() {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
         K::validate_key_pair(self, rng, crate::rsa::size::sealed::EngineToken::new())
     }
 }
@@ -373,6 +376,38 @@ impl<K: RsaSize> RsaPrivateComponents<K> {
     /// These components as the private key of `A`.
     pub fn into_key<A: RsaSignatureAlgorithm<Size = K>>(self) -> RsaPrivateKey<A> {
         RsaPrivateKey::from_components(self)
+    }
+
+    /// The components a key generated with `keygen_out` starts from: all zero, which is not
+    /// a key, and which [`Self::is_filled`] tells apart from one.
+    pub(in crate::rsa) fn zeroized() -> Self {
+        Self {
+            p: Secret::new(),
+            q: Secret::new(),
+            d_p: Secret::new(),
+            d_q: Secret::new(),
+            q_inv: Secret::new(),
+            n: K::Limbs::ZEROED,
+            e: 0,
+        }
+    }
+
+    /// Whether these are a key's components rather than [`Self::zeroized`]'s: every key has
+    /// `e >= 3`, and `e` is public.
+    pub(in crate::rsa) fn is_filled(&self) -> bool {
+        self.e != 0
+    }
+
+    /// Copies `other` into `self` where it sits, for a generator that fills a key the caller
+    /// holds rather than returning one.
+    pub(in crate::rsa) fn fill_from(&mut self, other: &Self) {
+        *self.p = *other.p;
+        *self.q = *other.q;
+        *self.d_p = *other.d_p;
+        *self.d_q = *other.d_q;
+        *self.q_inv = *other.q_inv;
+        self.n = other.n;
+        self.e = other.e;
     }
 
     pub(in crate::rsa) fn p(&self) -> &K::HalfLimbs {
@@ -613,6 +648,41 @@ where
 }
 
 impl<A: RsaSignatureAlgorithm> RsaPrivateKey<A> {
+    /// The key [`SignatureKeyPair::generate_signature_key_out`](crate::rsa::size::SignatureKeyPair::generate_signature_key_out)
+    /// writes into: not a key until it has, so it signs nothing and has no public key
+    /// ([`KeyMaterialError::ActingOnZeroizedKey`]), and it encodes as zeros.
+    pub fn zeroized() -> Self {
+        Self { components: RsaPrivateComponents::zeroized(), _alg: PhantomData }
+    }
+
+    /// The public key of the key pair, `(n, e)` under the same algorithm.
+    ///
+    /// # Errors
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] for a key that was never filled.
+    pub fn pub_key(&self) -> Result<RsaPublicKey<A>, SignatureError> {
+        if !self.components.is_filled() {
+            return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+        }
+        Ok(RsaPublicKey::from_components(RsaPublicComponents {
+            n: self.components.n,
+            e: self.components.e,
+        }))
+    }
+
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] for a key that was never filled.
+    pub(in crate::rsa) fn check_filled(&self) -> Result<(), SignatureError> {
+        if self.components.is_filled() {
+            Ok(())
+        } else {
+            Err(KeyMaterialError::ActingOnZeroizedKey.into())
+        }
+    }
+
+    /// The components, to fill in place.
+    pub(in crate::rsa) fn components_mut(&mut self) -> &mut RsaPrivateComponents<A::Size> {
+        &mut self.components
+    }
+
     /// A key over validated components.
     pub fn from_components(components: RsaPrivateComponents<A::Size>) -> Self {
         Self { components, _alg: PhantomData }
@@ -631,6 +701,28 @@ impl<A: RsaSignatureAlgorithm> RsaPrivateKey<A> {
     /// The public exponent `e` of the key pair.
     pub fn e(&self) -> u64 {
         self.components.e()
+    }
+}
+
+/// Generation is [`SignatureKeyPair::generate_signature_key_out`](crate::rsa::size::SignatureKeyPair::generate_signature_key_out)
+/// at the algorithm's size.
+impl<A: RsaSignatureAlgorithm> KeyPairGenerator for RsaPrivateKey<A>
+where
+    A::Size: RsaSigningSize,
+{
+    type PublicKey = RsaPublicKey<A>;
+    type Error = SignatureError;
+
+    fn zeroized() -> Self {
+        Self::zeroized()
+    }
+
+    fn generate_out(rng: &mut dyn RNG, sk: &mut Self) -> Result<(), SignatureError> {
+        <A::Size as crate::rsa::size::SignatureKeyPair>::generate_signature_key_out(rng, sk)
+    }
+
+    fn pub_key(&self) -> Result<RsaPublicKey<A>, SignatureError> {
+        self.pub_key()
     }
 }
 

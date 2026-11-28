@@ -4,26 +4,26 @@
 #![allow(dead_code)] // each test file calls the functions it needs
 
 use bouncycastle_core::agreement_key::AgreementKey;
-use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError, RNGError};
+use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError, KeyMaterialError, RNGError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, PrivateKey, PublicKey};
-use bouncycastle_core_test_framework::ShortRNG;
 use bouncycastle_core_test_framework::key_agreement::{
     TestFrameworkKeyAgreement, TestFrameworkKeyAgreementKeys,
 };
+use bouncycastle_core_test_framework::{FailingRNG, ShortRNG};
 use bouncycastle_digest::concatkdf::ConcatKDF;
 use bouncycastle_digest::hkdf::HKDF_SHA256;
 use bouncycastle_digest::x963kdf::X963KDF;
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ec::eccdh::eccdh::{ECCDH, ECCDH_ConcatKDF, ECCDH_X963KDF, MatchedHash};
-use bouncycastle_ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
-use bouncycastle_ec::eccdh::keys_common::DerivePublicKey;
+use bouncycastle_ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen, keygen_out};
+use bouncycastle_ec::eccdh::keys_common::AgreementKeyPair;
 use bouncycastle_rng::DefaultRNG;
 
-/// The framework suites over the raw role and the key codecs, `derive_pk` against `keygen`, and
+/// The framework suites over the raw role and the key codecs, `pub_key` against `keygen`, and
 /// the algorithm's name and strength.
 pub fn framework_and_metadata<C, const PK_LEN: usize, const SK_LEN: usize, const SS_LEN: usize>(
     alg_name: &str,
@@ -40,7 +40,7 @@ pub fn framework_and_metadata<C, const PK_LEN: usize, const SK_LEN: usize, const
         .test_keys::<ECCDHPublicKey<C>, ECCDHPrivateKey<C>, PK_LEN, SK_LEN>(keygen_default::<C>);
 
     let (pk, sk) = keygen_default::<C>().unwrap();
-    assert_eq!(sk.derive_pk(), pk);
+    assert_eq!(sk.pub_key().unwrap(), pk);
 
     assert_eq!(ECCDH::<C>::ALG_NAME, alg_name);
     assert_eq!(ECCDH::<C>::MAX_SECURITY_STRENGTH, strength);
@@ -122,7 +122,7 @@ where
     let mut rng = FixedSeedRNG::new(seed);
     rng.set_security_strength(strength);
     let (pk, sk) = keygen::<C>(&mut rng).unwrap();
-    assert_eq!(sk.derive_pk(), pk);
+    assert_eq!(sk.pub_key().unwrap(), pk);
 
     let (pk1, sk1) = keygen::<C>(&mut FixedSeedRNG::new(seed)).unwrap();
     let (pk2, sk2) = keygen::<C>(&mut FixedSeedRNG::new(seed)).unwrap();
@@ -204,4 +204,78 @@ pub fn kdf_variants<C, const PK_LEN: usize, const SS_LEN: usize, const KEY_LEN: 
     assert!(!sk_a.agree(&pk_b, other).unwrap().equals(&key));
     let none = KdfParams::new(&kdf, b"", KeyLen::<KEY_LEN>);
     assert!(!sk_a.agree(&pk_b, none).unwrap().equals(&key));
+}
+
+/// `keygen_out`: the key it fills runs the framework suite; it is the key `keygen` and the
+/// marker give from the same RNG output, and the marker's `generate_agreement_key_out` is it;
+/// it clears a key it is handed and leaves it cleared on every error (a weak, a short and a
+/// failing RNG); and a key it never filled has no public key and makes no agreement, raw or
+/// through a KDF.
+pub fn keygen_out_suite<C, const PK_LEN: usize, const SK_LEN: usize, const SS_LEN: usize>(
+    below: SecurityStrength,
+) where
+    C: MatchedHash
+        + AgreementKeyPair<PrivateKey = ECCDHPrivateKey<C>>
+        + Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], FeBytes = [u8; SS_LEN]>,
+{
+    fn keygen_out_default<C, const PK_LEN: usize>()
+    -> Result<(ECCDHPublicKey<C>, ECCDHPrivateKey<C>), KeyAgreementError>
+    where
+        C: Curve<PkUncompressed = [u8; PK_LEN]>,
+    {
+        let mut sk = ECCDHPrivateKey::zeroized();
+        keygen_out::<C>(&mut DefaultRNG::default(), &mut sk)?;
+        Ok((sk.pub_key()?, sk))
+    }
+    TestFrameworkKeyAgreement::new().test_key_agreement(keygen_out_default::<C, PK_LEN>, ());
+
+    let seed = core::array::from_fn::<u8, 128, _>(|i| i as u8);
+    let (pk, expected) = keygen::<C>(&mut FixedSeedRNG::new(seed)).unwrap();
+    let mut sk = ECCDHPrivateKey::<C>::zeroized();
+    keygen_out::<C>(&mut FixedSeedRNG::new(seed), &mut sk).unwrap();
+    assert_eq!(sk, expected, "keygen_out is keygen's key for the same RNG output");
+    assert_eq!(sk.pub_key().unwrap(), pk);
+    let mut from_marker = ECCDHPrivateKey::<C>::zeroized();
+    C::generate_agreement_key_out(&mut FixedSeedRNG::new(seed), &mut from_marker).unwrap();
+    assert_eq!(from_marker, expected);
+    let other_seed = core::array::from_fn::<u8, 128, _>(|i| (i as u8).wrapping_mul(7));
+    keygen_out::<C>(&mut FixedSeedRNG::new(other_seed), &mut from_marker).unwrap();
+    assert_ne!(from_marker, expected, "a filled key is overwritten");
+
+    // Every error clears the key it was handed, filled or not.
+    let zero = ECCDHPrivateKey::<C>::zeroized();
+    let mut weak = FixedSeedRNG::new(seed);
+    weak.set_security_strength(below);
+    assert!(matches!(
+        keygen_out::<C>(&mut weak, &mut sk),
+        Err(KeyAgreementError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm))
+    ));
+    assert_eq!(sk, zero);
+    sk = expected.clone();
+    assert!(matches!(
+        C::generate_agreement_key_out(&mut ShortRNG, &mut sk),
+        Err(KeyAgreementError::RNGError(RNGError::GenericError(_)))
+    ));
+    assert_eq!(sk, zero);
+    sk = expected.clone();
+    assert!(keygen_out::<C>(&mut FailingRNG, &mut sk).is_err());
+    assert_eq!(sk, zero);
+
+    // The unfilled key: equal only to another, encoded as zeros, refused by every role.
+    let refused = |r: Result<(), KeyAgreementError>| {
+        matches!(r, Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey)))
+    };
+    assert_eq!(zero, ECCDHPrivateKey::<C>::zeroized());
+    assert!(zero.encode().as_ref().iter().all(|b| *b == 0));
+    assert!(refused(zero.pub_key().map(|_| ())));
+    assert!(refused(zero.agree(&pk, ()).map(|_| ())));
+    assert!(refused(AgreementKey::<(), SS_LEN>::create_agreement(&zero, ()).map(|_| ())));
+    let mut z = KeyMaterial::<SS_LEN>::new();
+    assert!(refused(zero.agree_out(&pk, (), &mut z).map(|_| ())));
+    let kdf = X963KDF::<C::Hash>::new();
+    let params = KdfParams::new(&kdf, b"unfilled", KeyLen::<32>);
+    assert!(refused(zero.agree(&pk, params).map(|_| ())));
+    let kdf = ConcatKDF::<C::Hash>::new();
+    let params = KdfParams::new(&kdf, b"unfilled", KeyLen::<32>);
+    assert!(refused(zero.agree(&pk, params).map(|_| ())));
 }

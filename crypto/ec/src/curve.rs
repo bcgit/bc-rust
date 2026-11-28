@@ -16,7 +16,7 @@ use bouncycastle_core::traits::RNG;
 use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
-use bouncycastle_utils::stack_wipe::in_wiped_frame_scaled;
+use bouncycastle_utils::stack_wipe::{in_wiped_frame, in_wiped_frame_scaled};
 use core::fmt::Debug;
 
 /// A fixed-size array a curve's values are held or encoded in: `[u64; L]` limbs or `[u8; N]`
@@ -352,6 +352,43 @@ pub(crate) fn private_key_from_be_bytes<C: Curve, R>(
     key(&d)
 }
 
+/// The private scalar of key-pair generation with extra random bits, without its public point,
+/// into `d`: [`Curve::keygen_extra_bits`]'s strength check, draw and reduction, step for step
+/// (FIPS 186-5 Appendix A.2.1 steps 3 to 6, SP 800-56A Rev. 3 Section 5.6.1.2.1 steps 3 to 6),
+/// so that the same RNG output gives the same `d`. `d` is assigned only on success. The caller
+/// runs this in a wiped frame: the reduction's intermediates and the scalar it returns are left
+/// in this frame.
+pub(crate) fn keygen_scalar_into<C: Curve>(
+    rng: &mut dyn RNG,
+    d: &mut C::Scalar,
+) -> Result<(), RNGError> {
+    if rng.security_strength() < C::RNG_STRENGTH {
+        return Err(RNGError::SecurityStrengthInsufficientForAlgorithm);
+    }
+    let mut extra_bits = Secret::<C::ExtraBitsDraw>::new();
+    crate::rng_draw::fill_bytes(rng, (*extra_bits).as_mut())?;
+    *d = C::reduce_wide_bits_mod_n_minus_1((*extra_bits).as_ref());
+    Ok(())
+}
+
+/// The scalar `0`: the private scalar of a key that has not been filled, which no generated or
+/// decoded key holds (those are in `[1, n-1]`).
+pub(crate) fn zero_scalar<C: Curve>() -> C::Scalar {
+    C::Scalar::from_limbs(C::Limbs::ZEROED)
+}
+
+/// Whether `d` is not `0`, compared in constant time: whether a key holding it has been filled.
+/// The answer is not secret, since every filled key's scalar is non-zero; what the comparison
+/// spills of `d` is, so it runs in a frame whose stack is overwritten afterwards.
+pub(crate) fn scalar_is_filled<C: Curve>(d: &C::Scalar) -> bool {
+    in_wiped_frame::<FILLED_STACK_WORDS, _>(|| *d != zero_scalar::<C>())
+}
+
+/// What the stack wipe overwrites after [`scalar_is_filled`] and its kin, in 64-bit words: 512
+/// bytes. Unwiped, SM2 decryption's test of its key wrote to 104 bytes below the call (x86-64,
+/// rustc 1.97, `dev_scripts/sm2_stack_harness`).
+pub(crate) const FILLED_STACK_WORDS: usize = 64;
+
 /// What the stack wipe overwrites after an ECDSA or ECC CDH private key is decoded: this many of
 /// the curve's limb arrays and this many words, 1536 bytes. Unwiped, `from_bytes` writes to at
 /// most 808 bytes below the call (P-521; 376 on the other curves; x86-64, rustc 1.97 and 1.88,
@@ -376,7 +413,7 @@ pub(crate) const ENCODE_STACK_FIXED: usize = 64;
 
 /// The same after a public key is derived from a private one, [`public_point_wiped`]: 4608
 /// bytes on a 256-bit curve, 5888 on a 384-bit one, 7168 on brainpoolP512r1 and 7808 on P-521.
-/// Unwiped, `derive_pk` writes to at most 2768, 3952, 4960 and 5352 bytes below the call,
+/// Unwiped, `pub_key` writes to at most 2768, 3952, 4960 and 5352 bytes below the call,
 /// measured the same way.
 const DERIVE_STACK_PER_LIMB: usize = 80;
 const DERIVE_STACK_FIXED: usize = 256;

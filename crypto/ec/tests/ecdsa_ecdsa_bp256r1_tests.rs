@@ -49,3 +49,8 @@ fn rng_rules() {
 fn signature_length_and_range() {
     ecdsa_common::signature_length_and_range::<Bp256r1, SHA256, 32, 64>();
 }
+
+#[test]
+fn keygen_out() {
+    ecdsa_common::keygen_out_suite::<Bp256r1, SHA256, 65, 32, 64>(SecurityStrength::_112bit);
+}

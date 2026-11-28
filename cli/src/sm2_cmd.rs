@@ -1,10 +1,7 @@
 //! CLI wiring for `bouncycastle_ec::sm2`. Bespoke rather than routed through `ecdsa_cmd`'s generic
 //! function: every SM2 `SigningKey`/`VerifyingKey` call requires `ctx` to carry the signer's
 //! identity `IDA` (GB/T 32918.2-2016 §5.5; see `bouncycastle_ec::sm2::sm2`'s docs), whereas every
-//! curve `ecdsa_cmd` covers ignores `ctx` entirely -- and `SM2PrivateKey::derive_pk` is a plain
-//! inherent method rather than an implementation of `bouncycastle_ec::ecdsa::keys_common::
-//! DerivePublicKey` (see that method's own doc comment: SM2 was never going to share a single
-//! generic command function with the other seven curves regardless). `--idfile` is mandatory for
+//! curve `ecdsa_cmd` covers ignores `ctx` entirely. `--idfile` is mandatory for
 //! `Sign`/`Verify`: `bouncycastle_ec::sm2` has no default identity to fall back to when `ctx` is omitted.
 
 use crate::helpers::{
@@ -57,7 +54,9 @@ pub(crate) fn sm2_cmd(
         SM2Action::PkFromSk => {
             // `exit` runs no destructors, so the key is dropped before the write, which ends
             // the process on a failure.
-            let pk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes()).derive_pk();
+            let pk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes())
+                .pub_key()
+                .expect("a decoded key is filled");
             write_bytes_or_hex(&pk.encode(), output_hex);
         }
         SM2Action::CheckConsistency => {
@@ -65,8 +64,10 @@ pub(crate) fn sm2_cmd(
             let pk = parse_pk(&pk_bytes);
 
             // As above: the key is dropped before either branch can exit.
-            let matches =
-                parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes()).derive_pk() == pk;
+            let matches = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes())
+                .pub_key()
+                .expect("a decoded key is filled")
+                == pk;
             if matches {
                 println_stdout("SUCCESS: pk and sk match.");
             } else {

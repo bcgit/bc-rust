@@ -12,7 +12,6 @@ use bouncycastle_ec::P256;
 use bouncycastle_ec::ecdsa::ecdsa::ECDSA;
 use bouncycastle_ec::ecdsa::ecdsa::EcdsaHash;
 use bouncycastle_ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
-use bouncycastle_ec::ecdsa::keys_common::DerivePublicKey;
 
 const SCALAR_LEN: usize = 32;
 const SIG_LEN: usize = 64;
@@ -97,7 +96,7 @@ fn key_pair<H: EcdsaHash>() -> (ECDSAPublicKey<P256, H>, ECDSAPrivateKey<P256, H
 #[test]
 fn public_key_matches_vector() {
     let (pk, sk) = key_pair::<SHA256>();
-    assert_eq!(sk.derive_pk(), pk, "U = xG");
+    assert_eq!(sk.pub_key().unwrap(), pk, "U = xG");
 }
 
 /// The deterministic signature under `H` is the appendix's `(r, s)`, and verifies.

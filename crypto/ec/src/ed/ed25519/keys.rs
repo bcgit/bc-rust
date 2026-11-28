@@ -96,16 +96,16 @@ pub fn keygen(rng: &mut dyn RNG) -> Result<(Ed25519PublicKey, Ed25519PrivateKey)
     in_wiped_frame_scaled::<u64, 0, KEYGEN_STACK_WORDS, _>(|| {
         let mut sk = Ed25519PrivateKey::zeroized();
         keygen_out(rng, &mut sk)?;
-        let pk = sk.pk()?;
+        let pk = sk.pub_key()?;
         Ok((pk, sk))
     })
 }
 
-/// Generates a private key into `sk`, a key you hold: the RNG, which must offer Ed25519's 128
-/// bits, writes the 32 octets straight into the key, which is expanded where it sits, so no
-/// copy of it is staged on the way. The public key is read from the key afterwards with
-/// [`sk.pk()`](Ed25519PrivateKey::pk), which cannot fail once this has returned `Ok`. `sk` is
-/// zeroized first and left so on every error.
+/// Generates a private key into `sk`, a key you hold: the RNG, which must offer Ed25519's 128 bits,
+/// writes the 32 octets straight into the key, which is expanded where it sits, so no copy of it is
+/// staged on the way. The public key is read from the key afterwards with
+/// [`sk.pub_key()`](Ed25519PrivateKey::pub_key), which cannot fail once this has returned `Ok`.
+/// `sk` is zeroized first and left so on every error.
 ///
 /// # Errors
 /// As [`keygen`].
@@ -231,7 +231,7 @@ impl Ed25519PrivateKey {
     /// # Errors
     /// [`KeyMaterialError::ActingOnZeroizedKey`] for a key that was never filled
     /// ([`zeroized`](Self::zeroized)).
-    pub fn pk(&self) -> Result<Ed25519PublicKey, SignatureError> {
+    pub fn pub_key(&self) -> Result<Ed25519PublicKey, SignatureError> {
         // `None` is the unfilled key: the stored encoding of a filled one always decodes.
         let point = self.expanded.public_point().ok_or(KeyMaterialError::ActingOnZeroizedKey)?;
         Ok(Ed25519PublicKey { point })
@@ -323,7 +323,7 @@ impl Eq for Ed25519PrivateKey {}
 /// variable-time scalar multiplication by the group order, comparable to verifying a signature;
 /// verification under a key that exists does not repeat it. Keep the key object rather than
 /// its encoding where one key verifies many signatures. The key of an
-/// [`Ed25519PrivateKey`] comes from [`Ed25519PrivateKey::pk`] or [`keygen`] without that cost.
+/// [`Ed25519PrivateKey`] comes from [`Ed25519PrivateKey::pub_key`] or [`keygen`] without that cost.
 #[derive(Clone)]
 pub struct Ed25519PublicKey {
     point: PublicPoint,
@@ -633,5 +633,22 @@ impl<'a> VerifyingKey<Ed25519ph, SIGNATURE_LEN> for Ed25519phPublicKey<'a> {
 impl OneShotVerifyingKey<Ed25519ph, SIGNATURE_LEN> for Ed25519phPublicKey<'_> {
     fn verify(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         verify_with_verifier(self.create_verifier(ctx)?, msg, sig)
+    }
+}
+
+impl bouncycastle_core::traits::KeyPairGenerator for Ed25519PrivateKey {
+    type PublicKey = Ed25519PublicKey;
+    type Error = SignatureError;
+
+    fn zeroized() -> Self {
+        Self::zeroized()
+    }
+
+    fn generate_out(rng: &mut dyn RNG, sk: &mut Self) -> Result<(), SignatureError> {
+        keygen_out(rng, sk)
+    }
+
+    fn pub_key(&self) -> Result<Ed25519PublicKey, SignatureError> {
+        self.pub_key()
     }
 }

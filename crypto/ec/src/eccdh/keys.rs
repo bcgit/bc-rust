@@ -3,12 +3,12 @@
 
 use crate::curve::{
     Curve, DECODE_STACK_FIXED, DECODE_STACK_PER_LIMB, ENCODE_STACK_FIXED, ENCODE_STACK_PER_LIMB,
-    KEYGEN_STACK_FIXED, KEYGEN_STACK_PER_LIMB, SecretScalar, private_key_from_be_bytes,
-    public_point_wiped,
+    KEYGEN_STACK_FIXED, KEYGEN_STACK_PER_LIMB, SecretScalar, keygen_scalar_into,
+    private_key_from_be_bytes, public_point_wiped, scalar_is_filled, zero_scalar,
 };
-use crate::eccdh::keys_common::{AgreementKeyPair, DerivePublicKey};
-use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError};
-use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
+use crate::eccdh::keys_common::AgreementKeyPair;
+use bouncycastle_core::errors::{KeyAgreementError, KeyDecodingError, KeyMaterialError};
+use bouncycastle_core::traits::{KeyPairGenerator, PrivateKey, PublicKey, RNG};
 use bouncycastle_utils::stack_wipe::in_wiped_frame_scaled;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -21,6 +21,42 @@ use core::fmt::{Debug, Display, Formatter};
 pub struct ECCDHPrivateKey<C: Curve>(C::Scalar);
 
 impl<C: Curve> ECCDHPrivateKey<C> {
+    /// The key [`keygen_out`] writes into, so that `d` is reduced where it will live and never
+    /// moved: `d = 0`, which is not a key. Until `keygen_out` fills it, it has no public key and
+    /// makes no agreement and no decapsulator ([`KeyMaterialError::ActingOnZeroizedKey`]), and
+    /// it is equal to no key that was generated or decoded.
+    ///
+    /// # 🚨 Security Considerations 🚨
+    ///
+    /// The encoding of this key is not refused, the encoding methods having no error to give: it
+    /// is all zero, which decodes as no key. Do not store or send the encoding of a key whose
+    /// generation failed.
+    pub fn zeroized() -> Self {
+        Self(zero_scalar::<C>())
+    }
+
+    /// Whether the key has been generated or decoded, which `d != 0` says.
+    pub(in crate::eccdh) fn is_filled(&self) -> bool {
+        scalar_is_filled::<C>(&self.0)
+    }
+
+    /// Refuses a key that was never generated or decoded.
+    pub(in crate::eccdh) fn check_filled(&self) -> Result<(), KeyMaterialError> {
+        if self.is_filled() { Ok(()) } else { Err(KeyMaterialError::ActingOnZeroizedKey) }
+    }
+
+    /// Recomputes the public key `Q = [d]G`, with the fixed-base multiplier `keygen` uses: SP
+    /// 800-56A Rev. 3 Section 5.6.2.1.4's pair-wise consistency check compares it with the
+    /// public key held.
+    ///
+    /// # Errors
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] for a key that was never filled.
+    pub fn pub_key(&self) -> Result<ECCDHPublicKey<C>, KeyAgreementError> {
+        self.check_filled()?;
+        let (x, y) = public_point_wiped::<C>(&self.0);
+        Ok(ECCDHPublicKey { x, y })
+    }
+
     /// The wrapped scalar, for this module's own agreement to compute with.
     pub(in crate::eccdh) fn scalar(&self) -> &C::Scalar {
         &self.0
@@ -32,13 +68,20 @@ impl<C: Curve> ECCDHPrivateKey<C> {
     }
 }
 
-impl<C, const PK_LEN: usize> DerivePublicKey<ECCDHPublicKey<C>, PK_LEN> for ECCDHPrivateKey<C>
-where
-    C: Curve<PkUncompressed = [u8; PK_LEN]>,
-{
-    fn derive_pk(&self) -> ECCDHPublicKey<C> {
-        let (x, y) = public_point_wiped::<C>(&self.0);
-        ECCDHPublicKey { x, y }
+impl<C: Curve> KeyPairGenerator for ECCDHPrivateKey<C> {
+    type PublicKey = ECCDHPublicKey<C>;
+    type Error = KeyAgreementError;
+
+    fn zeroized() -> Self {
+        Self::zeroized()
+    }
+
+    fn generate_out(rng: &mut dyn RNG, sk: &mut Self) -> Result<(), KeyAgreementError> {
+        keygen_out(rng, sk)
+    }
+
+    fn pub_key(&self) -> Result<ECCDHPublicKey<C>, KeyAgreementError> {
+        self.pub_key()
     }
 }
 
@@ -135,19 +178,50 @@ impl<C: Curve> Display for ECCDHPublicKey<C> {
 /// strength of s bits or more"; `s` from SP 800-57 Part 1 Rev. 5 Table 2): step 3's draw of at
 /// least `N + 64` bits is the curve's [`keygen_extra_bits`](Curve::keygen_extra_bits).
 ///
+/// [`keygen_out`] into a key you hold, moved out of this frame; a move wipes nothing.
+///
 /// # Errors
 /// [`KeyAgreementError::RNGError`] if the RNG is weaker than the curve or fails to deliver.
 pub fn keygen<C: Curve>(
     rng: &mut dyn RNG,
 ) -> Result<(ECCDHPublicKey<C>, ECCDHPrivateKey<C>), KeyAgreementError> {
     in_wiped_frame_scaled::<C::Limbs, KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED, _>(|| {
-        let (d, (x, y)) = C::keygen_extra_bits(rng)?;
-        Ok((ECCDHPublicKey { x, y }, ECCDHPrivateKey(d)))
+        let mut sk = ECCDHPrivateKey::zeroized();
+        keygen_out(rng, &mut sk)?;
+        let pk = sk.pub_key()?;
+        Ok((pk, sk))
     })
 }
 
+/// As [`keygen`], into `sk`, a key you hold (made with [`zeroized`](ECCDHPrivateKey::zeroized)):
+/// `d` is reduced from the RNG's output straight into the key, in a frame whose stack is
+/// overwritten afterwards, so no copy of it is left on the way. The same RNG output gives the
+/// same key as [`keygen`]. The public key is computed from the key afterwards with
+/// [`pub_key`](ECCDHPrivateKey::pub_key), which cannot fail once this has returned `Ok`.
+/// `sk` is zeroized first and left so on every error.
+///
+/// # Errors
+/// As [`keygen`].
+pub fn keygen_out<C: Curve>(
+    rng: &mut dyn RNG,
+    sk: &mut ECCDHPrivateKey<C>,
+) -> Result<(), KeyAgreementError> {
+    sk.0 = zero_scalar::<C>();
+    let result =
+        in_wiped_frame_scaled::<C::Limbs, KEYGEN_STACK_PER_LIMB, KEYGEN_STACK_FIXED, _>(|| {
+            keygen_scalar_into::<C>(rng, &mut sk.0)
+        });
+    if let Err(e) = result {
+        sk.0 = zero_scalar::<C>();
+        return Err(e.into());
+    }
+    Ok(())
+}
+
 /// Every curve's [`generate_agreement_key_pair`](AgreementKeyPair::generate_agreement_key_pair)
-/// is [`keygen`].
+/// is [`keygen`], and its
+/// [`generate_agreement_key_out`](AgreementKeyPair::generate_agreement_key_out) is
+/// [`keygen_out`].
 impl<C: Curve> AgreementKeyPair for C {
     type PublicKey = ECCDHPublicKey<C>;
     type PrivateKey = ECCDHPrivateKey<C>;
@@ -156,5 +230,12 @@ impl<C: Curve> AgreementKeyPair for C {
         rng: &mut dyn RNG,
     ) -> Result<(ECCDHPublicKey<C>, ECCDHPrivateKey<C>), KeyAgreementError> {
         keygen::<C>(rng)
+    }
+
+    fn generate_agreement_key_out(
+        rng: &mut dyn RNG,
+        sk: &mut ECCDHPrivateKey<C>,
+    ) -> Result<(), KeyAgreementError> {
+        keygen_out::<C>(rng, sk)
     }
 }

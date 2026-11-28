@@ -938,3 +938,21 @@ impl<P: MLKEMParams + CiphertextLen<CT_LEN>, const CT_LEN: usize>
         Ok(MLKEMDecapsulator { dk: self, _phantom: PhantomData })
     }
 }
+
+/// Generation is [`MLKEMTrait::keygen_out`]; the public key is a copy of the one the key holds.
+impl<P: MLKEMParams> bouncycastle_core::traits::KeyPairGenerator for MLKEMPrivateKey<P> {
+    type PublicKey = MLKEMPublicKey<P>;
+    type Error = KEMError;
+
+    fn zeroized() -> Self {
+        Self::zeroized()
+    }
+
+    fn generate_out(rng: &mut dyn RNG, sk: &mut Self) -> Result<(), KEMError> {
+        MLKEM::<P>::keygen_out(rng, sk)
+    }
+
+    fn pub_key(&self) -> Result<MLKEMPublicKey<P>, KEMError> {
+        crate::mlkem::MLKEMPrivateKeyTrait::pk(self).cloned()
+    }
+}

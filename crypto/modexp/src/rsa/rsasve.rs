@@ -46,7 +46,9 @@
 use crate::rsa::keygen::{fill_bytes, keygen_as};
 use crate::rsa::keys::{RsaPrivateComponents, RsaPublicComponents, decoding_error};
 use crate::rsa::size::{RsaSigningSize, RsaSize};
-use bouncycastle_core::errors::{KEMError, KeyDecodingError, RNGError, SignatureError};
+use bouncycastle_core::errors::{
+    KEMError, KeyDecodingError, KeyMaterialError, RNGError, SignatureError,
+};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorithm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -189,6 +191,29 @@ impl<K: RsaSigningSize> RsaKEMPrivateKey<K> {
         })
     }
 
+    /// The key [`KemKeyPair::generate_kem_key_out`](crate::rsa::size::KemKeyPair::generate_kem_key_out)
+    /// writes into: not a key until it has, so it decapsulates and decrypts nothing and has no
+    /// public key ([`KeyMaterialError::ActingOnZeroizedKey`]), and it encodes as zeros.
+    pub fn zeroized() -> Self {
+        Self(RsaPrivateComponents::zeroized())
+    }
+
+    /// The public key of the key pair.
+    ///
+    /// # Errors
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] for a key that was never filled.
+    pub fn pub_key(&self) -> Result<RsaKEMPublicKey<K>, KEMError> {
+        self.check_filled()?;
+        RsaKEMPublicKey::from_rsa_key(
+            RsaPublicComponents::new(self.0.n(), self.0.e()).map_err(kem_error)?,
+        )
+    }
+
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] for a key that was never filled.
+    pub(in crate::rsa) fn check_filled(&self) -> Result<(), KeyMaterialError> {
+        if self.0.is_filled() { Ok(()) } else { Err(KeyMaterialError::ActingOnZeroizedKey) }
+    }
+
     pub(in crate::rsa) fn from_rsa_key(sk: RsaPrivateComponents<K>) -> Result<Self, KEMError> {
         if sk.e() < MIN_PUBLIC_EXPONENT {
             return Err(EXPONENT_TOO_SMALL);
@@ -239,6 +264,15 @@ impl<K: RsaSigningSize> RSASVE<K> {
         rng: &mut dyn RNG,
     ) -> Result<(RsaKEMPublicKey<K>, RsaKEMPrivateKey<K>), KEMError> {
         keygen_as::<K, _, _>(rng, keygen_from::<K>)
+    }
+
+    /// As [`Self::keygen`], into `sk`, a key you hold (made with
+    /// [`RsaKEMPrivateKey::zeroized`]); the public key is read from it with its `pub_key()`.
+    ///
+    /// # Errors
+    /// As [`Self::keygen`]; `sk` is left zeroized.
+    pub fn keygen_out(rng: &mut dyn RNG, sk: &mut RsaKEMPrivateKey<K>) -> Result<(), KEMError> {
+        <K as crate::rsa::size::KemKeyPair>::generate_kem_key_out(rng, sk)
     }
 }
 
@@ -420,7 +454,26 @@ where
 
     /// Cannot fail: RSASVE takes no parameters beyond the key.
     fn create_decapsulator<'k>(&'k self, _params: ()) -> Result<Self::Decapsulator<'k>, KEMError> {
+        self.check_filled()?;
         Ok(RsasveDecapsulator { sk: self })
+    }
+}
+
+/// Generation is [`KemKeyPair::generate_kem_key_out`](crate::rsa::size::KemKeyPair::generate_kem_key_out).
+impl<K: RsaSigningSize> bouncycastle_core::traits::KeyPairGenerator for RsaKEMPrivateKey<K> {
+    type PublicKey = RsaKEMPublicKey<K>;
+    type Error = KEMError;
+
+    fn zeroized() -> Self {
+        Self::zeroized()
+    }
+
+    fn generate_out(rng: &mut dyn RNG, sk: &mut Self) -> Result<(), KEMError> {
+        <K as crate::rsa::size::KemKeyPair>::generate_kem_key_out(rng, sk)
+    }
+
+    fn pub_key(&self) -> Result<RsaKEMPublicKey<K>, KEMError> {
+        self.pub_key()
     }
 }
 

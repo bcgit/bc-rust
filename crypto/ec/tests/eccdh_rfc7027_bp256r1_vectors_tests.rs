@@ -8,7 +8,6 @@ use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::traits::{PrivateKey, PublicKey};
 use bouncycastle_ec::Bp256r1;
 use bouncycastle_ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
-use bouncycastle_ec::eccdh::keys_common::DerivePublicKey;
 
 const D_A: &str = "81DB1EE100150FF2EA338D708271BE38300CB54241D79950F77B063039804F1D";
 const X_QA: &str = "44106E913F92BC02A1705D9953A8414DB95E1AAA49E81D9E85F929A8E3100BE5";
@@ -29,8 +28,8 @@ fn rfc7027_appendix_a_1() {
     let sk_b = ECCDHPrivateKey::<Bp256r1>::from_bytes(&hex_decode(D_B).unwrap()).unwrap();
     let pk_a = pk(X_QA, Y_QA);
     let pk_b = pk(X_QB, Y_QB);
-    assert_eq!(sk_a.derive_pk(), pk_a, "Q_A = [d_A]G");
-    assert_eq!(sk_b.derive_pk(), pk_b, "Q_B = [d_B]G");
+    assert_eq!(sk_a.pub_key().unwrap(), pk_a, "Q_A = [d_A]G");
+    assert_eq!(sk_b.pub_key().unwrap(), pk_b, "Q_B = [d_B]G");
 
     let x_z = hex_decode(X_Z).unwrap();
     assert_eq!(sk_a.agree(&pk_b, ()).unwrap().ref_to_bytes(), x_z.as_slice(), "x_Z from A");

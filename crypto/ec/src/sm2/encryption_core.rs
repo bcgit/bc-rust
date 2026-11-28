@@ -262,7 +262,7 @@ const WIPED_STACK_WORDS: usize = 1024;
 
 /// What [`wipe_stack_below`] overwrites after a key pair is generated or a public key derived,
 /// in 64-bit words: 4096 bytes. Measured as [`WIPED_STACK_WORDS`] was, `keygen` writes to 2552
-/// bytes below its call with rustc 1.97 (nightly) and 2272 with rustc 1.88, and `derive_pk` to
+/// bytes below its call with rustc 1.97 (nightly) and 2272 with rustc 1.88, and `pub_key` to
 /// 2440 and 2208; with 2304 bytes the check fails. Measured in review on arm64 Linux, it fails
 /// with 2048 bytes and passes with 2560.
 pub(in crate::sm2) const KEY_WIPED_STACK_WORDS: usize = 512;

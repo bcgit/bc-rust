@@ -30,9 +30,9 @@ fn key_boundary_conditions() {
 }
 
 #[test]
-fn derive_pk_matches_keygen() {
+fn pub_key_matches_keygen() {
     let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
-    assert_eq!(sk.derive_pk(), pk);
+    assert_eq!(sk.pub_key().unwrap(), pk);
 }
 
 #[test]
@@ -312,7 +312,7 @@ fn private_key_rejects_values_outside_1_to_n_minus_2() {
 
     let msg = b"dA = n - 2: step A6 divides by 1 + dA = n - 1";
     let sig = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).expect("dA = n - 2 must sign");
-    sk.derive_pk().verify(msg, Some(ID), &sig).expect("and its signature must verify");
+    sk.pub_key().unwrap().verify(msg, Some(ID), &sig).expect("and its signature must verify");
 }
 
 #[test]

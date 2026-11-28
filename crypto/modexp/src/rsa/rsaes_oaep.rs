@@ -480,6 +480,7 @@ where
             assert!(LEN > 0, "a key has at least one byte");
             assert!(LEN <= RSAES_OAEP::<K, H, M>::MAX_MESSAGE_LEN, "LEN > k - 2hLen - 2");
         }
+        self.check_filled()?;
         Ok(RsaOaepDecapsulator { sk: self, params })
     }
 }
@@ -542,6 +543,7 @@ where
         key: &mut KeyMaterial<KEY_LEN>,
     ) -> Result<usize, KeyTransportError> {
         key.zeroize();
+        self.check_filled()?;
         let mut bytes = Secret::<[u8; KEY_LEN]>::new();
         let len = decrypt::<K, H, M, N>(self, params.label, ct, None, &mut *bytes)
             .ok_or(KeyTransportError::DecryptionFailed)?;

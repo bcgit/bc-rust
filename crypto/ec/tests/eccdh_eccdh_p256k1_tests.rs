@@ -29,3 +29,8 @@ fn rng_rules() {
 fn kdf_variants() {
     eccdh_common::kdf_variants::<Secp256K1, 65, 32, 32>(SecurityStrength::_128bit);
 }
+
+#[test]
+fn keygen_out() {
+    eccdh_common::keygen_out_suite::<Secp256K1, 65, 32, 32>(SecurityStrength::_112bit);
+}

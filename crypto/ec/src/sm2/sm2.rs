@@ -264,7 +264,7 @@ impl SigningKey<SM2, SIG_LEN> for SM2PrivateKey {
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
         // PA is carried by the key, not recomputed: see SM2PrivateKey's docs.
-        let (x, y) = self.derive_pk().affine();
+        let (x, y) = self.pub_key()?.affine();
         let hash = za_hash(ctx, &x, &y)?;
         // Dropped last, after the signer is where the caller wants it.
         let _wipe = WipeStackBelowOnDrop::<WIPED_STACK_WORDS>;

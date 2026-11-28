@@ -130,7 +130,7 @@ fn bench_x25519_keygen_out() {
     let mut sk = X25519PrivateKey::zeroized();
     measure(|| {
         keygen_out(&mut FixedSeedRNG::new(black_box([0x2Au8; 32])), &mut sk).unwrap();
-        print!("{:x?}", sk.pk().unwrap().encode());
+        print!("{:x?}", sk.pub_key().unwrap().encode());
     });
 }
 
@@ -141,7 +141,7 @@ fn bench_x25519_from_bytes() {
     let bytes = [0x2Au8; 32];
     measure(|| {
         let sk = X25519PrivateKey::from_bytes(&bytes).unwrap();
-        print!("{:x?}", sk.pk().unwrap().encode());
+        print!("{:x?}", sk.pub_key().unwrap().encode());
     });
 }
 
@@ -153,7 +153,7 @@ fn bench_x25519_from_bytes_out() {
     let mut sk = X25519PrivateKey::zeroized();
     measure(|| {
         X25519PrivateKey::from_bytes_out(&bytes, &mut sk).unwrap();
-        print!("{:x?}", sk.pk().unwrap().encode());
+        print!("{:x?}", sk.pub_key().unwrap().encode());
     });
 }
 

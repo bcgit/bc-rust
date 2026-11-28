@@ -189,8 +189,8 @@ fn rfc7748_section_6_2() {
         "6927c120bb5ee8972b0d3e21374c9c921b09d1b0366f10b65173992d",
     )));
 
-    let alice_pk = alice_sk.pk().unwrap();
-    let bob_pk = bob_sk.pk().unwrap();
+    let alice_pk = alice_sk.pub_key().unwrap();
+    let bob_pk = bob_sk.pub_key().unwrap();
     check_value(
         alice_pk.as_bytes(),
         "Section 6.2 Alice's public key",
@@ -317,7 +317,7 @@ fn the_scalar_four_times_the_order_is_a_key_whose_public_key_is_zero() {
     let bytes = decode_56(FOUR_TIMES_ORDER);
     for sk in [X448PrivateKey::from_bytes(&bytes).unwrap(), sk_from_bytes(&bytes)] {
         assert_eq!(sk.encode(), bytes);
-        assert_eq!(sk.pk().unwrap().as_bytes(), &[0_u8; POINT_LEN]);
+        assert_eq!(sk.pub_key().unwrap().as_bytes(), &[0_u8; POINT_LEN]);
 
         let (on_curve, other_sk) = keygen_default().unwrap();
         assert!(matches!(sk.agree(&on_curve, ()), Err(KeyAgreementError::AgreementFailed)));
@@ -356,7 +356,7 @@ fn an_unfilled_key_makes_no_agreement() {
     // A generated key is unaffected, including the one whose bytes are all zero: its scalar
     // clamps to 2^447 and its public key is not zero.
     let zero_bytes = X448PrivateKey::from_bytes(&[0u8; SCALAR_LEN]).unwrap();
-    assert_ne!(zero_bytes.pk().unwrap().as_bytes(), &[0u8; POINT_LEN]);
+    assert_ne!(zero_bytes.pub_key().unwrap().as_bytes(), &[0u8; POINT_LEN]);
     assert!(zero_bytes.agree(&pk, ()).is_ok());
     assert!(zero_bytes.agree(&pk, params).is_ok());
 }

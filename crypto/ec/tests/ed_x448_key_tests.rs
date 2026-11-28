@@ -28,7 +28,7 @@ fn seed(hex_str: &str, key_type: KeyType) -> KeyMaterial<56> {
     KeyMaterial::<56>::from_bytes_as_type(&hex::decode(hex_str).unwrap(), key_type).unwrap()
 }
 
-/// What `pk()` gives for a key that was never filled.
+/// What `pub_key()` gives for a key that was never filled.
 const NO_PK: Result<X448PublicKey, KeyAgreementError> =
     Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey));
 
@@ -68,7 +68,7 @@ fn keygen_from_seed_takes_a_seed_or_random_material() {
     for key_type in [KeyType::Seed, KeyType::CryptographicRandom] {
         let (pk, sk) = keygen_from_seed(&seed(ALICE_SK, key_type)).unwrap();
         assert_eq!(pk.as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
-        assert_eq!(sk.pk().unwrap(), pk);
+        assert_eq!(sk.pub_key().unwrap(), pk);
     }
 }
 
@@ -113,7 +113,7 @@ fn keygen_uses_the_rng_output_as_the_key() {
     let mut rng = FixedSeedRNG::new(seed_bytes);
     let (pk, sk) = keygen(&mut rng).unwrap();
     assert_eq!(pk.as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
-    assert_eq!(sk.pk().unwrap(), pk);
+    assert_eq!(sk.pub_key().unwrap(), pk);
 
     // RNG too weak.
     let mut rng = FixedSeedRNG::new(seed_bytes);
@@ -143,7 +143,7 @@ fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
 
     let seed_bytes: [u8; 56] = hex::decode(ALICE_SK).unwrap().try_into().unwrap();
     let zero = X448PrivateKey::zeroized();
-    assert_eq!(zero.pk(), NO_PK);
+    assert_eq!(zero.pub_key(), NO_PK);
     let unfilled = |sk: &X448PrivateKey| {
         matches!(
             sk.create_agreement(()),
@@ -155,8 +155,8 @@ fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
     let (_, mut sk) = keygen_default().unwrap();
     keygen_out(&mut FixedSeedRNG::new(seed_bytes), &mut sk).unwrap();
     let (expected_pk, expected_sk) = keygen(&mut FixedSeedRNG::new(seed_bytes)).unwrap();
-    assert_eq!(sk.pk().unwrap().as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
-    assert_eq!(sk.pk().unwrap(), expected_pk);
+    assert_eq!(sk.pub_key().unwrap().as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
+    assert_eq!(sk.pub_key().unwrap(), expected_pk);
     assert!(sk == expected_sk);
     assert!(!unfilled(&sk));
 
@@ -167,7 +167,7 @@ fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
         Err(KeyAgreementError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm))
     ));
     assert!(sk == zero);
-    assert_eq!(sk.pk(), NO_PK);
+    assert_eq!(sk.pub_key(), NO_PK);
     assert!(unfilled(&sk));
 
     // An RNG that fails part-way through the key: what it wrote is wiped.
@@ -178,14 +178,14 @@ fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
     ));
     assert!(sk == zero);
     assert_eq!(sk.encode(), zero.encode());
-    assert_eq!(sk.pk(), NO_PK);
+    assert_eq!(sk.pub_key(), NO_PK);
     assert!(unfilled(&sk));
 
     let (_, mut sk) = keygen_default().unwrap();
     keygen_from_seed_out(&seed(ALICE_SK, KeyType::Seed), &mut sk).unwrap();
     let (expected_pk, expected_sk) = keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap();
-    assert_eq!(sk.pk().unwrap().as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
-    assert_eq!(sk.pk().unwrap(), expected_pk);
+    assert_eq!(sk.pub_key().unwrap().as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
+    assert_eq!(sk.pub_key().unwrap(), expected_pk);
     assert!(sk == expected_sk);
     assert!(!unfilled(&sk));
 
@@ -194,7 +194,7 @@ fn the_out_forms_fill_the_callers_key_and_zeroize_it_on_refusal() {
         Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
     ));
     assert!(sk == zero);
-    assert_eq!(sk.pk(), NO_PK);
+    assert_eq!(sk.pub_key(), NO_PK);
     assert!(unfilled(&sk));
 }
 
@@ -203,20 +203,20 @@ fn keygen_gives_fresh_pairs_whose_public_keys_belong_to_them() {
     let (pk1, sk1) = keygen_default().unwrap();
     let (pk2, sk2) = keygen_default().unwrap();
     assert_ne!(pk1, pk2);
-    assert_eq!(sk1.pk().unwrap(), pk1);
-    assert_eq!(sk2.pk().unwrap(), pk2);
-    assert_ne!(sk1.pk().unwrap(), pk2);
-    assert_ne!(sk2.pk().unwrap(), pk1);
+    assert_eq!(sk1.pub_key().unwrap(), pk1);
+    assert_eq!(sk2.pub_key().unwrap(), pk2);
+    assert_ne!(sk1.pub_key().unwrap(), pk2);
+    assert_ne!(sk2.pub_key().unwrap(), pk1);
     assert!(sk1 != sk2);
 }
 
 #[test]
 fn private_key_pk() {
     let (_, sk) = keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap();
-    assert_eq!(sk.pk().unwrap().as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
+    assert_eq!(sk.pub_key().unwrap().as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
 
     let (pk, sk) = keygen_default().unwrap();
-    assert_eq!(sk.pk().unwrap(), pk);
+    assert_eq!(sk.pub_key().unwrap(), pk);
 }
 
 #[test]
@@ -282,7 +282,7 @@ fn private_key_encoding() {
     let clamped_alice = X448PrivateKey::from_bytes(&clamp(decode_56(ALICE_SK))).unwrap();
     assert_eq!(clamp(raw), clamp(decode_56(ALICE_SK)));
     assert!(sk == clamped_alice);
-    assert_eq!(sk.pk().unwrap().as_bytes(), &decode_56(ALICE_PK));
+    assert_eq!(sk.pub_key().unwrap().as_bytes(), &decode_56(ALICE_PK));
 
     let mut out = [0xFF_u8; 56];
     assert_eq!(sk.encode_out(&mut out), 56);
@@ -297,7 +297,7 @@ fn private_key_encoding() {
     let encoded = from_seed.encode();
     let decoded = X448PrivateKey::from_bytes(&encoded).unwrap();
     assert!(decoded == from_seed);
-    assert_eq!(decoded.pk().unwrap(), from_seed.pk().unwrap());
+    assert_eq!(decoded.pub_key().unwrap(), from_seed.pub_key().unwrap());
 
     // Keys that differ in any other bit differ.
     for (byte, bit) in [(0, 0x04), (27, 0x01), (55, 0x40)] {
@@ -323,7 +323,7 @@ fn from_bytes_out_fills_a_held_key() {
     X448PrivateKey::from_bytes_out(&hex::decode(ALICE_SK).unwrap(), &mut held).unwrap();
     assert!(held == alice);
     assert_eq!(held.encode(), alice.encode());
-    assert_eq!(held.pk().unwrap().as_bytes()[..], hex::decode(ALICE_PK).unwrap()[..]);
+    assert_eq!(held.pub_key().unwrap().as_bytes()[..], hex::decode(ALICE_PK).unwrap()[..]);
 
     X448PrivateKey::from_bytes_out(&[7u8; 56], &mut held).unwrap();
     assert!(held == X448PrivateKey::from_bytes(&[7u8; 56]).unwrap() && held != alice);
@@ -335,7 +335,7 @@ fn from_bytes_out_fills_a_held_key() {
             Err(KeyDecodingError("An X448 private key must be 56 bytes"))
         );
         assert_eq!(held.encode(), X448PrivateKey::zeroized().encode());
-        assert_eq!(held.pk(), NO_PK);
+        assert_eq!(held.pub_key(), NO_PK);
     }
 }
 
@@ -347,7 +347,7 @@ fn clone_from_copies_into_a_held_key() {
     held.clone_from(&alice);
     assert!(held == alice);
     assert_eq!(held.encode(), alice.encode());
-    assert_eq!(held.pk().unwrap(), alice.pk().unwrap());
+    assert_eq!(held.pub_key().unwrap(), alice.pub_key().unwrap());
 
     // The copy of a filled key is filled: it makes the agreement the original makes.
     let (peer, _) = keygen_default().unwrap();
@@ -356,7 +356,7 @@ fn clone_from_copies_into_a_held_key() {
     // The copy of an unfilled key is unfilled, whatever the destination held.
     held.clone_from(&X448PrivateKey::zeroized());
     assert_eq!(held.encode(), X448PrivateKey::zeroized().encode());
-    assert_eq!(held.pk(), NO_PK);
+    assert_eq!(held.pub_key(), NO_PK);
     assert!(matches!(
         held.agree(&peer, ()),
         Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey))
@@ -369,7 +369,7 @@ fn a_clone_is_the_same_key() {
     let (pk, sk) = keygen_default().unwrap();
     let copy = sk.clone();
     assert!(copy == sk);
-    assert_eq!(copy.pk().unwrap(), pk);
+    assert_eq!(copy.pub_key().unwrap(), pk);
     let (peer, _) = keygen_default().unwrap();
     assert!(copy.agree(&peer, ()).unwrap().equals(&sk.agree(&peer, ()).unwrap()));
     assert!(matches!(
@@ -408,7 +408,7 @@ impl bouncycastle_core::traits::RNG for HalfWrittenRNG {
 fn keypair_consistency_check_takes_a_key_with_its_own_public_key() {
     let (pk, sk) = keygen_default().unwrap();
     assert_eq!(keypair_consistency_check(&pk, &sk), Ok(()));
-    assert_eq!(keypair_consistency_check(&sk.pk().unwrap(), &sk.clone()), Ok(()));
+    assert_eq!(keypair_consistency_check(&sk.pub_key().unwrap(), &sk.clone()), Ok(()));
 
     let (pk2, sk2) = keygen_default().unwrap();
     assert_eq!(

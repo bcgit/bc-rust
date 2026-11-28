@@ -305,6 +305,7 @@ where
         params: KdfParams<'p, HkdfDescription<'s, H>, SS_LEN>,
     ) -> Result<Self::Decapsulator<'k>, KEMError> {
         const { len_check::<H, SS_LEN>() };
+        self.check_filled()?;
         Ok(RsasveKdfDecapsulator { sk: self, params })
     }
 }

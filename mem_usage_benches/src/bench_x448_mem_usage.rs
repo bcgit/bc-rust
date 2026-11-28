@@ -129,7 +129,7 @@ fn bench_x448_keygen_out() {
     let mut sk = X448PrivateKey::zeroized();
     measure(|| {
         keygen_out(&mut FixedSeedRNG::new(black_box(ALICE_SK)), &mut sk).unwrap();
-        print!("{:x?}", sk.pk().unwrap().encode());
+        print!("{:x?}", sk.pub_key().unwrap().encode());
     });
 }
 
@@ -140,7 +140,7 @@ fn bench_x448_from_bytes() {
     let bytes = [0x2Au8; 56];
     measure(|| {
         let sk = X448PrivateKey::from_bytes(&bytes).unwrap();
-        print!("{:x?}", sk.pk().unwrap().encode());
+        print!("{:x?}", sk.pub_key().unwrap().encode());
     });
 }
 
@@ -152,7 +152,7 @@ fn bench_x448_from_bytes_out() {
     let mut sk = X448PrivateKey::zeroized();
     measure(|| {
         X448PrivateKey::from_bytes_out(&bytes, &mut sk).unwrap();
-        print!("{:x?}", sk.pk().unwrap().encode());
+        print!("{:x?}", sk.pub_key().unwrap().encode());
     });
 }
 

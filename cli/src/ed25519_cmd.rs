@@ -81,7 +81,7 @@ pub(crate) fn ed25519_cmd(
                 let mut sk = Ed25519PrivateKey::zeroized();
                 load_sk(|| read_secret_file_or_stdin(skfile), &mut sk);
                 // A decoded key is filled, so it has a public key.
-                sk.pk().unwrap()
+                sk.pub_key().unwrap()
             };
             write_bytes_or_hex(&pk.encode(), output_hex);
         }

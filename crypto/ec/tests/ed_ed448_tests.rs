@@ -250,7 +250,7 @@ fn signing_is_deterministic() {
 #[test]
 fn what_was_not_signed_is_rejected() {
     let (pk, sk) = key_pair().unwrap();
-    let other = Ed448PrivateKey::from_bytes(&[3; 57]).unwrap().pk().unwrap();
+    let other = Ed448PrivateKey::from_bytes(&[3; 57]).unwrap().pub_key().unwrap();
     for (name, sign, verify) in BOTH {
         let sig = sign(&sk, MSG, None);
         assert_eq!(verify(&pk, MSG, None, &sig), Ok(()), "{name}");
@@ -544,7 +544,7 @@ const CONTEXT_KATS: &[(bool, &str, &str)] = &[
 fn known_answers_with_a_context() {
     let sk = Ed448PrivateKey::from_bytes(&bouncycastle_core::hex::decode(GENERATED_SK).unwrap())
         .unwrap();
-    let pk = sk.pk().unwrap();
+    let pk = sk.pub_key().unwrap();
     assert_eq!(pk.encode().as_slice(), bouncycastle_core::hex::decode(GENERATED_PK).unwrap());
     let mut seen = Vec::new();
     for (ph, ctx, sig) in CONTEXT_KATS {

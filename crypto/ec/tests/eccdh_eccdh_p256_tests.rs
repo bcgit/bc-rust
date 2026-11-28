@@ -133,3 +133,8 @@ fn the_parameters_name_the_length() {
     X963KDF_SHA256::derive_out(&z, b"info", 48, &mut expected).unwrap();
     assert!(key48.equals(&expected));
 }
+
+#[test]
+fn keygen_out() {
+    eccdh_common::keygen_out_suite::<P256, 65, 32, 32>(SecurityStrength::_112bit);
+}

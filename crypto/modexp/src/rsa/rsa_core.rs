@@ -18,7 +18,7 @@ use crate::rsa::modexp::{
     MontgomeryContext, mod_pow, mod_pow_public_exponent, mul_mod, mul_u64_mod, reduce_wide, sub_mod,
 };
 use crate::rsa::size::{RsaSigningSize, RsaSize};
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{KeyMaterialError, SignatureError};
 use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::montgomery;
 use bouncycastle_utils::nat;
@@ -64,6 +64,9 @@ pub(in crate::rsa) fn rsasp1<K: RsaSigningSize>(
     sk: &RsaPrivateComponents<K>,
     m: &K::Limbs,
 ) -> Result<K::Limbs, SignatureError> {
+    if !sk.is_filled() {
+        return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+    }
     // RFC 8017 §5.2.1 step 1: the representative must be in [0, n - 1].
     if !K::is_less(m, sk.n()) {
         return Err(SignatureError::DecodingError("message representative out of range"));

@@ -56,10 +56,10 @@ use bouncycastle_ec::dhkem::{AuthDecapsulatingKey, AuthEncapsulatingKey, DHKEMPa
 use bouncycastle_ec::eccdh::dhkem::{DhkemCurve, derive_key_pair};
 use bouncycastle_ec::eccdh::eccdh::{ECCDH, MatchedHash};
 use bouncycastle_ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
-use bouncycastle_ec::eccdh::keys_common::{AgreementKeyPair, DerivePublicKey as EccdhDerive};
+use bouncycastle_ec::eccdh::keys_common::AgreementKeyPair;
 use bouncycastle_ec::ecdsa::ecdsa::{ECDSA, EcdsaHash};
 use bouncycastle_ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
-use bouncycastle_ec::ecdsa::keys_common::{DerivePublicKey, SignatureKeyPair};
+use bouncycastle_ec::ecdsa::keys_common::SignatureKeyPair;
 use bouncycastle_ec::ed::x448::{self, X448PrivateKey, X448PublicKey};
 use bouncycastle_ec::ed::x25519::{self, X25519PrivateKey, X25519PublicKey};
 use bouncycastle_ec::ed::{ed448, ed25519};
@@ -584,6 +584,28 @@ where
         }
         scan.same(&op(name), &publics[0], &publics[1]);
     }
+    // Into a key held on the heap: nothing is handed out, so the two runs must leave the same
+    // stack throughout.
+    for (name, generic) in [("keygen_out", false), ("generate_signature_key_out", true)] {
+        for (wide, d) in key_draws.iter().zip(&keys) {
+            scan.keep();
+            *rng = rng_of(wide);
+            *sk = ECDSAPrivateKey::zeroized();
+            scan.run(|| {
+                if generic {
+                    C::generate_signature_key_out::<H>(&mut *rng, &mut sk)
+                } else {
+                    bouncycastle_ec::ecdsa::keys::keygen_out::<C, H>(&mut *rng, &mut sk)
+                }
+            })
+            .unwrap();
+            assert_eq!(sk.encode(), *d, "not its reduction");
+            let mut values = key_values(d);
+            push_integer(&mut values, "RNG output", wide);
+            scan.clean(&op(name), &values);
+        }
+        scan.same(&op(name), &[], &[]);
+    }
 
     for d in &keys {
         *sk = ECDSAPrivateKey::from_bytes(d).unwrap();
@@ -605,18 +627,20 @@ where
     for d in &keys {
         *sk = ECDSAPrivateKey::from_bytes(d).unwrap();
         scan.keep();
-        let pk: ECDSAPublicKey<C, H> = scan.run(|| sk.derive_pk());
+        let pk: ECDSAPublicKey<C, H> = scan.run(|| sk.pub_key()).unwrap();
         assert_eq!(pk.encode(), public_of::<C, SK, PK>(d), "not its public key");
-        scan.clean(&op("derive_pk"), &key_values(d));
+        scan.clean(&op("pub_key"), &key_values(d));
         publics.push([public_image(&pk.encode()), memory_image(&pk)].concat());
     }
-    scan.same(&op("derive_pk"), &publics[0], &publics[1]);
+    scan.same(&op("pub_key"), &publics[0], &publics[1]);
 
     // Signing: twice, under two keys, from two draws of the RNG.
     let msg = message(100);
     let mut sig = Box::new([0u8; SIG]);
-    let pks: Vec<ECDSAPublicKey<C, H>> =
-        keys.iter().map(|d| ECDSAPrivateKey::<C, H>::from_bytes(d).unwrap().derive_pk()).collect();
+    let pks: Vec<ECDSAPublicKey<C, H>> = keys
+        .iter()
+        .map(|d| ECDSAPrivateKey::<C, H>::from_bytes(d).unwrap().pub_key().unwrap())
+        .collect();
     // What a signature under the i-th key is searched for: the key, the k recovered from the
     // signature, and the draw it was to come from, if any.
     let signing_values = |i: usize, sig: &[u8; SIG], wide: Option<&[u8]>| {
@@ -834,6 +858,28 @@ where
     }
 
     let mut sk = Box::new(ECCDHPrivateKey::<C>::from_bytes(&keys[0]).unwrap());
+    // Into a key held on the heap: nothing is handed out, so the two runs must leave the same
+    // stack throughout.
+    for (name, generic) in [("keygen_out", false), ("generate_agreement_key_out", true)] {
+        for (wide, d) in key_draws.iter().zip(&keys) {
+            scan.keep();
+            *rng = rng_of(wide);
+            *sk = ECCDHPrivateKey::zeroized();
+            scan.run(|| {
+                if generic {
+                    C::generate_agreement_key_out(&mut *rng, &mut sk)
+                } else {
+                    bouncycastle_ec::eccdh::keys::keygen_out::<C>(&mut *rng, &mut sk)
+                }
+            })
+            .unwrap();
+            assert_eq!(sk.encode(), *d, "not its reduction");
+            let mut values = key_values(d);
+            push_integer(&mut values, "RNG output", wide);
+            scan.clean(&op(name), &values);
+        }
+        scan.same(&op(name), &[], &[]);
+    }
     // As for ECDSA's encodings, the search is the check.
     for d in &keys {
         *sk = ECCDHPrivateKey::from_bytes(d).unwrap();
@@ -855,12 +901,12 @@ where
     for d in &keys {
         *sk = ECCDHPrivateKey::from_bytes(d).unwrap();
         scan.keep();
-        let pk: ECCDHPublicKey<C> = scan.run(|| EccdhDerive::derive_pk(&*sk));
+        let pk: ECCDHPublicKey<C> = scan.run(|| sk.pub_key()).unwrap();
         assert_eq!(pk.encode(), public_of::<C, SK, PK>(d), "not its public key");
-        scan.clean(&op("derive_pk"), &key_values(d));
+        scan.clean(&op("pub_key"), &key_values(d));
         publics.push([public_image(&pk.encode()), memory_image(&pk)].concat());
     }
-    scan.same(&op("derive_pk"), &publics[0], &publics[1]);
+    scan.same(&op("pub_key"), &publics[0], &publics[1]);
 
     // Agreement: under two keys, with one peer.
     let peer_d = C::reduce_wide_bits_mod_n_minus_1(&bytes_of(&format!("{curve} peer"), draw_len))

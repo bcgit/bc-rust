@@ -20,7 +20,7 @@
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
-//! assert_eq!(sk.pk()?, pk);
+//! assert_eq!(sk.pub_key()?, pk);
 //! # Ok::<(), bouncycastle_core::errors::KeyAgreementError>(())
 //! ```
 //!
@@ -290,10 +290,10 @@ pub fn keygen(rng: &mut dyn RNG) -> Result<(X448PublicKey, X448PrivateKey), KeyA
 }
 
 /// Generates a private key into `sk`, a key you hold: the RNG, which must offer X448's 192 bits,
-/// writes the 56 bytes of the scalar straight into the key's own `Secret` (RFC 7748 Section
-/// 6.2), so no copy of it is staged on the way. The public key is read from the key afterwards
-/// with [`sk.pk()`](X448PrivateKey::pk), which cannot fail once this has returned `Ok`. `sk` is
-/// zeroized first and left so on every error.
+/// writes the 56 bytes of the scalar straight into the key's own `Secret` (RFC 7748 Section 6.2),
+/// so no copy of it is staged on the way. The public key is read from the key afterwards with
+/// [`sk.pub_key()`](X448PrivateKey::pub_key), which cannot fail once this has returned `Ok`. `sk`
+/// is zeroized first and left so on every error.
 ///
 /// # Errors
 /// [`KeyAgreementError::RNGError`] if the RNG is weaker than the algorithm or fails to deliver.
@@ -380,7 +380,7 @@ pub fn keypair_consistency_check(
     sk: &X448PrivateKey,
 ) -> Result<(), KeyAgreementError> {
     // Both sides are public keys, so the comparison need not be constant time.
-    if sk.pk()? == *pk { Ok(()) } else { Err(KeyAgreementError::ConsistencyCheckFailed) }
+    if sk.pub_key()? == *pk { Ok(()) } else { Err(KeyAgreementError::ConsistencyCheckFailed) }
 }
 
 /// `K = X448(k, u)` of RFC 7748 Section 6.2 into `out`, the u-coordinate of the peer's public
@@ -621,7 +621,7 @@ impl X448PrivateKey {
     /// # Errors
     /// [`KeyMaterialError::ActingOnZeroizedKey`] for a key that was never filled
     /// ([`zeroized`](Self::zeroized)).
-    pub fn pk(&self) -> Result<X448PublicKey, KeyAgreementError> {
+    pub fn pub_key(&self) -> Result<X448PublicKey, KeyAgreementError> {
         if !self.filled {
             return Err(KeyMaterialError::ActingOnZeroizedKey.into());
         }
@@ -1238,5 +1238,22 @@ impl DecapsulatingKey<(), POINT_LEN, DHKEM_SS_LEN> for X448PrivateKey {
     fn create_decapsulator<'k>(&'k self, _params: ()) -> Result<X448Decapsulator<'k>, KEMError> {
         self.check_dhkem_key()?;
         Ok(X448Decapsulator { sk: self })
+    }
+}
+
+impl bouncycastle_core::traits::KeyPairGenerator for X448PrivateKey {
+    type PublicKey = X448PublicKey;
+    type Error = KeyAgreementError;
+
+    fn zeroized() -> Self {
+        Self::zeroized()
+    }
+
+    fn generate_out(rng: &mut dyn RNG, sk: &mut Self) -> Result<(), KeyAgreementError> {
+        keygen_out(rng, sk)
+    }
+
+    fn pub_key(&self) -> Result<X448PublicKey, KeyAgreementError> {
+        self.pub_key()
     }
 }

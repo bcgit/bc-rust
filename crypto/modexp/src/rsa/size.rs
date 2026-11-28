@@ -14,6 +14,7 @@ use crate::rsa::keys::{
     RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey, modulus_strength,
 };
 use crate::rsa::rsa_core;
+use crate::rsa::rsassa::RsaSignatureAlgorithm;
 use crate::rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use crate::rsa::rsassa_pss::{PssHash, PssParams, RSASSA_PSS};
 use crate::rsa::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
@@ -244,9 +245,39 @@ pub trait SignatureKeyPair: RsaSigningSize {
         (RsaPublicKey<RSASSA_PSS<Self, H, P>>, RsaPrivateKey<RSASSA_PSS<Self, H, P>>),
         SignatureError,
     >;
+
+    /// Key generation into `sk`, a key you hold (made with
+    /// [`RsaPrivateKey::zeroized`]), for any signature scheme at this size: the key is written
+    /// where it sits from inside the frame [`RsaSigningSize::keygen`] runs in, which is
+    /// overwritten afterwards, so no copy of it is left on the way. The public key is read
+    /// from it afterwards with [`RsaPrivateKey::pub_key`]. `sk` is zeroized first and left so on
+    /// every error.
+    ///
+    /// # Errors
+    /// As [`RsaSigningSize::keygen`].
+    fn generate_signature_key_out<A: RsaSignatureAlgorithm<Size = Self>>(
+        rng: &mut dyn RNG,
+        sk: &mut RsaPrivateKey<A>,
+    ) -> Result<(), SignatureError>;
 }
 
 impl<K: RsaSigningSize> SignatureKeyPair for K {
+    fn generate_signature_key_out<A: RsaSignatureAlgorithm<Size = K>>(
+        rng: &mut dyn RNG,
+        sk: &mut RsaPrivateKey<A>,
+    ) -> Result<(), SignatureError> {
+        *sk = RsaPrivateKey::zeroized();
+        let result = keygen_as::<K, _, _>(rng, |pair| {
+            let (_, components) = pair?;
+            sk.components_mut().fill_from(&components);
+            Ok(())
+        });
+        if result.is_err() {
+            *sk = RsaPrivateKey::zeroized();
+        }
+        result
+    }
+
     fn generate_pkcs1_v1_5_signature_key_pair<H: HashOneShot + HashAlgParams + AlgorithmOID>(
         rng: &mut dyn RNG,
     ) -> Result<
@@ -298,6 +329,14 @@ pub trait KemKeyPair {
     fn generate_kem_key_pair(
         rng: &mut dyn RNG,
     ) -> Result<(Self::PublicKey, Self::PrivateKey), KEMError>;
+
+    /// Key generation into `sk`, a key you hold (made with `zeroized()`), as
+    /// [`SignatureKeyPair::generate_signature_key_out`] does for a signature key; the public
+    /// key is read from it afterwards with its `pub_key()`.
+    ///
+    /// # Errors
+    /// As [`Self::generate_kem_key_pair`]; `sk` is left zeroized.
+    fn generate_kem_key_out(rng: &mut dyn RNG, sk: &mut Self::PrivateKey) -> Result<(), KEMError>;
 }
 
 impl<K: RsaSigningSize> KemKeyPair for K {
@@ -308,6 +347,22 @@ impl<K: RsaSigningSize> KemKeyPair for K {
         rng: &mut dyn RNG,
     ) -> Result<(RsaKEMPublicKey<K>, RsaKEMPrivateKey<K>), KEMError> {
         keygen_as::<K, _, _>(rng, crate::rsa::rsasve::keygen_from::<K>)
+    }
+
+    fn generate_kem_key_out(
+        rng: &mut dyn RNG,
+        sk: &mut RsaKEMPrivateKey<K>,
+    ) -> Result<(), KEMError> {
+        *sk = RsaKEMPrivateKey::zeroized();
+        let result = keygen_as::<K, _, _>(rng, |pair| {
+            let (_, generated) = crate::rsa::rsasve::keygen_from::<K>(pair)?;
+            sk.0.fill_from(&generated.0);
+            Ok(())
+        });
+        if result.is_err() {
+            *sk = RsaKEMPrivateKey::zeroized();
+        }
+        result
     }
 }
 

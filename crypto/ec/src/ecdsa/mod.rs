@@ -208,7 +208,7 @@
 //! stack wipe (see the Security Considerations); `encode` is also `encode_out`'s, and the final is
 //! the larger of the random and the deterministic signer's, on a signer held in a `Box`:
 //!
-//! | Curve                              | `from_bytes` | `encode` | `derive_pk` | `keygen` | `create_signer` | `sign_out` | `sign_deterministic_out` | final  |
+//! | Curve                              | `from_bytes` | `encode` | `pub_key`   | `keygen` | `create_signer` | `sign_out` | `sign_deterministic_out` | final  |
 //! |------------------------------------|--------------|----------|-------------|----------|-----------------|------------|--------------------------|--------|
 //! | P-256, secp256k1, brainpoolP256r1  | 1,656        | 632      | 4,776       | 5,240    | 5,768           | 6,344      | 6,200                    | 5,976  |
 //! | P-384, brainpoolP384r1             | 1,656        | 632      | 6,088       | 6,776    | 7,304           | 8,280      | 7,976                    | 7,640  |
@@ -263,7 +263,7 @@
 //!   RIPEMD-160 lacks; see [`ECDSA`](ecdsa::ECDSA) for the hazmat wrapper that opts back in.
 //! - **The stack used to load, encode or generate a private key, to derive its public key, to
 //!   draw `k` and to sign is overwritten afterwards**: after `from_bytes`, `encode`,
-//!   `encode_out`, `derive_pk`, `keygen`, `create_signer`, `sign_out` and the signers' finals,
+//!   `encode_out`, `pub_key`, `keygen`, `create_signer`, `sign_out` and the signers' finals,
 //!   by 512 bytes after an encoding, 1,536 after `from_bytes` and, after the others, by 4,608 to
 //!   9,472 bytes by curve, sized from measurements of optimised x86-64 builds with rustc 1.88
 //!   and 1.97 and checked by `dev_scripts/check_ecdsa_stack.sh`, which covers those builds only.

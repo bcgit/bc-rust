@@ -182,11 +182,13 @@ where
     where
         Self: 'k;
 
-    /// The raw primitive takes nothing beyond the key, so this never fails.
+    /// The raw primitive takes nothing beyond the key, so this fails only for a key that was
+    /// never filled ([`KeyMaterialError::ActingOnZeroizedKey`]).
     fn create_agreement<'k>(
         &'k self,
         _params: (),
     ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
+        self.check_filled()?;
         Ok(ECCDHAgreement { sk: self })
     }
 }
@@ -357,11 +359,13 @@ where
     where
         Self: 'k;
 
-    /// Cannot fail: the KDF validated what it was made from when it was made.
+    /// Fails only for a key that was never filled ([`KeyMaterialError::ActingOnZeroizedKey`]):
+    /// the KDF validated what it was made from when it was made.
     fn create_agreement<'k>(
         &'k self,
         params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
+        self.check_filled()?;
         Ok(ECCDHKdfAgreement { sk: self, params })
     }
 }

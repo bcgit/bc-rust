@@ -22,6 +22,7 @@
 //! stream is all zero, about one one-byte message in 256; Bouncy Castle Java's `SM2Engine`
 //! makes no such test when it decrypts.
 
+use crate::curve::FILLED_STACK_WORDS;
 use crate::hazmat::sm2::Sm2FieldElement;
 use crate::hazmat::sm2_comb::comb_multiply_base_point;
 use crate::hazmat::sm2_scalar::Sm2Scalar;
@@ -29,12 +30,14 @@ use crate::hazmat::sm2_sec1;
 use crate::sm2::encryption_core::{self, KEY_WIPED_STACK_WORDS};
 use crate::sm2::extra_bits::{N_MINUS_1_LIMBS, reduce_wide_bits_mod_n_minus_2};
 use crate::sm2::keys::{EXTRA_BITS_DRBG_OUTPUT_LEN, PK_LEN, SK_LEN};
-use bouncycastle_core::errors::{KeyDecodingError, PublicKeyEncryptionError, RNGError};
+use bouncycastle_core::errors::{
+    KeyDecodingError, KeyMaterialError, PublicKeyEncryptionError, RNGError,
+};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_utils::nat;
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
-use bouncycastle_utils::stack_wipe::{WipeStackBelowOnDrop, wipe_stack_below};
+use bouncycastle_utils::stack_wipe::{WipeStackBelowOnDrop, in_wiped_frame, wipe_stack_below};
 use core::fmt;
 use core::fmt::{Display, Formatter};
 
@@ -201,11 +204,39 @@ pub struct SM2EncryptionPrivateKey {
 }
 
 impl SM2EncryptionPrivateKey {
+    /// The key [`keygen_out`] writes into, so that `dB` is reduced where it will live and never
+    /// moved: `dB = 0`, which is not a key. Until `keygen_out` fills it, it has no public key and
+    /// decrypts nothing ([`KeyMaterialError::ActingOnZeroizedKey`]), and it is equal to no key
+    /// that was generated or decoded.
+    ///
+    /// # 🚨 Security Considerations 🚨
+    ///
+    /// The encoding of this key is not refused, the encoding methods having no error to give: it
+    /// is all zero, which decodes as no key. Do not store or send the encoding of a key whose
+    /// generation failed.
+    pub fn zeroized() -> Self {
+        Self { d: Sm2Scalar::from_limbs([0; 4]) }
+    }
+
+    /// Refuses a key that was never generated or decoded: `dB = 0`, compared in constant time.
+    /// Every filled key's `dB` is non-zero, so the answer is not secret; what the comparison
+    /// spills of `dB` is, so it runs in a frame whose stack is overwritten afterwards.
+    fn check_filled(&self) -> Result<(), PublicKeyEncryptionError> {
+        let unfilled =
+            in_wiped_frame::<FILLED_STACK_WORDS, _>(|| self.d == Sm2Scalar::from_limbs([0; 4]));
+        if unfilled { Err(KeyMaterialError::ActingOnZeroizedKey.into()) } else { Ok(()) }
+    }
+
     /// The public key `PB = [dB]G`, computed on each call.
-    pub fn derive_pk(&self) -> SM2EncryptionPublicKey {
+    ///
+    /// # Errors
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] for a key that was never filled
+    /// ([`zeroized`](Self::zeroized)).
+    pub fn pub_key(&self) -> Result<SM2EncryptionPublicKey, PublicKeyEncryptionError> {
+        self.check_filled()?;
         let pk = public_key_in_own_frame(&self.d);
         wipe_stack_below::<KEY_WIPED_STACK_WORDS>();
-        pk
+        Ok(pk)
     }
 
     /// Decrypts `C2` in `buf` where it lies, given `C1` and `C3`: `buf` holds `C2` on entry and
@@ -220,13 +251,18 @@ impl SM2EncryptionPrivateKey {
     /// encoding of a point on the curve or the ciphertext does not verify, without saying which;
     /// and
     /// [`PublicKeyEncryptionError::InvalidInputLength`] for an empty `buf`, or one of
-    /// `(2^32 - 1) * 32` bytes or more.
+    /// `(2^32 - 1) * 32` bytes or more; [`PublicKeyEncryptionError::KeyMaterialError`] for a key
+    /// that was never filled ([`zeroized`](Self::zeroized)), with `buf` zeroized.
     pub fn decrypt_detached_inplace(
         &self,
         c1: &[u8; C1_LEN],
         c3: &[u8; C3_LEN],
         buf: &mut [u8],
     ) -> Result<(), PublicKeyEncryptionError> {
+        if let Err(e) = self.check_filled() {
+            encryption_core::wipe(buf);
+            return Err(e);
+        }
         encryption_core::decrypt_detached_inplace(&self.d, c1, c3, buf)
     }
 
@@ -340,14 +376,25 @@ fn public_key_in_own_frame(d: &Sm2Scalar) -> SM2EncryptionPublicKey {
     public_key(d)
 }
 
-/// The key pair that 320 bits of an RNG's output give, never inlined, for the same reason. It
-/// returns what [`keygen`] does, for `keygen` to end in the call: the private key is then
-/// written to where `keygen`'s caller wants it, and to no frame above the wiped ones.
+/// The key that 320 bits of an RNG's output give, filled into `sk`, never inlined, for the same
+/// reason.
+#[inline(never)]
+fn fill_in_own_frame(
+    extra_bits: &[u8; EXTRA_BITS_DRBG_OUTPUT_LEN],
+    sk: &mut SM2EncryptionPrivateKey,
+) {
+    sk.d = reduce_wide_bits_mod_n_minus_2(extra_bits);
+}
+
+/// The key pair [`keygen_out`] gives, never inlined, for the same reason. It returns what
+/// [`keygen`] does, for `keygen` to end in the call: the private key is then written to where
+/// `keygen`'s caller wants it, and to no frame above the wiped ones.
 #[inline(never)]
 fn key_pair_in_own_frame(
-    extra_bits: &[u8; EXTRA_BITS_DRBG_OUTPUT_LEN],
+    rng: &mut dyn RNG,
 ) -> Result<(SM2EncryptionPublicKey, SM2EncryptionPrivateKey), PublicKeyEncryptionError> {
-    let sk = SM2EncryptionPrivateKey { d: reduce_wide_bits_mod_n_minus_2(extra_bits) };
+    let mut sk = SM2EncryptionPrivateKey::zeroized();
+    keygen_out(rng, &mut sk)?;
     Ok((public_key(&sk.d), sk))
 }
 
@@ -355,18 +402,57 @@ fn key_pair_in_own_frame(
 /// `dB` in `[1, n-2]` from 320 bits of `rng`'s output (see [`crate::sm2::extra_bits`]), and
 /// `PB = [dB]G`.
 ///
+/// [`keygen_out`] into a key you hold, moved out of this frame; a move wipes nothing.
+///
 /// # Errors
 /// [`PublicKeyEncryptionError::RNGError`] if `rng` offers less than 128 bits of security
 /// strength or fails to deliver.
 pub fn keygen(
     rng: &mut dyn RNG,
 ) -> Result<(SM2EncryptionPublicKey, SM2EncryptionPrivateKey), PublicKeyEncryptionError> {
+    // Dropped last, after the result is where the caller wants it.
+    let _wipe = WipeStackBelowOnDrop::<KEY_WIPED_STACK_WORDS>;
+    key_pair_in_own_frame(rng)
+}
+
+/// As [`keygen`], into `sk`, a key you hold (made with [`SM2EncryptionPrivateKey::zeroized`]):
+/// `dB` is reduced from the RNG's output straight into the key, with the stack the work used
+/// overwritten afterwards, so no copy of it is left on the way. The same RNG output gives the
+/// same key as [`keygen`]. The public key is computed from the key afterwards with
+/// [`sk.pub_key()`](SM2EncryptionPrivateKey::pub_key), which cannot fail once this has
+/// returned `Ok`. `sk` is zeroized first and left so on every error.
+///
+/// # Errors
+/// As [`keygen`].
+pub fn keygen_out(
+    rng: &mut dyn RNG,
+    sk: &mut SM2EncryptionPrivateKey,
+) -> Result<(), PublicKeyEncryptionError> {
+    *sk = SM2EncryptionPrivateKey::zeroized();
     if rng.security_strength() < SecurityStrength::_128bit {
         return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
     }
-    // Dropped last, after the result is where the caller wants it.
+    // Dropped last, after the key is filled.
     let _wipe = WipeStackBelowOnDrop::<KEY_WIPED_STACK_WORDS>;
     let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
     crate::rng_draw::fill_bytes(rng, &mut *extra_bits)?;
-    key_pair_in_own_frame(&extra_bits)
+    fill_in_own_frame(&extra_bits, sk);
+    Ok(())
+}
+
+impl bouncycastle_core::traits::KeyPairGenerator for SM2EncryptionPrivateKey {
+    type PublicKey = SM2EncryptionPublicKey;
+    type Error = PublicKeyEncryptionError;
+
+    fn zeroized() -> Self {
+        Self::zeroized()
+    }
+
+    fn generate_out(rng: &mut dyn RNG, sk: &mut Self) -> Result<(), PublicKeyEncryptionError> {
+        keygen_out(rng, sk)
+    }
+
+    fn pub_key(&self) -> Result<SM2EncryptionPublicKey, PublicKeyEncryptionError> {
+        self.pub_key()
+    }
 }

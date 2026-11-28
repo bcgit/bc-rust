@@ -548,7 +548,7 @@ Twelve workflows under `.github/workflows/`, all triggered by pull requests:
   `sm2.rs` for the signing key and signing (the harness reports the depth with the wipe's body taken out).
 - `ecdsa-stack.yml`: `dev_scripts/check_ecdsa_stack.sh`, the same shape and matrix over
   `dev_scripts/ecdsa_stack_harness`, which runs ECDSA's and ECC CDH's key decoding, encoding, generation and
-  `derive_pk`, the drawing of `k`, the one-shots and the signers' finals, on all seven curves, ECC CDH's agreement
+  `pub_key`, the drawing of `k`, the one-shots and the signers' finals, on all seven curves, ECC CDH's agreement
   (raw and through its KDFs), DHKEM over the NIST curves and X448 with its labeled HKDF steps, and, in its `ed`
   module, Ed25519's and Ed448's key generation, decoding, copies, encodings and every form of signing and X25519's
   and X448's keys and agreement (X25519's DHKEM, and the comparison of its scalar multiplications, are reported,

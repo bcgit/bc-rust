@@ -324,7 +324,7 @@ where
     }
 }
 
-/// `ECDSA_KeyPair.rsp`'s `[curve]` section: `[d]G` must be `Q`, through `derive_pk` and
+/// `ECDSA_KeyPair.rsp`'s `[curve]` section: `[d]G` must be `Q`, through `pub_key` and
 /// through a signature under `d` verifying under `Q`.
 pub fn keypair<C, H, const PK_LEN: usize, const SK_LEN: usize, const SIG_LEN: usize>(section: &str)
 where
@@ -332,7 +332,6 @@ where
         + Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
     H: EcdsaHash + CollisionResistantHash,
 {
-    use bouncycastle_ec::ecdsa::keys_common::DerivePublicKey;
     let width = C::SCALAR_LEN;
     let content = get_test_data("ECDSA_KeyPair.rsp");
     let records: Vec<Record> = parse_records(&content)
@@ -350,7 +349,7 @@ where
             ECDSAPrivateKey::<C, H>::from_bytes(&d).expect("CAVP d must be a valid private key");
         let pk = ECDSAPublicKey::<C, H>::from_bytes(&uncompressed_pk(&qx, &qy))
             .expect("CAVP Q must be a valid public key");
-        assert_eq!(sk.derive_pk(), pk, "{section}: [d]G must be Q");
+        assert_eq!(sk.pub_key().unwrap(), pk, "{section}: [d]G must be Q");
         let sig = OneShotSigningKey::<ECDSA<C, H>, SIG_LEN>::sign(
             &sk,
             &mut DefaultRNG::default(),

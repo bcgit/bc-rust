@@ -39,7 +39,6 @@ use bouncycastle::core::traits::{PrivateKey, PublicKey};
 use bouncycastle::ec::curve::Curve;
 use bouncycastle::ec::eccdh::dhkem::DhkemCurve;
 use bouncycastle::ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
-use bouncycastle::ec::eccdh::keys_common::DerivePublicKey;
 use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
 use bouncycastle::rng::DefaultRNG;
 
@@ -103,7 +102,7 @@ where
     bytes[SK_LEN - 1] = 0x2A;
     let sk = ECCDHPrivateKey::<C>::from_bytes(&bytes).unwrap();
     bytes[SK_LEN - 1] = 0x07;
-    let peer_pk = ECCDHPrivateKey::<C>::from_bytes(&bytes).unwrap().derive_pk();
+    let peer_pk = ECCDHPrivateKey::<C>::from_bytes(&bytes).unwrap().pub_key().unwrap();
 
     let z = measure(|| sk.agree(&peer_pk, ()).unwrap());
     println!("{:x?}", z.ref_to_bytes());
@@ -127,7 +126,7 @@ fn load_pk<C, const PK_LEN: usize, const SK_LEN: usize>() -> ECCDHPublicKey<C>
 where
     C: Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN]>,
 {
-    load_sk::<C, SK_LEN>().derive_pk()
+    load_sk::<C, SK_LEN>().pub_key().unwrap()
 }
 
 /// DHKEM encapsulation (RFC 9180 Section 4.1) on one curve against a fixed key, including the
@@ -157,7 +156,7 @@ where
 
     let mut bytes = [0u8; SK_LEN];
     bytes[SK_LEN - 1] = 0x07;
-    let ct = ECCDHPrivateKey::<C>::from_bytes(&bytes).unwrap().derive_pk().encode();
+    let ct = ECCDHPrivateKey::<C>::from_bytes(&bytes).unwrap().pub_key().unwrap().encode();
 
     let sk = load_sk::<C, SK_LEN>();
     measure(|| {

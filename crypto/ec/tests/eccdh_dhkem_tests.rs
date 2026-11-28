@@ -20,7 +20,7 @@
 //! Neither the appendix nor that file has P-384 (`kem_id` 17). Its known answers are in
 //! `eccdh_dhkem_p384_bc_java_tests.rs`.
 
-use bouncycastle_core::errors::{KEMError, RNGError};
+use bouncycastle_core::errors::{KEMError, KeyMaterialError, RNGError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::hex;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
@@ -33,11 +33,13 @@ use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKe
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ec::dhkem::{AuthDecapsulatingKey, AuthEncapsulatingKey};
+use bouncycastle_ec::dhkem::{DHKEM, DHKEMParams};
 use bouncycastle_ec::eccdh::dhkem::{
     DHKEM_P256_HKDF_SHA256, DHKEM_P384_HKDF_SHA384, DHKEM_P521_HKDF_SHA512, DhkemCurve,
     derive_key_pair,
 };
-use bouncycastle_ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
+use bouncycastle_ec::eccdh::eccdh::ECCDH;
+use bouncycastle_ec::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen, keygen_out};
 use bouncycastle_ec::{P256, P384, P521};
 use bouncycastle_rng::{DefaultRNG, HashDRBG_SHA512};
 use std::collections::HashMap;
@@ -426,4 +428,70 @@ fn auth_encaps_and_auth_decaps_agree_on_every_curve() {
     auth_round_trip::<P256, 65, 32>();
     auth_round_trip::<P384, 97, 48>();
     auth_round_trip::<P521, 133, 64>();
+}
+
+fn keygen_out_kem<C, const N_PK: usize>()
+-> Result<(ECCDHPublicKey<C>, ECCDHPrivateKey<C>), KEMError>
+where
+    C: Curve<PkUncompressed = [u8; N_PK]>,
+{
+    let mut sk = ECCDHPrivateKey::<C>::zeroized();
+    keygen_out::<C>(&mut DefaultRNG::default(), &mut sk)
+        .map_err(|_| KEMError::KeyGenError("keygen_out failed"))?;
+    let pk = sk.pub_key().map_err(|_| KEMError::KeyGenError("pub_key failed"))?;
+    Ok((pk, sk))
+}
+
+/// A key `keygen_out` fills decapsulates as the KEM suite asks; one it never filled is refused
+/// by every role that uses it, and by the DHKEM's own functions, which reach it without a role.
+fn keygen_out_and_unfilled<
+    C,
+    const N_PK: usize,
+    const N_SK: usize,
+    const N_DH: usize,
+    const N_SECRET: usize,
+>()
+where
+    C: DhkemCurve<SharedSecret = KeyMaterial<N_SECRET>>
+        + Curve<PkUncompressed = [u8; N_PK], ScalarBytes = [u8; N_SK], FeBytes = [u8; N_DH]>,
+    ECCDH<C>: DHKEMParams<N_PK, N_SK, N_DH, PrivateKey = ECCDHPrivateKey<C>>,
+{
+    TestFrameworkKEM::new(false, false)
+        .test_kem::<(), ECCDHPublicKey<C>, ECCDHPrivateKey<C>, N_PK, N_SECRET>(
+            keygen_out_kem::<C, N_PK>,
+            (),
+            false,
+        );
+
+    let refused = |r: Result<(), KEMError>| {
+        matches!(r, Err(KEMError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey)))
+    };
+    let zero = ECCDHPrivateKey::<C>::zeroized();
+    let (pk, sk) = keygen_out_kem::<C, N_PK>().unwrap();
+    let mut rng = DefaultRNG::default();
+    let (_, enc) = pk.encaps(&mut rng, ()).unwrap();
+    let mut ss = KeyMaterial::<N_SECRET>::new();
+    assert!(refused(zero.decaps(&enc, ()).map(|_| ())));
+    assert!(refused(
+        DecapsulatingKey::<(), N_PK, N_SECRET>::create_decapsulator(&zero, ()).map(|_| ())
+    ));
+    assert!(refused(zero.auth_decaps_out(&enc, &pk, &mut ss).map(|_| ())));
+    let mut enc_out = [0u8; N_PK];
+    assert!(refused(pk.auth_encaps_out(&mut rng, &zero, &mut enc_out, &mut ss).map(|_| ())));
+    assert_eq!(enc_out, [0u8; N_PK]);
+    // The group functions refuse it too, rather than computing with `d = 0`.
+    assert!(
+        DHKEM::<ECCDH<C>, N_PK, N_SK, N_DH, N_SECRET>::decap_out(&enc, &zero, &mut ss).is_err()
+    );
+    assert!(ss.ref_to_bytes().iter().all(|b| *b == 0));
+    // The filled key still decapsulates what was sent to it.
+    let (sent, enc) = pk.encaps(&mut rng, ()).unwrap();
+    assert!(sk.decaps(&enc, ()).unwrap().equals(&sent));
+}
+
+#[test]
+fn keygen_out_keys_decapsulate_and_unfilled_keys_are_refused() {
+    keygen_out_and_unfilled::<P256, 65, 32, 32, 32>();
+    keygen_out_and_unfilled::<P384, 97, 48, 48, 48>();
+    keygen_out_and_unfilled::<P521, 133, 66, 66, 64>();
 }

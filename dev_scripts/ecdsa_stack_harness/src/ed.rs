@@ -164,7 +164,7 @@ pub(crate) trait EdScheme<const SK: usize, const PK: usize, const SIG: usize>:
     fn keygen_out(rng: &mut dyn RNG, sk: &mut Self) -> Result<(), SignatureError>;
     fn zeroized() -> Self;
     fn from_bytes_out(bytes: &[u8], sk: &mut Self) -> Result<(), KeyDecodingError>;
-    fn pk(&self) -> Self::Pk;
+    fn pub_key(&self) -> Self::Pk;
     fn consistent(pk: &Self::Pk, sk: &Self) -> bool;
     fn sign_out(&self, msg: &[u8], ctx: Option<&[u8]>, sig: &mut [u8; SIG]) -> usize;
     fn sign(&self, msg: &[u8], ctx: Option<&[u8]>) -> [u8; SIG];
@@ -217,8 +217,8 @@ impl EdScheme<32, 32, 64> for Ed25519PrivateKey {
     fn from_bytes_out(bytes: &[u8], sk: &mut Self) -> Result<(), KeyDecodingError> {
         Ed25519PrivateKey::from_bytes_out(bytes, sk)
     }
-    fn pk(&self) -> Self::Pk {
-        Ed25519PrivateKey::pk(self).unwrap()
+    fn pub_key(&self) -> Self::Pk {
+        Ed25519PrivateKey::pub_key(self).unwrap()
     }
     fn consistent(pk: &Self::Pk, sk: &Self) -> bool {
         ed25519::keypair_consistency_check(pk, sk).is_ok()
@@ -338,8 +338,8 @@ impl EdScheme<57, 57, 114> for Ed448PrivateKey {
     fn from_bytes_out(bytes: &[u8], sk: &mut Self) -> Result<(), KeyDecodingError> {
         Ed448PrivateKey::from_bytes_out(bytes, sk)
     }
-    fn pk(&self) -> Self::Pk {
-        Ed448PrivateKey::pk(self).unwrap()
+    fn pub_key(&self) -> Self::Pk {
+        Ed448PrivateKey::pub_key(self).unwrap()
     }
     fn consistent(pk: &Self::Pk, sk: &Self) -> bool {
         ed448::keypair_consistency_check(pk, sk).is_ok()
@@ -510,7 +510,7 @@ where
     // The reference computation against RFC 8032's vector, before it is relied on.
     let [seed, pk, msg, ctx, sig] = E::VECTOR.map(hex);
     let sk = E::from_bytes(&seed).unwrap();
-    assert_eq!(&sk.pk().encode()[..], &pk[..], "not the RFC's public key");
+    assert_eq!(&sk.pub_key().encode()[..], &pk[..], "not the RFC's public key");
     assert_eq!(&sk.sign(&msg, Some(&ctx))[..], &sig[..], "not the RFC's signature");
     signing_values::<E, SK, PK, SIG>(
         &Expanded::of::<E, SK, PK, SIG>(&seed),
@@ -524,7 +524,7 @@ where
     let seeds = [0, 1].map(|i| bytes_of(&format!("{name} key {i}"), SK));
     let keys = seeds.clone().map(|s| Expanded::of::<E, SK, PK, SIG>(&s));
     let pks: Vec<[u8; PK]> =
-        seeds.iter().map(|s| E::from_bytes(s).unwrap().pk().encode()).collect();
+        seeds.iter().map(|s| E::from_bytes(s).unwrap().pub_key().encode()).collect();
     let publics: Vec<Vec<u8>> = pks.iter().map(|p| ed_public_image::<E, SK, PK, SIG>(p)).collect();
     let mut sk = Box::new(E::zeroized());
     let mut other = Box::new(E::zeroized());
@@ -548,7 +548,7 @@ where
         *rng = rng_of(&key.seed);
         scan.run(|| E::keygen_out(&mut *rng, &mut sk)).unwrap();
         assert_eq!(&sk.encode()[..], &key.seed[..], "not the RNG's draw");
-        assert_eq!(sk.pk().encode(), pks[i]);
+        assert_eq!(sk.pub_key().encode(), pks[i]);
         scan.clean(&op("keygen_out"), &key.values::<E, SK, PK, SIG>());
     }
     scan.same(&op("keygen_out"), &publics[0], &publics[1]);
@@ -557,7 +557,7 @@ where
         scan.keep();
         encoded.copy_from_slice(&key.seed);
         let loaded = scan.run(|| E::from_bytes(&encoded[..])).unwrap();
-        assert_eq!(loaded.pk().encode(), pks[i]);
+        assert_eq!(loaded.pub_key().encode(), pks[i]);
         scan.clean(&op("from_bytes"), &key.values::<E, SK, PK, SIG>());
     }
     scan.same(&op("from_bytes"), &publics[0], &publics[1]);
@@ -565,7 +565,7 @@ where
         scan.keep();
         encoded.copy_from_slice(&key.seed);
         scan.run(|| E::from_bytes_out(&encoded[..], &mut sk)).unwrap();
-        assert_eq!(sk.pk().encode(), pks[i]);
+        assert_eq!(sk.pub_key().encode(), pks[i]);
         scan.clean(&op("from_bytes_out"), &key.values::<E, SK, PK, SIG>());
     }
     scan.same(&op("from_bytes_out"), &publics[0], &publics[1]);
@@ -614,16 +614,16 @@ where
     for (i, key) in keys.iter().enumerate() {
         E::from_bytes_out(&key.seed, &mut sk).unwrap();
         scan.keep();
-        let pk = scan.run(|| sk.pk());
+        let pk = scan.run(|| sk.pub_key());
         assert_eq!(pk.encode(), pks[i]);
         scan.clean(&op("pk"), &key.values::<E, SK, PK, SIG>());
     }
     // `pk` decodes the stored public key and reads nothing secret, so two keys' runs differ in
     // public values alone and are not compared: the search is the check.
-    let mut pk = Box::new(sk.pk());
+    let mut pk = Box::new(sk.pub_key());
     for key in &keys {
         E::from_bytes_out(&key.seed, &mut sk).unwrap();
-        *pk = sk.pk();
+        *pk = sk.pub_key();
         scan.keep();
         assert!(scan.run(|| E::consistent(&pk, &sk)));
         scan.clean(&op("keypair_consistency_check"), &key.values::<E, SK, PK, SIG>());
@@ -637,7 +637,7 @@ where
     let ph_ctx: &[u8] = b"stack harness";
     let mut sig = Box::new([0u8; SIG]);
     let sign_values = |i: usize, sig: &[u8; SIG], ph: bool| {
-        let pk = E::from_bytes(&keys[i].seed).unwrap().pk();
+        let pk = E::from_bytes(&keys[i].seed).unwrap().pub_key();
         let c = if ph { ph_ctx } else { ctx };
         assert!(E::verifies(&pk, &msg, Some(c), sig, ph), "does not verify");
         signing_values::<E, SK, PK, SIG>(&keys[i], &pks[i], &msg, c, ph, sig)
@@ -709,7 +709,7 @@ pub(crate) trait XScheme<const N: usize>:
     fn keygen_from_seed_out(seed: &KeyMaterial<N>, sk: &mut Self) -> Result<(), KeyAgreementError>;
     fn zeroized() -> Self;
     fn from_bytes_out(bytes: &[u8], sk: &mut Self) -> Result<(), KeyDecodingError>;
-    fn pk(&self) -> Self::Pk;
+    fn pub_key(&self) -> Self::Pk;
     fn clamp(k: &mut [u8; N]);
 }
 
@@ -744,8 +744,8 @@ impl XScheme<32> for X25519PrivateKey {
     fn from_bytes_out(bytes: &[u8], sk: &mut Self) -> Result<(), KeyDecodingError> {
         X25519PrivateKey::from_bytes_out(bytes, sk)
     }
-    fn pk(&self) -> Self::Pk {
-        X25519PrivateKey::pk(self).unwrap()
+    fn pub_key(&self) -> Self::Pk {
+        X25519PrivateKey::pub_key(self).unwrap()
     }
     fn clamp(k: &mut [u8; 32]) {
         // RFC 7748 Section 5, decodeScalar25519.
@@ -789,8 +789,8 @@ impl XScheme<56> for X448PrivateKey {
     fn from_bytes_out(bytes: &[u8], sk: &mut Self) -> Result<(), KeyDecodingError> {
         X448PrivateKey::from_bytes_out(bytes, sk)
     }
-    fn pk(&self) -> Self::Pk {
-        X448PrivateKey::pk(self).unwrap()
+    fn pub_key(&self) -> Self::Pk {
+        X448PrivateKey::pub_key(self).unwrap()
     }
     fn clamp(k: &mut [u8; 56]) {
         // RFC 7748 Section 5, decodeScalar448.
@@ -838,7 +838,7 @@ pub(crate) fn xdh<X: XScheme<N>, const N: usize>(scan: &mut Scan, scalar_mult_le
     assert_eq!(z.ref_to_bytes(), &k[..], "not the RFC's shared secret");
 
     let raws = [0, 1].map(|i| bytes_of(&format!("{name} key {i}"), N));
-    let pks: Vec<X::Pk> = raws.iter().map(|r| X::from_bytes(r).unwrap().pk()).collect();
+    let pks: Vec<X::Pk> = raws.iter().map(|r| X::from_bytes(r).unwrap().pub_key()).collect();
     let publics: Vec<Vec<u8>> = pks.iter().map(|p| p.encode().to_vec()).collect();
     let mut sk = Box::new(X::zeroized());
     let mut encoded = Box::new([0u8; N]);
@@ -858,7 +858,7 @@ pub(crate) fn xdh<X: XScheme<N>, const N: usize>(scan: &mut Scan, scalar_mult_le
         *rng = rng_of(raw);
         scan.run(|| X::keygen_out(&mut *rng, &mut sk)).unwrap();
         assert_eq!(sk.encode(), clamped(raw), "not the RNG's draw");
-        assert_eq!(sk.pk().encode(), pks[i].encode());
+        assert_eq!(sk.pub_key().encode(), pks[i].encode());
         scan.clean(&op("keygen_out"), &key_values(raw));
     }
     same_scalar_mult(scan, "keygen_out", &publics[0], &publics[1]);
@@ -878,7 +878,7 @@ pub(crate) fn xdh<X: XScheme<N>, const N: usize>(scan: &mut Scan, scalar_mult_le
         scan.keep();
         scan.run(|| X::keygen_from_seed_out(&seed, &mut sk)).unwrap();
         assert_eq!(sk.encode(), clamped(raw));
-        assert_eq!(sk.pk().encode(), pks[i].encode());
+        assert_eq!(sk.pub_key().encode(), pks[i].encode());
         scan.clean(&op("keygen_from_seed_out"), &key_values(raw));
     }
     same_scalar_mult(scan, "keygen_from_seed_out", &publics[0], &publics[1]);
@@ -887,7 +887,7 @@ pub(crate) fn xdh<X: XScheme<N>, const N: usize>(scan: &mut Scan, scalar_mult_le
         scan.keep();
         encoded.copy_from_slice(raw);
         let loaded = scan.run(|| X::from_bytes(&encoded[..])).unwrap();
-        assert_eq!(loaded.pk().encode(), pks[i].encode());
+        assert_eq!(loaded.pub_key().encode(), pks[i].encode());
         scan.clean(&op("from_bytes"), &key_values(raw));
     }
     same_scalar_mult(scan, "from_bytes", &publics[0], &publics[1]);
@@ -895,7 +895,7 @@ pub(crate) fn xdh<X: XScheme<N>, const N: usize>(scan: &mut Scan, scalar_mult_le
         scan.keep();
         encoded.copy_from_slice(raw);
         scan.run(|| X::from_bytes_out(&encoded[..], &mut sk)).unwrap();
-        assert_eq!(sk.pk().encode(), pks[i].encode());
+        assert_eq!(sk.pub_key().encode(), pks[i].encode());
         scan.clean(&op("from_bytes_out"), &key_values(raw));
     }
     same_scalar_mult(scan, "from_bytes_out", &publics[0], &publics[1]);
@@ -936,7 +936,7 @@ pub(crate) fn xdh<X: XScheme<N>, const N: usize>(scan: &mut Scan, scalar_mult_le
     for (i, raw) in raws.iter().enumerate() {
         X::from_bytes_out(raw, &mut sk).unwrap();
         scan.keep();
-        let pk = scan.run(|| sk.pk());
+        let pk = scan.run(|| sk.pub_key());
         assert_eq!(pk.encode(), pks[i].encode());
         scan.clean(&op("pk"), &key_values(raw));
     }
@@ -945,7 +945,7 @@ pub(crate) fn xdh<X: XScheme<N>, const N: usize>(scan: &mut Scan, scalar_mult_le
     // Agreement: under two keys, with one peer. `K` is checked by the peer's agreement.
     let peer_raw = bytes_of(&format!("{name} peer"), N);
     let peer_sk = X::from_bytes(&peer_raw).unwrap();
-    let peer = Box::new(peer_sk.pk());
+    let peer = Box::new(peer_sk.pub_key());
     let mut z = Box::new(KeyMaterial::<N>::new());
     for (i, raw) in raws.iter().enumerate() {
         X::from_bytes_out(raw, &mut sk).unwrap();

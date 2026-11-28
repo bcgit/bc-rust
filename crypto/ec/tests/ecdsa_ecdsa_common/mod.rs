@@ -5,7 +5,7 @@
 
 #![allow(dead_code)] // each test file calls the functions it needs
 
-use bouncycastle_core::errors::{KeyDecodingError, RNGError, SignatureError};
+use bouncycastle_core::errors::{KeyDecodingError, KeyMaterialError, RNGError, SignatureError};
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{
@@ -22,8 +22,8 @@ use bouncycastle_core_test_framework::{FailingRNG, ShortRNG};
 use bouncycastle_ec::curve::Curve;
 use bouncycastle_ec::ecdsa::ecdsa::ECDSA;
 use bouncycastle_ec::ecdsa::ecdsa::EcdsaHash;
-use bouncycastle_ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen};
-use bouncycastle_ec::ecdsa::keys_common::DerivePublicKey;
+use bouncycastle_ec::ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey, keygen, keygen_out};
+use bouncycastle_ec::ecdsa::keys_common::SignatureKeyPair;
 use bouncycastle_rng::DefaultRNG;
 
 fn keygen_default<C: Curve, H: EcdsaHash + CollisionResistantHash>()
@@ -31,7 +31,7 @@ fn keygen_default<C: Curve, H: EcdsaHash + CollisionResistantHash>()
     keygen::<C, H>(&mut DefaultRNG::default())
 }
 
-/// The framework suites over both signers and the key codecs, `derive_pk` against `keygen`, and
+/// The framework suites over both signers and the key codecs, `pub_key` against `keygen`, and
 /// the algorithm's names and strength. The random signer draws a fresh `k` per signature
 /// (FIPS 186-5 Appendix A.3.1), so the suite expects two signatures of one message to differ;
 /// the deterministic one reproduces `(r, s)` (RFC 6979 Sections 3.4 and 3.6). ECDSA has no
@@ -66,7 +66,7 @@ pub fn framework_and_metadata<
         );
 
     let (pk, sk) = keygen_default::<C, H>().unwrap();
-    assert_eq!(sk.derive_pk(), pk);
+    assert_eq!(sk.pub_key().unwrap(), pk);
 
     assert_eq!(ECDSA::<C, H>::ALG_NAME, alg_name);
     assert_eq!(ECDSA::<C, H>::DETERMINISTIC_ALG_NAME, deterministic_alg_name);
@@ -251,7 +251,7 @@ where
     let mut rng = FixedSeedRNG::new(seed);
     rng.set_security_strength(strength);
     let (pk, sk) = keygen::<C, H>(&mut rng).unwrap();
-    assert_eq!(sk.derive_pk(), pk);
+    assert_eq!(sk.pub_key().unwrap(), pk);
 
     let (pk1, sk1) = keygen::<C, H>(&mut FixedSeedRNG::new(seed)).unwrap();
     let (pk2, sk2) = keygen::<C, H>(&mut FixedSeedRNG::new(seed)).unwrap();
@@ -334,4 +334,90 @@ where
             }
         }
     }
+}
+
+fn keygen_out_default<C, H, const PK_LEN: usize>()
+-> Result<(ECDSAPublicKey<C, H>, ECDSAPrivateKey<C, H>), SignatureError>
+where
+    C: Curve<PkUncompressed = [u8; PK_LEN]>,
+    H: EcdsaHash + CollisionResistantHash,
+{
+    let mut sk = ECDSAPrivateKey::zeroized();
+    keygen_out::<C, H>(&mut DefaultRNG::default(), &mut sk)?;
+    Ok((sk.pub_key()?, sk))
+}
+
+/// `keygen_out`: the key it fills runs the framework suites; it is the key `keygen` and the
+/// marker give from the same RNG output, and the marker's `generate_signature_key_out` is it;
+/// it clears a key it is handed and leaves it cleared on every error (a weak, a short and a
+/// failing RNG); and a key it never filled has no public key and signs nothing.
+pub fn keygen_out_suite<C, H, const PK_LEN: usize, const SK_LEN: usize, const SIG_LEN: usize>(
+    below: SecurityStrength,
+) where
+    C: Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>
+        + SignatureKeyPair,
+    H: EcdsaHash + CollisionResistantHash,
+{
+    let framework = TestFrameworkSignature::with_ctx_behaviour(CtxBehaviour::Refused);
+    framework.test_signature::<ECDSA<C, H>, ECDSAPublicKey<C, H>, ECDSAPrivateKey<C, H>, SIG_LEN>(
+        keygen_out_default::<C, H, PK_LEN>,
+        false,
+    );
+    framework
+        .test_deterministic_signature::<ECDSA<C, H>, ECDSAPublicKey<C, H>, ECDSAPrivateKey<C, H>, SIG_LEN>(
+            keygen_out_default::<C, H, PK_LEN>,
+            false,
+        );
+
+    let seed = core::array::from_fn::<u8, 128, _>(|i| i as u8);
+    let (pk, expected) = keygen::<C, H>(&mut FixedSeedRNG::new(seed)).unwrap();
+    let mut sk = ECDSAPrivateKey::<C, H>::zeroized();
+    keygen_out::<C, H>(&mut FixedSeedRNG::new(seed), &mut sk).unwrap();
+    assert!(sk == expected, "keygen_out is keygen's key for the same RNG output");
+    assert_eq!(sk.pub_key().unwrap(), pk);
+    let mut from_marker = ECDSAPrivateKey::<C, H>::zeroized();
+    C::generate_signature_key_out::<H>(&mut FixedSeedRNG::new(seed), &mut from_marker).unwrap();
+    assert!(from_marker == expected);
+    let other_seed = core::array::from_fn::<u8, 128, _>(|i| (i as u8).wrapping_mul(7));
+    keygen_out::<C, H>(&mut FixedSeedRNG::new(other_seed), &mut from_marker).unwrap();
+    assert!(from_marker != expected, "a filled key is overwritten");
+
+    // Every error clears the key it was handed, filled or not.
+    let zero = ECDSAPrivateKey::<C, H>::zeroized();
+    let mut weak = FixedSeedRNG::new(seed);
+    weak.set_security_strength(below);
+    assert!(matches!(
+        keygen_out::<C, H>(&mut weak, &mut sk),
+        Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm))
+    ));
+    assert!(sk == zero);
+    sk = expected.clone();
+    assert!(matches!(
+        C::generate_signature_key_out::<H>(&mut ShortRNG, &mut sk),
+        Err(SignatureError::RNGError(RNGError::GenericError(_)))
+    ));
+    assert!(sk == zero);
+    sk = expected.clone();
+    assert!(keygen_out::<C, H>(&mut FailingRNG, &mut sk).is_err());
+    assert!(sk == zero);
+
+    // The unfilled key: equal only to another, encoded as zeros, refused by every role.
+    let refused = |r: Result<(), SignatureError>| {
+        matches!(r, Err(SignatureError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey)))
+    };
+    assert!(zero == ECDSAPrivateKey::<C, H>::zeroized());
+    assert!(zero != expected);
+    assert!(zero.encode().as_ref().iter().all(|b| *b == 0));
+    assert!(zero.clone() == zero);
+    assert!(refused(zero.pub_key().map(|_| ())));
+    let mut rng = FixedSeedRNG::new(seed);
+    let msg = b"from a key that was never filled";
+    assert!(refused(zero.create_signer(&mut rng, None).map(|_| ())));
+    assert!(refused(zero.sign(&mut rng, msg, None).map(|_| ())));
+    let mut out = [0xA5u8; SIG_LEN];
+    assert!(refused(zero.sign_out(&mut rng, msg, None, &mut out).map(|_| ())));
+    assert_eq!(out, [0u8; SIG_LEN]);
+    assert!(refused(zero.create_signer_deterministic(None).map(|_| ())));
+    assert!(refused(zero.sign_deterministic(msg, None).map(|_| ())));
+    assert!(refused(zero.with_hash::<H>().pub_key().map(|_| ())));
 }

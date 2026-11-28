@@ -20,7 +20,7 @@
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
-//! assert_eq!(sk.pk()?, pk);
+//! assert_eq!(sk.pub_key()?, pk);
 //!
 //! // Decoding a public key validates it in full, which costs about as much as a verification.
 //! let pk2 = Ed25519PublicKey::from_bytes(&pk.encode())?;
@@ -104,7 +104,7 @@
 //! | `Ed25519PrivateKey::from_bytes`      | 3896 B |
 //! | `Ed25519PrivateKey::from_bytes_out`  | 3480 B |
 //! | `Ed25519PublicKey::from_bytes`       | 4376 B |
-//! | `Ed25519PrivateKey::pk`              | 1944 B |
+//! | `Ed25519PrivateKey::pub_key`         | 1944 B |
 //! | Ed25519 sign                         | 4232 B |
 //! | Ed25519 verify                       | 5896 B |
 //! | Ed25519ph sign                       | 5320 B |

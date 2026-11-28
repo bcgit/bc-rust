@@ -1127,3 +1127,32 @@ impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> OneShotVerifyingKey<MLDSA<P
 // `pqc::mldsa_common`.
 #[doc(inline)]
 pub use crate::mldsa_common::mu_builder::{MuBuilder, SUSPENDED_MU_BUILDER_STATE_LEN};
+
+/// Generation is [`MLDSATrait::keygen_out`], which gives the public key as well, so
+/// [`generate`](bouncycastle_core::traits::KeyPairGenerator::generate) keeps it rather than
+/// deriving it again; [`pub_key`](bouncycastle_core::traits::KeyPairGenerator::pub_key) is
+/// [`derive_pk`](crate::mldsa_lowmemory::MLDSAPrivateKeyTrait::derive_pk), a key generation's worth of work.
+impl<P: MLDSAParams> bouncycastle_core::traits::KeyPairGenerator for MLDSASeedPrivateKey<P> {
+    type PublicKey = MLDSAPublicKey<P>;
+    type Error = SignatureError;
+
+    fn zeroized() -> Self {
+        Self::zeroized()
+    }
+
+    fn generate_out(rng: &mut dyn RNG, sk: &mut Self) -> Result<(), SignatureError> {
+        MLDSA::<P>::keygen_out(rng, &mut MLDSAPublicKey::zeroized(), sk)
+    }
+
+    fn pub_key(&self) -> Result<MLDSAPublicKey<P>, SignatureError> {
+        self.check_filled()?;
+        Ok(crate::mldsa_lowmemory::MLDSAPrivateKeyTrait::derive_pk(self))
+    }
+
+    fn generate(rng: &mut dyn RNG) -> Result<(MLDSAPublicKey<P>, Self), SignatureError> {
+        let mut pk = MLDSAPublicKey::zeroized();
+        let mut sk = Self::zeroized();
+        MLDSA::<P>::keygen_out(rng, &mut pk, &mut sk)?;
+        Ok((pk, sk))
+    }
+}

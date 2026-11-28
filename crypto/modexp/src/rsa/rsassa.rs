@@ -149,7 +149,9 @@ where
     /// `k`. `ctx` must be `None` or empty, RSA having no context.
     ///
     /// # Errors
-    /// [`SignatureError::LengthError`] for a non-empty `ctx`, before anything is drawn;
+    /// [`SignatureError::LengthError`] for a non-empty `ctx`, and
+    /// [`KeyMaterialError::ActingOnZeroizedKey`](bouncycastle_core::errors::KeyMaterialError::ActingOnZeroizedKey)
+    /// for a key that was never filled, before anything is drawn;
     /// [`SignatureError::RNGError`] if the RNG fails to deliver, a draw shorter than the salt
     /// included.
     fn create_signer<'k>(
@@ -159,6 +161,7 @@ where
     ) -> Result<Self::Signer<'k>, SignatureError> {
         const { assert!(A::SALT_LEN <= MAX_HASH_LEN, "the salt fits the signer's buffer") };
         refuse_context(ctx)?;
+        self.check_filled()?;
         let mut salt = [0u8; MAX_HASH_LEN];
         fill_bytes(rng, &mut salt[..A::SALT_LEN]).map_err(SignatureError::RNGError)?;
         Ok(RsaSigner { sk: self, hash: A::Hash::default(), salt })
@@ -195,12 +198,15 @@ where
     /// `ctx` must be `None` or empty, RSA having no context.
     ///
     /// # Errors
-    /// [`SignatureError::LengthError`] for a non-empty `ctx`.
+    /// [`SignatureError::LengthError`] for a non-empty `ctx`;
+    /// [`KeyMaterialError::ActingOnZeroizedKey`](bouncycastle_core::errors::KeyMaterialError::ActingOnZeroizedKey)
+    /// for a key that was never filled.
     fn create_signer_deterministic<'k>(
         &'k self,
         ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
         refuse_context(ctx)?;
+        self.check_filled()?;
         Ok(RsaDeterministicSigner { sk: self, hash: A::Hash::default() })
     }
 }
@@ -391,8 +397,8 @@ where
 /// RFC 8017 §8.1.1.
 ///
 /// # Errors
-/// [`SignatureError::LengthError`] if `m_hash` is not `A::Hash::OUTPUT_LEN` bytes, before
-/// anything is drawn; [`SignatureError::RNGError`] if the RNG fails to deliver; else as
+/// [`SignatureError::LengthError`] if `m_hash` is not `A::Hash::OUTPUT_LEN` bytes, and
+/// `ActingOnZeroizedKey` for a key that was never filled, before anything is drawn; [`SignatureError::RNGError`] if the RNG fails to deliver; else as
 /// [`sign_from_hash_with_salt`].
 pub fn sign_from_hash<A, const K_LEN: usize>(
     sk: &RsaPrivateKey<A>,
@@ -407,6 +413,7 @@ where
     if m_hash.len() != A::Hash::OUTPUT_LEN {
         return Err(HASH_LEN_ERROR);
     }
+    sk.check_filled()?;
     let mut salt = [0u8; MAX_HASH_LEN];
     fill_bytes(rng, &mut salt[..A::SALT_LEN]).map_err(SignatureError::RNGError)?;
     sign_from_hash_with_salt::<A, K_LEN>(sk, m_hash, &salt[..A::SALT_LEN])

@@ -51,7 +51,7 @@ fn keygen_draws_the_private_key() {
     let drawn: [u8; 32] = core::array::from_fn(|i| i as u8);
     assert_eq!(sk.encode(), drawn);
     assert!(sk == Ed25519PrivateKey::from_bytes(&drawn).unwrap());
-    assert_eq!(pk, sk.pk().unwrap());
+    assert_eq!(pk, sk.pub_key().unwrap());
     keypair_consistency_check(&pk, &sk).unwrap();
 
     // The next draw is another key.
@@ -72,7 +72,7 @@ fn keygen_out_matches_keygen_and_signs() {
     let (pk, sk) = keygen(&mut rng()).unwrap();
     let mut sk_out = Ed25519PrivateKey::zeroized();
     keygen_out(&mut rng(), &mut sk_out).unwrap();
-    assert_eq!(sk_out.pk().unwrap(), pk);
+    assert_eq!(sk_out.pub_key().unwrap(), pk);
     assert!(sk_out == sk);
     assert_eq!(sk_out.encode(), sk.encode());
 
@@ -87,9 +87,9 @@ fn refilling_replaces_the_key() {
     let mut rng = rng();
     let mut sk = Ed25519PrivateKey::zeroized();
     keygen_out(&mut rng, &mut sk).unwrap();
-    let pk1 = sk.pk().unwrap();
+    let pk1 = sk.pub_key().unwrap();
     keygen_out(&mut rng, &mut sk).unwrap();
-    assert_ne!(sk.pk().unwrap(), pk1);
+    assert_ne!(sk.pub_key().unwrap(), pk1);
     let second: [u8; 32] = core::array::from_fn(|i| 32 + i as u8);
     assert_eq!(sk.encode(), second);
     assert!(sk == Ed25519PrivateKey::from_bytes(&second).unwrap());
@@ -141,7 +141,7 @@ fn a_failed_keygen_leaves_the_key_unfilled() {
         assert!(matches!(keygen_out(rng_that_fails, &mut sk), Err(SignatureError::RNGError(_))));
         assert!(sk == Ed25519PrivateKey::zeroized());
         assert_eq!(sk.encode(), [0u8; 32]);
-        assert_eq!(sk.pk().err(), Some(ZEROIZED));
+        assert_eq!(sk.pub_key().err(), Some(ZEROIZED));
     }
 }
 
@@ -150,7 +150,7 @@ fn a_failed_keygen_leaves_the_key_unfilled() {
 #[test]
 fn the_unfilled_key() {
     let unfilled = Ed25519PrivateKey::zeroized();
-    assert_eq!(unfilled.pk().err(), Some(ZEROIZED));
+    assert_eq!(unfilled.pub_key().err(), Some(ZEROIZED));
     assert!(unfilled == Ed25519PrivateKey::zeroized());
     assert!(unfilled == unfilled.clone());
     assert_eq!(unfilled.encode(), [0u8; 32]);
@@ -162,7 +162,7 @@ fn the_unfilled_key() {
     {
         assert!(zeros != unfilled && unfilled != zeros);
     }
-    let pk = zeros.pk().unwrap();
+    let pk = zeros.pub_key().unwrap();
     keypair_consistency_check(&pk, &zeros).unwrap();
     assert_eq!(keypair_consistency_check(&pk, &unfilled), Err(ZEROIZED));
 }
@@ -175,7 +175,7 @@ fn from_bytes_out_fills_a_held_key() {
     let mut held = Ed25519PrivateKey::zeroized();
     Ed25519PrivateKey::from_bytes_out(&sk.encode(), &mut held).unwrap();
     assert!(held == sk);
-    assert_eq!(held.pk().unwrap(), pk);
+    assert_eq!(held.pub_key().unwrap(), pk);
     assert_eq!(held.sign_deterministic(b"msg", None), sk.sign_deterministic(b"msg", None));
 
     Ed25519PrivateKey::from_bytes_out(&[7u8; 32], &mut held).unwrap();
@@ -189,7 +189,7 @@ fn from_bytes_out_fills_a_held_key() {
         );
         assert!(held == Ed25519PrivateKey::zeroized());
         assert_eq!(held.encode(), [0u8; 32]);
-        assert_eq!(held.pk().err(), Some(ZEROIZED));
+        assert_eq!(held.pub_key().err(), Some(ZEROIZED));
     }
 }
 
@@ -199,18 +199,18 @@ fn from_bytes_out_fills_a_held_key() {
 fn clone_and_clone_from() {
     let (pk, sk) = keygen(&mut rng()).unwrap();
     assert!(sk.clone() == sk);
-    assert_eq!(sk.clone().pk().unwrap(), pk);
+    assert_eq!(sk.clone().pub_key().unwrap(), pk);
 
     let mut held = Ed25519PrivateKey::from_bytes(&[7u8; 32]).unwrap();
     held.clone_from(&sk);
     assert!(held == sk);
     assert_eq!(held.encode(), sk.encode());
-    assert_eq!(held.pk().unwrap(), pk);
+    assert_eq!(held.pub_key().unwrap(), pk);
     assert_eq!(held.sign_deterministic(b"msg", None), sk.sign_deterministic(b"msg", None));
 
     held.clone_from(&Ed25519PrivateKey::zeroized());
     assert!(held == Ed25519PrivateKey::zeroized());
-    assert_eq!(held.pk().err(), Some(ZEROIZED));
+    assert_eq!(held.pub_key().err(), Some(ZEROIZED));
 }
 
 #[test]
@@ -223,7 +223,7 @@ fn keys_round_trip_through_their_encodings() {
     assert_eq!(out, sk_bytes);
     let sk2 = Ed25519PrivateKey::from_bytes(&sk_bytes).unwrap();
     assert!(sk2 == sk && sk.clone() == sk);
-    assert_eq!(sk2.pk().unwrap(), pk);
+    assert_eq!(sk2.pub_key().unwrap(), pk);
 
     let pk_bytes = pk.encode();
     let mut out = [0xA5u8; PUBLIC_KEY_LEN];

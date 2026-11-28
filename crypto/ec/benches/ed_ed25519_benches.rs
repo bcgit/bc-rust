@@ -32,7 +32,7 @@ fn bench_ed25519_keys(c: &mut Criterion) {
     group.bench_function("pk_from_bytes", |b| {
         b.iter(|| black_box(Ed25519PublicKey::from_bytes(black_box(&pk_bytes)).unwrap()))
     });
-    group.bench_function("pk_from_sk", |b| b.iter(|| black_box(black_box(&sk).pk().unwrap())));
+    group.bench_function("pk_from_sk", |b| b.iter(|| black_box(black_box(&sk).pub_key().unwrap())));
     group.finish();
 }
 

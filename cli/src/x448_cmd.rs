@@ -61,7 +61,7 @@ pub(crate) fn x448_cmd(
                 let mut sk = X448PrivateKey::zeroized();
                 load_sk(skfile, &mut sk);
                 // A decoded key is filled, so it has a public key.
-                sk.pk().unwrap()
+                sk.pub_key().unwrap()
             };
             write_bytes_or_hex(&pk.encode(), output_hex);
         }

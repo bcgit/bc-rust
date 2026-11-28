@@ -92,7 +92,7 @@ fn bench_sm2_verify() {
     let mut bytes = [0u8; SK_LEN];
     bytes[SK_LEN - 1] = 0x2A;
     let sk = SM2PrivateKey::from_bytes(&bytes).unwrap();
-    let pk = sk.derive_pk();
+    let pk = sk.pub_key().unwrap();
     let sig = sk.sign(&mut DefaultRNG::default(), MSG, Some(ID)).unwrap();
 
     if pk.verify(MSG, Some(ID), &sig).is_ok() {
@@ -111,7 +111,7 @@ fn encryption_key_pair() -> (SM2EncryptionPublicKey, SM2EncryptionPrivateKey) {
     let mut bytes = [0u8; SK_LEN];
     bytes[SK_LEN - 1] = 0x2A;
     let sk = SM2EncryptionPrivateKey::from_bytes(&bytes).unwrap();
-    (sk.derive_pk(), sk)
+    (sk.pub_key().unwrap(), sk)
 }
 
 fn bench_sm2_encryption_keygen() {

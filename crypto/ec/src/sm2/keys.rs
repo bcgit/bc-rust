@@ -13,7 +13,7 @@ use crate::hazmat::sm2_scalar::{Sm2Scalar, Sm2ScalarField};
 use crate::hazmat::sm2_sec1;
 use crate::rng_draw::fill_bytes;
 use crate::sm2::extra_bits::{N_MINUS_1_LIMBS, reduce_wide_bits_mod_n_minus_2};
-use bouncycastle_core::errors::{KeyDecodingError, RNGError, SignatureError};
+use bouncycastle_core::errors::{KeyDecodingError, KeyMaterialError, RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{PrivateKey, PublicKey, RNG};
 use bouncycastle_utils::nat;
@@ -85,9 +85,50 @@ pub struct SM2PrivateKey {
 }
 
 impl SM2PrivateKey {
+    /// The key [`keygen_out`] writes into, so that `dA` is reduced where it will live and never
+    /// moved: `dA = 0`, which is not a key, and no public key. Until `keygen_out` fills it, it
+    /// has no public key and signs nothing ([`KeyMaterialError::ActingOnZeroizedKey`]), and it
+    /// is equal to no key that was generated or decoded.
+    ///
+    /// # 🚨 Security Considerations 🚨
+    ///
+    /// The encoding of this key is not refused, the encoding methods having no error to give: it
+    /// is all zero, which decodes as no key. Do not store or send the encoding of a key whose
+    /// generation failed.
+    pub fn zeroized() -> Self {
+        Self {
+            d: Sm2Scalar::from_limbs([0; 4]),
+            pk: SM2PublicKey { x: Sm2FieldElement::ZERO, y: Sm2FieldElement::ZERO },
+            one_plus_d_inv: Sm2Scalar::from_limbs([0; 4]),
+        }
+    }
+
+    /// Back to the all-zero key, `dA` and `(1 + dA)^-1` wiped.
+    fn clear(&mut self) {
+        *self = Self::zeroized();
+    }
+
+    /// Refuses a key that was never generated or decoded. The stored public key says which it
+    /// is: `[dA]G` is never `(0, 0)`, which is not on the curve (`b != 0`).
+    pub(in crate::sm2) fn check_filled(&self) -> Result<(), SignatureError> {
+        if self.pk.x == Sm2FieldElement::ZERO && self.pk.y == Sm2FieldElement::ZERO {
+            Err(KeyMaterialError::ActingOnZeroizedKey.into())
+        } else {
+            Ok(())
+        }
+    }
+
     /// Builds the key pair from an already-validated `dA` in `[1, n-2]`, computing `PA = [dA]G`.
-    /// The single place `SM2PrivateKey`'s invariant (`pk` really is `[d]G`) is established.
     fn from_validated_scalar(d: Sm2Scalar) -> Self {
+        let mut key = Self::zeroized();
+        key.fill_from_validated_scalar(d);
+        key
+    }
+
+    /// Fills this key from an already-validated `dA` in `[1, n-2]`, computing `PA = [dA]G` and
+    /// `(1 + dA)^-1` where they will live. The single place `SM2PrivateKey`'s invariant (`pk`
+    /// really is `[d]G`) is established.
+    fn fill_from_validated_scalar(&mut self, d: Sm2Scalar) {
         let q = comb_multiply_base_point(&d);
         // dA is in [1, n-2] by construction (every caller validates first) and G has prime order n
         // (h = 1), so [dA]G is never the identity.
@@ -100,12 +141,13 @@ impl SM2PrivateKey {
         let mut d_field = Sm2ScalarField::from_secret(&d);
         let mut one_plus_d = Sm2ScalarField::ONE.add(&d_field);
         let mut inverse = one_plus_d.invert();
-        let one_plus_d_inv = Sm2Scalar::from_limbs(inverse.to_limbs());
+        self.one_plus_d_inv = Sm2Scalar::from_limbs(inverse.to_limbs());
         d_field.zeroize();
         one_plus_d.zeroize();
         inverse.zeroize();
 
-        Self { d, pk: SM2PublicKey { x, y }, one_plus_d_inv }
+        self.d = d;
+        self.pk = SM2PublicKey { x, y };
     }
 
     /// [`Self::from_validated_scalar`] over `dA`'s limbs, never inlined, so that what it and its
@@ -130,13 +172,12 @@ impl SM2PrivateKey {
     /// The matching public key `PA = [dA]G`. Free: it was computed when this key was created or
     /// loaded (see the type's docs), not recomputed here.
     ///
-    /// For the CLI's `PkFromSk`/`CheckConsistency` actions, which need it without having generated
-    /// the pair together -- see `crate::ecdsa::keys_common::DerivePublicKey`'s docs for the
-    /// shape this mirrors (kept as a plain inherent method here rather than a shared trait, since
-    /// SM2's own CLI command needs the extra `IDA` argument every other curve's doesn't, so it was
-    /// never going to share a single generic command function with them anyway).
-    pub fn derive_pk(&self) -> SM2PublicKey {
-        self.pk
+    /// # Errors
+    /// [`KeyMaterialError::ActingOnZeroizedKey`] for a key that was never filled
+    /// ([`zeroized`](Self::zeroized)).
+    pub fn pub_key(&self) -> Result<SM2PublicKey, SignatureError> {
+        self.check_filled()?;
+        Ok(self.pk)
     }
 }
 
@@ -215,7 +256,7 @@ impl SM2PublicKey {
     }
 }
 
-/// As [`keygen`], but sources the DRBG output from the caller-provided RNG, which must offer
+/// Generates a key pair from the caller-provided RNG, which must offer
 /// a security strength of at least 128 bits: GB/T 32918.2-2016 §5.4.3 asks only for an approved
 /// random number generator and the draft says no more (see the module docs on why key generation
 /// borrows FIPS 186-5's method wholesale), so this follows that
@@ -223,35 +264,81 @@ impl SM2PublicKey {
 /// 800-57 Part 1 Rev. 5's Table 2 associates with SM2's 256-bit curve order (`f = 256-383` in
 /// that table's ECC column, giving 128-bit security).
 ///
+/// [`keygen_out`] into a key you hold, moved out of this frame; a move wipes nothing.
+///
 /// # Errors
 /// [`SignatureError::RNGError`] if `rng` offers less than 128 bits of security strength, fails,
 /// or writes fewer bytes than it was asked for.
 pub fn keygen(rng: &mut dyn RNG) -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
+    // Dropped last, after the result is where the caller wants it.
+    let _wipe = WipeStackBelowOnDrop::<WIPED_STACK_WORDS>;
+    key_pair_in_own_frame(rng)
+}
+
+/// The key pair [`keygen_out`] gives, never inlined, so that the key it fills and what it and
+/// its callees leave lie below [`keygen`]'s frame, where the stack wipe reaches them. It returns
+/// what `keygen` does, for `keygen` to end in the call: the private key is then written to where
+/// `keygen`'s caller wants it, and to no frame above the wiped ones.
+#[inline(never)]
+fn key_pair_in_own_frame(
+    rng: &mut dyn RNG,
+) -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
+    let mut sk = SM2PrivateKey::zeroized();
+    keygen_out(rng, &mut sk)?;
+    Ok((sk.pk, sk))
+}
+
+/// As [`keygen`], into `sk`, a key you hold (made with [`SM2PrivateKey::zeroized`]): `dA` is
+/// reduced from 320 bits of the RNG's output (see [`crate::sm2::extra_bits`]) straight into the
+/// key, and `PA` and `(1 + dA)^-1` computed there, with the stack the work used overwritten
+/// afterwards, so no copy of `dA` is left on the way. The same RNG output gives the same key as
+/// [`keygen`]. The public key is read from the key afterwards with
+/// [`sk.pub_key()`](SM2PrivateKey::pub_key), which cannot fail once this has returned `Ok`.
+/// `sk` is zeroized first and left so on every error.
+///
+/// # Errors
+/// As [`keygen`].
+pub fn keygen_out(rng: &mut dyn RNG, sk: &mut SM2PrivateKey) -> Result<(), SignatureError> {
+    sk.clear();
     // FIPS 186-5 Appendix A.2.1 step 3: the DRBG must offer at least the security strength
     // SM2's 256-bit curve order calls for (SP 800-57 Part 1 Rev. 5, Table 2: 128 bits).
     if rng.security_strength() < SecurityStrength::_128bit {
         return Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm));
     }
 
-    // Dropped last, after the result is where the caller wants it.
+    // Dropped last, after the key is filled.
     let _wipe = WipeStackBelowOnDrop::<WIPED_STACK_WORDS>;
     // Raw DRBG output, reduced into the private key: held in `Secret` so it is scrubbed when
     // this function returns rather than left on the stack.
     let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
     fill_bytes(rng, &mut *extra_bits).map_err(SignatureError::RNGError)?;
-    key_pair_in_own_frame(&extra_bits)
+    fill_in_own_frame(&extra_bits, sk);
+    Ok(())
 }
 
-/// The key pair that 320 bits of an RNG's output give, never inlined, so that what it and its
-/// callees leave lies below [`keygen`]'s frame, where the stack wipe reaches it. It returns what
-/// `keygen` does, for `keygen` to end in the call: the private key is then written to where
-/// `keygen`'s caller wants it, and to no frame above the wiped ones.
+/// The key that 320 bits of an RNG's output give, filled into `sk`, never inlined, so that what
+/// it and its callees leave lies below [`keygen_out`]'s frame, where the stack wipe reaches it.
 #[inline(never)]
-fn key_pair_in_own_frame(
-    extra_bits: &[u8; EXTRA_BITS_DRBG_OUTPUT_LEN],
-) -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
+fn fill_in_own_frame(extra_bits: &[u8; EXTRA_BITS_DRBG_OUTPUT_LEN], sk: &mut SM2PrivateKey) {
     // d is in [1, n-2] by construction (see reduce_wide_bits_mod_n_minus_2), which is what
-    // `from_validated_scalar` assumes; it computes PA = [d]G once, and the pair shares that value.
-    let sk = SM2PrivateKey::from_validated_scalar(reduce_wide_bits_mod_n_minus_2(extra_bits));
-    Ok((sk.derive_pk(), sk))
+    // `fill_from_validated_scalar` assumes; it computes PA = [d]G once, and the pair shares that
+    // value.
+    sk.fill_from_validated_scalar(reduce_wide_bits_mod_n_minus_2(extra_bits));
+}
+
+impl bouncycastle_core::traits::KeyPairGenerator for SM2PrivateKey {
+    type PublicKey = SM2PublicKey;
+    type Error = SignatureError;
+
+    fn zeroized() -> Self {
+        Self::zeroized()
+    }
+
+    fn generate_out(rng: &mut dyn RNG, sk: &mut Self) -> Result<(), SignatureError> {
+        keygen_out(rng, sk)
+    }
+
+    fn pub_key(&self) -> Result<SM2PublicKey, SignatureError> {
+        self.pub_key()
+    }
 }
