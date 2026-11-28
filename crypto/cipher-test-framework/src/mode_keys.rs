@@ -25,7 +25,7 @@ use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMat
 use bouncycastle_core_test_framework::key_wrap::TestFrameworkKeyWrap;
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
-    TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
+    TestFrameworkSeekableStreamCipher, TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
 use bouncycastle_symmetric::BlockCipherKey;
 use bouncycastle_symmetric::modes::hazmat::ecb::ECB;
@@ -98,13 +98,16 @@ pub fn padded_modes<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     framework.test_key::<KEY_LEN, 0, 16, _>(&make_key::<P, ECB<NoPadding>, KEY_LEN>(), &mut rng());
 }
 
-/// The stream-cipher suite over CFB, CFB8, OFB and CTR.
+/// The stream-cipher suite over CFB, CFB8, OFB and CTR, and the seek suite over CTR's workers,
+/// whose 4-byte counter ends the keystream at `2^32` blocks of 16 bytes.
 pub fn stream_modes<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     let framework = TestFrameworkStreamCipher::new();
     framework.test_key::<KEY_LEN, 16, _>(&make_key::<P, CFB, KEY_LEN>(), &mut rng());
     framework.test_key::<KEY_LEN, 16, _>(&make_key::<P, CFB8, KEY_LEN>(), &mut rng());
     framework.test_key::<KEY_LEN, 12, _>(&make_key::<P, CTR, KEY_LEN>(), &mut rng());
     framework.test_key::<KEY_LEN, 16, _>(&make_key::<P, OFB, KEY_LEN>(), &mut rng());
+    TestFrameworkSeekableStreamCipher::new()
+        .test_key::<KEY_LEN, 12, _>(&make_key::<P, CTR, KEY_LEN>(), 16 << 32);
 }
 
 /// The AEAD suite and the inline `ciphertext || tag` layout over GCM, and the AEAD suite over the

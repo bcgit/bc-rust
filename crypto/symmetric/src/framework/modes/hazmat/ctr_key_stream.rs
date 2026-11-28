@@ -3,6 +3,7 @@
 
 use crate::modes::ModeNames;
 use crate::modes::ctr::apply_counter_blocks;
+use crate::stream::seekable::SeekableKeyStream;
 use bouncycastle_core::hazmat::{BlockPermutation, KeyStream};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -41,6 +42,9 @@ where
     /// its state back out of those bytes could not tell "just started" from "completely used up".
     /// This counts to `BLOCK_LIMIT` and stops there.
     next_counter: u64,
+    /// The counter of the first block, below which a seek does not go. Below `BLOCK_LIMIT`, so
+    /// it fits.
+    first_counter: u32,
 }
 
 impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
@@ -99,7 +103,7 @@ where
             counter < Self::BLOCK_LIMIT,
             "start_at must not be handed an already-exhausted counter"
         );
-        Self { perm, nonce, next_counter: counter }
+        Self { perm, nonce, next_counter: counter, first_counter: counter as u32 }
     }
 
     /// `Tj = N | [j]m`: the nonce followed by the counter `j`, big-endian, in the trailing
@@ -164,6 +168,25 @@ where
             |j| Self::counter_block(nonce, j),
             blocks,
         );
+    }
+}
+
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> SeekableKeyStream
+    for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
+where
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
+{
+    /// The counter value of the next block: `Tj = N | [j]m` is block `j` of the nonce's keystream.
+    fn next_block(&self) -> u64 {
+        self.next_counter
+    }
+
+    fn first_block(&self) -> u64 {
+        u64::from(self.first_counter)
+    }
+
+    fn set_next_block(&mut self, block: u64) {
+        self.next_counter = block;
     }
 }
 

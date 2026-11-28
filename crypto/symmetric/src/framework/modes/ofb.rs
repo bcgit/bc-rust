@@ -186,5 +186,18 @@ where
 /// [`Encrypting`] or [`Decrypting`].
 ///
 /// The initialization data is one block, the IV, so `INIT_DATA_LEN == BLOCK_LEN`.
+///
+/// It does not seek, as [`Ctr`](crate::modes::Ctr) does: OFB's keystream block `j` needs block
+/// `j - 1`.
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::traits::SeekableStreamCipher;
+/// use bouncycastle_symmetric::aes::hazmat::AES128Internal;
+/// use bouncycastle_symmetric::modes::Ofb;
+/// use bouncycastle_symmetric::{Decrypting, Encrypting};
+/// fn seekable<T: SeekableStreamCipher>() {}
+/// seekable::<Ofb<'static, AES128Internal, Encrypting, 16>>();
+/// seekable::<Ofb<'static, AES128Internal, Decrypting, 16>>();
+/// ```
 pub type Ofb<'k, P, Dir, const BLOCK_LEN: usize> =
     StreamCipher<OfbKeyStream<'k, P, BLOCK_LEN>, Dir, BLOCK_LEN, BLOCK_LEN>;

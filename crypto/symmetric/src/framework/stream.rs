@@ -15,8 +15,8 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, FinishToken, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    Algorithm, FinishToken, SeekableStreamCipher, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
@@ -352,6 +352,62 @@ where
     /// As [`StreamCipherEncryptor::do_encrypt_inplace`].
     fn do_decrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         self.apply(data)
+    }
+}
+
+// A keystream whose blocks can be generated in any order, so that a `StreamCipher` over it can
+// seek: CTR's and ChaCha20's, whose block `j` is a function of the key, the nonce and `j` alone.
+// Not OFB's, whose block `j` needs block `j - 1`. Unnameable outside the crate, so that only the
+// `StreamCipher` that checks the position against the keystream's end calls `set_next_block`.
+pub(crate) mod seekable {
+    pub trait SeekableKeyStream {
+        // The index of the next block, counted from block 0 of this init data's keystream, so
+        // that `next_block() + remaining_blocks()` is the keystream's length in blocks.
+        fn next_block(&self) -> u64;
+        // The block the keystream was constructed at. A seek goes no lower, so a keystream
+        // started past blocks its creator uses for something else (ChaCha20-Poly1305's one-time
+        // key is block 0) cannot be moved back onto them.
+        fn first_block(&self) -> u64;
+        // Makes `block` the next block. The caller keeps `block <= next_block() +
+        // remaining_blocks()`.
+        fn set_next_block(&mut self, block: u64);
+    }
+}
+
+// A seek moves the keystream to the block holding the position and, part-way into a block,
+// generates that block and marks its leading bytes used, so that the bytes after a seek are the
+// ones a straight run gives at that offset.
+impl<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> SeekableStreamCipher
+    for StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
+where
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + seekable::SeekableKeyStream,
+{
+    fn position(&self) -> u64 {
+        // While `used < BLOCK_LEN`, `pending` is the block before `next_block`, of which
+        // `BLOCK_LEN - used` bytes are not yet consumed.
+        self.keystream.next_block() * BLOCK_LEN as u64 - (BLOCK_LEN - self.used) as u64
+    }
+
+    fn seek_to(&mut self, position: u64) -> Result<(), SymmetricCipherError> {
+        let block_len = BLOCK_LEN as u64;
+        let end_blocks = self.keystream.next_block() + self.keystream.remaining_blocks();
+        let start = self.keystream.first_block().saturating_mul(block_len);
+        if position < start || position > end_blocks.saturating_mul(block_len) {
+            return Err(SymmetricCipherError::DataLimitExceeded);
+        }
+        // The keystream held for the old position is wiped, whatever happens next.
+        *self.pending = [0u8; BLOCK_LEN];
+        self.keystream.set_next_block(position / block_len);
+        let offset = (position % block_len) as usize;
+        if offset == 0 {
+            self.used = BLOCK_LEN;
+        } else {
+            // Part-way into a block, which is before the end (checked above): generate it in
+            // place inside the `Secret`, as `apply` does for a tail, and skip its leading bytes.
+            self.keystream.apply_blocks(core::slice::from_mut(&mut *self.pending));
+            self.used = offset;
+        }
+        Ok(())
     }
 }
 

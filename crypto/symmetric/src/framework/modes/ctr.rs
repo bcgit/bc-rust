@@ -98,6 +98,32 @@
 //! assert_eq!(data, [0x5Au8; 40]);
 //! ```
 //!
+//! A worker seeks ([`SeekableStreamCipher`]), so a decryptor can start at any byte of the
+//! message:
+//!
+//! ```
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyExpansion, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
+//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_core::traits::{SeekableStreamCipher, StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_symmetric::modes::CTR;
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! let state = <CTR<12, 16> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
+//! let mut data = [0x5Au8; 40];
+//! let (nonce, mut encryptor) =
+//!     CTR::<12, 16>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("nonce draw");
+//! encryptor.do_encrypt_inplace(&mut data).expect("encryption");
+//!
+//! let mut decryptor = CTR::<12, 16>::decrypt_init(&state, &nonce);
+//! decryptor.seek_to(21).expect("within the message");
+//! decryptor.do_decrypt_inplace(&mut data[21..]).expect("decryption");
+//! assert_eq!(data[21..], [0x5Au8; 19]);
+//! ```
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! The one security requirement of CTR mode is that every counter block be distinct across all
@@ -110,7 +136,8 @@
 //! refuses to overflow the counter and returns a [`SymmetricCipherError::DataLimitExceeded`]
 //! instead, and why a key's `create_encryptor` draws the nonce: within one message the counter
 //! cannot repeat, and across messages a fresh random nonce is what keeps the counter blocks
-//! distinct. Its `create_encryptor_nonce` hands that obligation to the caller.
+//! distinct. Its `create_encryptor_nonce` hands that obligation to the caller, and a
+//! [`seek_to`](SeekableStreamCipher::seek_to) the obligation not to encrypt twice at one position.
 
 use crate::modes::ModeNames;
 use crate::modes::hazmat::ctr_key_stream::CtrKeyStream;
@@ -127,7 +154,9 @@ use bouncycastle_utils::secret::Secret;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_core::traits::{
+    SeekableStreamCipher, StreamCipherDecryptor, StreamCipherEncryptor,
+};
 // end of imports needed for docs
 
 /// The CTR mode type: the `M` of a mode-bound key such as `AES128Key<CTR>`, on the symmetric key
@@ -206,6 +235,12 @@ where
 /// The counter block is the init data (the nonce) followed by a counter filling the rest of the
 /// block, so `INIT_DATA_LEN` chooses the counter length; see the module docs. `Dir` is
 /// [`Encrypting`] or [`Decrypting`].
+///
+/// Both directions implement [`SeekableStreamCipher`]: position `BLOCK_LEN * c` is the start of
+/// the block whose counter field is `c` (SP 800-38A Sec 6.5: a plaintext block "can be recovered
+/// independently from the other plaintext blocks if the corresponding counter block can be
+/// determined"). A seek past byte `BLOCK_LEN * 2^(8 * (BLOCK_LEN - INIT_DATA_LEN))`, the end of
+/// the counter, returns [`SymmetricCipherError::DataLimitExceeded`].
 ///
 /// # The counter width is checked at compile time
 ///

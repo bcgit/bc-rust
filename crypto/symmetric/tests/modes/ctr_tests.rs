@@ -738,21 +738,23 @@ fn every_permitted_nonce_length_works() {
 
 // ---- memory ---------------------------------------------------------------------------------
 
-/// Pins the layout: a reference to the permutation + nonce + counter (`u64`) + keystream block +
-/// the used offset, rounded up to the `u64`'s alignment.
+/// Pins the layout: a reference to the permutation + nonce + counter (`u64`) + first counter
+/// (`u32`) + keystream block + the used offset, rounded up to the `u64`'s alignment.
 #[test]
 fn sizes_match_the_documented_memory_table() {
     use core::mem::{align_of, size_of};
 
-    assert_eq!(
-        size_of::<ToyCtr<Encrypting>>(),
-        (size_of::<&Toy>() + NONCE_LEN + size_of::<u64>() + TOY_LEN + size_of::<usize>())
-            .next_multiple_of(align_of::<u64>())
-    );
-
-    // The direction marker is free, and the nonce length does not change the layout: the counter
-    // block is always a whole block.
+    let layout = |nonce_len: usize| {
+        (size_of::<&Toy>()
+            + nonce_len
+            + size_of::<u64>()
+            + size_of::<u32>()
+            + TOY_LEN
+            + size_of::<usize>())
+        .next_multiple_of(align_of::<u64>())
+    };
+    assert_eq!(size_of::<ToyCtr<Encrypting>>(), layout(NONCE_LEN));
+    assert_eq!(size_of::<TinyCtr<Encrypting>>(), layout(SHORT_CTR_NONCE_LEN));
+    // The direction marker is free.
     assert_eq!(size_of::<ToyCtr<Encrypting>>(), size_of::<ToyCtr<Decrypting>>());
-    // A longer nonce fits in the same padding, so the total is unchanged.
-    assert_eq!(size_of::<ToyCtr<Encrypting>>(), size_of::<TinyCtr<Encrypting>>());
 }

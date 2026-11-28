@@ -1467,6 +1467,34 @@ pub trait StreamCipherEncryptor<const INIT_DATA_LEN: usize>:
     fn do_encrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError>;
 }
 
+/// A stream cipher worker whose position in its keystream can be read and set, for random access
+/// into a long message. Implemented by encryptors and decryptors alike; the position is counted
+/// in bytes from the start of the keystream the worker's key and init data define, so it is the
+/// offset into the message of the next byte the worker processes.
+///
+/// # 🚨 Security Considerations 🚨
+/// Seeking back and encrypting again under the same key and init data reuses keystream: two
+/// different plaintexts at the same position reveal their XOR. Only re-encrypting the same bytes,
+/// or decrypting, is safe.
+pub trait SeekableStreamCipher {
+    /// The position of the next byte this worker will process: `0` for a worker fresh from its
+    /// key's `create_encryptor` or `create_decryptor`, advanced by
+    /// every byte encrypted or decrypted, and set by [`seek_to`](Self::seek_to).
+    fn position(&self) -> u64;
+
+    /// Moves the worker to `position`, forwards or backwards, so that the next byte it processes
+    /// is the message byte at that offset. Any position from the worker's start to the end of the
+    /// keystream inclusive is accepted; at the end itself only empty calls succeed. The start is
+    /// `0` for a worker from a key, and the starting block for one a hazmat constructor began
+    /// part-way into the keystream.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::DataLimitExceeded`] if `position` is before the worker's start or
+    /// past the end of the keystream this key and init data allow. The worker is left as it was,
+    /// and remains usable.
+    fn seek_to(&mut self, position: u64) -> Result<(), SymmetricCipherError>;
+}
+
 /// Allows a stateful object to suspend its operation by serializing its state into a byte array
 ///so that it can be resumed later, potentially from a different host.
 ///

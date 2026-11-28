@@ -9,6 +9,7 @@
 
 use crate::chacha20::{BLOCK_LEN, ChaCha20Key, KEY_LEN, NONCE_LEN};
 use crate::stream::hazmat::PermutationFreeKeyStream;
+use crate::stream::seekable::SeekableKeyStream;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -93,6 +94,8 @@ pub struct ChaCha20KeyStream<'k> {
     /// The counter of the *next* block. A `u64` so that the exhausted state, `2^32`, is
     /// representable without wrapping into the 32-bit word 12.
     next_counter: u64,
+    /// The counter of the first block, below which a seek does not go.
+    first_counter: u32,
 }
 
 impl<'k> ChaCha20KeyStream<'k> {
@@ -106,7 +109,12 @@ impl<'k> ChaCha20KeyStream<'k> {
         for (word, bytes) in words.iter_mut().zip(nonce.as_chunks::<4>().0) {
             *word = u32::from_le_bytes(*bytes);
         }
-        Self { key, nonce: words, next_counter: u64::from(initial_counter) }
+        Self {
+            key,
+            nonce: words,
+            next_counter: u64::from(initial_counter),
+            first_counter: initial_counter,
+        }
     }
 }
 
@@ -124,6 +132,21 @@ pub fn keystream_at<'k>(
     initial_counter: u32,
 ) -> ChaCha20KeyStream<'k> {
     ChaCha20KeyStream::start_at(&key.state, nonce, initial_counter)
+}
+
+// Block `j` is the block function at counter `j`, so any block can be generated directly.
+impl SeekableKeyStream for ChaCha20KeyStream<'_> {
+    fn next_block(&self) -> u64 {
+        self.next_counter
+    }
+
+    fn first_block(&self) -> u64 {
+        u64::from(self.first_counter)
+    }
+
+    fn set_next_block(&mut self, block: u64) {
+        self.next_counter = block;
+    }
 }
 
 // The block function is all there is: no block permutation, so no decrypt-only one.

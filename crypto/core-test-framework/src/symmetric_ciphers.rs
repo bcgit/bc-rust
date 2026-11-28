@@ -7,8 +7,8 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::FixedSeedRNG;
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle_core::traits::{
-    RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    RNG, SeekableStreamCipher, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 
 /// Instance of the test framework.
@@ -608,4 +608,174 @@ impl TestFrameworkStreamCipher {
         assert_ne!(iv_a, iv_b);
         assert_ne!(&a[..], &b[..]);
     }
+}
+
+/// Instance of the test framework.
+pub struct TestFrameworkSeekableStreamCipher {
+    // Put any config options here
+}
+
+impl Default for TestFrameworkSeekableStreamCipher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TestFrameworkSeekableStreamCipher {
+    ///
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    /// The [`SeekableStreamCipher`] contract over both workers of a stream cipher key, whose
+    /// keystream for one init data is `end` bytes long.
+    ///
+    /// Checks, for the encryptor and the decryptor alike:
+    /// * `position` starts at 0 and advances by every byte processed, whatever the chunking;
+    /// * `seek_to` any offset, block-aligned or not, forwards or backwards on one worker, gives the
+    ///   keystream a straight run gives at that offset;
+    /// * a message processed in pieces in reverse order, each reached by a seek, is the one a
+    ///   straight run gives;
+    /// * the last bytes of the keystream agree whichever offset they are reached from, `end` itself
+    ///   is accepted and leaves only empty calls, and `end + 1` and `u64::MAX` are refused with
+    ///   `DataLimitExceeded`, leaving the worker, part-used block included, as it was;
+    /// * the trait is usable as `&mut dyn SeekableStreamCipher`.
+    pub fn test_key<
+        'k,
+        const KEY_LEN: usize,
+        const INIT_DATA_LEN: usize,
+        K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>
+            + SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
+    >(
+        &self,
+        key: &'k K,
+        end: u64,
+    ) where
+        K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN> + SeekableStreamCipher,
+        K::Decryptor<'k>: StreamCipherDecryptor<INIT_DATA_LEN> + SeekableStreamCipher,
+    {
+        let init_data = [0xA5u8; INIT_DATA_LEN];
+        check_worker(
+            "encryptor",
+            || key.create_encryptor_nonce(&init_data),
+            |w, data| w.do_encrypt_inplace(data),
+            end,
+        );
+        check_worker(
+            "decryptor",
+            || key.create_decryptor(&init_data),
+            |w, data| w.do_decrypt_inplace(data),
+            end,
+        );
+
+        // The two directions share their keystream, so a seeking decryptor undoes a straight
+        // encryption.
+        let mut ct = *DUMMY_SEED;
+        key.create_encryptor_nonce(&init_data).do_encrypt_inplace(&mut ct).unwrap();
+        let mut dec = key.create_decryptor(&init_data);
+        dec.seek_to(300).unwrap();
+        dec.do_decrypt_inplace(&mut ct[300..]).unwrap();
+        dec.seek_to(0).unwrap();
+        dec.do_decrypt_inplace(&mut ct[..300]).unwrap();
+        assert_eq!(&ct[..], &DUMMY_SEED[..], "a seeking decryptor must undo the encryption");
+    }
+}
+
+/// [`TestFrameworkSeekableStreamCipher::test_key`] over one direction: `make` builds a fresh
+/// worker under fixed init data and `apply` runs its in-place data method.
+fn check_worker<W: SeekableStreamCipher>(
+    label: &str,
+    make: impl Fn() -> W,
+    apply: impl Fn(&mut W, &mut [u8]) -> Result<usize, SymmetricCipherError>,
+    end: u64,
+) {
+    const LEN: usize = 300;
+    assert!(end >= LEN as u64, "{label}: the keystream must be longer than the test's {LEN} bytes");
+
+    // The straight-through keystream, and `position` tracking every chunking of it.
+    let mut keystream = [0u8; LEN];
+    let mut w = make();
+    assert_eq!(w.position(), 0, "{label}: a fresh worker is at position 0");
+    apply(&mut w, &mut keystream).unwrap();
+    assert_eq!(w.position(), LEN as u64, "{label}: position after one call");
+    for chunk in [1usize, 7, 15, 16, 17, 63, 64, 65, 128] {
+        let mut w = make();
+        let mut done = 0u64;
+        let mut chunked = [0u8; LEN];
+        for piece in chunked.chunks_mut(chunk) {
+            apply(&mut w, piece).unwrap();
+            done += piece.len() as u64;
+            assert_eq!(w.position(), done, "{label}: position in chunks of {chunk}");
+        }
+        assert_eq!(chunked, keystream, "{label}: chunks of {chunk}");
+    }
+
+    // Every offset, block-aligned or not, reached forwards and backwards on one worker.
+    let offsets = [0usize, 1, 7, 15, 16, 17, 31, 32, 63, 64, 65, 100, 127, 128, 129, 250, 299, 300];
+    let mut w = make();
+    for &off in offsets.iter().chain(offsets.iter().rev()) {
+        w.seek_to(off as u64).unwrap();
+        assert_eq!(w.position(), off as u64, "{label}: position after seek_to({off})");
+        let mut got = [0u8; LEN];
+        let got = &mut got[..LEN - off];
+        apply(&mut w, got).unwrap();
+        assert_eq!(got, &keystream[off..], "{label}: keystream after seek_to({off})");
+        assert_eq!(w.position(), LEN as u64, "{label}: position after the rest from {off}");
+    }
+
+    // A message in pieces in reverse order, each reached by a seek, is the straight message.
+    let mut msg = [0u8; LEN];
+    msg.copy_from_slice(&DUMMY_SEED[..LEN]);
+    let mut straight = msg;
+    apply(&mut make(), &mut straight).unwrap();
+    let mut w = make();
+    let cuts = [0usize, 5, 64, 70, 199, 256, LEN];
+    for piece in cuts.windows(2).rev() {
+        w.seek_to(piece[0] as u64).unwrap();
+        apply(&mut w, &mut msg[piece[0]..piece[1]]).unwrap();
+    }
+    assert_eq!(msg, straight, "{label}: pieces in reverse order");
+
+    // The end of the keystream: reached from two offsets, it agrees.
+    const TAIL: usize = 70;
+    let mut w = make();
+    w.seek_to(end - TAIL as u64).unwrap();
+    let mut tail = [0u8; TAIL];
+    apply(&mut w, &mut tail).unwrap();
+    assert_eq!(w.position(), end, "{label}: position at the end");
+    let mut last = [0u8; 3];
+    w.seek_to(end - 3).unwrap();
+    apply(&mut w, &mut last).unwrap();
+    assert_eq!(&last, &tail[TAIL - 3..], "{label}: the last bytes from a later offset");
+
+    // At the end only empty calls succeed.
+    assert!(matches!(apply(&mut w, &mut [0u8; 1]), Err(SymmetricCipherError::DataLimitExceeded)));
+    assert_eq!(apply(&mut w, &mut []).unwrap(), 0);
+    w.seek_to(end).unwrap();
+    assert_eq!(w.position(), end, "{label}: seek_to(end) is accepted");
+    assert!(matches!(apply(&mut w, &mut [0u8; 1]), Err(SymmetricCipherError::DataLimitExceeded)));
+
+    // Past the end is refused, and the worker is left where it was, part-used block included.
+    let mut w = make();
+    let mut head = [0u8; 7];
+    apply(&mut w, &mut head).unwrap();
+    for past in [end + 1, end + 64, u64::MAX] {
+        assert!(
+            matches!(w.seek_to(past), Err(SymmetricCipherError::DataLimitExceeded)),
+            "{label}: seek_to({past}) is past the end"
+        );
+        assert_eq!(w.position(), 7, "{label}: a refused seek leaves the position");
+    }
+    let mut rest = [0u8; LEN - 7];
+    apply(&mut w, &mut rest).unwrap();
+    assert_eq!(&rest[..], &keystream[7..], "{label}: a refused seek leaves the keystream");
+
+    // Through `dyn`.
+    let mut w = make();
+    let seekable: &mut dyn SeekableStreamCipher = &mut w;
+    seekable.seek_to(65).unwrap();
+    assert_eq!(seekable.position(), 65);
+    let mut got = [0u8; 10];
+    apply(&mut w, &mut got).unwrap();
+    assert_eq!(&got, &keystream[65..75], "{label}: seek through dyn");
 }

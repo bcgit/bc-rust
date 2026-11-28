@@ -3,8 +3,9 @@
 //! [`ChaCha20Key`] is the key object: built once from 32 bytes of key material through
 //! [`FromKeyMaterial`], it hands out [`ChaCha20`] stream ciphers through
 //! [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`], drawing the nonce from the RNG it is
-//! given and starting the block counter at zero. The raw keystream, with a caller-chosen nonce
-//! and counter for protocols and test vectors, is [`hazmat::keystream_at`]. Only the RFC's
+//! given and starting the block counter at zero. Both implement [`SeekableStreamCipher`], whose
+//! position `64 * c` is the start of the block with counter `c`. The raw keystream, with a caller-chosen nonce and counter
+//! for constructions that derive material from it, is [`hazmat::keystream_at`]. Only the RFC's
 //! 32-byte key and 12-byte nonce variant is supported. A message in progress is paused by holding
 //! its worker; the workers do not suspend (#173).
 //!
@@ -45,6 +46,27 @@
 //! assert_eq!(data, [0x5au8; 100]);
 //! ```
 //!
+//! Random access: a decryptor seeks to any byte of the message and decrypts from there.
+//!
+//! ```
+//! use bouncycastle_symmetric::chacha20::ChaCha20Key;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::traits::{SeekableStreamCipher, StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
+//! let key = ChaCha20Key::from_key_material(&material).unwrap();
+//! let mut data = [0x5au8; 200];
+//! let (nonce, mut enc) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! enc.do_encrypt_inplace(&mut data).unwrap();
+//!
+//! let mut dec = key.create_decryptor(&nonce);
+//! dec.seek_to(150).unwrap();
+//! dec.do_decrypt_inplace(&mut data[150..]).unwrap();
+//! assert_eq!(data[150..], [0x5au8; 50]);
+//! assert_eq!(dec.position(), 200);
+//! ```
+//!
 //! # Memory Usage
 //!
 //! | Type | In-memory size (bytes) |
@@ -71,7 +93,7 @@
 //! # 🚨 Security Considerations 🚨
 //!
 //! - Never reuse a nonce under the same key, or overlap counter ranges for that key and nonce
-//!   through [`hazmat::keystream_at`]: the keystream repeats and the XOR of the two
+//!   through [`hazmat::keystream_at`] or a seek: the keystream repeats and the XOR of the two
 //!   plaintexts is revealed.
 //! - ChaCha20 provides no authentication: flipping a ciphertext bit flips the same plaintext bit.
 //!   Use ChaCha20-Poly1305 unless the ciphertext is authenticated by other means.
@@ -89,6 +111,11 @@ use bouncycastle_core::symmetric_key::{
 use bouncycastle_core::traits::{RNG, RNGExt};
 use hazmat::{ChaCha20KeyState, ChaCha20KeyStream};
 
+// Imports needed for docs
+#[allow(unused_imports)]
+use bouncycastle_core::traits::SeekableStreamCipher;
+// end of imports needed for docs
+
 /// Key length in bytes.
 pub const KEY_LEN: usize = 32;
 /// Nonce length in bytes.
@@ -100,7 +127,8 @@ pub const BLOCK_LEN: usize = 64;
 /// borrowing the key for `'k`. `Dir` is [`Encrypting`] or [`Decrypting`].
 ///
 /// A message may be at most `2^32` blocks of 64 bytes; a call that would run past that returns
-/// [`SymmetricCipherError::DataLimitExceeded`] and consumes nothing.
+/// [`SymmetricCipherError::DataLimitExceeded`] and consumes nothing, and so does a
+/// [`seek_to`](SeekableStreamCipher::seek_to) past byte `2^38`.
 pub type ChaCha20<'k, Dir> = StreamCipher<ChaCha20KeyStream<'k>, Dir, NONCE_LEN, BLOCK_LEN>;
 
 /// A ChaCha20 key: the 256-bit key of RFC 8439 Sec 2.3, validated once, from which the stream

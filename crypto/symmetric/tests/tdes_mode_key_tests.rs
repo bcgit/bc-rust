@@ -16,7 +16,7 @@ use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::key_wrap::TestFrameworkKeyWrap;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
-    TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
+    TestFrameworkSeekableStreamCipher, TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_symmetric::modes::hazmat::ecb::ECB;
@@ -116,6 +116,13 @@ fn stream_mode_keys_pass_the_stream_cipher_framework() {
     framework.test_key::<KEY_LEN, BLOCK_LEN, _>(&key3::<CFB8>(), &mut rng());
     framework.test_key::<KEY_LEN, BLOCK_LEN, _>(&key3::<OFB>(), &mut rng());
     framework.test_key::<KEY_LEN, CTR_NONCE_LEN, _>(&key3::<Ctr6>(), &mut rng());
+}
+
+/// The CTR workers seek, up to the end of the 2-byte counter: `2^16` blocks of 8 bytes.
+#[test]
+fn ctr_workers_pass_the_seek_framework() {
+    TestFrameworkSeekableStreamCipher::new()
+        .test_key::<KEY_LEN, CTR_NONCE_LEN, _>(&key3::<Ctr6>(), (BLOCK_LEN as u64) << 16);
 }
 
 /// A two-key key hands out decryptors for every mode, and they decrypt what the raw two-key
